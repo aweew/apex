@@ -74,3 +74,7 @@ apex:
   mx-output-dir: ${user.dir}/../../.mx_output
   local-username: admin
   local-password: admin123
+  hot:
+    python-cmd: python
+    # IDEA 工作目录通常为 apex-be，相对仓库根为 ../scripts
+    script-path: ${user.dir}/../scripts/market_data/sync_hot.py

@@ -11,6 +11,7 @@ import PipelineView from '../views/PipelineView.vue'
 import ScreenerView from '../views/ScreenerView.vue'
 import DecisionView from '../views/DecisionView.vue'
 import HoldingView from '../views/HoldingView.vue'
+import HotView from '../views/HotView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -18,6 +19,7 @@ const router = createRouter({
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'dashboard', component: DashboardView },
     { path: '/decision', name: 'decision', component: DecisionView },
+    { path: '/hot', name: 'hot', component: HotView },
     { path: '/holding', name: 'holding', component: HoldingView },
     { path: '/pipeline', name: 'pipeline', component: PipelineView },
     { path: '/screener', name: 'screener', component: ScreenerView },

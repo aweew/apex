@@ -55,9 +55,24 @@ python sync_fundamentals.py --mode reports --sleep 0.8
 前端个股页 Tab：财务摘要 / 分析指标 / 利润表 / 资产负债表 / 现金流量表  
 接口：`GET /api/stock/{code}/fundamental`
 
-## 4. 说明
+## 4. 多平台热点
+
+写入表：`market_hot`（先执行 `apex-be/docs/sql/10_market_hot.sql`）
+
+```bash
+# 东财人气 + 雪球关注 + 百度热搜
+python sync_hot.py --limit 50
+
+# 快刷（跳过较慢的雪球）
+python sync_hot.py --sources eastmoney,baidu --limit 40
+```
+
+前端导航「热点」；接口：`GET /api/hot/overview`、`POST /api/hot/refresh`
+
+## 5. 说明
 
 - 日线数据源：AKShare（优先新浪日线，失败再试东财；前复权）
 - 基本面数据源：分析指标 + 同花顺摘要 + 新浪三大报表（科目级 EAV，payload 保留全量字段）
+- 热点数据源：东财人气榜 / 雪球关注 / 百度热搜（外网不稳定时请重试）
 - 全 A 约 5000+ 只，首次导入往往需要数小时，请保持 `--sleep`
 - 导入完成后，Apex 详情/回测/基本面直接读本地库即可
