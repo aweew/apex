@@ -1,10 +1,11 @@
 <script setup>
-import { nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { fetchStockDetail, fetchStockFundamental, syncStockBasic } from '../api/stock'
 import { syncBars } from '../api/bars'
+import { aggregateBars, tdSequential } from '../utils/kline'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,7 +26,126 @@ const chartRef = ref(null)
 const activeTab = ref('chart')
 const fund = ref(null)
 const macdTip = ref('')
+const tdTip = ref('')
+/** day | week | month */
+const klinePeriod = ref('day')
+/** 默认仅显示 MA5 / MA20 */
+const selectedMas = ref(['MA5', 'MA20'])
+const showTd9 = ref(true)
+/** key=仅显示 8/9，all=显示 1–9 */
+const tdShowMode = ref('key')
+const BAR_LIMIT = 500
+const CHART_PREF_KEY = 'apex.stock.chartPrefs'
+const MA_META = [
+  { name: 'MA5', color: '#1d1d1f' },
+  { name: 'MA10', color: '#f59e0b' },
+  { name: 'MA20', color: '#7c3aed' },
+  { name: 'MA60', color: '#5c6bc0' },
+]
+const MA_NAMES = MA_META.map((item) => item.name)
 let chart
+let syncingFromLegend = false
+let resetZoomNext = true
+let savedZoom = { start: 45, end: 100 }
+
+const chartBars = computed(() => aggregateBars(bars.value, klinePeriod.value))
+const periodLabel = computed(() =>
+  klinePeriod.value === 'week' ? '周K' : klinePeriod.value === 'month' ? '月K' : '日K',
+)
+/** 随 K 线周期：天 / 周 / 月 */
+const periodUnit = computed(() =>
+  klinePeriod.value === 'week' ? '周' : klinePeriod.value === 'month' ? '月' : '天',
+)
+const periodMeta = computed(() => {
+  const n = chartBars.value.length
+  if (!n) return ''
+  if (klinePeriod.value === 'day') return `${periodLabel.value} · ${n} 根`
+  return `${periodLabel.value} · ${n} 根（由 ${bars.value.length} 根日线聚合）`
+})
+function maDisplayName(name) {
+  const n = String(name).replace(/^MA/i, '')
+  return `MA${n}${periodUnit.value}`
+}
+
+function loadChartPrefs() {
+  try {
+    const raw = localStorage.getItem(CHART_PREF_KEY)
+    if (!raw) return
+    const prefs = JSON.parse(raw)
+    if (['day', 'week', 'month'].includes(prefs.klinePeriod)) klinePeriod.value = prefs.klinePeriod
+    if (Array.isArray(prefs.selectedMas)) {
+      const next = prefs.selectedMas.filter((name) => MA_NAMES.includes(name))
+      if (next.length) selectedMas.value = next
+    }
+    if (typeof prefs.showTd9 === 'boolean') showTd9.value = prefs.showTd9
+    if (prefs.tdShowMode === 'all' || prefs.tdShowMode === 'key') tdShowMode.value = prefs.tdShowMode
+  } catch {
+    /* ignore broken prefs */
+  }
+}
+
+function saveChartPrefs() {
+  try {
+    localStorage.setItem(
+      CHART_PREF_KEY,
+      JSON.stringify({
+        klinePeriod: klinePeriod.value,
+        selectedMas: selectedMas.value,
+        showTd9: showTd9.value,
+        tdShowMode: tdShowMode.value,
+      }),
+    )
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function captureZoom() {
+  if (!chart) return
+  const dz = chart.getOption()?.dataZoom
+  if (!Array.isArray(dz) || !dz.length) return
+  const start = Number(dz[0].start)
+  const end = Number(dz[0].end)
+  if (!Number.isNaN(start) && !Number.isNaN(end)) savedZoom = { start, end }
+}
+
+function refreshChart() {
+  if (!bars.value.length) {
+    macdTip.value = ''
+    tdTip.value = ''
+    disposeChart()
+    return
+  }
+  renderChart(chartBars.value)
+}
+
+function resetChartView() {
+  resetZoomNext = true
+  savedZoom = { start: chartBars.value.length <= 80 ? 0 : 45, end: 100 }
+  if (bars.value.length && activeTab.value === 'chart') refreshChart()
+}
+
+function bindChartEvents() {
+  if (!chart) return
+  chart.off('datazoom')
+  chart.off('legendselectchanged')
+  chart.on('datazoom', () => captureZoom())
+  chart.on('legendselectchanged', (evt) => {
+    const selected = evt?.selected || {}
+    const unit = periodUnit.value
+    const nextMas = MA_NAMES.filter((name) => selected[`${name}${unit}`] !== false)
+    const masChanged =
+      nextMas.length !== selectedMas.value.length ||
+      nextMas.some((name) => !selectedMas.value.includes(name))
+    if (!masChanged) return
+    syncingFromLegend = true
+    selectedMas.value = nextMas
+    nextTick(() => {
+      syncingFromLegend = false
+      saveChartPrefs()
+    })
+  })
+}
 
 function ma(closes, period) {
   return closes.map((_, i) => {
@@ -128,6 +248,8 @@ function fmtVol(v) {
 
 function disposeChart() {
   if (chart) {
+    chart.off('datazoom')
+    chart.off('legendselectchanged')
     chart.dispose()
     chart = null
   }
@@ -170,6 +292,7 @@ function fmtSignedPct(v) {
 async function renderChart(list) {
   if (!list.length) {
     macdTip.value = ''
+    tdTip.value = ''
     disposeChart()
     return
   }
@@ -184,7 +307,9 @@ async function renderChart(list) {
   if (!chartRef.value) return
   if (!chart) {
     chart = echarts.init(chartRef.value)
+    bindChartEvents()
   } else {
+    captureZoom()
     chart.resize()
   }
   const dates = list.map((b) => b.tradeDate)
@@ -198,6 +323,21 @@ async function renderChart(list) {
   const ma10 = ma(closes, 10)
   const ma20 = ma(closes, 20)
   const ma60 = ma(closes, 60)
+  const maSelected = {
+    MA5: selectedMas.value.includes('MA5'),
+    MA10: selectedMas.value.includes('MA10'),
+    MA20: selectedMas.value.includes('MA20'),
+    MA60: selectedMas.value.includes('MA60'),
+  }
+  const periodPctLabel =
+    klinePeriod.value === 'week' ? '本周' : klinePeriod.value === 'month' ? '本月' : '当日'
+  const unit = periodUnit.value
+  const maLegend = {
+    MA5: `MA5${unit}`,
+    MA10: `MA10${unit}`,
+    MA20: `MA20${unit}`,
+    MA60: `MA60${unit}`,
+  }
   const { dif, dea, hist } = macd(closes)
   const crosses = macdCrosses(dif, dea)
   const goldenPoints = []
@@ -219,13 +359,114 @@ async function renderChart(list) {
   } else {
     macdTip.value = ''
   }
+  const { buy: tdBuy, sell: tdSell } = tdSequential(closes)
+  const tdBuyPoints = []
+  const tdSellPoints = []
+  const tdMinShow = tdShowMode.value === 'all' ? 1 : 8
+  if (showTd9.value) {
+    for (let i = 0; i < closes.length; i++) {
+      if (tdBuy[i] >= tdMinShow) {
+        const isNine = tdBuy[i] === 9
+        tdBuyPoints.push({
+          value: [dates[i], lows[i]],
+          count: tdBuy[i],
+          label: {
+            show: true,
+            formatter: String(tdBuy[i]),
+            position: 'bottom',
+            distance: 4,
+            color: isNine ? '#26a69a' : 'rgba(38,166,154,0.82)',
+            fontSize: isNine ? 12 : 10,
+            fontWeight: isNine ? 800 : 600,
+          },
+          itemStyle: {
+            color: isNine ? 'rgba(38,166,154,0.28)' : 'transparent',
+            borderColor: isNine ? '#26a69a' : 'transparent',
+            borderWidth: isNine ? 1.2 : 0,
+          },
+          symbolSize: isNine ? 18 : 1,
+        })
+      }
+      if (tdSell[i] >= tdMinShow) {
+        const isNine = tdSell[i] === 9
+        tdSellPoints.push({
+          value: [dates[i], highs[i]],
+          count: tdSell[i],
+          label: {
+            show: true,
+            formatter: String(tdSell[i]),
+            position: 'top',
+            distance: 4,
+            color: isNine ? '#ef5350' : 'rgba(239,83,80,0.82)',
+            fontSize: isNine ? 12 : 10,
+            fontWeight: isNine ? 800 : 600,
+          },
+          itemStyle: {
+            color: isNine ? 'rgba(239,83,80,0.28)' : 'transparent',
+            borderColor: isNine ? '#ef5350' : 'transparent',
+            borderWidth: isNine ? 1.2 : 0,
+          },
+          symbolSize: isNine ? 18 : 1,
+        })
+      }
+    }
+  }
+  tdTip.value = ''
+  for (let i = closes.length - 1; i >= 0; i--) {
+    if (tdSell[i] === 9) {
+      tdTip.value = `最近上涨九转(卖)：${dates[i]}`
+      break
+    }
+    if (tdBuy[i] === 9) {
+      tdTip.value = `最近下跌九转(买)：${dates[i]}`
+      break
+    }
+  }
+  if (!tdTip.value) {
+    for (let i = closes.length - 1; i >= 0; i--) {
+      if (tdSell[i] > 0) {
+        tdTip.value = `上涨九转进行中：九转卖${tdSell[i]}（${dates[i]}）`
+        break
+      }
+      if (tdBuy[i] > 0) {
+        tdTip.value = `下跌九转进行中：九转买${tdBuy[i]}（${dates[i]}）`
+        break
+      }
+    }
+  }
   const { k: kLine, d: dLine, j: jLine } = kdj(highs, lows, closes)
+  let zoomStart = list.length <= 80 ? 0 : 45
+  let zoomEnd = 100
+  if (!resetZoomNext && list.length > 0) {
+    zoomStart = savedZoom.start
+    zoomEnd = savedZoom.end
+  }
+  resetZoomNext = false
 
   chart.setOption({
     backgroundColor: 'transparent',
     animation: false,
     legend: {
-      data: ['K线', 'MA5', 'MA10', 'MA20', 'MA60', '成交量', 'DIF', 'DEA', 'MACD', '金叉', '死叉', 'K', 'D', 'J'],
+      data: [
+        'K线',
+        maLegend.MA5,
+        maLegend.MA10,
+        maLegend.MA20,
+        maLegend.MA60,
+        '成交量',
+        'DIF',
+        'DEA',
+        'MACD',
+        'K',
+        'D',
+        'J',
+      ],
+      selected: {
+        [maLegend.MA5]: maSelected.MA5,
+        [maLegend.MA10]: maSelected.MA10,
+        [maLegend.MA20]: maSelected.MA20,
+        [maLegend.MA60]: maSelected.MA60,
+      },
       top: 2,
       itemWidth: 12,
       itemHeight: 8,
@@ -296,26 +537,27 @@ async function renderChart(list) {
         const sinceLabel =
           sincePct == null || Number.isNaN(sincePct) || sincePct >= 0 ? '至今涨幅' : '至今跌幅'
         const sincePeriods = Math.max(1, closes.length - idx)
-        const crossBadge =
-          crosses[idx] === 'golden'
-            ? '<span class="kline-tip__badge kline-tip__badge--up">MACD 金叉</span>'
-            : crosses[idx] === 'death'
-              ? '<span class="kline-tip__badge kline-tip__badge--down">MACD 死叉</span>'
-              : ''
-
-        const byName = {}
-        for (const p of items) {
-          if (!p?.seriesName) continue
-          let val = p.data
-          if (Array.isArray(val)) val = val.length >= 2 && typeof val[1] === 'number' ? val[1] : val[0]
-          byName[p.seriesName] = val
+        const badges = []
+        if (crosses[idx] === 'golden') {
+          badges.push('<span class="kline-tip__badge kline-tip__badge--up">MACD 金叉</span>')
+        } else if (crosses[idx] === 'death') {
+          badges.push('<span class="kline-tip__badge kline-tip__badge--down">MACD 死叉</span>')
         }
-        const maColors = { MA5: '#f59e0b', MA10: '#10b981', MA20: '#c79100', MA60: '#5c6bc0' }
+        if (tdSell[idx] === 9) {
+          badges.push('<span class="kline-tip__badge kline-tip__badge--up">上涨九转</span>')
+        } else if (tdBuy[idx] === 9) {
+          badges.push('<span class="kline-tip__badge kline-tip__badge--down">下跌九转</span>')
+        }
+        const crossBadge = badges.join('')
+
+        const maColors = { MA5: '#1d1d1f', MA10: '#f59e0b', MA20: '#7c3aed', MA60: '#5c6bc0' }
+        const maVals = { MA5: ma5[idx], MA10: ma10[idx], MA20: ma20[idx], MA60: ma60[idx] }
         const maChips = ['MA5', 'MA10', 'MA20', 'MA60']
+          .filter((name) => maSelected[name])
           .map((name) => {
-            const v = byName[name]
+            const v = maVals[name]
             if (v == null) return ''
-            return `<span class="kline-tip__chip"><i style="color:${maColors[name]}">${name}</i>${fmtNum(v)}</span>`
+            return `<span class="kline-tip__chip"><i style="color:${maColors[name]}">${maLegend[name]}</i><b>${fmtNum(v)}</b></span>`
           })
           .join('')
         const chipRow = (items) =>
@@ -327,10 +569,10 @@ async function renderChart(list) {
               return `<span class="kline-tip__chip"><i style="color:${color}">${name}</i><b${valStyle}>${num}</b></span>`
             })
             .join('')
-        const macdVal = byName.MACD
+        const macdVal = hist[idx]
         const macdChips = chipRow([
-          ['DIF', byName.DIF, '#1f6f5b'],
-          ['DEA', byName.DEA, '#c79100'],
+          ['DIF', dif[idx], '#1f6f5b'],
+          ['DEA', dea[idx], '#c79100'],
           [
             'MACD',
             macdVal,
@@ -343,15 +585,15 @@ async function renderChart(list) {
           ],
         ])
         const kdjChips = chipRow([
-          ['K', byName.K, '#c79100'],
-          ['D', byName.D, '#5c6bc0'],
-          ['J', byName.J, '#6a4c93'],
+          ['K', kLine[idx], '#c79100'],
+          ['D', dLine[idx], '#5c6bc0'],
+          ['J', jLine[idx], '#6a4c93'],
         ])
         const amount = amounts[idx]
         const amountHtml =
           amount == null || Number.isNaN(Number(amount))
             ? ''
-            : `<span><em>额</em>${fmtVol(amount)}</span>`
+            : `<span><em>额</em><b>${fmtVol(amount)}</b></span>`
 
         return `
 <div class="kline-tip__card">
@@ -361,23 +603,26 @@ async function renderChart(list) {
   </div>
   <div class="kline-tip__price-row">
     <span class="kline-tip__price" style="color:${pctColor(dayPct)}">${fmtNum(close)}</span>
-    <span class="kline-tip__day" style="color:${pctColor(dayPct)}">当日 ${fmtSignedPct(dayPct)}</span>
+    <span class="kline-tip__day">
+      <em>${periodPctLabel}</em>
+      <b style="color:${pctColor(dayPct)}">${fmtSignedPct(dayPct)}</b>
+    </span>
   </div>
   <div class="kline-tip__metrics">
     <span class="kline-tip__metric">
       <em>${sinceLabel}</em>
       <b style="color:${pctColor(sincePct)}">${sinceText}</b>
     </span>
-    <span class="kline-tip__periods">${sincePeriods}周期</span>
+    <span class="kline-tip__periods">${sincePeriods}${unit}</span>
   </div>
   <div class="kline-tip__ohlc">
-    <span><em>开</em>${fmtNum(open)}</span>
-    <span><em>高</em>${fmtNum(high)}</span>
-    <span><em>低</em>${fmtNum(low)}</span>
-    <span><em>收</em>${fmtNum(close)}</span>
+    <span><em>开</em><b>${fmtNum(open)}</b></span>
+    <span><em>高</em><b style="color:#ef5350">${fmtNum(high)}</b></span>
+    <span><em>低</em><b style="color:#26a69a">${fmtNum(low)}</b></span>
+    <span><em>收</em><b>${fmtNum(close)}</b></span>
   </div>
   <div class="kline-tip__vol">
-    <span><em>量</em>${fmtVol(volumes[idx])}</span>
+    <span><em>量</em><b>${fmtVol(volumes[idx])}</b></span>
     ${amountHtml}
   </div>
   ${maChips ? `<div class="kline-tip__row">${maChips}</div>` : ''}
@@ -388,7 +633,7 @@ async function renderChart(list) {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      { left: 56, right: 20, top: 40, height: '38%' },
+      { left: 56, right: 20, top: showTd9.value ? 46 : 40, height: '38%' },
       { left: 56, right: 20, top: '52%', height: '10%' },
       { left: 56, right: 20, top: '66%', height: '12%' },
       { left: 56, right: 20, top: '82%', height: '10%' },
@@ -411,8 +656,8 @@ async function renderChart(list) {
       { min: 0, max: 100, gridIndex: 3, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: 45, end: 100 },
-      { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '95%', start: 45, end: 100 },
+      { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: zoomStart, end: zoomEnd },
+      { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '95%', start: zoomStart, end: zoomEnd },
     ],
     series: [
       {
@@ -421,10 +666,28 @@ async function renderChart(list) {
         data: ohlc,
         itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' },
       },
-      { name: 'MA5', type: 'line', data: ma5, smooth: true, showSymbol: false, lineStyle: { width: 1.2, color: '#f59e0b' } },
-      { name: 'MA10', type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { width: 1.2, color: '#10b981' } },
-      { name: 'MA20', type: 'line', data: ma20, smooth: true, showSymbol: false, lineStyle: { width: 1.5, color: '#c79100' } },
-      { name: 'MA60', type: 'line', data: ma60, smooth: true, showSymbol: false, lineStyle: { width: 1.5, color: '#5c6bc0' } },
+      { name: maLegend.MA5, type: 'line', data: ma5, smooth: true, showSymbol: false, lineStyle: { width: 1.2, color: '#1d1d1f' } },
+      { name: maLegend.MA10, type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { width: 1.2, color: '#f59e0b' } },
+      { name: maLegend.MA20, type: 'line', data: ma20, smooth: true, showSymbol: false, lineStyle: { width: 1.5, color: '#7c3aed' } },
+      { name: maLegend.MA60, type: 'line', data: ma60, smooth: true, showSymbol: false, lineStyle: { width: 1.5, color: '#5c6bc0' } },
+      {
+        name: '九转卖',
+        type: 'scatter',
+        data: tdSellPoints,
+        symbol: 'circle',
+        z: 12,
+        legendHoverLink: false,
+        tooltip: { show: false },
+      },
+      {
+        name: '九转买',
+        type: 'scatter',
+        data: tdBuyPoints,
+        symbol: 'circle',
+        z: 12,
+        legendHoverLink: false,
+        tooltip: { show: false },
+      },
       {
         name: '成交量',
         type: 'bar',
@@ -456,6 +719,7 @@ async function renderChart(list) {
         data: goldenPoints,
         symbol: 'triangle',
         symbolSize: 11,
+        legendHoverLink: false,
         itemStyle: { color: '#ef5350' },
         label: {
           show: true,
@@ -476,6 +740,7 @@ async function renderChart(list) {
         symbol: 'triangle',
         symbolRotate: 180,
         symbolSize: 11,
+        legendHoverLink: false,
         itemStyle: { color: '#26a69a' },
         label: {
           show: true,
@@ -499,7 +764,7 @@ async function load(refreshQuote = false) {
   if (!code.value) return
   loading.value = true
   try {
-    const res = await fetchStockDetail(code.value.trim(), 220, false)
+    const res = await fetchStockDetail(code.value.trim(), BAR_LIMIT, false)
     applyDetail(res.data)
     await loadFundamental()
     if (refreshQuote) {
@@ -535,14 +800,14 @@ function applyDetail(data) {
   rs20.value = data.rs20VsHs300
   rs60.value = data.rs60VsHs300
   volumeRatio.value = data.volumeRatio
-  renderChart(bars.value)
+  refreshChart()
 }
 
 async function refreshQuoteOnly() {
   refreshing.value = true
   try {
     await syncStockBasic(code.value.trim())
-    const res = await fetchStockDetail(code.value.trim(), 220, false)
+    const res = await fetchStockDetail(code.value.trim(), BAR_LIMIT, false)
     applyDetail(res.data)
     ElMessage.success('行情已刷新并落库')
   } catch (e) {
@@ -566,7 +831,7 @@ async function syncDailyBars() {
       console.warn('同步日后刷新行情失败', quoteErr)
     }
     ElMessage.success(`日线同步完成：K线 ${data.barCount ?? 0} 根`)
-    const detail = await fetchStockDetail(pure, 220, false)
+    const detail = await fetchStockDetail(pure, BAR_LIMIT, false)
     applyDetail(detail.data)
   } catch (e) {
     ElMessage.error(e.message || '同步日线失败')
@@ -589,12 +854,33 @@ watch(
   (v) => {
     if (v) {
       code.value = String(v)
+      resetZoomNext = true
       load(false)
     }
   },
 )
 
+watch(klinePeriod, () => {
+  resetZoomNext = true
+  saveChartPrefs()
+  if (bars.value.length && activeTab.value === 'chart') refreshChart()
+})
+
+watch(
+  [selectedMas, showTd9, tdShowMode],
+  () => {
+    if (syncingFromLegend) {
+      saveChartPrefs()
+      return
+    }
+    saveChartPrefs()
+    if (bars.value.length && activeTab.value === 'chart') refreshChart()
+  },
+  { deep: true },
+)
+
 onMounted(() => {
+  loadChartPrefs()
   load(false)
   window.addEventListener('resize', onResize)
 })
@@ -646,7 +932,7 @@ function sheetCell(row, idx) {
 
 function onTabChange(name) {
   if (name === 'chart' && bars.value.length) {
-    nextTick(() => renderChart(bars.value))
+    nextTick(() => refreshChart())
   }
 }
 </script>
@@ -704,10 +990,53 @@ function onTabChange(name) {
           <el-button type="primary" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
         </el-empty>
         <div v-if="bars.length" class="chart-toolbar">
+          <div class="chart-controls">
+            <el-radio-group v-model="klinePeriod" size="small">
+              <el-radio-button value="day">日K</el-radio-button>
+              <el-radio-button value="week">周K</el-radio-button>
+              <el-radio-button value="month">月K</el-radio-button>
+            </el-radio-group>
+            <el-checkbox-group v-model="selectedMas" size="small" class="ma-checks">
+              <el-checkbox
+                v-for="item in MA_META"
+                :key="item.name"
+                :value="item.name"
+                :style="{ '--ma-color': item.color }"
+              >
+                {{ maDisplayName(item.name) }}
+              </el-checkbox>
+            </el-checkbox-group>
+            <label class="ctrl-label">
+              神奇九转
+              <el-switch v-model="showTd9" size="small" />
+            </label>
+            <el-radio-group
+              v-if="showTd9"
+              v-model="tdShowMode"
+              size="small"
+              class="td-mode"
+            >
+              <el-radio-button value="key">仅8/9</el-radio-button>
+              <el-radio-button value="all">全部</el-radio-button>
+            </el-radio-group>
+            <el-button size="small" text type="primary" class="reset-view" @click="resetChartView">
+              重置视野
+            </el-button>
+            <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
+          </div>
+          <el-alert
+            v-if="klinePeriod !== 'day' && bars.length < 120"
+            class="chart-alert"
+            type="info"
+            :closable="false"
+            show-icon
+            :title="`日线仅 ${bars.length} 根，周/月K样本偏少，建议同步更多日线`"
+          />
           <p class="chart-hint">
-            悬浮看价格与至今涨跌 · 副图：成交量 / MACD / KDJ · 金叉▲ 死叉▼
+            设置会记住 · 切换周期重置视野 · 改均线/九转保持缩放 · 副图：量 / MACD / KDJ
           </p>
-          <p v-if="macdTip" class="macd-tip">{{ macdTip }}</p>
+          <p v-if="tdTip && showTd9" class="macd-tip">{{ tdTip }}</p>
+          <p v-if="macdTip" class="macd-tip macd-tip--sub">{{ macdTip }}</p>
         </div>
         <div v-if="bars.length" ref="chartRef" class="chart" />
       </el-tab-pane>
@@ -858,10 +1187,66 @@ function onTabChange(name) {
 
 .chart-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 14px;
+  flex-direction: column;
+  gap: 8px;
   margin: 0 0 10px;
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+.ma-checks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.ma-checks :deep(.el-checkbox__label) {
+  color: var(--ma-color, #3a3a3c);
+  font-weight: 600;
+  font-size: 12px;
+  padding-left: 6px;
+}
+
+.ctrl-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3a3a3c;
+  cursor: pointer;
+}
+
+.td-mode {
+  margin-left: -4px;
+}
+
+.reset-view {
+  margin-left: 0;
+  font-weight: 600;
+}
+
+.period-meta {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-alert {
+  margin: 0;
+}
+
+.chart-alert :deep(.el-alert__title) {
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .chart-hint {
@@ -878,6 +1263,12 @@ function onTabChange(name) {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+.macd-tip--sub {
+  font-weight: 500;
+  color: #4b5563;
+}
+
 
 .chart {
   height: 720px;
@@ -933,7 +1324,7 @@ function onTabChange(name) {
 }
 
 .kline-tip__card {
-  width: 236px;
+  width: 280px;
   box-sizing: border-box;
   padding: 12px 14px 10px;
   border-radius: 14px;
@@ -948,14 +1339,15 @@ function onTabChange(name) {
   font-family: inherit;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .kline-tip__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   margin-bottom: 8px;
 }
 
@@ -985,6 +1377,11 @@ function onTabChange(name) {
   background: rgba(38, 166, 154, 0.16);
 }
 
+.kline-tip__badge--soft {
+  color: #6b7280;
+  background: rgba(0, 0, 0, 0.05);
+}
+
 .kline-tip__price-row {
   display: flex;
   align-items: baseline;
@@ -1002,11 +1399,23 @@ function onTabChange(name) {
 }
 
 .kline-tip__day {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   flex: 0 0 auto;
   font-size: 13px;
-  font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
+}
+
+.kline-tip__day em {
+  font-style: normal;
+  font-weight: 500;
+  color: #86868b;
+}
+
+.kline-tip__day b {
+  font-weight: 700;
 }
 
 .kline-tip__metrics {
@@ -1043,30 +1452,47 @@ function onTabChange(name) {
   color: #86868b;
 }
 
-.kline-tip__ohlc,
-.kline-tip__vol {
+.kline-tip__ohlc {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px 8px;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
   margin-bottom: 8px;
   font-size: 12px;
   color: #3a3a3c;
 }
 
+.kline-tip__ohlc > span,
+.kline-tip__vol > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.kline-tip__ohlc b,
+.kline-tip__vol b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .kline-tip__vol {
+  display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
   padding-top: 8px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   color: #6b7280;
   margin-bottom: 8px;
+  font-size: 12px;
 }
 
 .kline-tip__ohlc em,
 .kline-tip__vol em {
   font-style: normal;
   color: #a1a1a6;
-  margin-right: 3px;
   font-size: 11px;
+  flex: 0 0 auto;
 }
 
 .kline-tip__row {
@@ -1079,22 +1505,25 @@ function onTabChange(name) {
 .kline-tip__chip {
   display: inline-flex;
   align-items: baseline;
-  gap: 3px;
-  padding: 2px 6px;
+  gap: 6px;
+  padding: 3px 8px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.35);
   font-size: 11px;
   color: #3a3a3c;
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .kline-tip__chip i {
   font-style: normal;
   font-size: 10px;
   font-weight: 700;
+  flex: 0 0 auto;
 }
 
 .kline-tip__chip b {
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 </style>
