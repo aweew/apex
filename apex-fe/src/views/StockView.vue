@@ -345,10 +345,11 @@ function fmtMv(v) {
 
 <style scoped>
 .header .code {
-  color: var(--slate);
+  color: var(--muted);
   font-size: 18px;
   font-weight: 500;
   margin-left: 8px;
+  letter-spacing: -0.02em;
 }
 
 .meta {
@@ -360,21 +361,20 @@ function fmtMv(v) {
 
 .meta > div {
   background: var(--glass);
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--line);
+  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   padding: 12px 14px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-soft);
   font-variant-numeric: tabular-nums;
 }
 
 .meta label {
   display: block;
-  color: var(--slate);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   margin-bottom: 6px;
 }
 
@@ -389,6 +389,13 @@ function fmtMv(v) {
 .chart {
   height: 720px;
   width: 100%;
+  background: var(--glass-strong);
+  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
 }
 
 @media (max-width: 900px) {

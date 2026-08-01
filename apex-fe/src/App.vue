@@ -167,7 +167,6 @@ onBeforeUnmount(() => {
           <path d="M20 20l-3.2-3.2" stroke-linecap="round" />
         </svg>
         <span>搜索</span>
-        <kbd>⌘K</kbd>
       </button>
     </nav>
 
@@ -182,18 +181,18 @@ onBeforeUnmount(() => {
             ref="inputRef"
             v-model="query"
             class="search-input"
-            placeholder="输入代码或名称"
+            placeholder="代码或名称"
             autocomplete="off"
             @input="onQueryInput"
             @keydown.enter.prevent="onEnter"
             @keydown.esc.prevent="closeSearch"
           />
-          <button type="button" class="search-close" @click="closeSearch">Esc</button>
+          <button type="button" class="search-close" @click="closeSearch">esc</button>
         </div>
         <div class="search-body">
           <div v-if="loading" class="search-tip">搜索中…</div>
-          <div v-else-if="!query.trim()" class="search-tip">支持代码、名称，回车打开第一条</div>
-          <div v-else-if="!results.length" class="search-tip">无匹配结果</div>
+          <div v-else-if="!query.trim()" class="search-tip">输入后回车打开第一条结果</div>
+          <div v-else-if="!results.length" class="search-tip">无匹配</div>
           <ul v-else class="search-list">
             <li v-for="item in results" :key="item.code">
               <button type="button" class="search-item" @click="goStock(item.code)">
@@ -224,30 +223,35 @@ onBeforeUnmount(() => {
   z-index: 100;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 16px;
-  height: 52px;
-  background: #16261e;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 12px;
+  padding: 0 18px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 
 .brand-block {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 7px;
   flex: 0 0 auto;
 }
 
 .brand {
-  color: #e8d4a8;
+  color: var(--ink);
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
+  letter-spacing: -0.03em;
 }
 
 .tagline {
   font-size: 11px;
-  color: rgba(232, 212, 168, 0.4);
+  color: var(--muted);
+  letter-spacing: 0.01em;
 }
 
 .health {
@@ -256,30 +260,34 @@ onBeforeUnmount(() => {
   gap: 5px;
   flex: 0 0 auto;
   font-size: 11px;
-  color: #8a968f;
+  color: var(--slate);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .health .dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #6a756e;
+  background: #c7c7cc;
 }
 
 .health.up {
-  color: #8fbf9f;
+  color: #248a3d;
 }
 
 .health.up .dot {
-  background: #5cb87a;
+  background: #34c759;
 }
 
 .health.down {
-  color: #d98888;
+  color: #d70015;
 }
 
 .health.down .dot {
-  background: #d07070;
+  background: #ff3b30;
 }
 
 .links {
@@ -297,22 +305,24 @@ onBeforeUnmount(() => {
 
 .links a {
   flex: 0 0 auto;
-  color: rgba(220, 231, 225, 0.72);
+  color: var(--slate);
   text-decoration: none;
   font-size: 13px;
-  padding: 6px 9px;
-  border-radius: 6px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 980px;
   white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .links a:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .links a.router-link-active {
-  color: #e8d4a8;
-  background: rgba(232, 212, 168, 0.1);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .search-btn {
@@ -321,29 +331,21 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   height: 30px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  background: transparent;
-  color: rgba(238, 242, 240, 0.78);
+  padding: 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 980px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--ink-soft);
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .search-btn:hover {
-  color: #fff;
-  border-color: rgba(232, 212, 168, 0.35);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.search-btn kbd {
-  display: none;
-  font-family: inherit;
-  font-size: 10px;
-  color: rgba(238, 242, 240, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
-  padding: 0 4px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink);
 }
 
 .search-layer {
@@ -352,19 +354,23 @@ onBeforeUnmount(() => {
   z-index: 200;
   display: flex;
   justify-content: center;
-  padding: 12vh 16px 0;
-  background: rgba(12, 18, 15, 0.45);
-  backdrop-filter: blur(2px);
+  padding: 14vh 16px 0;
+  background: rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
 }
 
 .search-panel {
-  width: min(420px, 100%);
+  width: min(440px, 100%);
   max-height: min(520px, 70vh);
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 20px 50px rgba(10, 18, 14, 0.28);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
   overflow: hidden;
 }
 
@@ -372,9 +378,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(20, 36, 28, 0.08);
-  color: #6a7b72;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  color: var(--muted);
 }
 
 .search-input {
@@ -382,23 +388,26 @@ onBeforeUnmount(() => {
   min-width: 0;
   border: 0;
   outline: none;
-  font-size: 15px;
-  color: #14241c;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
   background: transparent;
+  font-family: inherit;
 }
 
 .search-input::placeholder {
-  color: #9aa8a1;
+  color: #aeaeb2;
 }
 
 .search-close {
-  border: 1px solid rgba(20, 36, 28, 0.12);
-  background: #f4f7f5;
-  color: #6a7b72;
-  border-radius: 5px;
+  border: 0;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--slate);
+  border-radius: 8px;
   font-size: 11px;
-  padding: 2px 7px;
+  padding: 4px 8px;
   cursor: pointer;
+  text-transform: lowercase;
 }
 
 .search-body {
@@ -407,16 +416,16 @@ onBeforeUnmount(() => {
 }
 
 .search-tip {
-  padding: 28px 16px;
+  padding: 32px 16px;
   text-align: center;
-  color: #8a968f;
+  color: var(--muted);
   font-size: 13px;
 }
 
 .search-list {
   list-style: none;
   margin: 0;
-  padding: 6px;
+  padding: 8px;
 }
 
 .search-item {
@@ -427,20 +436,21 @@ onBeforeUnmount(() => {
   align-items: center;
   border: 0;
   background: transparent;
-  border-radius: 8px;
-  padding: 10px 10px;
+  border-radius: 12px;
+  padding: 11px 12px;
   text-align: left;
   cursor: pointer;
+  font-family: inherit;
 }
 
 .search-item:hover {
-  background: #f1f5f2;
+  background: rgba(0, 113, 227, 0.08);
 }
 
 .search-item .code {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-  color: #14241c;
+  color: var(--ink);
   font-size: 13px;
 }
 
@@ -449,25 +459,19 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #5a6b62;
+  color: var(--slate);
   font-size: 13px;
 }
 
 .search-item .market {
   font-size: 11px;
-  color: #8a968f;
+  color: var(--muted);
 }
 
 .search-item :deep(em) {
   font-style: normal;
-  color: #c62828;
+  color: #ff3b30;
   font-weight: 700;
-}
-
-@media (min-width: 900px) {
-  .search-btn kbd {
-    display: inline;
-  }
 }
 
 @media (max-width: 900px) {
