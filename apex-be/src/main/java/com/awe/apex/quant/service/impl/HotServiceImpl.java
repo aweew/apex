@@ -5,6 +5,7 @@ import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
 import com.awe.apex.quant.domain.dto.HotOverviewResp;
+import com.awe.apex.quant.domain.dto.HotRefreshResp;
 import com.awe.apex.quant.domain.entity.MarketHot;
 import com.awe.apex.quant.mapper.MarketHotMapper;
 import com.awe.apex.quant.service.IHotService;
@@ -40,8 +41,6 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class HotServiceImpl implements IHotService {
 
-    private static final List<String> SOURCES = List.of("eastmoney", "xueqiu", "baidu");
-
     @Resource
     private MarketHotMapper marketHotMapper;
 
@@ -60,11 +59,16 @@ public class HotServiceImpl implements IHotService {
     @Override
     public HotOverviewResp overview(Integer limit) {
         int size = Objects.isNull(limit) || limit <= 0 ? 40 : Math.min(limit, 100);
+        // 共振用更大样本，避免展示条数偏小时漏掉多源交集
+        int confluenceSize = Math.max(size, 50);
         Map<String, LocalDateTime> times = new LinkedHashMap<>();
-        List<MarketHot> eastmoney = latestOf("eastmoney", size, times);
-        List<MarketHot> xueqiu = latestOf("xueqiu", size, times);
-        List<MarketHot> baidu = latestOf("baidu", size, times);
-        List<HotConfluenceItem> confluence = buildConfluence(List.of(eastmoney, xueqiu, baidu));
+        List<MarketHot> eastmoneyFull = latestOf("eastmoney", confluenceSize, times);
+        List<MarketHot> xueqiuFull = latestOf("xueqiu", confluenceSize, times);
+        List<MarketHot> baiduFull = latestOf("baidu", confluenceSize, times);
+        List<HotConfluenceItem> confluence = buildConfluence(List.of(eastmoneyFull, xueqiuFull, baiduFull));
+        List<MarketHot> eastmoney = trimList(eastmoneyFull, size);
+        List<MarketHot> xueqiu = trimList(xueqiuFull, size);
+        List<MarketHot> baidu = trimList(baiduFull, size);
         String message = "东财 " + eastmoney.size() + " · 雪球 " + xueqiu.size()
                 + " · 百度 " + baidu.size() + " · 共振 " + confluence.size();
         return HotOverviewResp.builder()
@@ -99,10 +103,10 @@ public class HotServiceImpl implements IHotService {
      * @return 结果
      */
     @Override
-    public Map<String, Object> refresh(String sources, Integer limit) {
+    public HotRefreshResp refresh(String sources, Integer limit) {
         Path script = resolveScript();
-        if (Objects.isNull(script) || !Files.exists(script)) {
-            throw new BusinessException("未找到热点同步脚本 sync_hot.py，请确认仓库 scripts/market_data");
+        if (Objects.isNull(script) || !Files.isRegularFile(script)) {
+            throw new BusinessException("未找到热点同步脚本 sync_hot.py，请配置 apex.hot.script-path 或确认仓库 scripts/market_data");
         }
         String src = StringUtils.isNotBlank(sources) ? sources.trim() : "eastmoney,xueqiu,baidu";
         int size = Objects.isNull(limit) || limit <= 0 ? 50 : Math.min(limit, 100);
@@ -141,19 +145,40 @@ public class HotServiceImpl implements IHotService {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("热点同步失败 cmd={}, err={}", command, ex.getMessage());
+            log.warn("热点同步失败 script={}, err={}", script, ex.getMessage());
             throw new BusinessException("热点同步失败: " + ex.getMessage());
         }
         if (exit != 0) {
             throw new BusinessException("热点同步脚本退出码 " + exit + "：" + trimOut(output.toString()));
         }
         HotOverviewResp overview = overview(size);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("exitCode", exit);
-        result.put("log", trimOut(output.toString()));
-        result.put("overview", overview);
-        result.put("message", "刷新完成 · " + overview.getMessage());
-        return result;
+        return HotRefreshResp.builder()
+                .exitCode(exit)
+                .log(trimOut(output.toString()))
+                .overview(overview)
+                .message("刷新完成 · " + overview.getMessage())
+                .build();
+    }
+
+    /**
+     * 最新多源共振（code -> 条目），供决策/今日关注加分
+     *
+     * @param limit 每源条数
+     * @return 共振映射
+     */
+    @Override
+    public Map<String, HotConfluenceItem> confluenceMap(Integer limit) {
+        HotOverviewResp overview = overview(limit);
+        Map<String, HotConfluenceItem> map = new HashMap<>();
+        if (CollUtil.isEmpty(overview.getConfluence())) {
+            return map;
+        }
+        for (HotConfluenceItem item : overview.getConfluence()) {
+            if (StringUtils.isNotBlank(item.getCode())) {
+                map.put(item.getCode(), item);
+            }
+        }
+        return map;
     }
 
     private List<MarketHot> latestOf(String source, int limit, Map<String, LocalDateTime> times) {
@@ -238,23 +263,36 @@ public class HotServiceImpl implements IHotService {
     }
 
     private Path resolveScript() {
-        Path cwd = Paths.get("").toAbsolutePath();
-        Path userDir = Paths.get(System.getProperty("user.dir", ".")).toAbsolutePath();
-        Path[] candidates = new Path[]{
-                StringUtils.isNotBlank(scriptPathConfig) ? Paths.get(scriptPathConfig) : null,
-                cwd.resolve("scripts/market_data/sync_hot.py"),
-                cwd.resolve("../scripts/market_data/sync_hot.py"),
-                cwd.getParent() != null ? cwd.getParent().resolve("scripts/market_data/sync_hot.py") : null,
-                userDir.resolve("scripts/market_data/sync_hot.py"),
-                userDir.resolve("../scripts/market_data/sync_hot.py"),
-                userDir.getParent() != null ? userDir.getParent().resolve("scripts/market_data/sync_hot.py") : null,
-                Paths.get("D:/code/apex/scripts/market_data/sync_hot.py"),
-        };
-        for (Path path : candidates) {
-            if (Objects.nonNull(path) && Files.isRegularFile(path)) {
-                return path.toAbsolutePath().normalize();
+        List<Path> candidates = new ArrayList<>();
+        if (StringUtils.isNotBlank(scriptPathConfig)) {
+            candidates.add(Paths.get(scriptPathConfig.trim()));
+        }
+        Path userDir = Paths.get(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
+        Path cwd = Paths.get("").toAbsolutePath().normalize();
+        // 从当前目录向上最多 5 级查找仓库根下的脚本
+        for (Path start : List.of(userDir, cwd)) {
+            Path cursor = start;
+            for (int i = 0; i < 5 && Objects.nonNull(cursor); i++) {
+                candidates.add(cursor.resolve("scripts/market_data/sync_hot.py"));
+                candidates.add(cursor.resolve("sync_hot.py"));
+                cursor = cursor.getParent();
             }
         }
+        for (Path path : candidates) {
+            if (Objects.isNull(path)) {
+                continue;
+            }
+            try {
+                Path normalized = path.toAbsolutePath().normalize();
+                if (Files.isRegularFile(normalized)) {
+                    log.info("热点脚本定位成功 path={}", normalized);
+                    return normalized;
+                }
+            } catch (Exception ignored) {
+                // 下一候选
+            }
+        }
+        log.warn("热点脚本未找到 user.dir={} cwd={} config={}", userDir, cwd, scriptPathConfig);
         return null;
     }
 
@@ -264,6 +302,13 @@ public class HotServiceImpl implements IHotService {
             return Charset.forName("GBK");
         }
         return StandardCharsets.UTF_8;
+    }
+
+    private List<MarketHot> trimList(List<MarketHot> list, int size) {
+        if (CollUtil.isEmpty(list) || list.size() <= size) {
+            return list;
+        }
+        return list.subList(0, size);
     }
 
     private String trimOut(String text) {

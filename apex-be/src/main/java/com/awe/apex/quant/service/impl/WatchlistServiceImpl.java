@@ -11,6 +11,9 @@ import com.awe.apex.common.executor.TransactionalAsyncExecutor;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.config.ApexProperties;
 import com.awe.apex.quant.domain.dto.CorrelationMatrixResp;
+import com.awe.apex.quant.domain.dto.WatchlistAddItem;
+import com.awe.apex.quant.domain.dto.WatchlistAddReq;
+import com.awe.apex.quant.domain.dto.WatchlistAddResp;
 import com.awe.apex.quant.domain.dto.WatchlistImportReq;
 import com.awe.apex.quant.domain.dto.WatchlistImportResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
@@ -282,6 +285,78 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
                 .sourceFile(file.getAbsolutePath())
                 .groupName(groupName)
                 .message("已导入并启动后台预热（行情/日线），可在自选页查看同步进度")
+                .build();
+    }
+
+    /**
+     * 批量加入自选（热点/决策等入口）
+     *
+     * @param req 请求
+     * @return 结果
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public WatchlistAddResp addCodes(WatchlistAddReq req) {
+        if (Objects.isNull(req) || CollUtil.isEmpty(req.getItems())) {
+            throw new BusinessException("请选择要加入自选的标的");
+        }
+        String groupName = StringUtils.isNotBlank(req.getGroupName()) ? req.getGroupName().trim() : "我的自选";
+        String source = StringUtils.isNotBlank(req.getSource()) ? req.getSource().trim() : "manual";
+        int added = 0;
+        int updated = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (WatchlistAddItem item : req.getItems()) {
+            if (Objects.isNull(item) || StringUtils.isBlank(item.getCode())) {
+                continue;
+            }
+            String code = item.getCode().trim();
+            String name = StringUtils.isNotBlank(item.getName()) ? item.getName().trim() : null;
+            String market = MarketCodeUtils.resolveMarket(code);
+            if (StringUtils.isBlank(name)) {
+                StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
+                        .eq(StockBasic::getCode, code)
+                        .last("LIMIT 1"));
+                if (Objects.nonNull(basic)) {
+                    name = basic.getName();
+                    if (StringUtils.isNotBlank(basic.getMarket())) {
+                        market = basic.getMarket();
+                    }
+                }
+            }
+            Watchlist existing = getOne(Wrappers.<Watchlist>lambdaQuery()
+                    .eq(Watchlist::getCode, code)
+                    .eq(Watchlist::getGroupName, groupName)
+                    .last("LIMIT 1"));
+            if (Objects.isNull(existing)) {
+                Watchlist row = Watchlist.builder()
+                        .code(code)
+                        .name(name)
+                        .market(market)
+                        .groupName(groupName)
+                        .source(source)
+                        .createTime(now)
+                        .updateTime(now)
+                        .build();
+                save(row);
+                added++;
+            } else {
+                if (StringUtils.isNotBlank(name)) {
+                    existing.setName(name);
+                }
+                if (StringUtils.isNotBlank(market)) {
+                    existing.setMarket(market);
+                }
+                existing.setSource(source);
+                existing.setUpdateTime(now);
+                updateById(existing);
+                updated++;
+            }
+        }
+        return WatchlistAddResp.builder()
+                .addedCount(added)
+                .updatedCount(updated)
+                .groupName(groupName)
+                .message("加入自选完成 · 新增 " + added + " · 更新 " + updated + " · 分组 " + groupName)
                 .build();
     }
 

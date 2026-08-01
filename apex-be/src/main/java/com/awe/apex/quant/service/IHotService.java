@@ -1,6 +1,8 @@
 package com.awe.apex.quant.service;
 
+import com.awe.apex.quant.domain.dto.HotConfluenceItem;
 import com.awe.apex.quant.domain.dto.HotOverviewResp;
+import com.awe.apex.quant.domain.dto.HotRefreshResp;
 import com.awe.apex.quant.domain.entity.MarketHot;
 
 import java.util.List;
@@ -35,5 +37,13 @@ public interface IHotService {
      * @param limit   每源条数
      * @return 结果
      */
-    Map<String, Object> refresh(String sources, Integer limit);
+    HotRefreshResp refresh(String sources, Integer limit);
+
+    /**
+     * 最新多源共振（code -> 条目），供决策/今日关注加分
+     *
+     * @param limit 每源条数
+     * @return 共振映射
+     */
+    Map<String, HotConfluenceItem> confluenceMap(Integer limit);
 }

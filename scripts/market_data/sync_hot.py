@@ -140,8 +140,11 @@ def resolve_name_to_code(name: str, name_map: Dict[str, str]) -> Optional[str]:
 def upsert_rows(conn, source: str, snapshot_time: datetime, rows: List[Tuple]) -> int:
     """
     rows: (rank_no, code, name, price, pct_chg, heat_score, heat_text, payload_json)
-    先软删同 source 旧快照，再插入
+    有数据才软删旧快照并插入；空结果不覆盖，避免网络抖动把榜单刷空
     """
+    if not rows:
+        print(f"{source} skip empty (keep previous snapshot)", file=sys.stderr)
+        return 0
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE market_hot SET deleted = 1, update_time = NOW() "
@@ -170,8 +173,7 @@ def upsert_rows(conn, source: str, snapshot_time: datetime, rows: List[Tuple]) -
                     payload,
                 )
             )
-        if params:
-            cur.executemany(sql, params)
+        cur.executemany(sql, params)
     conn.commit()
     return len(params)
 
@@ -192,9 +194,9 @@ def sync_eastmoney(conn, limit: int, snapshot_time: datetime) -> int:
             last_err = ex
             time.sleep(1.2 * (attempt + 1))
 
-    # 人气榜被掐时，降级为东财全市场成交额榜（仍标记 eastmoney）
+    # 人气榜被掐时：东财成交额 → 新浪现货成交额（仍写入 source=eastmoney，便于前端三栏）
     if df is None or getattr(df, "empty", True):
-        print(f"eastmoney 人气榜不可用，尝试成交额榜: {last_err}", file=sys.stderr)
+        print(f"eastmoney 人气榜不可用，尝试东财成交额榜: {last_err}", file=sys.stderr)
         spot = None
         for attempt in range(3):
             try:
@@ -203,15 +205,33 @@ def sync_eastmoney(conn, limit: int, snapshot_time: datetime) -> int:
             except Exception as ex:
                 last_err = ex
                 time.sleep(1.5 * (attempt + 1))
-        if spot is None or getattr(spot, "empty", True):
-            raise RuntimeError(f"eastmoney 人气/成交额均失败: {last_err}")
-        amount_col = "成交额" if "成交额" in spot.columns else None
-        if amount_col:
-            spot = spot.sort_values(amount_col, ascending=False)
+        if spot is not None and not getattr(spot, "empty", True):
+            amount_col = "成交额" if "成交额" in spot.columns else None
+            if amount_col:
+                spot = spot.sort_values(amount_col, ascending=False)
+            else:
+                spot = spot.sort_values("涨跌幅", ascending=False)
+            df = spot.head(limit).copy()
+            mode = "成交额榜"
         else:
-            spot = spot.sort_values("涨跌幅", ascending=False)
-        df = spot.head(limit).copy()
-        mode = "成交额榜"
+            print(f"eastmoney 成交额榜不可用，尝试新浪现货: {last_err}", file=sys.stderr)
+            sina = None
+            for attempt in range(3):
+                try:
+                    sina = ak.stock_zh_a_spot()
+                    break
+                except Exception as ex:
+                    last_err = ex
+                    time.sleep(1.2 * (attempt + 1))
+            if sina is None or getattr(sina, "empty", True):
+                raise RuntimeError(f"eastmoney/新浪热点源均失败: {last_err}")
+            amount_col = "成交额" if "成交额" in sina.columns else None
+            if amount_col:
+                sina = sina.sort_values(amount_col, ascending=False)
+            elif "涨跌幅" in sina.columns:
+                sina = sina.sort_values("涨跌幅", ascending=False)
+            df = sina.head(limit).copy()
+            mode = "新浪成交额"
 
     rows: List[Tuple] = []
     records = df.to_dict(orient="records")
@@ -227,13 +247,13 @@ def sync_eastmoney(conn, limit: int, snapshot_time: datetime) -> int:
             heat = Decimal(str(max(limit - rank_no + 1, 1)))
             heat_text = f"人气第{rank_no}"
         else:
-            code = normalize_code(item.get("代码"))
-            name = str(item.get("名称") or "").strip() or None
-            price = parse_number(item.get("最新价"))
-            pct = parse_number(item.get("涨跌幅"))
+            code = normalize_code(item.get("代码") or item.get("code"))
+            name = str(item.get("名称") or item.get("name") or "").strip() or None
+            price = parse_number(item.get("最新价") or item.get("trade"))
+            pct = parse_number(item.get("涨跌幅") or item.get("changepercent"))
             rank_no = i
-            heat = parse_number(item.get("成交额"))
-            heat_text = f"成交额第{rank_no}"
+            heat = parse_number(item.get("成交额") or item.get("amount"))
+            heat_text = f"{mode}第{rank_no}"
         payload = json.dumps({k: str(v) for k, v in item.items()}, ensure_ascii=False)
         rows.append((rank_no, code, name, price, pct, heat, heat_text, payload))
     return upsert_rows(conn, "eastmoney", snapshot_time, rows)
@@ -322,6 +342,8 @@ def main() -> int:
     snapshot_time = datetime.now().replace(microsecond=0)
 
     conn = db_conn()
+    ok_count = 0
+    fail_count = 0
     try:
         name_map = load_name_map(conn) if "baidu" in sources else {}
         print(f"snapshot={snapshot_time.isoformat()} sources={sources} limit={limit}")
@@ -334,9 +356,32 @@ def main() -> int:
                 else:
                     n = sync_baidu(conn, limit, snapshot_time, name_map)
                 print(f"{source} ok rows={n}")
+                if n > 0:
+                    ok_count += 1
+                else:
+                    fail_count += 1
             except Exception as ex:
                 conn.rollback()
+                fail_count += 1
                 print(f"{source} FAIL {ex}", file=sys.stderr)
+        # 清理较旧的软删快照，控制表体积
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM market_hot WHERE deleted = 1 AND update_time < (NOW() - INTERVAL 7 DAY)"
+                )
+                purged = cur.rowcount
+            conn.commit()
+            if purged:
+                print(f"purged soft-deleted rows={purged}")
+        except Exception as ex:
+            conn.rollback()
+            print(f"purge skip: {ex}", file=sys.stderr)
+
+        # 全部失败才非 0，便于后端提示；部分成功仍算成功
+        if ok_count == 0:
+            print(f"all sources failed or empty fail={fail_count}", file=sys.stderr)
+            return 2
         return 0
     finally:
         conn.close()

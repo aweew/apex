@@ -1,6 +1,8 @@
 package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
+import com.awe.apex.quant.domain.dto.HotConfluenceItem;
+import com.awe.apex.quant.domain.dto.HotOverviewResp;
 import com.awe.apex.quant.domain.dto.RiskAlertItem;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
 import com.awe.apex.quant.domain.dto.SignalConfluenceItem;
@@ -9,6 +11,7 @@ import com.awe.apex.quant.domain.dto.TodayFocusResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
+import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
 import com.awe.apex.quant.service.ISignalService;
@@ -44,8 +47,11 @@ public class TodayFocusController {
     @Resource
     private IPaperService paperService;
 
+    @Resource
+    private IHotService hotService;
+
     /**
-     * 汇总异动、信号、风控
+     * 汇总异动、信号、风控、热点共振
      */
     @GetMapping
     public Result<TodayFocusResp> today(@RequestParam(required = false) String groupName,
@@ -97,6 +103,11 @@ public class TodayFocusController {
         if (conflItems.size() > 8) {
             conflItems = conflItems.subList(0, 8);
         }
+        HotOverviewResp hotOverview = hotService.overview(40);
+        List<HotConfluenceItem> hotItems = hotOverview.getConfluence() == null ? List.of() : hotOverview.getConfluence();
+        if (hotItems.size() > 8) {
+            hotItems = hotItems.subList(0, 8);
+        }
 
         return Result.success(TodayFocusResp.builder()
                 .movers(movers)
@@ -105,10 +116,12 @@ public class TodayFocusController {
                 .riskAlerts(alerts)
                 .breadthMessage(breadthMsg)
                 .confluence(conflItems)
+                .hotConfluence(hotItems)
                 .message("异动 " + ((movers.getGainers() == null ? 0 : movers.getGainers().size())
                         + (movers.getLosers() == null ? 0 : movers.getLosers().size()))
                         + " · BUY " + buys.size() + " · SELL " + sells.size()
-                        + " · 共振 " + conflItems.size()
+                        + " · 策略共振 " + conflItems.size()
+                        + " · 热点共振 " + hotItems.size()
                         + " · 风控 " + alerts.size())
                 .build());
     }

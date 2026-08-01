@@ -1,8 +1,10 @@
 package com.awe.apex.quant.job;
 
 import com.awe.apex.quant.domain.dto.BarSyncResp;
+import com.awe.apex.quant.domain.dto.HotRefreshResp;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
+import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.IWatchlistService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +28,9 @@ public class DataSyncScheduler {
 
     @Resource
     private IWatchlistService watchlistService;
+
+    @Resource
+    private IHotService hotService;
 
     /**
      * 工作日傍晚尝试同步过期日线
@@ -59,6 +64,22 @@ public class DataSyncScheduler {
             log.info("定时刷新行情完成 group={}, success={}", group, resp.get("successCount"));
         } catch (Exception ex) {
             log.warn("定时刷新行情失败: {}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 交易时段快刷热点（跳过较慢雪球；需 auto_sync_enabled=true）
+     */
+    @Scheduled(cron = "0 20 9,10,11,13,14 * * MON-FRI")
+    public void refreshHotIntraday() {
+        if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+            return;
+        }
+        try {
+            HotRefreshResp resp = hotService.refresh("eastmoney,baidu", 40);
+            log.info("定时热点刷新完成 message={}", resp.getMessage());
+        } catch (Exception ex) {
+            log.warn("定时热点刷新失败: {}", ex.getMessage());
         }
     }
 }

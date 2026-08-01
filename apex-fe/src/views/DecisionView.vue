@@ -118,7 +118,7 @@ onMounted(load)
       <div>
         <h1>智能决策</h1>
         <p>
-          {{ data?.message || '买入：自选股票池策略机会 · 卖出/持有：聚焦我的持仓 · 共振与基本面辅助打分' }}
+          {{ data?.message || '买入：自选股票池策略机会 · 卖出/持有：聚焦我的持仓 · 策略共振/热点共振/基本面辅助打分' }}
           <span v-if="data?.riskNote"> · {{ data.riskNote }}</span>
         </p>
       </div>
@@ -146,7 +146,7 @@ onMounted(load)
           type="info"
           :closable="false"
           show-icon
-          title="买入来自「自选」股票池的 S1/S2/S3 机会，不要求已在我的持仓；已持仓标的会标注为加仓"
+          title="买入来自「自选」股票池 + 多平台热点共振扩扫；多策略/热点共振会加分抬仓，基本面偏弱降权；已持仓标的会标注为加仓"
         />
         <el-table :data="buys" size="small" stripe empty-text="暂无买入机会（可先充实自选并同步日线后重跑）">
           <el-table-column prop="code" label="代码" width="100" fixed>

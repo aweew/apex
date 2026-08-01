@@ -20,7 +20,7 @@ import sys
 import time
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -154,7 +154,22 @@ def sync_stock_list(conn, limit: Optional[int] = None) -> int:
     return count
 
 
-def list_codes(conn, limit: Optional[int] = None) -> List[str]:
+def list_codes(
+    conn,
+    limit: Optional[int] = None,
+    codes: Optional[Sequence[str]] = None,
+) -> List[str]:
+    if codes:
+        cleaned: List[str] = []
+        seen = set()
+        for raw in codes:
+            code = normalize_code(raw)
+            if code and code not in seen:
+                seen.add(code)
+                cleaned.append(code)
+        if limit:
+            return cleaned[: int(limit)]
+        return cleaned
     sql = "SELECT code FROM stock_basic WHERE deleted = 0 ORDER BY code"
     if limit:
         sql += f" LIMIT {int(limit)}"
@@ -318,10 +333,11 @@ def sync_bars(
     limit: Optional[int],
     resume: bool,
     only_missing: bool,
+    codes: Optional[Sequence[str]] = None,
 ) -> None:
-    codes = list_codes(conn, limit=limit)
+    codes = list_codes(conn, limit=limit, codes=codes)
     if not codes:
-        print("stock_basic 为空，请先执行 --mode list")
+        print("无待同步代码（stock_basic 为空或 --codes 无效），请先执行 --mode list")
         return
 
     progress = load_progress() if resume else {}
@@ -340,9 +356,21 @@ def sync_bars(
         local_max = max_bar_date(conn, code)
         fetch_start = start
         if only_missing and local_max is not None:
-            # 已有数据则从最后交易日前 5 天续拉，做增量重叠
+            # 已有数据则从最后交易日前 5 天续拉；若已贴近 end（含周末空隙）则跳过
             from datetime import timedelta
 
+            end_dt = datetime.strptime(end, "%Y%m%d").date()
+            if (end_dt - local_max).days <= 10:
+                progress[code] = {
+                    "status": "done",
+                    "end": end,
+                    "max_date": str(local_max),
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                skip += 1
+                if idx % 200 == 0:
+                    print(f"[{idx}/{total}] skip fresh…")
+                continue
             fetch_start = max(start, (local_max - timedelta(days=5)).strftime("%Y%m%d"))
             if fetch_start.replace("-", "") >= end:
                 progress[code] = {
@@ -400,6 +428,7 @@ def parse_args():
     p.add_argument("--end", default=today, help="日线结束 yyyymmdd")
     p.add_argument("--sleep", type=float, default=0.35, help="每只股票间隔秒")
     p.add_argument("--limit", type=int, default=None, help="仅处理前 N 只（试跑）")
+    p.add_argument("--codes", default=None, help="仅同步指定代码，逗号分隔，如 300308,600519")
     p.add_argument("--no-resume", action="store_true", help="忽略进度文件")
     p.add_argument("--full-refresh", action="store_true", help="不走增量，强制按 start 全量重拉")
     return p.parse_args()
@@ -413,9 +442,12 @@ def main() -> int:
         f"{os.getenv('MYSQL_HOST', '127.0.0.1')}:{os.getenv('MYSQL_PORT', '3306')}/"
         f"{os.getenv('MYSQL_DB', 'apex')}"
     )
+    code_list = None
+    if args.codes:
+        code_list = [x.strip() for x in str(args.codes).split(",") if x.strip()]
     conn = db_conn()
     try:
-        if args.mode in ("list", "all"):
+        if args.mode in ("list", "all") and not code_list:
             sync_stock_list(conn, limit=args.limit if args.mode == "list" else None)
         if args.mode in ("bars", "all"):
             # all 模式下 list 已全量写入；bars 的 limit 才限制同步数量
@@ -428,6 +460,7 @@ def main() -> int:
                 limit=bar_limit,
                 resume=not args.no_resume,
                 only_missing=not args.full_refresh,
+                codes=code_list,
             )
         return 0
     finally:

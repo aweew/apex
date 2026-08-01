@@ -1,6 +1,8 @@
 package com.awe.apex.quant.service;
 
 import com.awe.apex.quant.domain.dto.CorrelationMatrixResp;
+import com.awe.apex.quant.domain.dto.WatchlistAddReq;
+import com.awe.apex.quant.domain.dto.WatchlistAddResp;
 import com.awe.apex.quant.domain.dto.WatchlistImportReq;
 import com.awe.apex.quant.domain.dto.WatchlistImportResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
@@ -32,6 +34,14 @@ public interface IWatchlistService extends IService<Watchlist> {
      * @return 导入结果
      */
     WatchlistImportResp importFromMxFile(WatchlistImportReq req);
+
+    /**
+     * 批量加入自选（热点/决策等入口）
+     *
+     * @param req 请求
+     * @return 结果
+     */
+    WatchlistAddResp addCodes(WatchlistAddReq req);
 
     /**
      * 刷新分组行情快照（名称/现价/估值）

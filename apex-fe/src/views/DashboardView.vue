@@ -216,11 +216,37 @@ onBeforeUnmount(() => {
     />
     <el-alert
       v-if="focus"
-      :title="`今日关注：${focus.message}${focus.breadthMessage ? ' · ' + focus.breadthMessage : ''}${(focus.confluence || []).length ? ' · 共振 ' + focus.confluence.map((c) => c.code).slice(0, 5).join('/') : ''}${(focus.buySignals || []).length ? ' · BUY ' + focus.buySignals.map((s) => s.code).slice(0, 5).join('/') : ''}`"
+      :title="`今日关注：${focus.message}${focus.breadthMessage ? ' · ' + focus.breadthMessage : ''}${(focus.confluence || []).length ? ' · 策略共振 ' + focus.confluence.map((c) => c.code).slice(0, 5).join('/') : ''}${(focus.hotConfluence || []).length ? ' · 热点共振 ' + focus.hotConfluence.map((c) => c.code).slice(0, 5).join('/') : ''}${(focus.buySignals || []).length ? ' · BUY ' + focus.buySignals.map((s) => s.code).slice(0, 5).join('/') : ''}`"
       type="success"
       :closable="false"
       style="margin-bottom: 8px"
     />
+    <div v-if="(focus?.hotConfluence || []).length" class="section-head" style="margin-top: 4px">
+      <h3>热点共振</h3>
+      <el-button link type="primary" @click="router.push('/hot')">查看全部</el-button>
+    </div>
+    <el-table
+      v-if="(focus?.hotConfluence || []).length"
+      :data="focus.hotConfluence"
+      size="small"
+      style="margin-bottom: 12px"
+    >
+      <el-table-column prop="code" label="代码" width="100">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+        </template>
+      </el-table-column>
+      <el-table-column prop="name" label="名称" width="120" />
+      <el-table-column prop="sourceCount" label="源数" width="70" />
+      <el-table-column prop="bestRank" label="最佳排名" width="90" />
+      <el-table-column label="涨跌幅" width="90">
+        <template #default="{ row }">
+          <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">
+            {{ row.pctChg != null ? Number(row.pctChg).toFixed(2) + '%' : '-' }}
+          </span>
+        </template>
+      </el-table-column>
+    </el-table>
     <el-alert
       v-if="paperHealth"
       :title="`${paperHealth.message}${(paperHealth.factors || []).length ? ' · ' + paperHealth.factors.slice(0, 4).join(' / ') : ''}`"
@@ -513,6 +539,7 @@ onBeforeUnmount(() => {
         <h3>今日清单</h3>
         <div>
           <el-button link type="primary" @click="router.push('/decision')">智能决策</el-button>
+          <el-button link type="primary" @click="router.push('/hot')">市场热点</el-button>
           <el-button link type="primary" @click="router.push('/daily')">查看全部</el-button>
         </div>
       </div>

@@ -3,11 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchHotOverview, refreshHot } from '../api/hot'
+import { addWatchlistCodes } from '../api/watchlist'
 
 const router = useRouter()
 const loading = ref(false)
 const refreshing = ref(false)
 const data = ref(null)
+const lastLog = ref('')
 const activeTab = ref('confluence')
 
 const eastmoney = computed(() => data.value?.eastmoney || [])
@@ -47,12 +49,34 @@ async function load() {
   }
 }
 
+async function addToWatch(rows) {
+  const items = (rows || [])
+    .filter((r) => r?.code)
+    .map((r) => ({ code: r.code, name: r.name || '' }))
+  if (!items.length) {
+    ElMessage.warning('没有可加入的代码')
+    return
+  }
+  try {
+    const res = await addWatchlistCodes({
+      groupName: '我的自选',
+      source: 'hot',
+      items,
+    })
+    ElMessage.success(res.data?.message || `已加入 ${items.length} 只`)
+  } catch (e) {
+    ElMessage.error(e.message || '加入自选失败')
+  }
+}
+
 async function onRefresh(sources = 'eastmoney,xueqiu,baidu') {
   refreshing.value = true
   try {
     const res = await refreshHot(sources, 50)
     data.value = res.data?.overview || data.value
+    lastLog.value = res.data?.log || ''
     ElMessage.success(res.data?.message || '热点已刷新')
+    if (!confluence.value.length && eastmoney.value.length) activeTab.value = 'eastmoney'
   } catch (e) {
     ElMessage.error(e.message || '刷新失败，可命令行运行 sync_hot.py')
     await load()
@@ -76,6 +100,7 @@ onMounted(load)
       <div class="actions">
         <el-button type="primary" :loading="refreshing" @click="onRefresh()">刷新全部</el-button>
         <el-button :loading="refreshing" @click="onRefresh('eastmoney,baidu')">快刷(跳过雪球)</el-button>
+        <el-button :disabled="!confluence.length" @click="addToWatch(confluence)">共振进自选</el-button>
         <el-button @click="load">重新加载</el-button>
         <el-button @click="router.push('/decision')">智能决策</el-button>
       </div>
@@ -85,6 +110,7 @@ onMounted(load)
       <div>
         <label>东财快照</label>
         <span>{{ fmtTime(data.snapshotTimes?.eastmoney) }}</span>
+        <small v-if="!eastmoney.length" class="warn">暂无，建议快刷补齐</small>
       </div>
       <div>
         <label>雪球快照</label>
@@ -99,6 +125,17 @@ onMounted(load)
         <b>{{ confluence.length }}</b>
       </div>
     </div>
+
+    <el-alert
+      v-if="lastLog"
+      class="hint"
+      type="info"
+      :closable="true"
+      show-icon
+      title="最近刷新日志"
+      :description="lastLog"
+      @close="lastLog = ''"
+    />
 
     <el-tabs v-model="activeTab" class="tabs">
       <el-tab-pane :label="`多源共振 (${confluence.length})`" name="confluence">
@@ -132,10 +169,22 @@ onMounted(load)
             </template>
           </el-table-column>
           <el-table-column prop="price" label="现价" width="100" sortable />
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" :disabled="!row.code" @click="addToWatch([row])">自选</el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane :label="`东财人气 (${eastmoney.length})`" name="eastmoney">
+      <el-tab-pane :label="`东财/成交额 (${eastmoney.length})`" name="eastmoney">
+        <el-alert
+          class="hint"
+          type="info"
+          :closable="false"
+          show-icon
+          title="优先东财人气；不可用时自动降级为东财/新浪成交额榜（source 仍为 eastmoney）"
+        />
         <el-table :data="eastmoney" size="small" stripe empty-text="暂无东财数据，点刷新">
           <el-table-column prop="rankNo" label="排名" width="70" sortable />
           <el-table-column prop="code" label="代码" width="100" sortable>
@@ -152,7 +201,7 @@ onMounted(load)
               <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="heatText" label="热度" min-width="120" />
+          <el-table-column prop="heatText" label="热度" min-width="140" />
         </el-table>
       </el-tab-pane>
 
@@ -234,6 +283,13 @@ onMounted(load)
 
 .muted {
   color: var(--muted);
+}
+
+.warn {
+  display: block;
+  margin-top: 4px;
+  color: var(--el-color-warning);
+  font-size: 11px;
 }
 
 @media (max-width: 900px) {

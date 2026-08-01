@@ -5,6 +5,7 @@ import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.HotConfluenceItem;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
 import com.awe.apex.quant.domain.dto.SignalConfluenceItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceResp;
@@ -23,6 +24,7 @@ import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockFinAbstractMapper;
 import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
 import com.awe.apex.quant.service.IDecisionService;
+import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
@@ -49,7 +51,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 智能决策：编排股票池 / 策略信号 / 共振 / 基本面 / 风控
+ * 智能决策：编排股票池 / 策略信号 / 共振 / 热点 / 基本面 / 风控
  */
 @Service
 public class DecisionServiceImpl implements IDecisionService {
@@ -62,6 +64,8 @@ public class DecisionServiceImpl implements IDecisionService {
     private static final BigDecimal DEBT_EXCLUDE = new BigDecimal("80");
     private static final BigDecimal DEBT_WEAK = new BigDecimal("70");
     private static final BigDecimal SCORE_BOOST_CONFLUENCE = new BigDecimal("12");
+    private static final BigDecimal SCORE_BOOST_HOT = new BigDecimal("8");
+    private static final BigDecimal SCORE_BOOST_HOT_TRIPLE = new BigDecimal("4");
     private static final BigDecimal SCORE_PENALTY_FUND = new BigDecimal("8");
 
     @Resource
@@ -69,6 +73,9 @@ public class DecisionServiceImpl implements IDecisionService {
 
     @Resource
     private ISignalService signalService;
+
+    @Resource
+    private IHotService hotService;
 
     @Resource
     private IRiskService riskService;
@@ -117,7 +124,7 @@ public class DecisionServiceImpl implements IDecisionService {
         UniverseRefreshResp universeResp = universeService.refresh(universeReq);
         int universeCount = Objects.nonNull(universeResp.getCount()) ? universeResp.getCount() : 0;
 
-        // 3. 跑 S1/S2/S3：股票池 + 持仓代码（持仓即使不在池里也要扫卖出信号）
+        // 3. 跑 S1/S2/S3：股票池 + 持仓 + 热点共振（热点不在自选也纳入扫描）
         List<String> signalCodes = new ArrayList<>();
         Set<String> signalCodeSet = new HashSet<>();
         List<UniverseSnapshot> universeList = universeService.latest();
@@ -131,6 +138,14 @@ public class DecisionServiceImpl implements IDecisionService {
         for (MyHolding holding : holdings) {
             if (StringUtils.isNotBlank(holding.getCode()) && signalCodeSet.add(holding.getCode())) {
                 signalCodes.add(holding.getCode());
+            }
+        }
+        Map<String, HotConfluenceItem> hotMap = hotService.confluenceMap(50);
+        int hotScanCount = 0;
+        for (String hotCode : hotMap.keySet()) {
+            if (StringUtils.isNotBlank(hotCode) && signalCodeSet.add(hotCode)) {
+                signalCodes.add(hotCode);
+                hotScanCount++;
             }
         }
         SignalRunReq signalReq = new SignalRunReq();
@@ -195,7 +210,9 @@ public class DecisionServiceImpl implements IDecisionService {
                 if (cfCount >= 2) {
                     score = score.add(SCORE_BOOST_CONFLUENCE);
                 }
-                String reason = humanReason(signal, cf, null, "持仓卖出");
+                HotConfluenceItem hot = hotMap.get(code);
+                score = applyHotBoost(score, hot);
+                String reason = humanReason(signal, cf, null, "持仓卖出", hot);
                 DecisionItemResp item = DecisionItemResp.builder()
                         .actionDate(actionDate)
                         .code(code)
@@ -233,13 +250,16 @@ public class DecisionServiceImpl implements IDecisionService {
             if (cfCount >= 2) {
                 score = score.add(SCORE_BOOST_CONFLUENCE);
             }
+            HotConfluenceItem hot = hotMap.get(code);
+            score = applyHotBoost(score, hot);
             if (gate.weak) {
                 score = score.subtract(SCORE_PENALTY_FUND);
             }
-            BigDecimal weight = suggestWeight(cfCount >= 2, !gate.weak, singleLimit);
+            boolean hotOk = Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount()) && hot.getSourceCount() >= 2;
+            BigDecimal weight = suggestWeight(cfCount >= 2 || hotOk, !gate.weak, singleLimit);
             boolean alreadyHeld = Objects.nonNull(holdingInMap);
             String buyLabel = alreadyHeld ? "加仓" : "买入";
-            String reason = humanReason(signal, cf, gate, buyLabel);
+            String reason = humanReason(signal, cf, gate, buyLabel, hot);
             if (alreadyHeld) {
                 reason = trimReason(reason + " · 已在我的持仓");
             }
@@ -375,7 +395,9 @@ public class DecisionServiceImpl implements IDecisionService {
                 .riskNote(riskNote)
                 .message("买入看股票池机会 " + buys.size() + " · 卖出看我的持仓 " + sells.size()
                         + " · 继续持有 " + holds.size() + " · 股票池 " + universeCount
-                        + " · 持仓 " + holdings.size())
+                        + " · 持仓 " + holdings.size()
+                        + " · 热点扩扫 " + hotScanCount
+                        + " · 扫描 " + signalCodes.size())
                 .build();
     }
 
@@ -548,7 +570,19 @@ public class DecisionServiceImpl implements IDecisionService {
         return Objects.nonNull(score) ? score : new BigDecimal("60");
     }
 
-    private String humanReason(StrategySignalEntity signal, SignalConfluenceItem cf, FundGate gate, String actionLabel) {
+    private BigDecimal applyHotBoost(BigDecimal score, HotConfluenceItem hot) {
+        if (Objects.isNull(hot) || Objects.isNull(hot.getSourceCount()) || hot.getSourceCount() < 2) {
+            return score;
+        }
+        BigDecimal result = score.add(SCORE_BOOST_HOT);
+        if (hot.getSourceCount() >= 3) {
+            result = result.add(SCORE_BOOST_HOT_TRIPLE);
+        }
+        return result;
+    }
+
+    private String humanReason(StrategySignalEntity signal, SignalConfluenceItem cf, FundGate gate,
+                               String actionLabel, HotConfluenceItem hot) {
         String rule = extractRule(signal.getReasonJson());
         StringBuilder sb = new StringBuilder();
         sb.append(actionLabel).append("：");
@@ -562,6 +596,12 @@ public class DecisionServiceImpl implements IDecisionService {
             sb.append(" · ").append(cf.getStrategyCount()).append("策略共振");
             if (CollUtil.isNotEmpty(cf.getStrategies())) {
                 sb.append("(").append(String.join("/", cf.getStrategies())).append(")");
+            }
+        }
+        if (Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount()) && hot.getSourceCount() >= 2) {
+            sb.append(" · 热点共振");
+            if (CollUtil.isNotEmpty(hot.getSources())) {
+                sb.append("(").append(String.join("/", hot.getSources())).append(")");
             }
         }
         if (Objects.nonNull(gate) && gate.weak) {

@@ -8,6 +8,10 @@ export function importWatchlist(payload) {
   return http.post('/api/watchlist/import', payload)
 }
 
+export function addWatchlistCodes(payload) {
+  return http.post('/api/watchlist/add', payload)
+}
+
 export function refreshQuotes(groupName, limit = 40, preferMissing = true) {
   return http.post('/api/watchlist/refresh-quotes', null, {
     params: { groupName, limit, preferMissing },

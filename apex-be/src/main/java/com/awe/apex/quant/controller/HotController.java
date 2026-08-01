@@ -2,6 +2,7 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.HotOverviewResp;
+import com.awe.apex.quant.domain.dto.HotRefreshResp;
 import com.awe.apex.quant.domain.entity.MarketHot;
 import com.awe.apex.quant.service.IHotService;
 import jakarta.annotation.Resource;
@@ -12,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 多平台热点股票
@@ -56,7 +56,7 @@ public class HotController {
      * @return 结果
      */
     @PostMapping("/refresh")
-    public Result<Map<String, Object>> refresh(
+    public Result<HotRefreshResp> refresh(
             @RequestParam(required = false, defaultValue = "eastmoney,xueqiu,baidu") String sources,
             @RequestParam(required = false, defaultValue = "50") Integer limit) {
         return Result.success(hotService.refresh(sources, limit));

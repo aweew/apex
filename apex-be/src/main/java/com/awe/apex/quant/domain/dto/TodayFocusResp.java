@@ -48,6 +48,11 @@ public class TodayFocusResp {
     private List<SignalConfluenceItem> confluence;
 
     /**
+     * 多平台热点共振（≥2 源）
+     */
+    private List<HotConfluenceItem> hotConfluence;
+
+    /**
      * 说明
      */
     private String message;

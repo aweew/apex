@@ -1,6 +1,8 @@
 package com.awe.apex.quant.controller;
 
 import com.awe.apex.quant.domain.dto.CorrelationMatrixResp;
+import com.awe.apex.quant.domain.dto.WatchlistAddReq;
+import com.awe.apex.quant.domain.dto.WatchlistAddResp;
 import com.awe.apex.quant.domain.dto.WatchlistImportReq;
 import com.awe.apex.quant.domain.dto.WatchlistImportResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
@@ -44,6 +46,17 @@ public class WatchlistController {
     @PostMapping("/import")
     public Result<WatchlistImportResp> importWatchlist(@RequestBody WatchlistImportReq req) {
         return Result.success(watchlistService.importFromMxFile(req));
+    }
+
+    /**
+     * 批量加入自选
+     *
+     * @param req 请求
+     * @return 结果
+     */
+    @PostMapping("/add")
+    public Result<WatchlistAddResp> addCodes(@RequestBody WatchlistAddReq req) {
+        return Result.success(watchlistService.addCodes(req));
     }
 
     /**
