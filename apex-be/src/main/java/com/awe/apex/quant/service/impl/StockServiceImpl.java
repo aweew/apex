@@ -57,7 +57,7 @@ public class StockServiceImpl implements IStockService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public StockBasic syncBasic(String code) {
-        String pure = MarketCodeUtils.normalizeCode(code);
+        String pure = MarketCodeUtils.normalizeHoldingCode(code);
         if (StringUtils.isBlank(pure)) {
             throw new BusinessException("代码无效");
         }

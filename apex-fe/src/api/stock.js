@@ -11,3 +11,9 @@ export function syncStockBasic(code) {
 export function searchStock(q, limit = 15) {
   return http.get('/api/stock/search', { params: { q, limit } })
 }
+
+export function fetchStockFundamental(code, periodLimit = 40, reportPeriodLimit = 12) {
+  return http.get(`/api/stock/${code}/fundamental`, {
+    params: { periodLimit, reportPeriodLimit },
+  })
+}

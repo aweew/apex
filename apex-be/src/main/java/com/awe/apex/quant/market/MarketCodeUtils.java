@@ -31,7 +31,7 @@ public final class MarketCodeUtils {
     }
 
     /**
-     * 推断市场：SH / SZ / BJ
+     * 推断市场：SH / SZ / BJ / HK
      *
      * @param code 证券代码
      * @return 市场
@@ -44,15 +44,21 @@ public final class MarketCodeUtils {
         if (pure.contains(".")) {
             String[] parts = pure.split("\\.");
             if (parts.length == 2) {
-                if ("SH".equals(parts[1]) || "SZ".equals(parts[1]) || "BJ".equals(parts[1])) {
+                if ("SH".equals(parts[1]) || "SZ".equals(parts[1]) || "BJ".equals(parts[1]) || "HK".equals(parts[1])) {
                     return parts[1];
                 }
-                if ("SH".equals(parts[0]) || "SZ".equals(parts[0]) || "BJ".equals(parts[0])) {
+                if ("SH".equals(parts[0]) || "SZ".equals(parts[0]) || "BJ".equals(parts[0]) || "HK".equals(parts[0])) {
                     return parts[0];
                 }
             }
         }
+        if (pure.startsWith("HK")) {
+            return "HK";
+        }
         String digits = normalizeCode(pure);
+        if (isHkCode(digits)) {
+            return "HK";
+        }
         if (isIndex(digits)) {
             return "SH";
         }
@@ -68,6 +74,20 @@ public final class MarketCodeUtils {
             return "BJ";
         }
         return "SZ";
+    }
+
+    /**
+     * 是否港股代码（常见 4~5 位，如 1810 / 01810 / 03986）
+     *
+     * @param digits 纯数字代码
+     * @return true=港股
+     */
+    public static boolean isHkCode(String digits) {
+        if (StringUtils.isBlank(digits)) {
+            return false;
+        }
+        // A 股主板/科创/创业均为 6 位；港股通常见 4~5 位
+        return digits.length() >= 4 && digits.length() <= 5;
     }
 
     /**
@@ -103,11 +123,36 @@ public final class MarketCodeUtils {
      * @return secid
      */
     public static String toEastMoneySecId(String code) {
-        String pure = normalizeCode(code);
+        String pure = normalizeHoldingCode(code);
         String market = resolveMarket(pure);
+        if ("HK".equals(market)) {
+            // 东财港股 secid：116.xxxxx
+            return "116." + pure;
+        }
         if ("SH".equals(market)) {
             return "1." + pure;
         }
         return "0." + pure;
+    }
+
+    /**
+     * 持仓/行情用代码规范化：港股补齐 5 位，A 股保持 6 位
+     *
+     * @param code 原始代码
+     * @return 规范化代码
+     */
+    public static String normalizeHoldingCode(String code) {
+        String digits = normalizeCode(code);
+        if (StringUtils.isBlank(digits)) {
+            return digits;
+        }
+        if (isHkCode(digits)) {
+            if (digits.length() >= 5) {
+                return digits.substring(digits.length() - 5);
+            }
+            String padded = "00000" + digits;
+            return padded.substring(padded.length() - 5);
+        }
+        return digits;
     }
 }

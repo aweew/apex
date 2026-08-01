@@ -46,17 +46,17 @@ public class StockQuoteClient {
      * @return 基本信息
      */
     public StockBasic fetchBasic(String code) {
-        String pure = MarketCodeUtils.normalizeCode(code);
+        String pure = MarketCodeUtils.normalizeHoldingCode(code);
         String market = MarketCodeUtils.resolveMarket(pure);
         StockBasic basic = fetchFromSina(pure, market);
-        // 估值优先腾讯，避免批量撞东财 push2 断连
-        if (needValuationFallback(basic)) {
+        // 港股估值/行业补充易踩空，有现价即可；A 股继续补估值
+        if (!"HK".equals(market) && needValuationFallback(basic)) {
             enrichFromTencent(basic);
         }
-        if (needValuationFallback(basic) && !isEastMoneyCoolingDown()) {
+        if (!"HK".equals(market) && needValuationFallback(basic) && !isEastMoneyCoolingDown()) {
             enrichFromEastMoney(basic);
         }
-        if (StringUtils.isBlank(basic.getIndustry()) && !isEastMoneyCoolingDown()) {
+        if (!"HK".equals(market) && StringUtils.isBlank(basic.getIndustry()) && !isEastMoneyCoolingDown()) {
             enrichIndustryFromEastMoney(basic);
         }
         return basic;
@@ -83,19 +83,35 @@ public class StockQuoteClient {
                 throw new BusinessException("新浪行情格式异常");
             }
             String[] parts = body.substring(start + 1, end).split(",");
-            if (parts.length < 10 || StringUtils.isBlank(parts[0])) {
+            if (parts.length < 4 || StringUtils.isBlank(parts[0])) {
                 throw new BusinessException("未找到股票: " + code);
             }
-            BigDecimal price = toDecimal(parts[3]);
-            BigDecimal prevClose = toDecimal(parts[2]);
-            BigDecimal pct = null;
-            if (Objects.nonNull(price) && Objects.nonNull(prevClose) && prevClose.signum() > 0) {
-                pct = price.subtract(prevClose)
-                        .multiply(BigDecimal.valueOf(100))
-                        .divide(prevClose, 4, RoundingMode.HALF_UP);
+            String name;
+            BigDecimal price;
+            BigDecimal pct;
+            if ("HK".equals(market)) {
+                // 港股：英名,中文名,开盘,昨收,最高,最低,现价,涨跌额,涨跌幅,...
+                if (parts.length < 9) {
+                    throw new BusinessException("未找到港股: " + code);
+                }
+                name = StringUtils.isNotBlank(parts[1]) ? parts[1] : parts[0];
+                price = toDecimal(parts[6]);
+                pct = toDecimal(parts[8]);
+            } else {
+                if (parts.length < 10) {
+                    throw new BusinessException("未找到股票: " + code);
+                }
+                name = parts[0];
+                price = toDecimal(parts[3]);
+                BigDecimal prevClose = toDecimal(parts[2]);
+                pct = null;
+                if (Objects.nonNull(price) && Objects.nonNull(prevClose) && prevClose.signum() > 0) {
+                    pct = price.subtract(prevClose)
+                            .multiply(BigDecimal.valueOf(100))
+                            .divide(prevClose, 4, RoundingMode.HALF_UP);
+                }
             }
             LocalDateTime now = LocalDateTime.now();
-            String name = parts[0];
             return StockBasic.builder()
                     .code(code)
                     .name(name)
@@ -287,6 +303,9 @@ public class StockQuoteClient {
     }
 
     private String toSinaSymbol(String code, String market) {
+        if ("HK".equals(market)) {
+            return "hk" + code;
+        }
         if ("SH".equals(market)) {
             return "sh" + code;
         }

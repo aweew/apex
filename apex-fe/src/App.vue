@@ -151,6 +151,8 @@ onBeforeUnmount(() => {
       </span>
       <div class="links">
         <RouterLink to="/dashboard">看板</RouterLink>
+        <RouterLink to="/decision">智能决策</RouterLink>
+        <RouterLink to="/holding">我的持仓</RouterLink>
         <RouterLink to="/pipeline">流水线</RouterLink>
         <RouterLink to="/screener">选股</RouterLink>
         <RouterLink to="/watchlist">自选</RouterLink>

@@ -511,7 +511,10 @@ onBeforeUnmount(() => {
 
       <div class="section-head">
         <h3>今日清单</h3>
-        <el-button link type="primary" @click="router.push('/daily')">查看全部</el-button>
+        <div>
+          <el-button link type="primary" @click="router.push('/decision')">智能决策</el-button>
+          <el-button link type="primary" @click="router.push('/daily')">查看全部</el-button>
+        </div>
       </div>
       <el-table :data="data.todayActions || []" size="small">
         <el-table-column prop="action" label="动作" width="80" />

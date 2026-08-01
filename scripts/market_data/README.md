@@ -30,8 +30,34 @@ python sync_a_share.py --mode bars --start 20180101 --no-resume --full-refresh
 
 进度文件：`.progress/bars_progress.json`
 
-## 3. 说明
+## 3. 公司基本面（详细财报）
 
-- 数据源：AKShare（优先新浪日线，失败再试东财；前复权）
-- 全 A 约 5000+ 只，十年级历史首次导入往往需要数小时，请保持 `--sleep`
-- 导入完成后，Apex 详情/回测直接读本地库即可
+写入表：`stock_fin_indicator` / `stock_fin_abstract` / `stock_fin_report_item`  
+（先执行 `apex-be/docs/sql/07_fundamental.sql`）
+
+```bash
+# 试跑 2 只（摘要 + 分析指标 + 三大报表）
+python sync_fundamentals.py --mode all --codes "000001,600519" --sleep 0.8
+
+# 从 stock_basic 取前 20 只
+python sync_fundamentals.py --mode all --limit 20 --sleep 0.8
+
+# 全市场（可过夜；中断后重跑续传）
+python sync_fundamentals.py --mode all --sleep 0.8
+
+# 只同步某一类
+python sync_fundamentals.py --mode indicator --sleep 0.5
+python sync_fundamentals.py --mode abstract --sleep 0.5
+python sync_fundamentals.py --mode reports --sleep 0.8
+```
+
+进度文件：`.progress/fund_progress.json`  
+前端个股页 Tab：财务摘要 / 分析指标 / 利润表 / 资产负债表 / 现金流量表  
+接口：`GET /api/stock/{code}/fundamental`
+
+## 4. 说明
+
+- 日线数据源：AKShare（优先新浪日线，失败再试东财；前复权）
+- 基本面数据源：分析指标 + 同花顺摘要 + 新浪三大报表（科目级 EAV，payload 保留全量字段）
+- 全 A 约 5000+ 只，首次导入往往需要数小时，请保持 `--sleep`
+- 导入完成后，Apex 详情/回测/基本面直接读本地库即可

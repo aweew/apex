@@ -32,6 +32,10 @@ public class DailyAction implements Serializable {
     /** 理由 */ private String reason;
     /** 建议仓位 */ private BigDecimal suggestedWeight;
     /** 离场条件 */ private String exitRule;
+    /** 综合评分 */ private BigDecimal score;
+    /** 共振策略数 */ private Integer confluenceCount;
+    /** 基本面要点 */ private String fundNote;
+    /** 关联策略信号ID */ private Long signalId;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     @TableLogic private Integer deleted;

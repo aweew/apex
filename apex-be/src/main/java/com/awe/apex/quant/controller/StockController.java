@@ -2,8 +2,10 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.StockDetailResp;
+import com.awe.apex.quant.domain.dto.StockFundamentalResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.StockBasic;
+import com.awe.apex.quant.service.IStockFundamentalService;
 import com.awe.apex.quant.service.IStockService;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,6 +26,9 @@ public class StockController {
 
     @Resource
     private IStockService stockService;
+
+    @Resource
+    private IStockFundamentalService stockFundamentalService;
 
     /**
      * 搜索股票
@@ -62,5 +67,20 @@ public class StockController {
                                           @RequestParam(defaultValue = "120") Integer barLimit,
                                           @RequestParam(defaultValue = "false") Boolean refresh) {
         return Result.success(stockService.detail(code, barLimit, refresh));
+    }
+
+    /**
+     * 个股基本面（只读本地：摘要 / 分析指标 / 三大报表）
+     *
+     * @param code              证券代码
+     * @param periodLimit       摘要与指标期数
+     * @param reportPeriodLimit 报表展示期数
+     * @return 基本面
+     */
+    @GetMapping("/{code}/fundamental")
+    public Result<StockFundamentalResp> fundamental(@PathVariable String code,
+                                                    @RequestParam(defaultValue = "40") Integer periodLimit,
+                                                    @RequestParam(defaultValue = "12") Integer reportPeriodLimit) {
+        return Result.success(stockFundamentalService.query(code, periodLimit, reportPeriodLimit));
     }
 }

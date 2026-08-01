@@ -9,12 +9,16 @@ import ConfigView from '../views/ConfigView.vue'
 import StockView from '../views/StockView.vue'
 import PipelineView from '../views/PipelineView.vue'
 import ScreenerView from '../views/ScreenerView.vue'
+import DecisionView from '../views/DecisionView.vue'
+import HoldingView from '../views/HoldingView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'dashboard', component: DashboardView },
+    { path: '/decision', name: 'decision', component: DecisionView },
+    { path: '/holding', name: 'holding', component: HoldingView },
     { path: '/pipeline', name: 'pipeline', component: PipelineView },
     { path: '/screener', name: 'screener', component: ScreenerView },
     { path: '/watchlist', name: 'watchlist', component: WatchlistView },

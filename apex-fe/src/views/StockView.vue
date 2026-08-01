@@ -3,7 +3,7 @@ import { nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { fetchStockDetail, syncStockBasic } from '../api/stock'
+import { fetchStockDetail, fetchStockFundamental, syncStockBasic } from '../api/stock'
 import { syncBars } from '../api/bars'
 
 const route = useRoute()
@@ -11,6 +11,7 @@ const router = useRouter()
 const loading = ref(false)
 const syncingBars = ref(false)
 const refreshing = ref(false)
+const fundLoading = ref(false)
 const code = ref(String(route.params.code || route.query.code || '600519'))
 const basic = ref(null)
 const note = ref('')
@@ -21,6 +22,8 @@ const rs20 = ref(null)
 const rs60 = ref(null)
 const volumeRatio = ref(null)
 const chartRef = ref(null)
+const activeTab = ref('chart')
+const fund = ref(null)
 let chart
 
 function ma(closes, period) {
@@ -191,6 +194,7 @@ async function load(refreshQuote = false) {
   try {
     const res = await fetchStockDetail(code.value.trim(), 220, false)
     applyDetail(res.data)
+    await loadFundamental()
     if (refreshQuote) {
       await refreshQuoteOnly()
     }
@@ -198,6 +202,20 @@ async function load(refreshQuote = false) {
     ElMessage.error(e.message || '加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadFundamental() {
+  if (!code.value) return
+  fundLoading.value = true
+  try {
+    const res = await fetchStockFundamental(code.value.trim(), 40, 12)
+    fund.value = res.data || null
+  } catch (e) {
+    fund.value = null
+    console.warn('加载基本面失败', e)
+  } finally {
+    fundLoading.value = false
   }
 }
 
@@ -286,6 +304,44 @@ function fmtMv(v) {
   if (n >= 1e8) return (n / 1e8).toFixed(2) + '亿'
   return n.toFixed(2)
 }
+
+function fmtMoney(v) {
+  if (v == null || v === '') return '-'
+  const n = Number(v)
+  if (Number.isNaN(n)) return String(v)
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : ''
+  if (abs >= 1e12) return sign + (abs / 1e12).toFixed(2) + '万亿'
+  if (abs >= 1e8) return sign + (abs / 1e8).toFixed(2) + '亿'
+  if (abs >= 1e4) return sign + (abs / 1e4).toFixed(2) + '万'
+  return sign + abs.toFixed(2)
+}
+
+function fmtNum(v, digits = 2) {
+  if (v == null || v === '') return '-'
+  const n = Number(v)
+  if (Number.isNaN(n)) return String(v)
+  return n.toFixed(digits)
+}
+
+function fmtPct(v) {
+  if (v == null || v === '') return '-'
+  const n = Number(v)
+  if (Number.isNaN(n)) return String(v)
+  return n.toFixed(2) + '%'
+}
+
+function sheetCell(row, idx) {
+  const text = row?.texts?.[idx]
+  if (text) return text
+  return fmtMoney(row?.values?.[idx])
+}
+
+function onTabChange(name) {
+  if (name === 'chart' && bars.value.length) {
+    nextTick(() => renderChart(bars.value))
+  }
+}
 </script>
 
 <template>
@@ -331,15 +387,116 @@ function fmtMv(v) {
       :title="`本地仅 ${barCount} 根日线，建议同步补齐后再做指标/回测`"
     />
 
-    <el-empty
-      v-if="!loading && !bars.length"
-      class="empty-bars"
-      description="本地暂无日线，请先同步日线落库"
-    >
-      <el-button type="primary" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
-    </el-empty>
+    <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">
+      <el-tab-pane label="行情图表" name="chart">
+        <el-empty
+          v-if="!loading && !bars.length"
+          class="empty-bars"
+          description="本地暂无日线，请先同步日线落库"
+        >
+          <el-button type="primary" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
+        </el-empty>
+        <div v-if="bars.length" ref="chartRef" class="chart" />
+      </el-tab-pane>
 
-    <div v-if="bars.length" ref="chartRef" class="chart" />
+      <el-tab-pane label="财务摘要" name="abstract" lazy>
+        <div v-loading="fundLoading">
+          <p class="fund-note">{{ fund?.note || '加载中…' }}</p>
+          <div class="meta fund-kpi" v-if="fund?.latestAbstract">
+            <div><label>报告期</label><span>{{ fund.latestAbstract.reportDate || '-' }}</span></div>
+            <div><label>净利润</label><b>{{ fmtMoney(fund.latestAbstract.netProfit) }}</b></div>
+            <div><label>净利润同比</label><b :class="Number(fund.latestAbstract.netProfitYoy) >= 0 ? 'up' : 'down'">{{ fmtPct(fund.latestAbstract.netProfitYoy) }}</b></div>
+            <div><label>扣非净利润</label><b>{{ fmtMoney(fund.latestAbstract.netProfitExcl) }}</b></div>
+            <div><label>营业总收入</label><b>{{ fmtMoney(fund.latestAbstract.revenue) }}</b></div>
+            <div><label>营收同比</label><b :class="Number(fund.latestAbstract.revenueYoy) >= 0 ? 'up' : 'down'">{{ fmtPct(fund.latestAbstract.revenueYoy) }}</b></div>
+            <div><label>EPS</label><span>{{ fmtNum(fund.latestAbstract.epsBasic, 4) }}</span></div>
+            <div><label>BPS</label><span>{{ fmtNum(fund.latestAbstract.bps, 4) }}</span></div>
+            <div><label>ROE</label><span>{{ fmtPct(fund.latestAbstract.roe) }}</span></div>
+            <div><label>净利率</label><span>{{ fmtPct(fund.latestAbstract.netMargin) }}</span></div>
+            <div><label>资产负债率</label><span>{{ fmtPct(fund.latestAbstract.debtRatio) }}</span></div>
+            <div><label>流动/速动</label><span>{{ fmtNum(fund.latestAbstract.currentRatio) }} / {{ fmtNum(fund.latestAbstract.quickRatio) }}</span></div>
+          </div>
+          <el-table v-if="fund?.abstracts?.length" :data="fund.abstracts" size="small" stripe height="480" class="fund-table">
+            <el-table-column prop="reportDate" label="报告期" width="110" fixed />
+            <el-table-column label="净利润" min-width="110"><template #default="{ row }">{{ fmtMoney(row.netProfit) }}</template></el-table-column>
+            <el-table-column label="净利同比" width="100"><template #default="{ row }">{{ fmtPct(row.netProfitYoy) }}</template></el-table-column>
+            <el-table-column label="营收" min-width="110"><template #default="{ row }">{{ fmtMoney(row.revenue) }}</template></el-table-column>
+            <el-table-column label="营收同比" width="100"><template #default="{ row }">{{ fmtPct(row.revenueYoy) }}</template></el-table-column>
+            <el-table-column label="EPS" width="90"><template #default="{ row }">{{ fmtNum(row.epsBasic, 4) }}</template></el-table-column>
+            <el-table-column label="ROE" width="90"><template #default="{ row }">{{ fmtPct(row.roe) }}</template></el-table-column>
+            <el-table-column label="净利率" width="90"><template #default="{ row }">{{ fmtPct(row.netMargin) }}</template></el-table-column>
+            <el-table-column label="负债率" width="90"><template #default="{ row }">{{ fmtPct(row.debtRatio) }}</template></el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无财务摘要，请先同步基本面" />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="分析指标" name="indicator" lazy>
+        <div v-loading="fundLoading">
+          <div class="meta fund-kpi" v-if="fund?.latestIndicator">
+            <div><label>报告期</label><span>{{ fund.latestIndicator.reportDate || '-' }}</span></div>
+            <div><label>EPS</label><span>{{ fmtNum(fund.latestIndicator.eps, 4) }}</span></div>
+            <div><label>扣非EPS</label><span>{{ fmtNum(fund.latestIndicator.epsExcl, 4) }}</span></div>
+            <div><label>BPS</label><span>{{ fmtNum(fund.latestIndicator.bps, 4) }}</span></div>
+            <div><label>OCFPS</label><span>{{ fmtNum(fund.latestIndicator.ocfps, 4) }}</span></div>
+            <div><label>ROE</label><span>{{ fmtPct(fund.latestIndicator.roe) }}</span></div>
+            <div><label>ROA</label><span>{{ fmtPct(fund.latestIndicator.roa) }}</span></div>
+            <div><label>毛利率</label><span>{{ fmtPct(fund.latestIndicator.grossMargin) }}</span></div>
+            <div><label>净利率</label><span>{{ fmtPct(fund.latestIndicator.netMargin) }}</span></div>
+            <div><label>营业利润率</label><span>{{ fmtPct(fund.latestIndicator.operateMargin) }}</span></div>
+            <div><label>资产负债率</label><span>{{ fmtPct(fund.latestIndicator.debtRatio) }}</span></div>
+            <div><label>流动/速动</label><span>{{ fmtNum(fund.latestIndicator.currentRatio) }} / {{ fmtNum(fund.latestIndicator.quickRatio) }}</span></div>
+          </div>
+          <el-table v-if="fund?.indicators?.length" :data="fund.indicators" size="small" stripe height="480" class="fund-table">
+            <el-table-column prop="reportDate" label="报告期" width="110" fixed />
+            <el-table-column label="EPS" width="90"><template #default="{ row }">{{ fmtNum(row.eps, 4) }}</template></el-table-column>
+            <el-table-column label="加权EPS" width="90"><template #default="{ row }">{{ fmtNum(row.epsWeighted, 4) }}</template></el-table-column>
+            <el-table-column label="扣非EPS" width="90"><template #default="{ row }">{{ fmtNum(row.epsExcl, 4) }}</template></el-table-column>
+            <el-table-column label="BPS" width="90"><template #default="{ row }">{{ fmtNum(row.bps, 4) }}</template></el-table-column>
+            <el-table-column label="OCFPS" width="90"><template #default="{ row }">{{ fmtNum(row.ocfps, 4) }}</template></el-table-column>
+            <el-table-column label="ROE" width="90"><template #default="{ row }">{{ fmtPct(row.roe) }}</template></el-table-column>
+            <el-table-column label="ROA" width="90"><template #default="{ row }">{{ fmtPct(row.roa) }}</template></el-table-column>
+            <el-table-column label="毛利率" width="90"><template #default="{ row }">{{ fmtPct(row.grossMargin) }}</template></el-table-column>
+            <el-table-column label="净利率" width="90"><template #default="{ row }">{{ fmtPct(row.netMargin) }}</template></el-table-column>
+            <el-table-column label="负债率" width="90"><template #default="{ row }">{{ fmtPct(row.debtRatio) }}</template></el-table-column>
+            <el-table-column label="流动比率" width="90"><template #default="{ row }">{{ fmtNum(row.currentRatio) }}</template></el-table-column>
+            <el-table-column label="速动比率" width="90"><template #default="{ row }">{{ fmtNum(row.quickRatio) }}</template></el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无分析指标，请先同步基本面" />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane
+        v-for="sheetKey in ['profitSheet', 'balanceSheet', 'cashflowSheet']"
+        :key="sheetKey"
+        :label="fund?.[sheetKey]?.statementName || ({ profitSheet: '利润表', balanceSheet: '资产负债表', cashflowSheet: '现金流量表' }[sheetKey])"
+        :name="sheetKey"
+        lazy
+      >
+        <div v-loading="fundLoading" class="sheet-wrap">
+          <el-table
+            v-if="fund?.[sheetKey]?.rows?.length"
+            :data="fund[sheetKey].rows"
+            size="small"
+            stripe
+            height="560"
+            class="fund-table"
+          >
+            <el-table-column prop="itemName" label="科目" min-width="180" fixed />
+            <el-table-column
+              v-for="(p, idx) in fund[sheetKey].periods"
+              :key="p + '-' + idx"
+              :label="String(p)"
+              min-width="120"
+              align="right"
+            >
+              <template #default="{ row }">{{ sheetCell(row, idx) }}</template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无该报表数据，请先同步基本面" />
+        </div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -396,6 +553,29 @@ function fmtMv(v) {
   border-radius: var(--radius);
   box-shadow: var(--shadow-soft);
   overflow: hidden;
+}
+
+.tabs {
+  margin-top: 4px;
+}
+
+.fund-note {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.fund-kpi {
+  margin-bottom: 14px;
+}
+
+.fund-table {
+  width: 100%;
+  background: transparent;
+}
+
+.sheet-wrap {
+  min-height: 200px;
 }
 
 @media (max-width: 900px) {
