@@ -47,6 +47,8 @@ let chart
 let syncingFromLegend = false
 let resetZoomNext = true
 let savedZoom = { start: 45, end: 100 }
+/** 当前图数据，供可视区高低点随缩放更新 */
+let chartPayload = null
 
 const chartBars = computed(() => aggregateBars(bars.value, klinePeriod.value))
 const periodLabel = computed(() =>
@@ -109,6 +111,117 @@ function captureZoom() {
   if (!Number.isNaN(start) && !Number.isNaN(end)) savedZoom = { start, end }
 }
 
+/** dataZoom 百分比 → 可视下标区间（含端点） */
+function visibleIndexRange(len, startPct, endPct) {
+  if (len <= 0) return [0, -1]
+  let startIdx = Math.floor((len * startPct) / 100)
+  let endIdx = Math.ceil((len * endPct) / 100) - 1
+  if (startIdx < 0) startIdx = 0
+  if (endIdx >= len) endIdx = len - 1
+  if (endIdx < startIdx) endIdx = startIdx
+  return [startIdx, endIdx]
+}
+
+/**
+ * 仅按可视区 K 线高低定 Y 轴（忽略均线），避免底部大块空白
+ * scale:true 时 boundaryGap 无效，必须显式 min/max
+ */
+function calcVisiblePriceExtent(highs, lows, startPct, endPct) {
+  const [startIdx, endIdx] = visibleIndexRange(highs.length, startPct, endPct)
+  if (endIdx < startIdx) return { min: null, max: null }
+  let min = Infinity
+  let max = -Infinity
+  for (let i = startIdx; i <= endIdx; i++) {
+    if (Number.isFinite(lows[i]) && lows[i] < min) min = lows[i]
+    if (Number.isFinite(highs[i]) && highs[i] > max) max = highs[i]
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: null, max: null }
+  const span = max - min
+  const pad = span > 0 ? span * 0.04 : Math.max(Math.abs(max) * 0.01, 0.01)
+  return { min: +(min - pad).toFixed(4), max: +(max + pad).toFixed(4) }
+}
+
+/**
+ * 可视范围阶段高低点（东财风格）
+ * 锚点在当日影线最高/最低尖端；「价格→」水平对准尖端
+ */
+function buildVisibleExtremeMarkPoint(dates, highs, lows, startPct, endPct) {
+  const [startIdx, endIdx] = visibleIndexRange(dates.length, startPct, endPct)
+  if (endIdx < startIdx) {
+    return { silent: true, animation: false, data: [] }
+  }
+  let highIdx = startIdx
+  let lowIdx = startIdx
+  let highVal = highs[startIdx]
+  let lowVal = lows[startIdx]
+  for (let i = startIdx + 1; i <= endIdx; i++) {
+    if (highs[i] > highVal) {
+      highVal = highs[i]
+      highIdx = i
+    }
+    if (lows[i] < lowVal) {
+      lowVal = lows[i]
+      lowIdx = i
+    }
+  }
+  const span = Math.max(1, endIdx - startIdx)
+  const makePoint = (idx, val) => {
+    const onLeft = (idx - startIdx) / span > 0.18
+    const price = fmtNum(val)
+    return {
+      // 类目下标 + 当日最高/最低，钉在影线尖端（非实体）
+      coord: [idx, val],
+      symbol: 'circle',
+      symbolSize: 0,
+      itemStyle: { color: 'transparent' },
+      label: {
+        show: true,
+        formatter: onLeft ? `${price} →` : `← ${price}`,
+        position: onLeft ? 'left' : 'right',
+        distance: 4,
+        color: '#1d1d1f',
+        fontSize: 11,
+        fontWeight: 400,
+        verticalAlign: 'middle',
+        backgroundColor: 'rgba(255,255,255,0.7)',
+        padding: [1, 4],
+        borderRadius: 2,
+      },
+    }
+  }
+  const data = []
+  if (Number.isFinite(highVal)) data.push(makePoint(highIdx, highVal))
+  if (Number.isFinite(lowVal)) data.push(makePoint(lowIdx, lowVal))
+  return {
+    silent: true,
+    animation: false,
+    data,
+  }
+}
+
+/** 缩放后同步：阶段高低点 + 按 K 线重算 Y 轴 */
+function updateVisibleWindow() {
+  if (!chart || !chartPayload) return
+  captureZoom()
+  const { dates, highs, lows } = chartPayload
+  const markPoint = buildVisibleExtremeMarkPoint(dates, highs, lows, savedZoom.start, savedZoom.end)
+  const extent = calcVisiblePriceExtent(highs, lows, savedZoom.start, savedZoom.end)
+  chart.setOption({
+    yAxis: [
+      {
+        min: extent.min,
+        max: extent.max,
+      },
+    ],
+    series: [
+      {
+        id: 'kline-main',
+        markPoint,
+      },
+    ],
+  })
+}
+
 function refreshChart() {
   if (!bars.value.length) {
     macdTip.value = ''
@@ -129,7 +242,9 @@ function bindChartEvents() {
   if (!chart) return
   chart.off('datazoom')
   chart.off('legendselectchanged')
-  chart.on('datazoom', () => captureZoom())
+  chart.on('datazoom', () => {
+    updateVisibleWindow()
+  })
   chart.on('legendselectchanged', (evt) => {
     const selected = evt?.selected || {}
     const unit = periodUnit.value
@@ -253,6 +368,7 @@ function disposeChart() {
     chart.dispose()
     chart = null
   }
+  chartPayload = null
 }
 
 function dayPctOf(list, closes, idx) {
@@ -319,6 +435,7 @@ async function renderChart(list) {
   const closes = list.map((b) => +b.closePrice)
   const highs = list.map((b) => +b.highPrice)
   const lows = list.map((b) => +b.lowPrice)
+  chartPayload = { dates, highs, lows }
   const ma5 = ma(closes, 5)
   const ma10 = ma(closes, 10)
   const ma20 = ma(closes, 20)
@@ -332,12 +449,18 @@ async function renderChart(list) {
   const periodPctLabel =
     klinePeriod.value === 'week' ? '本周' : klinePeriod.value === 'month' ? '本月' : '当日'
   const unit = periodUnit.value
+  const maColors = { MA5: '#1d1d1f', MA10: '#f59e0b', MA20: '#7c3aed', MA60: '#5c6bc0' }
   const maLegend = {
     MA5: `MA5${unit}`,
     MA10: `MA10${unit}`,
     MA20: `MA20${unit}`,
     MA60: `MA60${unit}`,
   }
+  const maLegendItem = (key) => ({
+    name: maLegend[key],
+    itemStyle: { color: maColors[key] },
+    lineStyle: { color: maColors[key] },
+  })
   const { dif, dea, hist } = macd(closes)
   const crosses = macdCrosses(dif, dea)
   const goldenPoints = []
@@ -376,15 +499,15 @@ async function renderChart(list) {
             position: 'bottom',
             distance: 4,
             color: isNine ? '#26a69a' : 'rgba(38,166,154,0.82)',
-            fontSize: isNine ? 12 : 10,
-            fontWeight: isNine ? 800 : 600,
+            fontSize: isNine ? 11 : 10,
+            fontWeight: isNine ? 700 : 600,
           },
           itemStyle: {
-            color: isNine ? 'rgba(38,166,154,0.28)' : 'transparent',
+            color: isNine ? 'rgba(38,166,154,0.22)' : 'transparent',
             borderColor: isNine ? '#26a69a' : 'transparent',
-            borderWidth: isNine ? 1.2 : 0,
+            borderWidth: isNine ? 1 : 0,
           },
-          symbolSize: isNine ? 18 : 1,
+          symbolSize: isNine ? 12 : 1,
         })
       }
       if (tdSell[i] >= tdMinShow) {
@@ -398,15 +521,15 @@ async function renderChart(list) {
             position: 'top',
             distance: 4,
             color: isNine ? '#ef5350' : 'rgba(239,83,80,0.82)',
-            fontSize: isNine ? 12 : 10,
-            fontWeight: isNine ? 800 : 600,
+            fontSize: isNine ? 11 : 10,
+            fontWeight: isNine ? 700 : 600,
           },
           itemStyle: {
-            color: isNine ? 'rgba(239,83,80,0.28)' : 'transparent',
+            color: isNine ? 'rgba(239,83,80,0.22)' : 'transparent',
             borderColor: isNine ? '#ef5350' : 'transparent',
-            borderWidth: isNine ? 1.2 : 0,
+            borderWidth: isNine ? 1 : 0,
           },
-          symbolSize: isNine ? 18 : 1,
+          symbolSize: isNine ? 12 : 1,
         })
       }
     }
@@ -435,6 +558,20 @@ async function renderChart(list) {
     }
   }
   const { k: kLine, d: dLine, j: jLine } = kdj(highs, lows, closes)
+  // J 常超出 0–100，轴略外扩避免上下被裁切
+  let kdjMin = 0
+  let kdjMax = 100
+  for (const series of [kLine, dLine, jLine]) {
+    for (const val of series) {
+      if (val == null || Number.isNaN(val)) continue
+      if (val < kdjMin) kdjMin = val
+      if (val > kdjMax) kdjMax = val
+    }
+  }
+  const kdjPad = Math.max((kdjMax - kdjMin) * 0.08, 4)
+  // 保证 20/50/80 虚线标尺落在可视范围内
+  kdjMin = Math.min(Math.floor(kdjMin - kdjPad), 15)
+  kdjMax = Math.max(Math.ceil(kdjMax + kdjPad), 85)
   let zoomStart = list.length <= 80 ? 0 : 45
   let zoomEnd = 100
   if (!resetZoomNext && list.length > 0) {
@@ -442,17 +579,26 @@ async function renderChart(list) {
     zoomEnd = savedZoom.end
   }
   resetZoomNext = false
+  const extremeMarkPoint = buildVisibleExtremeMarkPoint(dates, highs, lows, zoomStart, zoomEnd)
+  const priceExtent = calcVisiblePriceExtent(highs, lows, zoomStart, zoomEnd)
 
   chart.setOption({
     backgroundColor: 'transparent',
     animation: false,
     legend: {
+      show: true,
+      top: 0,
+      left: 'center',
+      itemWidth: 14,
+      itemHeight: 8,
+      itemGap: 12,
+      icon: 'roundRect',
       data: [
         'K线',
-        maLegend.MA5,
-        maLegend.MA10,
-        maLegend.MA20,
-        maLegend.MA60,
+        maLegendItem('MA5'),
+        maLegendItem('MA10'),
+        maLegendItem('MA20'),
+        maLegendItem('MA60'),
         '成交量',
         'DIF',
         'DEA',
@@ -467,10 +613,7 @@ async function renderChart(list) {
         [maLegend.MA20]: maSelected.MA20,
         [maLegend.MA60]: maSelected.MA60,
       },
-      top: 2,
-      itemWidth: 12,
-      itemHeight: 8,
-      textStyle: { fontSize: 11, color: '#6b7280' },
+      textStyle: { fontSize: 11, color: '#6b7280', fontWeight: 400 },
       inactiveColor: '#c5c5c7',
     },
     // 副图左侧名称：成交量 / MACD / KDJ
@@ -478,19 +621,19 @@ async function renderChart(list) {
       {
         text: '成交量',
         left: 8,
-        top: '51%',
+        top: '47%',
         textStyle: { fontSize: 11, color: 'rgba(107,114,128,0.85)', fontWeight: 600 },
       },
       {
         text: 'MACD',
         left: 8,
-        top: '65%',
+        top: '60%',
         textStyle: { fontSize: 11, color: 'rgba(107,114,128,0.85)', fontWeight: 600 },
       },
       {
         text: 'KDJ',
         left: 8,
-        top: '81%',
+        top: '75%',
         textStyle: { fontSize: 11, color: 'rgba(107,114,128,0.85)', fontWeight: 600 },
       },
     ],
@@ -550,7 +693,6 @@ async function renderChart(list) {
         }
         const crossBadge = badges.join('')
 
-        const maColors = { MA5: '#1d1d1f', MA10: '#f59e0b', MA20: '#7c3aed', MA60: '#5c6bc0' }
         const maVals = { MA5: ma5[idx], MA10: ma10[idx], MA20: ma20[idx], MA60: ma60[idx] }
         const maChips = ['MA5', 'MA10', 'MA20', 'MA60']
           .filter((name) => maSelected[name])
@@ -633,43 +775,140 @@ async function renderChart(list) {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      { left: 56, right: 20, top: showTd9.value ? 46 : 40, height: '38%' },
-      { left: 56, right: 20, top: '52%', height: '10%' },
-      { left: 56, right: 20, top: '66%', height: '12%' },
-      { left: 56, right: 20, top: '82%', height: '10%' },
+      // 主图 → 窄缝放日期 → 成交量；右侧略留白给 KDJ 标尺数字
+      { left: 56, right: 28, top: 36, height: '38%' },
+      { left: 56, right: 28, top: '47%', height: '9%' },
+      { left: 56, right: 28, top: '60%', height: '11%' },
+      { left: 56, right: 28, top: '75%', height: '10%' },
     ],
     xAxis: [
-      { type: 'category', data: dates, boundaryGap: true, axisLine: { onZero: false }, min: 'dataMin', max: 'dataMax' },
-      { type: 'category', gridIndex: 1, data: dates, boundaryGap: true, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' },
-      { type: 'category', gridIndex: 2, data: dates, boundaryGap: true, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' },
-      { type: 'category', gridIndex: 3, data: dates, boundaryGap: true, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' },
+      {
+        type: 'category',
+        data: dates,
+        boundaryGap: true,
+        axisLine: { onZero: false, lineStyle: { color: 'rgba(0,0,0,0.22)' } },
+        axisTick: { show: false },
+        axisLabel: {
+          show: true,
+          color: '#86868b',
+          fontSize: 11,
+          hideOverlap: true,
+          margin: 6,
+        },
+        min: 'dataMin',
+        max: 'dataMax',
+      },
+      {
+        type: 'category',
+        gridIndex: 1,
+        data: dates,
+        boundaryGap: true,
+        axisLabel: { show: false },
+        axisTick: { show: false },
+        axisLine: { show: false },
+        min: 'dataMin',
+        max: 'dataMax',
+      },
+      {
+        type: 'category',
+        gridIndex: 2,
+        data: dates,
+        boundaryGap: true,
+        axisLabel: { show: false },
+        axisTick: { show: false },
+        axisLine: { show: false },
+        min: 'dataMin',
+        max: 'dataMax',
+      },
+      {
+        type: 'category',
+        gridIndex: 3,
+        data: dates,
+        boundaryGap: true,
+        axisLabel: { show: false },
+        axisTick: { show: false },
+        axisLine: { show: false },
+        min: 'dataMin',
+        max: 'dataMax',
+      },
     ],
     yAxis: [
       {
         scale: true,
+        min: priceExtent.min,
+        max: priceExtent.max,
+        splitNumber: 4,
         splitArea: { show: true, areaStyle: { color: ['rgba(255,255,255,0.08)', 'rgba(0,0,0,0.015)'] } },
         splitLine: { lineStyle: { color: 'rgba(0,0,0,0.05)' } },
         axisLabel: { color: '#86868b', fontSize: 11 },
       },
       { scale: true, gridIndex: 1, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
       { scale: true, gridIndex: 2, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
-      { min: 0, max: 100, gridIndex: 3, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
+      {
+        min: kdjMin,
+        max: kdjMax,
+        gridIndex: 3,
+        splitNumber: 2,
+        axisLabel: { show: false },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
+      },
     ],
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: zoomStart, end: zoomEnd },
-      { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '95%', start: zoomStart, end: zoomEnd },
+      { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '94%', start: zoomStart, end: zoomEnd },
     ],
     series: [
       {
+        id: 'kline-main',
         name: 'K线',
         type: 'candlestick',
         data: ohlc,
         itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' },
+        // 阶段高低钉在当日影线最高/最低
+        markPoint: extremeMarkPoint,
       },
-      { name: maLegend.MA5, type: 'line', data: ma5, smooth: true, showSymbol: false, lineStyle: { width: 1.2, color: '#1d1d1f' } },
-      { name: maLegend.MA10, type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { width: 1.2, color: '#f59e0b' } },
-      { name: maLegend.MA20, type: 'line', data: ma20, smooth: true, showSymbol: false, lineStyle: { width: 1.5, color: '#7c3aed' } },
-      { name: maLegend.MA60, type: 'line', data: ma60, smooth: true, showSymbol: false, lineStyle: { width: 1.5, color: '#5c6bc0' } },
+      {
+        name: maLegend.MA5,
+        type: 'line',
+        data: ma5,
+        smooth: true,
+        showSymbol: false,
+        color: maColors.MA5,
+        itemStyle: { color: maColors.MA5 },
+        lineStyle: { width: 1.2, color: maColors.MA5 },
+      },
+      {
+        name: maLegend.MA10,
+        type: 'line',
+        data: ma10,
+        smooth: true,
+        showSymbol: false,
+        color: maColors.MA10,
+        itemStyle: { color: maColors.MA10 },
+        lineStyle: { width: 1.2, color: maColors.MA10 },
+      },
+      {
+        name: maLegend.MA20,
+        type: 'line',
+        data: ma20,
+        smooth: true,
+        showSymbol: false,
+        color: maColors.MA20,
+        itemStyle: { color: maColors.MA20 },
+        lineStyle: { width: 1.5, color: maColors.MA20 },
+      },
+      {
+        name: maLegend.MA60,
+        type: 'line',
+        data: ma60,
+        smooth: true,
+        showSymbol: false,
+        color: maColors.MA60,
+        itemStyle: { color: maColors.MA60 },
+        lineStyle: { width: 1.5, color: maColors.MA60 },
+      },
       {
         name: '九转卖',
         type: 'scatter',
@@ -752,9 +991,68 @@ async function renderChart(list) {
         },
         z: 10,
       },
-      { name: 'K', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: kLine, showSymbol: false, lineStyle: { width: 1.2, color: '#c79100' } },
-      { name: 'D', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: dLine, showSymbol: false, lineStyle: { width: 1.2, color: '#5c6bc0' } },
-      { name: 'J', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: jLine, showSymbol: false, lineStyle: { width: 1.2, color: '#6a4c93' } },
+      {
+        name: 'K',
+        type: 'line',
+        xAxisIndex: 3,
+        yAxisIndex: 3,
+        data: kLine,
+        showSymbol: false,
+        clip: false,
+        lineStyle: { width: 1.2, color: '#c79100' },
+      },
+      {
+        name: 'D',
+        type: 'line',
+        xAxisIndex: 3,
+        yAxisIndex: 3,
+        data: dLine,
+        showSymbol: false,
+        clip: false,
+        lineStyle: { width: 1.2, color: '#5c6bc0' },
+      },
+      {
+        name: 'J',
+        type: 'line',
+        xAxisIndex: 3,
+        yAxisIndex: 3,
+        data: jLine,
+        showSymbol: false,
+        clip: false,
+        lineStyle: { width: 1.2, color: '#6a4c93' },
+      },
+      {
+        // 不进图例：东财风格 20 / 50 / 80 虚线标尺
+        name: 'KDJ标尺',
+        type: 'line',
+        xAxisIndex: 3,
+        yAxisIndex: 3,
+        data: [],
+        silent: true,
+        legendHoverLink: false,
+        showSymbol: false,
+        tooltip: { show: false },
+        lineStyle: { opacity: 0, width: 0 },
+        markLine: {
+          silent: true,
+          symbol: 'none',
+          animation: false,
+          label: {
+            show: true,
+            position: 'end',
+            distance: 2,
+            color: '#a1a1a6',
+            fontSize: 10,
+            formatter: '{c}',
+          },
+          lineStyle: {
+            color: 'rgba(0, 0, 0, 0.28)',
+            type: 'dashed',
+            width: 1,
+          },
+          data: [{ yAxis: 20 }, { yAxis: 50 }, { yAxis: 80 }],
+        },
+      },
     ],
   }, true)
   chart.resize()
