@@ -1,0 +1,64 @@
+USE apex;
+
+CREATE TABLE IF NOT EXISTS stock_basic (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    code VARCHAR(16) NOT NULL COMMENT '证券代码',
+    name VARCHAR(64) NULL COMMENT '证券简称',
+    market VARCHAR(8) NULL COMMENT '市场 SH/SZ/BJ',
+    list_date DATE NULL COMMENT '上市日期',
+    st_flag TINYINT NOT NULL DEFAULT 0 COMMENT '是否ST 0否1是',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_stock_basic_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票基础信息';
+
+CREATE TABLE IF NOT EXISTS bar_daily (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    code VARCHAR(16) NOT NULL COMMENT '证券代码',
+    trade_date DATE NOT NULL COMMENT '交易日',
+    open_price DECIMAL(16, 4) NULL COMMENT '开盘价',
+    high_price DECIMAL(16, 4) NULL COMMENT '最高价',
+    low_price DECIMAL(16, 4) NULL COMMENT '最低价',
+    close_price DECIMAL(16, 4) NULL COMMENT '收盘价',
+    volume DECIMAL(20, 2) NULL COMMENT '成交量',
+    amount DECIMAL(20, 2) NULL COMMENT '成交额',
+    pct_chg DECIMAL(10, 4) NULL COMMENT '涨跌幅%',
+    source VARCHAR(32) NOT NULL DEFAULT 'eastmoney' COMMENT '数据来源',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_bar_daily_code_date (code, trade_date),
+    KEY idx_bar_daily_trade_date (trade_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='日线行情';
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    code VARCHAR(16) NOT NULL COMMENT '证券代码',
+    name VARCHAR(64) NULL COMMENT '证券简称',
+    market VARCHAR(8) NULL COMMENT '市场',
+    group_name VARCHAR(64) NOT NULL DEFAULT '默认' COMMENT '分组',
+    source VARCHAR(64) NOT NULL DEFAULT 'mx' COMMENT '来源',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_watchlist_code_group (code, group_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自选股';
+
+CREATE TABLE IF NOT EXISTS data_sync_log (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    sync_type VARCHAR(32) NOT NULL COMMENT '同步类型',
+    source VARCHAR(64) NOT NULL COMMENT '数据来源',
+    scope_desc VARCHAR(512) NULL COMMENT '同步范围描述',
+    status VARCHAR(16) NOT NULL COMMENT 'SUCCESS/FAIL/PARTIAL',
+    message VARCHAR(1024) NULL COMMENT '消息',
+    fetched_at DATETIME NOT NULL COMMENT '数据获取时间',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    PRIMARY KEY (id),
+    KEY idx_data_sync_log_type_time (sync_type, create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据同步日志';

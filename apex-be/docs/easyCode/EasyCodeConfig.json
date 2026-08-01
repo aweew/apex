@@ -1,0 +1,165 @@
+{
+  "author" : "Awe",
+  "version" : "1.2.4",
+  "userSecure" : "",
+  "currTypeMapperGroupName" : "Default",
+  "currTemplateGroupName" : "apex",
+  "currColumnConfigGroupName" : "Default",
+  "currGlobalConfigGroupName" : "Default",
+  "typeMapper" : {
+    "Default" : {
+      "name" : "Default",
+      "elementList" : [ {
+        "matchType" : "REGEX",
+        "columnType" : "varchar(\\(\\d+\\))?",
+        "javaType" : "java.lang.String"
+      }, {
+        "matchType" : "REGEX",
+        "columnType" : "char(\\(\\d+\\))?",
+        "javaType" : "java.lang.String"
+      }, {
+        "matchType" : "REGEX",
+        "columnType" : "(tiny|medium|long)*text",
+        "javaType" : "java.lang.String"
+      }, {
+        "matchType" : "REGEX",
+        "columnType" : "decimal(\\(\\d+,\\d+\\))?",
+        "javaType" : "java.math.BigDecimal"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "integer",
+        "javaType" : "java.lang.Integer"
+      }, {
+        "matchType" : "REGEX",
+        "columnType" : "(tiny|small|medium)*int(\\(\\d+\\))?",
+        "javaType" : "java.lang.Integer"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "int4",
+        "javaType" : "java.lang.Integer"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "int8",
+        "javaType" : "java.lang.Long"
+      }, {
+        "matchType" : "REGEX",
+        "columnType" : "bigint(\\(\\d+\\))?",
+        "javaType" : "java.lang.Long"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "date",
+        "javaType" : "java.time.LocalDate"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "datetime",
+        "javaType" : "java.time.LocalDateTime"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "timestamp",
+        "javaType" : "java.time.LocalDateTime"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "time",
+        "javaType" : "java.time.LocalTime"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "boolean",
+        "javaType" : "java.lang.Boolean"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "bigint(20) unsigned",
+        "javaType" : "java.lang.Long"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "tinyint(3) unsigned",
+        "javaType" : "java.lang.Integer"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "json",
+        "javaType" : "java.lang.String"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "int(10) unsigned zerofill",
+        "javaType" : "java.lang.Long"
+      }, {
+        "matchType" : "ORDINARY",
+        "columnType" : "decimal(10)",
+        "javaType" : "java.math.BigDecimal"
+      } ]
+    }
+  },
+  "template" : {
+    "apex" : {
+      "name" : "apex",
+      "elementList" : [ {
+        "name" : "debug.json.vm",
+        "code" : "// 禁止将生成结果写入到文件\n##$!callback.setWriteFile(false)\n\n//调试表原始对象\n##$!tool.debug($tableInfo.obj)\n\n//调试列原始对象\n$!tool.debug($tableInfo.fullColumn.get(0).obj)\n\n//调试列原始列类型\n##$!tool.debug($tableInfo.fullColumn.get(0).obj.dataType)\n\n//获取原始列类型中的字段\n##sqlType = $!tool.getField($tableInfo.fullColumn.get(0).obj.dataType, \"typeName\")\n\n//执行原始列类型中的方法\n##sqlTypeLen = $!tableInfo.fullColumn.get(0).obj.dataType.getLength()\n"
+      }, {
+        "name" : "controller.java.vm",
+        "code" : "##定义初始变量\n#set($tableName = $tool.append($tableInfo.name, \"Controller\"))\n\n##设置回调\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n$!callback.setFileName($tool.append($tableName, \".java\"))\n$!callback.setSavePath($tool.append($tableInfo.savePath, \"/controller\"))\n\n##拿到主键\n#if(!$tableInfo.pkColumn.isEmpty())\n    #set($pk = $tableInfo.pkColumn.get(0))\n#end\n\n#if($tableInfo.savePackageName)package $!{tableInfo.savePackageName}.#{end}controller;\n\nimport com.awe.apex.common.api.PageResponse;\nimport com.awe.apex.common.api.Result;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.convert.$!{tableInfo.name}Convert;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.dto.req.$!{tableInfo.name}AddReq;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.dto.req.$!{tableInfo.name}Req;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.dto.req.$!{tableInfo.name}UpdateReq;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.dto.resp.$!{tableInfo.name}Resp;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.entity.$!{tableInfo.name};\nimport $!{tableInfo.savePackageName}.service.I$!{tableInfo.name}Service;\nimport com.baomidou.mybatisplus.core.toolkit.Wrappers;\nimport com.baomidou.mybatisplus.extension.plugins.pagination.Page;\nimport jakarta.annotation.Resource;\nimport jakarta.validation.Valid;\nimport org.springframework.web.bind.annotation.*;\n\nimport java.util.List;\nimport java.util.Objects;\n\n/**\n * $!{tableInfo.comment}管理\n *\n * @author $!author\n * @since $!time.currTime()\n */\n@RestController\n@RequestMapping(\"/$!tool.firstLowerCase($tableInfo.name)\")\npublic class $!{tableName} {\n\n    @Resource\n    private I$!{tableInfo.name}Service $!tool.firstLowerCase($tableInfo.name)Service;\n    \n    @Resource\n    private $!{tableInfo.name}Convert $!tool.firstLowerCase($tableInfo.name)Convert;\n\n    /**\n     * 根据筛选条件获取$!{tableInfo.comment}列表(分页)\n     *\n     * @param pageReq   分页对象\n     * @param req       筛选条件\n     * @return 查询结果\n     */\n    @GetMapping(\"/page\")\n    public Result<PageResponse<$!{tableInfo.name}Resp>> page(Page<$!{tableInfo.name}> pageReq, $!{tableInfo.name}Req req) {\n        $!{tableInfo.name} $!{tool.firstLowerCase($tableInfo.name)} = $!{tool.firstLowerCase($tableInfo.name)}Convert.toEntity(req);\n        Page<$!{tableInfo.name}> page = this.$!{tool.firstLowerCase($tableInfo.name)}Service.page(pageReq, Wrappers.lambdaQuery($!{tool.firstLowerCase($tableInfo.name)}));\n        return Result.success(page, $!{tool.firstLowerCase($tableInfo.name)}Convert::toResp);\n    }\n    \n    /**\n     * 根据筛选条件获取$!{tableInfo.comment}列表(全量)\n     *\n     * @param req 筛选条件\n     * @return 查询结果\n     */\n    @GetMapping(\"/list\")\n    public Result<List<$!{tableInfo.name}Resp>> list($!{tableInfo.name}Req req) {\n        $!{tableInfo.name} $!{tool.firstLowerCase($tableInfo.name)} = $!{tool.firstLowerCase($tableInfo.name)}Convert.toEntity(req);\n        List<$!{tableInfo.name}> list = $!tool.firstLowerCase($tableInfo.name)Service.list(Wrappers.lambdaQuery($!{tool.firstLowerCase($tableInfo.name)}));\n        return Result.success(list, $!{tool.firstLowerCase($tableInfo.name)}Convert::toRespList);\n    }\n\n    /**\n     * 根据id获取$!{tableInfo.comment}\n     *\n     * @param id 主键\n     * @return 单条数据\n     */\n    @GetMapping(\"/{id}\")\n    public Result<$!{tableInfo.name}Resp> getById(@PathVariable(\"id\") $!pk.shortType id) {\n        $!{tableInfo.name} $!{tool.firstLowerCase($tableInfo.name)} = this.$!{tool.firstLowerCase($tableInfo.name)}Service.getById(id);\n        if (Objects.nonNull($!{tool.firstLowerCase($tableInfo.name)})) {\n            return Result.success($!{tool.firstLowerCase($tableInfo.name)}, $!{tool.firstLowerCase($tableInfo.name)}Convert::toResp);\n        }\n        return Result.success();\n    }\n\n    /**\n     * 新增$!{tableInfo.comment}\n     *\n     * @param req 新增对象\n     * @return 新增结果\n     */\n    @PostMapping\n    public Result<Void> save(@Valid @RequestBody $!{tableInfo.name}AddReq req) {\n        this.$!{tool.firstLowerCase($tableInfo.name)}Service.save($!{tool.firstLowerCase($tableInfo.name)}Convert.addToEntity(req));\n        return Result.success();\n    }\n\n    /**\n     * 更新$!{tableInfo.comment}\n     *\n     * @param req 更新对象\n     * @return 更新结果\n     */\n    @PutMapping\n    public Result<Void> update(@Valid @RequestBody $!{tableInfo.name}UpdateReq req) {\n        $!{tableInfo.name} $!{tool.firstLowerCase($tableInfo.name)} = this.$!{tool.firstLowerCase($tableInfo.name)}Service.getById(req.getId());\n        if (Objects.nonNull($!{tool.firstLowerCase($tableInfo.name)})) {\n            $!{tool.firstLowerCase($tableInfo.name)}Convert.updateToEntity(req, $!{tool.firstLowerCase($tableInfo.name)});\n            this.$!{tool.firstLowerCase($tableInfo.name)}Service.updateById($!{tool.firstLowerCase($tableInfo.name)});\n        }\n        return Result.success();\n    }\n\n    /**\n     * 删除$!{tableInfo.comment}\n     *\n     * @param id 主键\n     * @return 删除结果\n     */\n    @DeleteMapping(\"/{id}\")\n    public Result<Void> deleteById(@PathVariable(\"id\") $!pk.shortType id) {\n        this.$!{tool.firstLowerCase($tableInfo.name)}Service.removeById(id);\n        return Result.success();\n    }\n\n}"
+      }, {
+        "name" : "entity.java.vm",
+        "code" : "##引入宏定义\n$!{define.vm}\n\n##使用宏定义设置回调（保存位置与文件后缀）\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n#set($savePath = \"/domain/\" + $moduleName + \"/entity\")\n#save($savePath, \".java\")\n\n##使用宏定义设置包后缀\n#set($packageName = \"domain.\" + $moduleName + \".entity\")\n#setPackageSuffix($packageName)\n\n##使用全局变量实现默认包导入\n#if($tool.append($tableInfo.obj.getColumnAttrs($tableInfo.pkColumn.get(0).obj)).contains(\"AUTO_GENERATED\"))\nimport com.baomidou.mybatisplus.annotation.IdType;\nimport com.baomidou.mybatisplus.annotation.TableId;\n#end\nimport com.baomidou.mybatisplus.annotation.TableName;\nimport lombok.AllArgsConstructor;\nimport lombok.Data;\nimport lombok.NoArgsConstructor;\nimport lombok.experimental.SuperBuilder;\n\nimport java.io.Serial;\nimport java.io.Serializable;\n$!{autoImport.vm}\n\n##使用宏定义实现类注释信息\n#tableComment(\"实体类\")\n@Data\n@SuperBuilder\n@AllArgsConstructor\n@NoArgsConstructor\n@TableName(\"$tableInfo.obj.name\")\npublic class $!{tableInfo.name} implements Serializable {\n\n    @Serial\n    private static final long serialVersionUID = $!tool.serial();\n\n#foreach($column in $tableInfo.fullColumn)\n    /**\n     * ${column.comment}\n     */\n#if($tool.append($tableInfo.obj.getColumnAttrs($column.obj)).contains(\"AUTO_GENERATED\"))\n    @TableId(value = \"$!{column.name}\", type = IdType.AUTO)\n#end\n    private $!{tool.getClsNameByFullName($column.type)} $!{column.name};\n    \n#end\n}"
+      }, {
+        "name" : "req.java.vm",
+        "code" : "##引入宏定义\n$!{define.vm}\n\n##使用宏定义设置回调（保存位置与文件后缀）\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n#set($savePath = \"/domain/\" + $moduleName + \"/dto/req\")\n#save($savePath, \"Req.java\")\n\n##使用宏定义设置包后缀\n#set($packageName = \"domain.\" + $moduleName + \".dto.req\")\n#setPackageSuffix($packageName)\n\n##使用全局变量实现默认包导入\nimport lombok.AllArgsConstructor;\nimport lombok.Data;\nimport lombok.NoArgsConstructor;\nimport lombok.experimental.SuperBuilder;\n\nimport java.io.Serial;\nimport java.io.Serializable;\n$!{autoImport.vm}\n\n##使用宏定义实现类注释信息\n#tableComment(\"查询请求对象\")\n@Data\n@SuperBuilder\n@AllArgsConstructor\n@NoArgsConstructor\npublic class $!{tableInfo.name}Req implements Serializable {\n\n    @Serial\n    private static final long serialVersionUID = $!tool.serial();\n\n#foreach($column in $tableInfo.fullColumn)\n#if(${column.name} != \"createTime\" && ${column.name} != \"updateTime\" && ${column.name} != \"createUserId\" && ${column.name} != \"updateUserId\" && ${column.name} != \"isDelete\")\n    /**\n     * ${column.comment}\n     */\n    private $!{tool.getClsNameByFullName($column.type)} $!{column.name};\n\n#end\n#end\n}"
+      }, {
+        "name" : "addReq.java.vm",
+        "code" : "##引入宏定义\n$!{define.vm}\n\n##使用宏定义设置回调（保存位置与文件后缀）\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n#set($savePath = \"/domain/\" + $moduleName + \"/dto/req\")\n#save($savePath, \"AddReq.java\")\n\n##使用宏定义设置包后缀\n#set($packageName = \"domain.\" + $moduleName + \".dto.req\")\n#setPackageSuffix($packageName)\n\n##使用全局变量实现默认包导入\nimport lombok.AllArgsConstructor;\nimport lombok.Data;\nimport lombok.NoArgsConstructor;\nimport lombok.experimental.SuperBuilder;\n\nimport java.io.Serial;\nimport java.io.Serializable;\n$!{autoImport.vm}\n\n##使用宏定义实现类注释信息\n#tableComment(\"新增请求对象\")\n@Data\n@SuperBuilder\n@AllArgsConstructor\n@NoArgsConstructor\npublic class $!{tableInfo.name}AddReq implements Serializable {\n\n    @Serial\n    private static final long serialVersionUID = $!tool.serial();\n\n#foreach($column in $tableInfo.fullColumn)\n#if(${column.name} != \"id\" && ${column.name} != \"createTime\" && ${column.name} != \"updateTime\" && ${column.name} != \"createUserId\" && ${column.name} != \"updateUserId\" && ${column.name} != \"isDelete\")\n    /**\n     * ${column.comment}\n     */\n    private $!{tool.getClsNameByFullName($column.type)} $!{column.name};\n\n#end\n#end\n}"
+      }, {
+        "name" : "updateReq.java.vm",
+        "code" : "##引入宏定义\n$!{define.vm}\n\n##使用宏定义设置回调（保存位置与文件后缀）\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n#set($savePath = \"/domain/\" + $moduleName + \"/dto/req\")\n#save($savePath, \"UpdateReq.java\")\n\n##使用宏定义设置包后缀\n#set($packageName = \"domain.\" + $moduleName + \".dto.req\")\n#setPackageSuffix($packageName)\n\n##使用全局变量实现默认包导入\nimport lombok.AllArgsConstructor;\nimport lombok.Data;\nimport lombok.NoArgsConstructor;\nimport lombok.experimental.SuperBuilder;\n\nimport java.io.Serial;\nimport java.io.Serializable;\n$!{autoImport.vm}\n\n##使用宏定义实现类注释信息\n#tableComment(\"更新请求对象\")\n@Data\n@SuperBuilder\n@AllArgsConstructor\n@NoArgsConstructor\npublic class $!{tableInfo.name}UpdateReq implements Serializable {\n\n    @Serial\n    private static final long serialVersionUID = $!tool.serial();\n\n#foreach($column in $tableInfo.fullColumn)\n#if(${column.name} != \"createTime\" && ${column.name} != \"updateTime\" && ${column.name} != \"createUserId\" && ${column.name} != \"updateUserId\" && ${column.name} != \"isDelete\")\n    /**\n     * ${column.comment}\n     */\n    private $!{tool.getClsNameByFullName($column.type)} $!{column.name};\n\n#end\n#end\n}"
+      }, {
+        "name" : "resp.java.vm",
+        "code" : "##引入宏定义\n$!{define.vm}\n\n##使用宏定义设置回调（保存位置与文件后缀）\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n#set($savePath = \"/domain/\" + $moduleName + \"/dto/resp\")\n#save($savePath, \"Resp.java\")\n\n##使用宏定义设置包后缀\n#set($packageName = \"domain.\" + $moduleName + \".dto.resp\")\n#setPackageSuffix($packageName)\n\n##使用全局变量实现默认包导入\nimport lombok.AllArgsConstructor;\nimport lombok.Data;\nimport lombok.NoArgsConstructor;\nimport lombok.experimental.SuperBuilder;\n\nimport java.io.Serial;\nimport java.io.Serializable;\n$!{autoImport.vm}\n\n##使用宏定义实现类注释信息\n#tableComment(\"响应对象\")\n@Data\n@SuperBuilder\n@AllArgsConstructor\n@NoArgsConstructor\npublic class $!{tableInfo.name}Resp implements Serializable {\n\n    @Serial\n    private static final long serialVersionUID = $!tool.serial();\n#foreach($column in $tableInfo.fullColumn)\n\n#if(${column.name} != \"isDelete\")\n    /**\n     * ${column.comment}\n     */\n    private $!{tool.getClsNameByFullName($column.type)} $!{column.name};\n    #end\n#end\n}"
+      }, {
+        "name" : "convert.vm",
+        "code" : "##导入宏定义\n$!{define.vm}\n\n##定义初始变量\n#set($entityName = $tableInfo.name) ## 实体名，比如 User\n#set($convertName = $tool.append($entityName, \"Convert\"))\n\n## 设置回调\n##使用宏定义设置回调（保存位置与文件后缀）\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n#set($savePath = \"/domain/\" + $moduleName + \"/convert\")\n#save($savePath, \"Convert.java\")\n\n## 包路径（宏定义）\n#set($packageName = \"domain.\" + $moduleName + \".convert\")\n#setPackageSuffix($packageName)\n\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.entity.$!{tableInfo.name};\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.dto.req.$!{tableInfo.name}AddReq;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.dto.req.$!{tableInfo.name}UpdateReq;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.dto.req.$!{tableInfo.name}Req;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.dto.resp.$!{tableInfo.name}Resp;\nimport com.awe.apex.common.convert.BaseConvert;\nimport org.mapstruct.Mapper;\n\n/**\n * $!{tableInfo.comment}转换器\n *\n * @author Awe\n * @since $!time.currTime()\n */\n@Mapper(componentModel = \"spring\")\npublic interface $!convertName extends BaseConvert<$!entityName, $!{tableInfo.name}AddReq, $!{tableInfo.name}UpdateReq, $!{tableInfo.name}Req, $!{tableInfo.name}Resp> {\n\n}"
+      }, {
+        "name" : "service.java.vm",
+        "code" : "##导入宏定义\n$!{define.vm}\n\n##定义初始变量\n#set($tableName = $tool.append($tableInfo.name, \"Service\"))\n##设置回调\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n$!callback.setFileName($tool.append(\"I\", $tableName, \".java\"))\n$!callback.setSavePath($tool.append($tableInfo.savePath, \"/service\"))\n\n##包路径（宏定义）\n#setPackageSuffix(\"service\")\n\nimport com.baomidou.mybatisplus.extension.service.IService;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.entity.$!{tableInfo.name};\n\n##表注释（宏定义）\n#tableComment(\"服务接口\")\npublic interface I$!{tableName} extends IService<$!tableInfo.name> {\n    \n}"
+      }, {
+        "name" : "serviceImpl.java.vm",
+        "code" : "##导入宏定义\n$!{define.vm}\n\n##设置表后缀（宏定义）\n#setTableSuffix(\"ServiceImpl\")\n\n##保存文件（宏定义）\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n#save(\"/service/impl\", \"ServiceImpl.java\")\n\n##包路径（宏定义）\n#setPackageSuffix(\"service.impl\")\n\nimport com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.entity.$!{tableInfo.name};\nimport $!{tableInfo.savePackageName}.mapper.$!{tableInfo.name}Mapper;\nimport $!{tableInfo.savePackageName}.service.I$!{tableInfo.name}Service;\nimport org.springframework.stereotype.Service;\n\n##表注释（宏定义）\n#tableComment(\"服务实现类\")\n@Service(\"$!tool.firstLowerCase($tableInfo.name)Service\")\npublic class $!{tableName} extends ServiceImpl<$!{tableInfo.name}Mapper, $!{tableInfo.name}> implements I$!{tableInfo.name}Service {\n    \n}"
+      }, {
+        "name" : "mapper.java.vm",
+        "code" : "##导入宏定义\n$!{define.vm}\n\n##设置表后缀（宏定义）\n#setTableSuffix(\"Mapper\")\n\n##保存文件（宏定义）\n#save(\"/mapper\", \"Mapper.java\")\n\n##包路径（宏定义）\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n#setPackageSuffix(\"mapper\")\n\nimport com.baomidou.mybatisplus.core.mapper.BaseMapper;\nimport $!{tableInfo.savePackageName}.domain.$!{moduleName}.entity.$!{tableInfo.name};\n\n##表注释（宏定义）\n#tableComment(\"数据库访问层\")\npublic interface $!{tableName} extends BaseMapper<$!{tableInfo.name}> {\n\n}"
+      }, {
+        "name" : "mapper.xml.vm",
+        "code" : "##引入mybatis支持\n$!{mybatisSupport.vm}\n\n##设置保存名称与保存位置\n#set($moduleName = $!tool.firstLowerCase($tableInfo.name))\n$!callback.setFileName($tool.append($!{tableInfo.name}, \"Mapper.xml\"))\n$!callback.setSavePath($tool.append($modulePath, \"/src/main/resources/mapper\"))\n\n##拿到主键\n#if(!$tableInfo.pkColumn.isEmpty())\n    #set($pk = $tableInfo.pkColumn.get(0))\n#end\n\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE mapper PUBLIC \"-//mybatis.org//DTD Mapper 3.0//EN\" \"http://mybatis.org/dtd/mybatis-3-mapper.dtd\">\n<mapper namespace=\"$!{tableInfo.savePackageName}.mapper.$!{tableInfo.name}Mapper\">\n\n</mapper>"
+      } ]
+    }
+  },
+  "columnConfig" : {
+    "Default" : {
+      "name" : "Default",
+      "elementList" : [ {
+        "title" : "disable",
+        "type" : "BOOLEAN",
+        "selectValue" : ""
+      }, {
+        "title" : "support",
+        "type" : "SELECT",
+        "selectValue" : "add,edit,query,del,ui"
+      } ]
+    }
+  },
+  "globalConfig" : {
+    "Default" : {
+      "name" : "Default",
+      "elementList" : [ {
+        "name" : "autoImport.vm",
+        "value" : "##自动导入包（仅导入实体属性需要的包，通常用于实体类）\n#foreach($import in $importList)\nimport $!import;\n#end"
+      }, {
+        "name" : "define.vm",
+        "value" : "##（Velocity宏定义）\n\n##定义设置表名后缀的宏定义，调用方式：#setTableSuffix(\"Test\")\n#macro(setTableSuffix $suffix)\n    #set($tableName = $!tool.append($tableInfo.name, $suffix))\n#end\n\n##定义设置包名后缀的宏定义，调用方式：#setPackageSuffix(\"Test\")\n#macro(setPackageSuffix $suffix)\n#if($suffix!=\"\")package #end#if($tableInfo.savePackageName!=\"\")$!{tableInfo.savePackageName}.#{end}$!suffix;\n#end\n\n##定义直接保存路径与文件名简化的宏定义，调用方式：#save(\"/entity\", \".java\")\n#macro(save $path $fileName)\n    $!callback.setSavePath($tool.append($tableInfo.savePath, $path))\n    $!callback.setFileName($tool.append($tableInfo.name, $fileName))\n#end\n\n##定义表注释的宏定义，调用方式：#tableComment(\"注释信息\")\n#macro(tableComment $desc)\n/**\n * $!{tableInfo.comment}$desc\n *\n * @author $!author\n * @since $!time.currTime()\n */\n#end\n\n##定义GET，SET方法的宏定义，调用方式：#getSetMethod($column)\n#macro(getSetMethod $column)\n\n    public $!{tool.getClsNameByFullName($column.type)} get$!{tool.firstUpperCase($column.name)}() {\n        return $!{column.name};\n    }\n\n    public void set$!{tool.firstUpperCase($column.name)}($!{tool.getClsNameByFullName($column.type)} $!{column.name}) {\n        this.$!{column.name} = $!{column.name};\n    }\n#end"
+      }, {
+        "name" : "init.vm",
+        "value" : "##初始化区域\n\n##去掉表的t_前缀\n$!tableInfo.setName($tool.getClassName($tableInfo.obj.name.replaceFirst(\"book_\",\"\")))\n\n##参考阿里巴巴开发手册，POJO 类中布尔类型的变量，都不要加 is 前缀，否则部分框架解析会引起序列化错误\n#foreach($column in $tableInfo.fullColumn)\n#if($column.name.startsWith(\"is\") && $column.type.equals(\"java.lang.Boolean\"))\n    $!column.setName($tool.firstLowerCase($column.name.substring(2)))\n#end\n#end\n\n##实现动态排除列\n#set($temp = $tool.newHashSet(\"testCreateTime\", \"otherColumn\"))\n#foreach($item in $temp)\n    #set($newList = $tool.newArrayList())\n    #foreach($column in $tableInfo.fullColumn)\n        #if($column.name!=$item)\n            ##带有反回值的方法调用时使用$tool.call来消除返回值\n            $tool.call($newList.add($column))\n        #end\n    #end\n    ##重新保存\n    $tableInfo.setFullColumn($newList)\n#end\n\n##对importList进行篡改\n#set($temp = $tool.newHashSet())\n#foreach($column in $tableInfo.fullColumn)\n    #if(!$column.type.startsWith(\"java.lang.\"))\n        ##带有反回值的方法调用时使用$tool.call来消除返回值\n        $tool.call($temp.add($column.type))\n    #end\n#end\n##覆盖\n#set($importList = $temp)"
+      }, {
+        "name" : "mybatisSupport.vm",
+        "value" : "##针对Mybatis 进行支持，主要用于生成xml文件\n#foreach($column in $tableInfo.fullColumn)\n    ##储存列类型\n    $tool.call($column.ext.put(\"sqlType\", $tool.getField($column.obj.dataType, \"typeName\")))\n    #if($tool.newHashSet(\"java.lang.String\").contains($column.type))\n        #set($jdbcType=\"VARCHAR\")\n    #elseif($tool.newHashSet(\"java.lang.Boolean\", \"boolean\").contains($column.type))\n        #set($jdbcType=\"BOOLEAN\")\n    #elseif($tool.newHashSet(\"java.lang.Byte\", \"byte\").contains($column.type))\n        #set($jdbcType=\"BYTE\")\n    #elseif($tool.newHashSet(\"java.lang.Integer\", \"int\", \"java.lang.Short\", \"short\").contains($column.type))\n        #set($jdbcType=\"INTEGER\")\n    #elseif($tool.newHashSet(\"java.lang.Long\", \"long\").contains($column.type))\n        #set($jdbcType=\"INTEGER\")\n    #elseif($tool.newHashSet(\"java.lang.Float\", \"float\", \"java.lang.Double\", \"double\").contains($column.type))\n        #set($jdbcType=\"NUMERIC\")\n    #elseif($tool.newHashSet(\"java.util.Date\", \"java.sql.Timestamp\", \"java.time.Instant\", \"java.time.LocalDateTime\", \"java.time.OffsetDateTime\", \"\tjava.time.ZonedDateTime\").contains($column.type))\n        #set($jdbcType=\"TIMESTAMP\")\n    #elseif($tool.newHashSet(\"java.sql.Date\", \"java.time.LocalDate\").contains($column.type))\n        #set($jdbcType=\"TIMESTAMP\")\n    #else\n        ##其他类型\n        #set($jdbcType=\"VARCHAR\")\n    #end\n    $tool.call($column.ext.put(\"jdbcType\", $jdbcType))\n#end\n\n##定义宏，查询所有列\n#macro(allSqlColumn)#foreach($column in $tableInfo.fullColumn)$column.obj.name#if($velocityHasNext), #end#end#end\n"
+      } ]
+    }
+  }
+}

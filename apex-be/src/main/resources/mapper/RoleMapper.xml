@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.awe.apex.manager.mapper.RoleMapper">
+
+    <select id="listByUserId" resultType="com.awe.apex.manager.domain.role.dto.resp.RoleResp">
+        SELECT
+            t2.id,
+            t2.code,
+            t2.name,
+            t2.is_system,
+            t2.status,
+            t2.remark,
+            t2.create_user_id,
+            t2.update_user_id,
+            t2.create_time,
+            t2.update_time,
+            t2.is_delete
+        FROM sys_user_role t1
+             LEFT JOIN sys_role t2 ON t1.role_id = t2.id
+        WHERE t1.user_id = #{userId}
+    </select>
+
+</mapper>

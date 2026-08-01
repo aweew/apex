@@ -1,0 +1,76 @@
+# 服务配置
+server:
+  port: 8080
+  servlet:
+    context-path: /apex
+
+# spring 配置
+spring:
+  application:
+    name: apex
+  profiles:
+    active: local
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+      idle-timeout: 10000
+    driver-class-name: com.p6spy.engine.spy.P6SpyDriver
+
+# mybatis-plus 配置
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/*.xml
+  type-aliases-package: com.awe.apex.manager.domain,com.awe.apex.quant.domain
+  global-config:
+    dbConfig:
+      idType: ASSIGN_ID
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+# Swagger3 配置
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tagsSorter: alpha
+    use-root-path: true
+  cache:
+    disabled: true
+
+# 日志
+logging:
+  level:
+    org.springframework: warn
+    com.awe: info
+    com.awe.apex.common.log.P6SpySlf4JLogger: warn
+  config: classpath:logback-spring.xml
+
+# 全局线程池相关配置
+thread-pool:
+  enabled: true
+  queueCapacity: 128
+  keepAliveSeconds: 300
+
+# Sa-Token 配置
+sa-token:
+  token-name: satoken
+  timeout: 2592000
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  token-style: uuid
+  jwt-secret-key: rtFDdiyVAjM8EYqwNgbS
+  is-log: true
+
+# Apex 业务配置
+apex:
+  mx-output-dir: ${user.dir}/../../.mx_output
+  local-username: admin
+  local-password: admin123

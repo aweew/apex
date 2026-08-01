@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.awe.apex.manager.mapper.MenuMapper">
+
+    <select id="listAllMenusByUserId" resultType="com.awe.apex.manager.domain.menu.dto.resp.MenuResp">
+        SELECT
+            t4.id,
+            t4.name,
+            t4.title,
+            t4.code,
+            t4.parent_id,
+            t4.type,
+            t4.status,
+            t4.level,
+            t4.sort,
+            t4.url,
+            t4.icon,
+            t4.open_type,
+            t4.path,
+            t4.component,
+            t4.query_param,
+            t4.is_frame,
+            t4.is_cache,
+            t4.is_visible,
+            t4.remark,
+            t4.create_user_id,
+            t4.update_user_id,
+            t4.create_time,
+            t4.update_time,
+            t4.is_delete
+        FROM sys_user t1
+             LEFT JOIN sys_user_role t2 ON t2.user_id = t1.id AND t2.is_delete = 0
+             LEFT JOIN sys_role_menu t3 ON t3.role_id = t2.role_id AND t3.is_delete = 0
+             LEFT JOIN sys_menu t4 ON t3.menu_id = t4.id AND t4.is_delete = 0
+        WHERE t1.id = #{userId}
+          AND t1.is_delete = 0
+    </select>
+
+    <select id="listAllMenusByRoleId" resultType="com.awe.apex.manager.domain.menu.dto.resp.MenuResp">
+        SELECT
+            DISTINCT t4.id,
+            t4.name,
+            t4.title,
+            t4.code,
+            t4.parent_id,
+            t4.type,
+            t4.status,
+            t4.level,
+            t4.sort,
+            t4.url,
+            t4.icon,
+            t4.open_type,
+            t4.path,
+            t4.component,
+            t4.query_param,
+            t4.is_frame,
+            t4.is_cache,
+            t4.is_visible,
+            t4.remark,
+            t4.create_user_id,
+            t4.update_user_id,
+            t4.create_time,
+            t4.update_time,
+            t4.is_delete
+        FROM sys_role t1
+             LEFT JOIN sys_role_menu t2 ON t2.role_id = t1.id AND t2.is_delete = 0
+             LEFT JOIN sys_menu t4 ON t2.menu_id = t4.id AND t4.is_delete = 0
+        WHERE t1.id = #{roleId}
+          AND t1.is_delete = 0
+    </select>
+
+    <select id="listPermissionsByUserId" resultType="java.lang.String">
+        SELECT DISTINCT t3.code
+        FROM sys_user_role t1
+        LEFT JOIN sys_role_menu t2 ON t2.role_id = t1.role_id AND t2.is_delete = 0
+        LEFT JOIN sys_menu t3 ON t2.menu_id = t3.id AND t3.is_delete = 0
+        WHERE t1.user_id = #{userId}
+          AND t1.is_delete = 0
+    </select>
+
+    <select id="listPermissionsByRoleId" resultType="java.lang.String">
+        SELECT DISTINCT t3.code
+        FROM sys_user_role t1
+        LEFT JOIN sys_role_menu t2 ON t2.role_id = t1.role_id AND t2.is_delete = 0
+        LEFT JOIN sys_menu t3 ON t2.menu_id = t3.id AND t3.is_delete = 0
+        WHERE t1.role_id = #{roleId}
+          AND t1.is_delete = 0
+    </select>
+
+</mapper>

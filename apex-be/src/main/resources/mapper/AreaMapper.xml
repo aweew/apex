@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.awe.apex.manager.mapper.AreaMapper">
+
+    <resultMap type="com.awe.apex.manager.domain.area.entity.Area" id="AreaMap">
+        <result property="id" column="id" jdbcType="INTEGER"/>
+        <result property="code" column="code" jdbcType="VARCHAR"/>
+        <result property="name" column="name" jdbcType="VARCHAR"/>
+        <result property="nameAlias" column="name_alias" jdbcType="VARCHAR"/>
+        <result property="parentCode" column="parent_code" jdbcType="VARCHAR"/>
+        <result property="level" column="level" jdbcType="INTEGER"/>
+        <result property="chain" column="chain" jdbcType="VARCHAR"/>
+        <result property="chainCode" column="chain_code" jdbcType="VARCHAR"/>
+        <result property="sort" column="sort" jdbcType="INTEGER"/>
+        <result property="lon" column="lon" jdbcType="VARCHAR"/>
+        <result property="lat" column="lat" jdbcType="VARCHAR"/>
+        <result property="createUserId" column="create_user_id" jdbcType="INTEGER"/>
+        <result property="updateUserId" column="update_user_id" jdbcType="INTEGER"/>
+        <result property="createTime" column="create_time" jdbcType="TIMESTAMP"/>
+        <result property="updateTime" column="update_time" jdbcType="TIMESTAMP"/>
+        <result property="deleted" column="deleted" jdbcType="INTEGER"/>
+    </resultMap>
+
+</mapper>
