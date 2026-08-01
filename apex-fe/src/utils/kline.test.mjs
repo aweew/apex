@@ -11,9 +11,9 @@ test('periodBucket week uses Monday', () => {
 
 test('aggregateBars week OHLC', () => {
   const daily = [
-    { tradeDate: '2026-03-09', openPrice: 10, highPrice: 11, lowPrice: 9.5, closePrice: 10.5, volume: 100, amount: 1000 },
-    { tradeDate: '2026-03-10', openPrice: 10.5, highPrice: 12, lowPrice: 10, closePrice: 11.5, volume: 200, amount: 2000 },
-    { tradeDate: '2026-03-16', openPrice: 11, highPrice: 11.2, lowPrice: 10.8, closePrice: 11.1, volume: 50, amount: 500 },
+    { tradeDate: '2026-03-09', openPrice: 10, highPrice: 11, lowPrice: 9.5, closePrice: 10.5, volume: 100, amount: 1000, turnoverRate: 1.1 },
+    { tradeDate: '2026-03-10', openPrice: 10.5, highPrice: 12, lowPrice: 10, closePrice: 11.5, volume: 200, amount: 2000, turnoverRate: 2.2 },
+    { tradeDate: '2026-03-16', openPrice: 11, highPrice: 11.2, lowPrice: 10.8, closePrice: 11.1, volume: 50, amount: 500, turnoverRate: 3.3 },
   ]
   const weekly = aggregateBars(daily, 'week')
   assert.equal(weekly.length, 2)
@@ -22,7 +22,9 @@ test('aggregateBars week OHLC', () => {
   assert.equal(weekly[0].highPrice, 12)
   assert.equal(weekly[0].lowPrice, 9.5)
   assert.equal(weekly[0].volume, 300)
+  assert.equal(weekly[0].turnoverRate, 2.2)
   assert.equal(weekly[1].tradeDate, '2026-03-16')
+  assert.equal(weekly[1].turnoverRate, 3.3)
 })
 
 test('tdSequential marks sell 9 after rising setup', () => {

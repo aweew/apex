@@ -17,3 +17,11 @@ export function fetchStockFundamental(code, periodLimit = 40, reportPeriodLimit 
     params: { periodLimit, reportPeriodLimit },
   })
 }
+
+export function fetchCompanyProfile(code, refresh = false) {
+  return http.get(`/api/stock/${code}/profile`, { params: { refresh } })
+}
+
+export function refreshCompanyProfile(code) {
+  return http.post(`/api/stock/${code}/profile/refresh`)
+}

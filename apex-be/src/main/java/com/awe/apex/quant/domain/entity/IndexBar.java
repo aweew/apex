@@ -16,14 +16,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * 日线行情
+ * 指数日线
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("bar_daily")
-public class BarDaily implements Serializable {
+@TableName("index_bar")
+public class IndexBar implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -35,9 +35,19 @@ public class BarDaily implements Serializable {
     private Long id;
 
     /**
-     * 证券代码
+     * 内部代码，如 CN_SH / US_DJI
      */
     private String code;
+
+    /**
+     * 指数名称
+     */
+    private String name;
+
+    /**
+     * 市场区域 CN/HK/JP/KR/US
+     */
+    private String region;
 
     /**
      * 交易日
@@ -45,22 +55,22 @@ public class BarDaily implements Serializable {
     private LocalDate tradeDate;
 
     /**
-     * 开盘价
+     * 开盘
      */
     private BigDecimal openPrice;
 
     /**
-     * 最高价
+     * 最高
      */
     private BigDecimal highPrice;
 
     /**
-     * 最低价
+     * 最低
      */
     private BigDecimal lowPrice;
 
     /**
-     * 收盘价
+     * 收盘
      */
     private BigDecimal closePrice;
 
@@ -78,11 +88,6 @@ public class BarDaily implements Serializable {
      * 涨跌幅%
      */
     private BigDecimal pctChg;
-
-    /**
-     * 换手率%
-     */
-    private BigDecimal turnoverRate;
 
     /**
      * 数据来源

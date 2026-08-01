@@ -23,6 +23,11 @@ public class SignalConfluenceItem {
     private String code;
 
     /**
+     * 证券名称
+     */
+    private String name;
+
+    /**
      * 方向
      */
     private String side;

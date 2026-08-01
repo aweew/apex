@@ -7,14 +7,17 @@ import com.awe.apex.quant.domain.dto.CodeCountItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceResp;
 import com.awe.apex.quant.domain.dto.SignalForwardResp;
+import com.awe.apex.quant.domain.dto.SignalItemResp;
 import com.awe.apex.quant.domain.dto.SignalRunReq;
 import com.awe.apex.quant.domain.dto.SignalScoreBucketItem;
 import com.awe.apex.quant.domain.dto.SignalStatsResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
+import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
+import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StrategySignalMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
@@ -63,6 +66,9 @@ public class SignalServiceImpl implements ISignalService {
 
     @Resource
     private WatchlistMapper watchlistMapper;
+
+    @Resource
+    private StockBasicMapper stockBasicMapper;
 
     @Resource
     private IUniverseService universeService;
@@ -146,6 +152,41 @@ public class SignalServiceImpl implements ISignalService {
             if (result.size() >= size) {
                 break;
             }
+        }
+        return result;
+    }
+
+    /**
+     * 信号列表补充证券名称
+     *
+     * @param signals 信号
+     * @return 含名称的列表
+     */
+    @Override
+    public List<SignalItemResp> toItemRespList(List<StrategySignalEntity> signals) {
+        if (CollUtil.isEmpty(signals)) {
+            return new ArrayList<>();
+        }
+        Set<String> codes = new HashSet<>();
+        for (StrategySignalEntity signal : signals) {
+            if (StringUtils.isNotBlank(signal.getCode())) {
+                codes.add(signal.getCode());
+            }
+        }
+        Map<String, String> nameMap = loadNameMap(codes);
+        List<SignalItemResp> result = new ArrayList<>();
+        for (StrategySignalEntity signal : signals) {
+            result.add(SignalItemResp.builder()
+                    .id(signal.getId())
+                    .code(signal.getCode())
+                    .name(nameMap.get(signal.getCode()))
+                    .strategyId(signal.getStrategyId())
+                    .signalDate(signal.getSignalDate())
+                    .side(signal.getSide())
+                    .score(signal.getScore())
+                    .reasonJson(signal.getReasonJson())
+                    .createTime(signal.getCreateTime())
+                    .build());
         }
         return result;
     }
@@ -265,6 +306,14 @@ public class SignalServiceImpl implements ISignalService {
         });
         if (items.size() > 30) {
             items = items.subList(0, 30);
+        }
+        Set<String> codes = new HashSet<>();
+        for (SignalConfluenceItem item : items) {
+            codes.add(item.getCode());
+        }
+        Map<String, String> nameMap = loadNameMap(codes);
+        for (SignalConfluenceItem item : items) {
+            item.setName(nameMap.get(item.getCode()));
         }
         return SignalConfluenceResp.builder()
                 .days(n)
@@ -490,6 +539,22 @@ public class SignalServiceImpl implements ISignalService {
             }
         }
         return selected;
+    }
+
+    private Map<String, String> loadNameMap(Set<String> codes) {
+        Map<String, String> nameMap = new HashMap<>();
+        if (CollUtil.isEmpty(codes)) {
+            return nameMap;
+        }
+        List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                .in(StockBasic::getCode, codes)
+                .select(StockBasic::getCode, StockBasic::getName));
+        for (StockBasic basic : basics) {
+            if (StringUtils.isNotBlank(basic.getCode())) {
+                nameMap.put(basic.getCode(), basic.getName());
+            }
+        }
+        return nameMap;
     }
 
     private StrategySignalEntity toEntity(StrategySignalResult result) {

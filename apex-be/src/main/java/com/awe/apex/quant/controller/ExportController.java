@@ -12,7 +12,7 @@ import com.awe.apex.quant.domain.dto.WatchlistResp;
 import com.awe.apex.quant.domain.entity.BacktestTrade;
 import com.awe.apex.quant.domain.entity.JournalTrade;
 import com.awe.apex.quant.domain.entity.PaperOrder;
-import com.awe.apex.quant.domain.entity.StrategySignalEntity;
+import com.awe.apex.quant.domain.dto.SignalItemResp;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.service.IBacktestService;
 import com.awe.apex.quant.service.IJournalService;
@@ -178,15 +178,16 @@ public class ExportController {
                               @RequestParam(defaultValue = "true") Boolean dedupeByCode,
                               HttpServletResponse response) {
         try {
-            List<StrategySignalEntity> signals = signalService.latest(limit, Boolean.TRUE.equals(dedupeByCode));
+            List<SignalItemResp> signals = signalService.toItemRespList(
+                    signalService.latest(limit, Boolean.TRUE.equals(dedupeByCode)));
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.setContentType("text/csv;charset=UTF-8");
             response.setHeader("Content-Disposition", "attachment; filename=signals.csv");
             PrintWriter writer = response.getWriter();
-            writer.println("signal_date,code,strategy_id,side,score,reason_json");
-            for (StrategySignalEntity signal : signals) {
-                writer.printf("%s,%s,%s,%s,%s,%s%n",
-                        signal.getSignalDate(), signal.getCode(), signal.getStrategyId(),
+            writer.println("signal_date,code,name,strategy_id,side,score,reason_json");
+            for (SignalItemResp signal : signals) {
+                writer.printf("%s,%s,%s,%s,%s,%s,%s%n",
+                        signal.getSignalDate(), signal.getCode(), safe(signal.getName()), signal.getStrategyId(),
                         signal.getSide(), signal.getScore(), safe(signal.getReasonJson()));
             }
             writer.flush();

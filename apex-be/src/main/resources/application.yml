@@ -78,3 +78,9 @@ apex:
     python-cmd: python
     # IDEA 工作目录通常为 apex-be，相对仓库根为 ../scripts
     script-path: ${user.dir}/../scripts/market_data/sync_hot.py
+  news:
+    python-cmd: python
+    script-path: ${user.dir}/../scripts/market_data/sync_news.py
+  index:
+    python-cmd: python
+    script-path: ${user.dir}/../scripts/market_data/sync_index.py

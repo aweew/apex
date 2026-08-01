@@ -88,7 +88,7 @@ async function onPaperOrder(row) {
     const buy = row.side !== 'SELL'
     const { value } = await ElMessageBox.prompt(
       buy ? '目标仓位比例(如 0.1=10%)，也可填整百股数量；留空则按风控单票上限一键下单' : '卖出数量(股)；留空则按信号全平',
-      `${row.code} ${row.side}`,
+      `${row.code} ${row.name || ''} ${row.side}`,
       {
         inputValue: buy ? '0.1' : '',
         confirmButtonText: '下单',
@@ -132,8 +132,8 @@ async function onQuickFromSignal(row) {
   try {
     await ElMessageBox.confirm(
       row.side === 'SELL'
-        ? `按信号卖出全部持仓 ${row.code}？`
-        : `按风控单票上限买入 ${row.code}？`,
+        ? `按信号卖出全部持仓 ${row.code} ${row.name || ''}？`
+        : `按风控单票上限买入 ${row.code} ${row.name || ''}？`,
       '信号一键下单',
       { type: 'warning' },
     )
@@ -154,7 +154,7 @@ async function onQuickFromSignal(row) {
 }
 
 function exportCsv() {
-  const header = ['signalDate', 'code', 'strategyId', 'side', 'score', 'reasonJson']
+  const header = ['signalDate', 'code', 'name', 'strategyId', 'side', 'score', 'reasonJson']
   const lines = [header.join(',')]
   for (const row of filtered.value) {
     lines.push(
@@ -179,7 +179,7 @@ onMounted(load)
   <div class="page">
     <header class="header">
       <div>
-        <h1>策略信号</h1>
+        <h1><TermTip term="strategy_signal">策略信号</TermTip></h1>
         <p>
           S1/S2/S3 · 股票池 {{ universeCount }} 只 · 可一键模拟下单
           <template v-if="stats">
@@ -209,6 +209,11 @@ onMounted(load)
       :closable="false"
       style="margin-bottom: 12px"
     />
+    <p class="term-help">
+      <TermTip term="forward_eval">什么是前瞻评估？</TermTip>
+      ·
+      <TermTip term="confluence">什么是策略共振？</TermTip>
+    </p>
     <el-alert
       v-if="confluence"
       :title="`策略共振：${confluence.message}`"
@@ -220,9 +225,10 @@ onMounted(load)
       v-if="confluence?.items?.length"
       :data="confluence.items"
       size="small"
-      style="margin-bottom: 12px; max-width: 720px"
+      style="margin-bottom: 12px; max-width: 840px"
     >
       <el-table-column prop="code" label="代码" width="100" />
+      <el-table-column prop="name" label="名称" width="120" />
       <el-table-column prop="side" label="方向" width="80" />
       <el-table-column prop="strategyCount" label="策略数" width="80" />
       <el-table-column label="策略" min-width="140">
@@ -291,6 +297,7 @@ onMounted(load)
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
         </template>
       </el-table-column>
+      <el-table-column prop="name" label="名称" width="120" show-overflow-tooltip />
       <el-table-column prop="strategyId" label="策略" width="80" />
       <el-table-column prop="side" label="方向" width="80" />
       <el-table-column prop="score" label="评分" width="90" sortable />
@@ -307,5 +314,9 @@ onMounted(load)
 </template>
 
 <style scoped>
-/* 共用样式见 style.css */
+.term-help {
+  margin: -4px 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
 </style>

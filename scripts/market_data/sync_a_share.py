@@ -194,17 +194,18 @@ def upsert_bars(conn, code: str, bars: List[Tuple]) -> int:
     sql = """
     INSERT INTO bar_daily
       (code, trade_date, open_price, high_price, low_price, close_price,
-       volume, amount, pct_chg, source, create_time, update_time, deleted)
+       volume, amount, pct_chg, turnover_rate, source, create_time, update_time, deleted)
     VALUES
-      (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 0)
+      (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 0)
     ON DUPLICATE KEY UPDATE
       open_price = VALUES(open_price),
       high_price = VALUES(high_price),
       low_price = VALUES(low_price),
       close_price = VALUES(close_price),
       volume = VALUES(volume),
-      amount = VALUES(amount),
-      pct_chg = VALUES(pct_chg),
+      amount = COALESCE(VALUES(amount), amount),
+      pct_chg = COALESCE(VALUES(pct_chg), pct_chg),
+      turnover_rate = COALESCE(VALUES(turnover_rate), turnover_rate),
       source = VALUES(source),
       update_time = NOW(),
       deleted = 0
@@ -216,25 +217,13 @@ def upsert_bars(conn, code: str, bars: List[Tuple]) -> int:
 
 
 def fetch_hist_bars(code: str, start: str, end: str):
-    """优先新浪日线；失败再试东财（本机东财常被掐断）。"""
+    """东财优先（含换手率）；失败再试新浪。"""
     import akshare as ak
 
     market = resolve_market(code)
     prefix = {"SH": "sh", "SZ": "sz", "BJ": "bj"}.get(market, "sz")
     sina_symbol = f"{prefix}{code}"
     errors: List[str] = []
-
-    try:
-        df = ak.stock_zh_a_daily(
-            symbol=sina_symbol,
-            start_date=start,
-            end_date=end,
-            adjust="qfq",
-        )
-        if df is not None and not df.empty:
-            return df, "akshare-sina"
-    except Exception as ex:
-        errors.append(f"sina:{ex}")
 
     try:
         df = ak.stock_zh_a_hist(
@@ -248,6 +237,18 @@ def fetch_hist_bars(code: str, start: str, end: str):
             return df, "akshare-em"
     except Exception as ex:
         errors.append(f"em:{ex}")
+
+    try:
+        df = ak.stock_zh_a_daily(
+            symbol=sina_symbol,
+            start_date=start,
+            end_date=end,
+            adjust="qfq",
+        )
+        if df is not None and not df.empty:
+            return df, "akshare-sina"
+    except Exception as ex:
+        errors.append(f"sina:{ex}")
 
     raise RuntimeError(" | ".join(errors) if errors else "empty history")
 
@@ -272,6 +273,9 @@ def to_bar_rows(code: str, df, source: str = SOURCE) -> List[Tuple]:
         "成交额": "amount",
         "amount": "amount",
         "涨跌幅": "pct",
+        "换手率": "turnover",
+        "turnover": "turnover",
+        "turnover_rate": "turnover",
     }
     data = df.rename(columns=rename)
     if "date" not in data.columns and data.index.name in ("date", "日期"):
@@ -279,7 +283,6 @@ def to_bar_rows(code: str, df, source: str = SOURCE) -> List[Tuple]:
         data = data.rename(columns={"日期": "date", "index": "date"})
     if "date" not in data.columns:
         data = data.reset_index()
-        # stock_zh_a_daily 常见把日期放在 index
         for cand in ("date", "日期", "index"):
             if cand in data.columns:
                 data = data.rename(columns={cand: "date"})
@@ -308,6 +311,7 @@ def to_bar_rows(code: str, df, source: str = SOURCE) -> List[Tuple]:
                 _num(r.get("volume")),
                 _num(r.get("amount")),
                 pct,
+                _num(r.get("turnover")),
                 source,
             )
         )

@@ -338,6 +338,16 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
             if (Objects.isNull(existing)) {
                 save(bar);
             } else {
+                // 新浪等源无额/涨跌幅/换手时，保留库内已有值，避免被刷空
+                if (Objects.isNull(bar.getAmount()) && Objects.nonNull(existing.getAmount())) {
+                    bar.setAmount(existing.getAmount());
+                }
+                if (Objects.isNull(bar.getPctChg()) && Objects.nonNull(existing.getPctChg())) {
+                    bar.setPctChg(existing.getPctChg());
+                }
+                if (Objects.isNull(bar.getTurnoverRate()) && Objects.nonNull(existing.getTurnoverRate())) {
+                    bar.setTurnoverRate(existing.getTurnoverRate());
+                }
                 bar.setId(existing.getId());
                 bar.setCreateTime(existing.getCreateTime());
                 bar.setUpdateTime(now);

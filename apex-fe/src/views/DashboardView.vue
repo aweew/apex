@@ -283,23 +283,27 @@ onBeforeUnmount(() => {
           <div class="value">{{ data.risk?.totalAsset }}</div>
         </div>
         <div class="card">
-          <div class="label">累计收益</div>
+          <div class="label"><TermTip term="total_return">累计收益</TermTip></div>
           <div class="value" :class="Number(data.paperMetrics?.totalReturn) >= 0 ? 'up' : 'down'">
             {{ data.paperMetrics?.totalReturn != null ? (Number(data.paperMetrics.totalReturn) * 100).toFixed(2) + '%' : '-' }}
           </div>
         </div>
         <div class="card">
-          <div class="label">仓位</div>
+          <div class="label"><TermTip term="position_ratio">仓位</TermTip></div>
           <div class="value">{{ ((data.risk?.positionRatio || 0) * 100).toFixed(1) }}%</div>
         </div>
         <div class="card">
-          <div class="label">未实现盈亏</div>
+          <div class="label"><TermTip term="unrealized_pnl">未实现盈亏</TermTip></div>
           <div class="value" :class="Number(data.paperMetrics?.unrealizedPnl) >= 0 ? 'up' : 'down'">
             {{ data.paperMetrics?.unrealizedPnl ?? '-' }}
           </div>
         </div>
         <div class="card">
-          <div class="label">已实现 / 胜率</div>
+          <div class="label">
+            <TermTip term="realized_pnl">已实现</TermTip>
+            /
+            <TermTip term="win_rate">胜率</TermTip>
+          </div>
           <div class="value" :class="Number(data.paperMetrics?.realizedPnl) >= 0 ? 'up' : 'down'">
             {{ data.paperMetrics?.realizedPnl ?? '-' }}
             ·
@@ -307,29 +311,33 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="card">
-          <div class="label">期望/笔</div>
+          <div class="label"><TermTip term="expectancy">期望/笔</TermTip></div>
           <div class="value" :class="Number(data.paperMetrics?.expectancy) >= 0 ? 'up' : 'down'">
             {{ data.paperMetrics?.expectancy ?? '-' }}
           </div>
         </div>
         <div class="card">
-          <div class="label">换手率</div>
+          <div class="label"><TermTip term="paper_turnover">换手率</TermTip></div>
           <div class="value">
             {{ data.paperMetrics?.turnoverRate != null ? (Number(data.paperMetrics.turnoverRate) * 100).toFixed(1) + '%' : '-' }}
           </div>
         </div>
         <div class="card">
-          <div class="label">最大回撤</div>
+          <div class="label"><TermTip term="max_drawdown">最大回撤</TermTip></div>
           <div class="value">
             {{ data.paperMetrics?.maxDrawdown != null ? (Number(data.paperMetrics.maxDrawdown) * 100).toFixed(2) + '%' : '-' }}
           </div>
         </div>
         <div class="card">
-          <div class="label">夏普 / 20日</div>
+          <div class="label"><TermTip term="sharpe">夏普 / 20日</TermTip></div>
           <div class="value">{{ data.paperMetrics?.sharpe ?? '-' }} / {{ data.paperMetrics?.rollingSharpe20 ?? '-' }}</div>
         </div>
         <div class="card">
-          <div class="label">VaR95 / CVaR</div>
+          <div class="label">
+            <TermTip term="var95">VaR95</TermTip>
+            /
+            <TermTip term="cvar">CVaR</TermTip>
+          </div>
           <div class="value">
             {{ data.paperMetrics?.dailyVar95 != null ? (Number(data.paperMetrics.dailyVar95) * 100).toFixed(2) + '%' : '-' }}
             /
@@ -337,33 +345,33 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="card">
-          <div class="label">Calmar</div>
+          <div class="label"><TermTip term="calmar">Calmar</TermTip></div>
           <div class="value">{{ data.paperMetrics?.calmar ?? '-' }}</div>
         </div>
         <div class="card">
-          <div class="label">水下占比</div>
+          <div class="label"><TermTip term="underwater_ratio">水下占比</TermTip></div>
           <div class="value">
             {{ data.paperMetrics?.underwaterRatio != null ? (Number(data.paperMetrics.underwaterRatio) * 100).toFixed(0) + '%' : '-' }}
           </div>
         </div>
         <div class="card">
-          <div class="label">回撤天数</div>
+          <div class="label"><TermTip term="drawdown_recovery">回撤天数</TermTip></div>
           <div class="value">{{ data.paperMetrics?.drawdownRecoveryDays ?? '-' }}</div>
         </div>
         <div class="card">
-          <div class="label">盈亏因子</div>
+          <div class="label"><TermTip term="profit_factor">盈亏因子</TermTip></div>
           <div class="value">{{ data.paperMetrics?.profitFactor ?? '-' }}</div>
         </div>
         <div class="card">
-          <div class="label">盈亏比</div>
+          <div class="label"><TermTip term="payoff_ratio">盈亏比</TermTip></div>
           <div class="value">{{ data.paperMetrics?.payoffRatio ?? '-' }}</div>
         </div>
         <div class="card">
-          <div class="label">Sortino</div>
+          <div class="label"><TermTip term="sortino">Sortino</TermTip></div>
           <div class="value">{{ data.paperMetrics?.sortino ?? '-' }}</div>
         </div>
         <div class="card">
-          <div class="label">Ulcer</div>
+          <div class="label"><TermTip term="ulcer">Ulcer</TermTip></div>
           <div class="value">{{ data.paperMetrics?.ulcerIndex ?? '-' }}</div>
         </div>
         <div class="card">
@@ -371,11 +379,11 @@ onBeforeUnmount(() => {
           <div class="value">{{ data.paperMetrics?.totalFee ?? '-' }}</div>
         </div>
         <div class="card">
-          <div class="label">Omega</div>
+          <div class="label"><TermTip term="omega">Omega</TermTip></div>
           <div class="value">{{ data.paperMetrics?.omega ?? '-' }}</div>
         </div>
         <div class="card">
-          <div class="label">最长连亏天</div>
+          <div class="label"><TermTip term="max_losing_days">最长连亏天</TermTip></div>
           <div class="value">{{ data.paperMetrics?.maxLosingDays ?? '-' }}</div>
         </div>
         <div class="card">

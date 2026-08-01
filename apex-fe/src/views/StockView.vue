@@ -3,7 +3,13 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { fetchStockDetail, fetchStockFundamental, syncStockBasic } from '../api/stock'
+import {
+  fetchCompanyProfile,
+  fetchStockDetail,
+  fetchStockFundamental,
+  refreshCompanyProfile,
+  syncStockBasic,
+} from '../api/stock'
 import { syncBars } from '../api/bars'
 import { aggregateBars, tdSequential } from '../utils/kline'
 
@@ -13,6 +19,10 @@ const loading = ref(false)
 const syncingBars = ref(false)
 const refreshing = ref(false)
 const fundLoading = ref(false)
+const profileLoading = ref(false)
+const profileRefreshing = ref(false)
+const profileExpand = ref(false)
+const conceptExpand = ref(false)
 const code = ref(String(route.params.code || route.query.code || '600519'))
 const basic = ref(null)
 const note = ref('')
@@ -25,6 +35,7 @@ const volumeRatio = ref(null)
 const chartRef = ref(null)
 const activeTab = ref('chart')
 const fund = ref(null)
+const profile = ref(null)
 const macdTip = ref('')
 const tdTip = ref('')
 /** day | week | month */
@@ -432,6 +443,7 @@ async function renderChart(list) {
   const ohlc = list.map((b) => [+b.openPrice, +b.closePrice, +b.lowPrice, +b.highPrice])
   const volumes = list.map((b) => +b.volume)
   const amounts = list.map((b) => (b.amount != null ? +b.amount : null))
+  const turnovers = list.map((b) => (b.turnoverRate != null && b.turnoverRate !== '' ? +b.turnoverRate : null))
   const closes = list.map((b) => +b.closePrice)
   const highs = list.map((b) => +b.highPrice)
   const lows = list.map((b) => +b.lowPrice)
@@ -736,6 +748,11 @@ async function renderChart(list) {
           amount == null || Number.isNaN(Number(amount))
             ? ''
             : `<span><em>额</em><b>${fmtVol(amount)}</b></span>`
+        const turnover = turnovers[idx]
+        const turnoverHtml =
+          turnover == null || Number.isNaN(Number(turnover))
+            ? ''
+            : `<span><em>换</em><b>${Number(turnover).toFixed(2)}%</b></span>`
 
         return `
 <div class="kline-tip__card">
@@ -766,6 +783,7 @@ async function renderChart(list) {
   <div class="kline-tip__vol">
     <span><em>量</em><b>${fmtVol(volumes[idx])}</b></span>
     ${amountHtml}
+    ${turnoverHtml}
   </div>
   ${maChips ? `<div class="kline-tip__row">${maChips}</div>` : ''}
   ${macdChips ? `<div class="kline-tip__row">${macdChips}</div>` : ''}
@@ -1089,6 +1107,47 @@ async function loadFundamental() {
   }
 }
 
+async function loadProfile(force = false) {
+  if (!code.value) return
+  profileLoading.value = true
+  try {
+    const res = force
+      ? await refreshCompanyProfile(code.value.trim())
+      : await fetchCompanyProfile(code.value.trim(), false)
+    profile.value = res.data || null
+    profileExpand.value = false
+    conceptExpand.value = false
+  } catch (e) {
+    profile.value = null
+    if (force) ElMessage.error(e.message || '刷新公司概况失败')
+    else console.warn('加载公司概况失败', e)
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function onRefreshProfile() {
+  profileRefreshing.value = true
+  try {
+    await loadProfile(true)
+    if (profile.value?.orgName) ElMessage.success('公司概况已刷新')
+  } finally {
+    profileRefreshing.value = false
+  }
+}
+
+const visibleConcepts = computed(() => {
+  const list = profile.value?.conceptList || []
+  if (conceptExpand.value || list.length <= 12) return list
+  return list.slice(0, 12)
+})
+
+const profileText = computed(() => {
+  const text = profile.value?.orgProfile || ''
+  if (profileExpand.value || text.length <= 220) return text
+  return `${text.slice(0, 220)}…`
+})
+
 function applyDetail(data) {
   basic.value = data.basic
   note.value = data.note || ''
@@ -1153,7 +1212,9 @@ watch(
     if (v) {
       code.value = String(v)
       resetZoomNext = true
+      profile.value = null
       load(false)
+      if (activeTab.value === 'profile') loadProfile(false)
     }
   },
 )
@@ -1232,6 +1293,13 @@ function onTabChange(name) {
   if (name === 'chart' && bars.value.length) {
     nextTick(() => refreshChart())
   }
+  if (name === 'profile' && !profile.value) {
+    loadProfile(false)
+  }
+}
+
+function dash(v) {
+  return v == null || v === '' ? '-' : v
 }
 </script>
 
@@ -1255,8 +1323,8 @@ function onTabChange(name) {
     <div class="meta" v-if="basic">
       <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
       <div><label>涨跌幅</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
-      <div><label>市盈率</label><span>{{ basic.peTtm ?? '-' }}</span></div>
-      <div><label>市净率</label><span>{{ basic.pb ?? '-' }}</span></div>
+      <div><label><TermTip term="pe_ttm">市盈率</TermTip></label><span>{{ basic.peTtm ?? '-' }}</span></div>
+      <div><label><TermTip term="pb">市净率</TermTip></label><span>{{ basic.pb ?? '-' }}</span></div>
       <div><label>总市值</label><span>{{ fmtMv(basic.totalMv) }}</span></div>
       <div><label>流通市值</label><span>{{ fmtMv(basic.circMv) }}</span></div>
       <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
@@ -1266,7 +1334,7 @@ function onTabChange(name) {
       <div><label>本地日线</label><span>{{ barCount }}</span></div>
       <div><label>RS20 vs沪深300</label><b :class="Number(rs20) >= 0 ? 'up' : 'down'">{{ rs20 != null ? rs20 + 'pp' : '-' }}</b></div>
       <div><label>RS60 vs沪深300</label><b :class="Number(rs60) >= 0 ? 'up' : 'down'">{{ rs60 != null ? rs60 + 'pp' : '-' }}</b></div>
-      <div><label>量比</label><b :class="Number(volumeRatio) >= 1.5 ? 'up' : ''">{{ volumeRatio ?? '-' }}</b></div>
+      <div><label><TermTip term="volume_ratio">量比</TermTip></label><b :class="Number(volumeRatio) >= 1.5 ? 'up' : ''">{{ volumeRatio ?? '-' }}</b></div>
     </div>
 
     <el-alert
@@ -1305,7 +1373,7 @@ function onTabChange(name) {
               </el-checkbox>
             </el-checkbox-group>
             <label class="ctrl-label">
-              神奇九转
+              <TermTip term="td9">神奇九转</TermTip>
               <el-switch v-model="showTd9" size="small" />
             </label>
             <el-radio-group
@@ -1331,12 +1399,199 @@ function onTabChange(name) {
             :title="`日线仅 ${bars.length} 根，周/月K样本偏少，建议同步更多日线`"
           />
           <p class="chart-hint">
-            设置会记住 · 切换周期重置视野 · 改均线/九转保持缩放 · 副图：量 / MACD / KDJ
+            设置会记住 · 切换周期重置视野 · 改均线/九转保持缩放 · 副图：量 /
+            <TermTip term="macd">MACD</TermTip>
+            /
+            <TermTip term="kdj">KDJ</TermTip>
           </p>
           <p v-if="tdTip && showTd9" class="macd-tip">{{ tdTip }}</p>
           <p v-if="macdTip" class="macd-tip macd-tip--sub">{{ macdTip }}</p>
         </div>
         <div v-if="bars.length" ref="chartRef" class="chart" />
+      </el-tab-pane>
+
+      <el-tab-pane label="公司概况" name="profile" lazy>
+        <div v-loading="profileLoading" class="profile-wrap">
+          <div class="profile-toolbar">
+            <p class="fund-note">{{ profile?.note || '东财 F10 公司基本资料' }}</p>
+            <el-button size="small" type="primary" :loading="profileRefreshing" @click="onRefreshProfile">
+              刷新概况
+            </el-button>
+          </div>
+
+          <el-empty v-if="!profileLoading && !profile?.orgName" description="暂无公司概况，点击刷新从东财拉取">
+            <el-button type="primary" :loading="profileRefreshing" @click="onRefreshProfile">拉取公司概况</el-button>
+          </el-empty>
+
+          <template v-else-if="profile?.orgName">
+            <section class="profile-card">
+              <h3 class="profile-section-title">基本资料</h3>
+              <div class="profile-name-block">
+                <div class="profile-org">{{ profile.orgName }}</div>
+                <div v-if="profile.businessTags?.length" class="profile-tags">
+                  <span v-for="tag in profile.businessTags" :key="tag" class="profile-tag">{{ tag }}</span>
+                </div>
+                <p v-if="profile.orgHighlight" class="profile-highlight">
+                  <span class="star">★</span> 公司亮点 · {{ profile.orgHighlight }}
+                </p>
+              </div>
+
+              <div class="profile-kv">
+                <div class="kv full">
+                  <label>曾用名</label>
+                  <span>{{ dash(profile.formerName) }}</span>
+                </div>
+                <div class="kv">
+                  <label>A股代码</label>
+                  <span>{{ dash(profile.aCode) }}</span>
+                </div>
+                <div class="kv">
+                  <label>A股简称</label>
+                  <span>{{ dash(profile.aName) }}</span>
+                </div>
+                <div class="kv">
+                  <label>所属地区</label>
+                  <span>{{ dash(profile.areaBoard || profile.region) }}</span>
+                </div>
+                <div class="kv">
+                  <label>交易市场</label>
+                  <span>{{ dash(profile.tradeMarket) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>所属行业</label>
+                  <span>{{ dash(profile.boardPath || profile.industryEm) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>证监会行业</label>
+                  <span>{{ dash(profile.industryCsrc) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>所属概念</label>
+                  <div class="concept-box">
+                    <button
+                      v-for="c in visibleConcepts"
+                      :key="c"
+                      type="button"
+                      class="concept-chip"
+                    >{{ c }}</button>
+                    <button
+                      v-if="(profile.conceptList || []).length > 12"
+                      type="button"
+                      class="concept-more"
+                      @click="conceptExpand = !conceptExpand"
+                    >{{ conceptExpand ? '收起' : '展开' }}</button>
+                    <span v-if="!(profile.conceptList || []).length">-</span>
+                  </div>
+                </div>
+                <div class="kv">
+                  <label>董事长</label>
+                  <span>{{ dash(profile.chairman) }}</span>
+                </div>
+                <div class="kv">
+                  <label>法人代表</label>
+                  <span>{{ dash(profile.legalPerson) }}</span>
+                </div>
+                <div class="kv">
+                  <label>总经理</label>
+                  <span>{{ dash(profile.president) }}</span>
+                </div>
+                <div class="kv">
+                  <label>董秘</label>
+                  <span>{{ dash(profile.secretary) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>控股股东</label>
+                  <span>
+                    {{ dash(profile.controlHolder) }}
+                    <em v-if="profile.controlRatio">（直接持有 {{ profile.controlRatio }}）</em>
+                  </span>
+                </div>
+                <div class="kv full">
+                  <label>实际控制人</label>
+                  <span>
+                    {{ dash(profile.realController) }}
+                    <em v-if="profile.realControllerRatio">（{{ profile.realControllerRatio }}）</em>
+                  </span>
+                </div>
+                <div class="kv">
+                  <label>经营性质</label>
+                  <span>{{ dash(profile.orgForm) }}</span>
+                </div>
+                <div class="kv">
+                  <label>成立日期</label>
+                  <span>{{ dash(profile.foundDate) }}</span>
+                </div>
+                <div class="kv">
+                  <label>注册资本</label>
+                  <span>{{ dash(profile.regCapitalText) }}</span>
+                </div>
+                <div class="kv">
+                  <label>上市日期</label>
+                  <span>{{ dash(profile.listDate) }}</span>
+                </div>
+                <div class="kv">
+                  <label>发行价格</label>
+                  <span>{{ profile.issuePrice != null ? profile.issuePrice + ' 元' : '-' }}</span>
+                </div>
+                <div class="kv">
+                  <label>员工人数</label>
+                  <span>{{ dash(profile.employeeNum) }}</span>
+                </div>
+                <div class="kv">
+                  <label>管理层人数</label>
+                  <span>{{ dash(profile.managerNum) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>主营业务</label>
+                  <span>{{ dash(profile.mainBusiness) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>公司网站</label>
+                  <span>
+                    <a v-if="profile.website" :href="profile.website.startsWith('http') ? profile.website : 'https://' + profile.website" target="_blank" rel="noreferrer">{{ profile.website }}</a>
+                    <template v-else>-</template>
+                  </span>
+                </div>
+                <div class="kv">
+                  <label>电子邮箱</label>
+                  <span>{{ dash(profile.email) }}</span>
+                </div>
+                <div class="kv">
+                  <label>联系电话</label>
+                  <span>{{ dash(profile.phone) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>办公地址</label>
+                  <span>{{ dash(profile.officeAddress) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>注册地址</label>
+                  <span>{{ dash(profile.regAddress) }}</span>
+                </div>
+                <div class="kv full">
+                  <label>统一社会信用代码</label>
+                  <span>{{ dash(profile.regNum) }}</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="profile-card">
+              <h3 class="profile-section-title">公司介绍</h3>
+              <p class="profile-intro">{{ profileText || '-' }}</p>
+              <button
+                v-if="(profile.orgProfile || '').length > 220"
+                type="button"
+                class="profile-more-btn"
+                @click="profileExpand = !profileExpand"
+              >{{ profileExpand ? '收起' : '展开全部' }}</button>
+            </section>
+
+            <section v-if="profile.businessScope" class="profile-card">
+              <h3 class="profile-section-title">经营范围</h3>
+              <p class="profile-intro">{{ profile.businessScope }}</p>
+            </section>
+          </template>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="财务摘要" name="abstract" lazy>
@@ -1441,6 +1696,158 @@ function onTabChange(name) {
 </template>
 
 <style scoped>
+.profile-wrap {
+  padding-bottom: 24px;
+}
+
+.profile-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.profile-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 16px 18px 8px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-soft);
+}
+
+.profile-section-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.profile-name-block {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.profile-org {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.profile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.profile-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(0, 113, 227, 0.1);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.profile-highlight {
+  margin: 0;
+  font-size: 12px;
+  color: #c27803;
+  line-height: 1.5;
+}
+
+.profile-highlight .star {
+  margin-right: 2px;
+}
+
+.profile-kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.profile-kv .kv {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  align-items: start;
+}
+
+.profile-kv .kv.full {
+  grid-column: 1 / -1;
+}
+
+.profile-kv label {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.profile-kv span {
+  color: var(--ink);
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.profile-kv em {
+  font-style: normal;
+  color: var(--slate);
+  margin-left: 4px;
+}
+
+.concept-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.concept-chip {
+  border: 0;
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--accent);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.concept-more,
+.profile-more-btn {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.profile-intro {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+}
+
+.profile-more-btn {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 720px) {
+  .profile-kv {
+    grid-template-columns: 1fr;
+  }
+}
+
 .header .code {
   color: var(--muted);
   font-size: 18px;

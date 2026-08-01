@@ -4,6 +4,7 @@ import com.awe.apex.common.api.Result;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.SignalConfluenceResp;
 import com.awe.apex.quant.domain.dto.SignalForwardResp;
+import com.awe.apex.quant.domain.dto.SignalItemResp;
 import com.awe.apex.quant.domain.dto.SignalRunReq;
 import com.awe.apex.quant.domain.dto.SignalStatsResp;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
@@ -38,11 +39,11 @@ public class SignalController {
      * @return 信号
      */
     @PostMapping("/run")
-    public Result<List<StrategySignalEntity>> run(@RequestBody(required = false) SignalRunReq req) {
+    public Result<List<SignalItemResp>> run(@RequestBody(required = false) SignalRunReq req) {
         if (req == null) {
             req = new SignalRunReq();
         }
-        return Result.success(signalService.run(req));
+        return Result.success(signalService.toItemRespList(signalService.run(req)));
     }
 
     /**
@@ -55,10 +56,10 @@ public class SignalController {
      * @return 列表
      */
     @GetMapping("/latest")
-    public Result<List<StrategySignalEntity>> latest(@RequestParam(defaultValue = "50") Integer limit,
-                                                     @RequestParam(defaultValue = "true") Boolean dedupeByCode,
-                                                     @RequestParam(required = false) BigDecimal minScore,
-                                                     @RequestParam(required = false) String side) {
+    public Result<List<SignalItemResp>> latest(@RequestParam(defaultValue = "50") Integer limit,
+                                               @RequestParam(defaultValue = "true") Boolean dedupeByCode,
+                                               @RequestParam(required = false) BigDecimal minScore,
+                                               @RequestParam(required = false) String side) {
         int size = Objects.isNull(limit) ? 50 : Math.max(1, Math.min(limit, 200));
         int fetch = Objects.nonNull(minScore) || StringUtils.isNotBlank(side) ? Math.min(200, size * 3) : size;
         List<StrategySignalEntity> raw = signalService.latest(fetch, Boolean.TRUE.equals(dedupeByCode));
@@ -76,7 +77,7 @@ public class SignalController {
                 break;
             }
         }
-        return Result.success(filtered);
+        return Result.success(signalService.toItemRespList(filtered));
     }
 
     /**

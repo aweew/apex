@@ -162,7 +162,8 @@ onMounted(load)
           <el-table-column label="建议仓位" width="90">
             <template #default="{ row }">{{ fmtPct(row.suggestedWeight) }}</template>
           </el-table-column>
-          <el-table-column label="共振" width="70">
+          <el-table-column width="70">
+            <template #header><TermTip term="confluence">共振</TermTip></template>
             <template #default="{ row }">
               <el-tag v-if="row.confluence" size="small" type="success">{{ row.confluenceCount }}</el-tag>
               <span v-else>{{ row.confluenceCount || '-' }}</span>
@@ -198,7 +199,8 @@ onMounted(load)
           <el-table-column label="评分" width="70">
             <template #default="{ row }">{{ fmtScore(row.score) }}</template>
           </el-table-column>
-          <el-table-column label="共振" width="70">
+          <el-table-column width="70">
+            <template #header><TermTip term="confluence">共振</TermTip></template>
             <template #default="{ row }">
               <el-tag v-if="row.confluence" size="small" type="danger">{{ row.confluenceCount }}</el-tag>
               <span v-else>{{ row.confluenceCount || '-' }}</span>

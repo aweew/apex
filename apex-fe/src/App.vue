@@ -3,6 +3,7 @@ import { nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { searchStock } from './api/stock'
 import http from './api/http'
+import GlossaryPanel from './components/GlossaryPanel.vue'
 
 const router = useRouter()
 const healthOk = ref(null)
@@ -11,9 +12,14 @@ const query = ref('')
 const loading = ref(false)
 const results = ref([])
 const inputRef = ref(null)
+const glossaryRef = ref(null)
 let healthTimer
 let searchSeq = 0
 let debounceTimer
+
+function openGlossary(termId) {
+  glossaryRef.value?.openGlossary?.(termId)
+}
 
 async function pingHealth() {
   try {
@@ -124,6 +130,11 @@ function onGlobalKeydown(e) {
     e.preventDefault()
     openSearch()
   }
+  // Ctrl+/ 打开名词百科
+  if ((e.ctrlKey || e.metaKey) && (e.key === '/' || e.code === 'Slash')) {
+    e.preventDefault()
+    openGlossary()
+  }
 }
 
 onMounted(() => {
@@ -151,8 +162,10 @@ onBeforeUnmount(() => {
       </span>
       <div class="links">
         <RouterLink to="/dashboard">看板</RouterLink>
+        <RouterLink to="/market">大盘</RouterLink>
         <RouterLink to="/decision">智能决策</RouterLink>
         <RouterLink to="/hot">热点</RouterLink>
+        <RouterLink to="/news">资讯</RouterLink>
         <RouterLink to="/holding">我的持仓</RouterLink>
         <RouterLink to="/pipeline">流水线</RouterLink>
         <RouterLink to="/screener">选股</RouterLink>
@@ -164,6 +177,14 @@ onBeforeUnmount(() => {
         <RouterLink to="/daily">日终</RouterLink>
         <RouterLink to="/config">参数</RouterLink>
       </div>
+      <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 11v5" stroke-linecap="round" />
+          <circle cx="12" cy="8" r="0.8" fill="currentColor" stroke="none" />
+        </svg>
+        <span>名词</span>
+      </button>
       <button type="button" class="search-btn" title="搜索股票 Ctrl+K" @click="openSearch">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="7" />
@@ -172,6 +193,8 @@ onBeforeUnmount(() => {
         <span>搜索</span>
       </button>
     </nav>
+
+    <GlossaryPanel ref="glossaryRef" />
 
     <div v-if="searchOpen" class="search-layer" @click.self="closeSearch">
       <div class="search-panel" role="dialog" aria-label="搜索股票">

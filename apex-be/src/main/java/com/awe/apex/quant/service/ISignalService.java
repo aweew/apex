@@ -2,6 +2,7 @@ package com.awe.apex.quant.service;
 
 import com.awe.apex.quant.domain.dto.SignalConfluenceResp;
 import com.awe.apex.quant.domain.dto.SignalForwardResp;
+import com.awe.apex.quant.domain.dto.SignalItemResp;
 import com.awe.apex.quant.domain.dto.SignalRunReq;
 import com.awe.apex.quant.domain.dto.SignalStatsResp;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
@@ -29,6 +30,14 @@ public interface ISignalService {
      * @return 列表
      */
     List<StrategySignalEntity> latest(int limit, boolean dedupeByCode);
+
+    /**
+     * 信号列表补充证券名称
+     *
+     * @param signals 信号
+     * @return 含名称的列表
+     */
+    List<SignalItemResp> toItemRespList(List<StrategySignalEntity> signals);
 
     /**
      * 近 N 日信号统计

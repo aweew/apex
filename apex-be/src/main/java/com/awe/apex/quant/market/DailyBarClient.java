@@ -18,7 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 日线行情客户端（新浪优先；东财仅作兜底，避免 push2his 断连刷屏）
+ * 日线行情客户端（东财优先：含成交额/涨跌幅/换手率；新浪兜底）
  */
 @Slf4j
 @Component
@@ -41,25 +41,25 @@ public class DailyBarClient {
      */
     public List<BarDaily> fetchDailyBars(String code, String beginDate, String endDate) {
         String pureCode = MarketCodeUtils.normalizeCode(code);
-        Exception sinaError = null;
-        try {
-            List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate);
-            if (!sinaBars.isEmpty()) {
-                return sinaBars;
-            }
-        } catch (Exception ex) {
-            sinaError = ex;
-            log.warn("新浪日线失败，尝试东财兜底，code={}, err={}", pureCode, ex.getMessage());
-            sleepQuiet(600L);
-        }
+        Exception eastError = null;
         try {
             List<BarDaily> emBars = fetchFromEastMoney(pureCode, beginDate, endDate);
             if (!emBars.isEmpty()) {
                 return emBars;
             }
-            throw new BusinessException("东财无数据");
         } catch (Exception ex) {
-            String msg = "sina: " + messageOf(sinaError) + " | eastmoney: " + ex.getMessage();
+            eastError = ex;
+            log.warn("东财日线失败，尝试新浪兜底，code={}, err={}", pureCode, ex.getMessage());
+            sleepQuiet(600L);
+        }
+        try {
+            List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate);
+            if (!sinaBars.isEmpty()) {
+                return sinaBars;
+            }
+            throw new BusinessException("新浪无数据");
+        } catch (Exception ex) {
+            String msg = "eastmoney: " + messageOf(eastError) + " | sina: " + ex.getMessage();
             throw new BusinessException("拉取日线失败: " + pureCode + ", " + msg, ex);
         }
     }
@@ -99,8 +99,14 @@ public class DailyBarClient {
                 bars.add(buildBar(
                         pureCode,
                         LocalDate.parse(parts[0], DAY),
-                        parts[1], parts[3], parts[4], parts[2], parts[5], parts[6],
+                        parts[1],
+                        parts[3],
+                        parts[4],
+                        parts[2],
+                        parts[5],
+                        parts[6],
                         parts.length > 8 ? parts[8] : null,
+                        parts.length > 10 ? parts[10] : null,
                         SOURCE_EASTMONEY
                 ));
             }
@@ -122,7 +128,6 @@ public class DailyBarClient {
             prefix = "bj";
         }
         String symbol = prefix + pureCode;
-        // scale=240 近似日线；datalen 取足够长再按日期过滤
         String url = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
                 + "?symbol=" + symbol + "&scale=240&ma=no&datalen=640";
         String body = httpGet(url, "https://finance.sina.com.cn/");
@@ -149,6 +154,7 @@ public class DailyBarClient {
                         node.path("volume").asText(),
                         null,
                         null,
+                        null,
                         SOURCE_SINA
                 ));
             }
@@ -165,7 +171,8 @@ public class DailyBarClient {
     }
 
     private BarDaily buildBar(String code, LocalDate tradeDate, String open, String high, String low,
-                              String close, String volume, String amount, String pctChg, String source) {
+                              String close, String volume, String amount, String pctChg,
+                              String turnoverRate, String source) {
         LocalDateTime now = LocalDateTime.now();
         return BarDaily.builder()
                 .code(code)
@@ -177,6 +184,7 @@ public class DailyBarClient {
                 .volume(toDecimal(volume))
                 .amount(toDecimal(amount))
                 .pctChg(toDecimal(pctChg))
+                .turnoverRate(toDecimal(turnoverRate))
                 .source(source)
                 .createTime(now)
                 .updateTime(now)

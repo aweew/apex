@@ -1,10 +1,12 @@
 package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
+import com.awe.apex.quant.domain.dto.CompanyProfileResp;
 import com.awe.apex.quant.domain.dto.StockDetailResp;
 import com.awe.apex.quant.domain.dto.StockFundamentalResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.StockBasic;
+import com.awe.apex.quant.service.ICompanyProfileService;
 import com.awe.apex.quant.service.IStockFundamentalService;
 import com.awe.apex.quant.service.IStockService;
 import jakarta.annotation.Resource;
@@ -29,6 +31,9 @@ public class StockController {
 
     @Resource
     private IStockFundamentalService stockFundamentalService;
+
+    @Resource
+    private ICompanyProfileService companyProfileService;
 
     /**
      * 搜索股票
@@ -82,5 +87,29 @@ public class StockController {
                                                     @RequestParam(defaultValue = "40") Integer periodLimit,
                                                     @RequestParam(defaultValue = "12") Integer reportPeriodLimit) {
         return Result.success(stockFundamentalService.query(code, periodLimit, reportPeriodLimit));
+    }
+
+    /**
+     * 公司概况（F10 基本资料；本地优先，refresh=true 强制拉东财）
+     *
+     * @param code    证券代码
+     * @param refresh 是否强制刷新
+     * @return 概况
+     */
+    @GetMapping("/{code}/profile")
+    public Result<CompanyProfileResp> profile(@PathVariable String code,
+                                              @RequestParam(defaultValue = "false") Boolean refresh) {
+        return Result.success(companyProfileService.query(code, Boolean.TRUE.equals(refresh)));
+    }
+
+    /**
+     * 刷新公司概况并落库
+     *
+     * @param code 证券代码
+     * @return 概况
+     */
+    @PostMapping("/{code}/profile/refresh")
+    public Result<CompanyProfileResp> refreshProfile(@PathVariable String code) {
+        return Result.success(companyProfileService.query(code, true));
     }
 }

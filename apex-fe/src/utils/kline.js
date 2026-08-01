@@ -51,6 +51,8 @@ export function aggregateBars(dailyBars, period) {
       volume,
       amount: amountOk ? amount : null,
       pctChg: null,
+      // 周/月 K 展示周期末日换手（与常见行情软件一致）
+      turnoverRate: last.turnoverRate != null && last.turnoverRate !== '' ? Number(last.turnoverRate) : null,
     })
   }
   return result

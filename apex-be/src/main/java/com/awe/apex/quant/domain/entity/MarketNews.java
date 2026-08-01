@@ -11,19 +11,17 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serial;
 import java.io.Serializable;
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * 日线行情
+ * 市场新闻资讯
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("bar_daily")
-public class BarDaily implements Serializable {
+@TableName("market_news")
+public class MarketNews implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -35,59 +33,54 @@ public class BarDaily implements Serializable {
     private Long id;
 
     /**
-     * 证券代码
-     */
-    private String code;
-
-    /**
-     * 交易日
-     */
-    private LocalDate tradeDate;
-
-    /**
-     * 开盘价
-     */
-    private BigDecimal openPrice;
-
-    /**
-     * 最高价
-     */
-    private BigDecimal highPrice;
-
-    /**
-     * 最低价
-     */
-    private BigDecimal lowPrice;
-
-    /**
-     * 收盘价
-     */
-    private BigDecimal closePrice;
-
-    /**
-     * 成交量
-     */
-    private BigDecimal volume;
-
-    /**
-     * 成交额
-     */
-    private BigDecimal amount;
-
-    /**
-     * 涨跌幅%
-     */
-    private BigDecimal pctChg;
-
-    /**
-     * 换手率%
-     */
-    private BigDecimal turnoverRate;
-
-    /**
-     * 数据来源
+     * 来源 eastmoney/cls/ths/sina/cctv
      */
     private String source;
+
+    /**
+     * 去重键（来源内唯一）
+     */
+    private String externalId;
+
+    /**
+     * 标题
+     */
+    private String title;
+
+    /**
+     * 摘要
+     */
+    private String summary;
+
+    /**
+     * 正文/快讯内容
+     */
+    private String content;
+
+    /**
+     * 原文链接
+     */
+    private String url;
+
+    /**
+     * 发布时间
+     */
+    private LocalDateTime publishedAt;
+
+    /**
+     * 关联代码（逗号分隔）
+     */
+    private String relatedCodes;
+
+    /**
+     * 情感：利好/利空/中性
+     */
+    private String sentiment;
+
+    /**
+     * 同步快照时间
+     */
+    private LocalDateTime snapshotTime;
 
     /**
      * 创建时间
