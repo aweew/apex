@@ -3,14 +3,20 @@ import { nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { fetchStockDetail } from '../api/stock'
+import { fetchStockDetail, syncStockBasic } from '../api/stock'
+import { syncBars } from '../api/bars'
 
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
+const syncingBars = ref(false)
+const refreshing = ref(false)
 const code = ref(String(route.params.code || route.query.code || '600519'))
 const basic = ref(null)
 const note = ref('')
+const bars = ref([])
+const needSyncBars = ref(false)
+const barCount = ref(0)
 const rs20 = ref(null)
 const rs60 = ref(null)
 const volumeRatio = ref(null)
@@ -78,13 +84,36 @@ function rsi(closes, period = 14) {
   })
 }
 
-function renderChart(bars) {
+function disposeChart() {
+  if (chart) {
+    chart.dispose()
+    chart = null
+  }
+}
+
+async function renderChart(list) {
+  if (!list.length) {
+    disposeChart()
+    return
+  }
+  // 等容器从空态切出并完成布局，避免 width=0 把图压成一条线
+  await nextTick()
+  await new Promise((r) => requestAnimationFrame(() => r()))
   if (!chartRef.value) return
-  if (!chart) chart = echarts.init(chartRef.value)
-  const dates = bars.map((b) => b.tradeDate)
-  const ohlc = bars.map((b) => [+b.openPrice, +b.closePrice, +b.lowPrice, +b.highPrice])
-  const volumes = bars.map((b) => +b.volume)
-  const closes = bars.map((b) => +b.closePrice)
+  const width = chartRef.value.clientWidth
+  if (width < 80) {
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  if (!chartRef.value) return
+  if (!chart) {
+    chart = echarts.init(chartRef.value)
+  } else {
+    chart.resize()
+  }
+  const dates = list.map((b) => b.tradeDate)
+  const ohlc = list.map((b) => [+b.openPrice, +b.closePrice, +b.lowPrice, +b.highPrice])
+  const volumes = list.map((b) => +b.volume)
+  const closes = list.map((b) => +b.closePrice)
   const ma20 = ma(closes, 20)
   const ma60 = ma(closes, 60)
   const { dif, dea, hist } = macd(closes)
@@ -153,20 +182,18 @@ function renderChart(bars) {
       { name: 'RSI', type: 'line', xAxisIndex: 3, yAxisIndex: 3, data: rsi14, showSymbol: false, lineStyle: { width: 1.2, color: '#6a4c93' } },
     ],
   }, true)
+  chart.resize()
 }
 
-async function load(refresh = false) {
+async function load(refreshQuote = false) {
   if (!code.value) return
   loading.value = true
   try {
-    const res = await fetchStockDetail(code.value.trim(), 220, refresh)
-    basic.value = res.data.basic
-    note.value = res.data.note || ''
-    rs20.value = res.data.rs20VsHs300
-    rs60.value = res.data.rs60VsHs300
-    volumeRatio.value = res.data.volumeRatio
-    await nextTick()
-    renderChart(res.data.bars || [])
+    const res = await fetchStockDetail(code.value.trim(), 220, false)
+    applyDetail(res.data)
+    if (refreshQuote) {
+      await refreshQuoteOnly()
+    }
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
   } finally {
@@ -174,9 +201,58 @@ async function load(refresh = false) {
   }
 }
 
+function applyDetail(data) {
+  basic.value = data.basic
+  note.value = data.note || ''
+  bars.value = data.bars || []
+  needSyncBars.value = !!data.needSyncBars
+  barCount.value = data.barCount ?? bars.value.length
+  rs20.value = data.rs20VsHs300
+  rs60.value = data.rs60VsHs300
+  volumeRatio.value = data.volumeRatio
+  renderChart(bars.value)
+}
+
+async function refreshQuoteOnly() {
+  refreshing.value = true
+  try {
+    await syncStockBasic(code.value.trim())
+    const res = await fetchStockDetail(code.value.trim(), 220, false)
+    applyDetail(res.data)
+    ElMessage.success('行情已刷新并落库')
+  } catch (e) {
+    ElMessage.error(e.message || '刷新行情失败')
+  } finally {
+    refreshing.value = false
+  }
+}
+
+async function syncDailyBars() {
+  if (!code.value) return
+  syncingBars.value = true
+  try {
+    const pure = code.value.trim()
+    const res = await syncBars({ codes: [pure] })
+    const data = res.data || {}
+    // 日线同步只落 K 线，顺带刷一次行情快照，避免现价/估值仍是空
+    try {
+      await syncStockBasic(pure)
+    } catch (quoteErr) {
+      console.warn('同步日后刷新行情失败', quoteErr)
+    }
+    ElMessage.success(`日线同步完成：K线 ${data.barCount ?? 0} 根`)
+    const detail = await fetchStockDetail(pure, 220, false)
+    applyDetail(detail.data)
+  } catch (e) {
+    ElMessage.error(e.message || '同步日线失败')
+  } finally {
+    syncingBars.value = false
+  }
+}
+
 function go() {
   router.replace(`/stock/${code.value.trim()}`)
-  load(true)
+  load(false)
 }
 
 function onResize() {
@@ -200,8 +276,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
-  chart?.dispose()
-  chart = null
+  disposeChart()
 })
 
 function fmtMv(v) {
@@ -223,7 +298,8 @@ function fmtMv(v) {
       <div class="actions">
         <el-input v-model="code" style="width: 120px" placeholder="代码" @keyup.enter="go" />
         <el-button type="primary" @click="go">查询</el-button>
-        <el-button @click="load(true)">刷新行情</el-button>
+        <el-button :loading="refreshing" @click="refreshQuoteOnly">刷新行情</el-button>
+        <el-button type="success" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
         <el-button @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
         <el-button @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">模拟买</el-button>
       </div>
@@ -240,12 +316,30 @@ function fmtMv(v) {
       <div><label>行业</label><span>{{ basic.industry || '-' }}</span></div>
       <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>
       <div><label>来源</label><span>{{ basic.source || '-' }}</span></div>
+      <div><label>本地日线</label><span>{{ barCount }}</span></div>
       <div><label>RS20 vs沪深300</label><b :class="Number(rs20) >= 0 ? 'up' : 'down'">{{ rs20 != null ? rs20 + 'pp' : '-' }}</b></div>
       <div><label>RS60 vs沪深300</label><b :class="Number(rs60) >= 0 ? 'up' : 'down'">{{ rs60 != null ? rs60 + 'pp' : '-' }}</b></div>
       <div><label>量比</label><b :class="Number(volumeRatio) >= 1.5 ? 'up' : ''">{{ volumeRatio ?? '-' }}</b></div>
     </div>
 
-    <div ref="chartRef" class="chart" />
+    <el-alert
+      v-if="!loading && bars.length && needSyncBars"
+      class="hint"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="`本地仅 ${barCount} 根日线，建议同步补齐后再做指标/回测`"
+    />
+
+    <el-empty
+      v-if="!loading && !bars.length"
+      class="empty-bars"
+      description="本地暂无日线，请先同步日线落库"
+    >
+      <el-button type="primary" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
+    </el-empty>
+
+    <div v-if="bars.length" ref="chartRef" class="chart" />
   </div>
 </template>
 
@@ -282,6 +376,14 @@ function fmtMv(v) {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin-bottom: 6px;
+}
+
+.hint {
+  margin-bottom: 12px;
+}
+
+.empty-bars {
+  margin: 24px 0;
 }
 
 .chart {

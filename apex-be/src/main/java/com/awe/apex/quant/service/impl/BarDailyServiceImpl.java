@@ -254,12 +254,14 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         String sourceLabel = details.stream().anyMatch(d -> d.contains("(" + DailyBarClient.SOURCE_SINA + ")"))
                 ? DailyBarClient.SOURCE_SINA
                 : DailyBarClient.SOURCE_EASTMONEY;
+        // 明细可能很长，日志只保留摘要 + 截断后的明细，避免撑爆 message 字段
+        String message = buildSyncLogMessage(successCount, failCount, barCount, details);
         DataSyncLog syncLog = DataSyncLog.builder()
                 .syncType("BAR_DAILY")
                 .source(sourceLabel)
                 .scopeDesc(scopeDesc + ", begin=" + beginDate + ", end=" + endDate)
                 .status(status)
-                .message(String.join("; ", details))
+                .message(message)
                 .fetchedAt(fetchedAt)
                 .createTime(LocalDateTime.now())
                 .updateTime(LocalDateTime.now())
@@ -275,6 +277,20 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 .barCount(barCount)
                 .details(details)
                 .build();
+    }
+
+    private String buildSyncLogMessage(int successCount, int failCount, int barCount, List<String> details) {
+        String summary = "success=" + successCount + ", fail=" + failCount + ", bars=" + barCount;
+        if (details == null || details.isEmpty()) {
+            return summary;
+        }
+        String detailText = String.join("; ", details);
+        String full = summary + " | " + detailText;
+        int maxLen = 4000;
+        if (full.length() <= maxLen) {
+            return full;
+        }
+        return full.substring(0, maxLen) + "...(truncated)";
     }
 
     private SyncItem syncOne(String code, String beginDate, String endDate) {

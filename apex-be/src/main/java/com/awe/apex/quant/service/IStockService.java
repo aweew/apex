@@ -20,7 +20,7 @@ public interface IStockService {
     StockBasic syncBasic(String code);
 
     /**
-     * 查询详情（可自动同步基本信息；K 线取本地库）
+     * 查询详情（默认只读本地；refresh=true 时才同步外网基本信息，不自动拉日线）
      *
      * @param code      证券代码
      * @param barLimit  K 线条数

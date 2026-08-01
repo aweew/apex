@@ -7,6 +7,7 @@ import cn.hutool.core.text.csv.CsvReader;
 import cn.hutool.core.text.csv.CsvRow;
 import cn.hutool.core.text.csv.CsvUtil;
 import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.common.executor.TransactionalAsyncExecutor;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.config.ApexProperties;
 import com.awe.apex.quant.domain.dto.CorrelationMatrixResp;
@@ -21,6 +22,7 @@ import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
+import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IStockService;
 import com.awe.apex.quant.service.IWatchlistService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -49,6 +51,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * 自选股服务实现
@@ -70,6 +74,18 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
 
     @Resource
     private IStockService stockService;
+
+    @Resource
+    private IBarDailyService barDailyService;
+
+    /**
+     * 自选导入后后台预热专用线程
+     */
+    private final Executor preheatExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "watchlist-preheat");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     /**
      * 查询自选列表
@@ -248,10 +264,24 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
             importCount++;
         }
 
+        // 导入完成后后台预热：先补行情快照，再分批补日线，不阻塞导入接口
+        final String preheatGroup = groupName;
+        TransactionalAsyncExecutor.runAfterCommit(() -> {
+            try {
+                log.info("自选导入后开始后台预热 groupName={}", preheatGroup);
+                fillQuotes(preheatGroup, 5, 40);
+                barDailyService.fillWatchlist(preheatGroup, 5, 40);
+                log.info("自选导入后后台预热完成 groupName={}", preheatGroup);
+            } catch (Exception ex) {
+                log.warn("自选导入后后台预热失败 groupName={}, err={}", preheatGroup, ex.getMessage());
+            }
+        }, preheatExecutor);
+
         return WatchlistImportResp.builder()
                 .importCount(importCount)
                 .sourceFile(file.getAbsolutePath())
                 .groupName(groupName)
+                .message("已导入并启动后台预热（行情/日线），可在自选页查看同步进度")
                 .build();
     }
 

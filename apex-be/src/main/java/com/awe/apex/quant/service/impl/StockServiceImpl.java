@@ -2,7 +2,6 @@ package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
-import com.awe.apex.quant.domain.dto.BarSyncReq;
 import com.awe.apex.quant.domain.dto.StockDetailResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.BarDaily;
@@ -13,16 +12,15 @@ import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
-import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IStockService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,6 +32,7 @@ import java.util.Objects;
 /**
  * 股票基本信息服务实现
  */
+@Slf4j
 @Service
 public class StockServiceImpl implements IStockService {
 
@@ -45,9 +44,6 @@ public class StockServiceImpl implements IStockService {
 
     @Resource
     private BarDailyMapper barDailyMapper;
-
-    @Resource
-    private IBarDailyService barDailyService;
 
     @Resource
     private WatchlistMapper watchlistMapper;
@@ -97,7 +93,7 @@ public class StockServiceImpl implements IStockService {
     }
 
     /**
-     * 查询详情
+     * 查询详情（默认只读本地；refresh=true 时才同步外网基本信息）
      *
      * @param code     证券代码
      * @param barLimit K 线条数
@@ -112,29 +108,35 @@ public class StockServiceImpl implements IStockService {
         StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                 .eq(StockBasic::getCode, pure)
                 .last("limit 1"));
-        boolean needRefresh = Boolean.TRUE.equals(refresh)
-                || Objects.isNull(basic)
-                || Objects.isNull(basic.getQuoteTime())
-                || basic.getQuoteTime().isBefore(LocalDateTime.now().minusMinutes(30));
-        if (needRefresh) {
-            basic = syncBasic(pure);
+        // 仅用户显式刷新时才打外网，避免打开详情阻塞
+        if (Boolean.TRUE.equals(refresh)) {
+            try {
+                basic = syncBasic(pure);
+            } catch (Exception ex) {
+                log.warn("刷新基本信息失败，回退本地 code={}, err={}", pure, ex.getMessage());
+            }
+        }
+        if (Objects.isNull(basic)) {
+            String name = null;
+            Watchlist watchlist = watchlistMapper.selectOne(Wrappers.<Watchlist>lambdaQuery()
+                    .eq(Watchlist::getCode, pure)
+                    .last("limit 1"));
+            if (Objects.nonNull(watchlist)) {
+                name = watchlist.getName();
+            }
+            basic = StockBasic.builder()
+                    .code(pure)
+                    .name(name)
+                    .market(MarketCodeUtils.resolveMarket(pure))
+                    .source("local")
+                    .deleted(0)
+                    .build();
         }
 
         List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
                 .eq(BarDaily::getCode, pure)
                 .orderByDesc(BarDaily::getTradeDate)
                 .last("limit " + limit));
-        if (bars.size() < 30) {
-            BarSyncReq syncReq = new BarSyncReq();
-            syncReq.setCodes(Collections.singletonList(pure));
-            syncReq.setBeginDate(LocalDate.now().minusYears(2).toString());
-            syncReq.setEndDate(LocalDate.now().toString());
-            barDailyService.syncBars(syncReq);
-            bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
-                    .eq(BarDaily::getCode, pure)
-                    .orderByDesc(BarDaily::getTradeDate)
-                    .last("limit " + limit));
-        }
         bars.sort((a, b) -> a.getTradeDate().compareTo(b.getTradeDate()));
 
         BigDecimal rs20 = null;
@@ -153,13 +155,18 @@ public class StockServiceImpl implements IStockService {
             // 相对强度失败不影响详情
         }
 
+        String note = bars.isEmpty()
+                ? "当前仅展示本地数据；暂无日线，请点击「同步日线」落库后再看K线。过去表现不代表未来收益。"
+                : "数据来自本地库（stock_basic / bar_daily）。点「刷新行情」可更新快照。过去表现不代表未来收益。";
         return StockDetailResp.builder()
                 .basic(basic)
                 .bars(bars)
                 .rs20VsHs300(rs20)
                 .rs60VsHs300(rs60)
                 .volumeRatio(volumeRatio)
-                .note("基本信息：新浪快照 + 东财/腾讯估值 + 东财F10行业；K线来自本地日线库。过去表现不代表未来收益。")
+                .needSyncBars(bars.size() < 30)
+                .barCount(bars.size())
+                .note(note)
                 .build();
     }
 

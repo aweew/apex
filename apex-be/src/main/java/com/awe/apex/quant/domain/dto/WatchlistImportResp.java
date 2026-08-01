@@ -28,4 +28,9 @@ public class WatchlistImportResp {
      * 分组
      */
     private String groupName;
+
+    /**
+     * 提示信息（如后台预热已启动）
+     */
+    private String message;
 }

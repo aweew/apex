@@ -45,6 +45,16 @@ public class StockDetailResp {
     private BigDecimal volumeRatio;
 
     /**
+     * 本地日线条数
+     */
+    private Integer barCount;
+
+    /**
+     * 是否建议同步日线（本地不足）
+     */
+    private Boolean needSyncBars;
+
+    /**
      * 数据说明
      */
     private String note;

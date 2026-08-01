@@ -92,7 +92,7 @@ async function onImport() {
       filePath: filePath.value,
       groupName: groupName.value,
     })
-    ElMessage.success(`导入 ${res.data.importCount} 条`)
+    ElMessage.success(res.data.message || `导入 ${res.data.importCount} 条`)
     await loadList()
   } catch (e) {
     ElMessage.error(e.message || '导入失败')

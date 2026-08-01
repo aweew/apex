@@ -50,7 +50,7 @@ public class StockController {
     }
 
     /**
-     * 股票详情（基本信息 + K 线）
+     * 股票详情（默认只读本地；refresh=true 才刷新外网基本信息）
      *
      * @param code     证券代码
      * @param barLimit K 线条数
