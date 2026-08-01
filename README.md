@@ -24,6 +24,8 @@ apex-be/docs/sql/03_p1_schema.sql
 apex-be/docs/sql/04_p2_schema.sql
 ```
 
+全 A 列表 + 历史日线导入（AKShare → MySQL，可断点续传）：见 `scripts/market_data/README.md`。
+
 复制本地配置：
 
 ```bash

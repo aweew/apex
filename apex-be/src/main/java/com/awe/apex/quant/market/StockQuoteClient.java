@@ -17,9 +17,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 股票基本信息/快照行情客户端（新浪优先，东财/腾讯补充估值与行业）
+ * 股票基本信息/快照行情客户端（新浪行情 + 腾讯估值优先；东财可选且带熔断）
  */
 @Slf4j
 @Component
@@ -28,6 +30,14 @@ public class StockQuoteClient {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final DateTimeFormatter LIST_DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final BigDecimal YI = new BigDecimal("100000000");
+
+    /** 东财连续失败次数达到阈值后熔断 */
+    private static final int EM_FAIL_THRESHOLD = 3;
+    /** 熔断时长（毫秒） */
+    private static final long EM_COOLDOWN_MS = 10 * 60 * 1000L;
+
+    private final AtomicInteger eastMoneyFailCount = new AtomicInteger(0);
+    private final AtomicLong eastMoneyCooldownUntil = new AtomicLong(0);
 
     /**
      * 拉取并组装基本信息
@@ -39,11 +49,14 @@ public class StockQuoteClient {
         String pure = MarketCodeUtils.normalizeCode(code);
         String market = MarketCodeUtils.resolveMarket(pure);
         StockBasic basic = fetchFromSina(pure, market);
-        enrichFromEastMoney(basic);
+        // 估值优先腾讯，避免批量撞东财 push2 断连
         if (needValuationFallback(basic)) {
             enrichFromTencent(basic);
         }
-        if (StringUtils.isBlank(basic.getIndustry())) {
+        if (needValuationFallback(basic) && !isEastMoneyCoolingDown()) {
+            enrichFromEastMoney(basic);
+        }
+        if (StringUtils.isBlank(basic.getIndustry()) && !isEastMoneyCoolingDown()) {
             enrichIndustryFromEastMoney(basic);
         }
         return basic;
@@ -54,7 +67,7 @@ public class StockQuoteClient {
         String url = "https://hq.sinajs.cn/list=" + symbol;
         try (HttpResponse response = HttpRequest.get(url)
                 .timeout(12000)
-                .header("User-Agent", "Mozilla/5.0")
+                .header("User-Agent", browserUa())
                 .header("Referer", "https://finance.sina.com.cn")
                 .execute()) {
             if (!response.isOk()) {
@@ -107,16 +120,14 @@ public class StockQuoteClient {
         String secId = MarketCodeUtils.toEastMoneySecId(basic.getCode());
         String url = "https://push2.eastmoney.com/api/qt/stock/get?secid=" + secId
                 + "&fields=f57,f58,f116,f117,f162,f167,f173,f189,f127";
-        try (HttpResponse response = HttpRequest.get(url)
-                .timeout(10000)
-                .header("User-Agent", "Mozilla/5.0")
-                .header("Referer", "https://quote.eastmoney.com/")
-                .execute()) {
+        try (HttpResponse response = httpGet(url, "https://quote.eastmoney.com/")) {
             if (!response.isOk() || StringUtils.isBlank(response.body())) {
+                markEastMoneyFail("empty/http", basic.getCode());
                 return;
             }
             JsonNode data = OBJECT_MAPPER.readTree(response.body()).path("data");
             if (data.isMissingNode() || data.isNull()) {
+                markEastMoneyFail("no-data", basic.getCode());
                 return;
             }
             if (StringUtils.isBlank(basic.getName())) {
@@ -143,8 +154,9 @@ public class StockQuoteClient {
                 basic.setListDate(LocalDate.parse(list, LIST_DAY));
             }
             appendSource(basic, "eastmoney");
+            markEastMoneySuccess();
         } catch (Exception ex) {
-            log.warn("东财估值补充失败，code={}, err={}", basic.getCode(), ex.getMessage());
+            markEastMoneyFail(ex.getMessage(), basic.getCode());
         }
     }
 
@@ -153,7 +165,8 @@ public class StockQuoteClient {
         String url = "https://qt.gtimg.cn/q=" + symbol;
         try (HttpResponse response = HttpRequest.get(url)
                 .timeout(10000)
-                .header("User-Agent", "Mozilla/5.0")
+                .header("User-Agent", browserUa())
+                .header("Referer", "https://gu.qq.com/")
                 .execute()) {
             if (!response.isOk() || response.bodyBytes() == null) {
                 return;
@@ -191,7 +204,7 @@ public class StockQuoteClient {
             }
             appendSource(basic, "tencent");
         } catch (Exception ex) {
-            log.warn("腾讯估值补充失败，code={}, err={}", basic.getCode(), ex.getMessage());
+            log.debug("腾讯估值补充失败，code={}, err={}", basic.getCode(), ex.getMessage());
         }
     }
 
@@ -203,12 +216,9 @@ public class StockQuoteClient {
         String codeParam = market + basic.getCode();
         String url = "https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/CompanySurveyAjax?code="
                 + codeParam;
-        try (HttpResponse response = HttpRequest.get(url)
-                .timeout(12000)
-                .header("User-Agent", "Mozilla/5.0")
-                .header("Referer", "https://emweb.securities.eastmoney.com/")
-                .execute()) {
+        try (HttpResponse response = httpGet(url, "https://emweb.securities.eastmoney.com/")) {
             if (!response.isOk() || StringUtils.isBlank(response.body())) {
+                markEastMoneyFail("industry-empty", basic.getCode());
                 return;
             }
             String industry = OBJECT_MAPPER.readTree(response.body())
@@ -219,10 +229,43 @@ public class StockQuoteClient {
             if (StringUtils.isNotBlank(industry)) {
                 basic.setIndustry(industry);
                 appendSource(basic, "em-f10");
+                markEastMoneySuccess();
             }
         } catch (Exception ex) {
-            log.warn("东财行业补充失败，code={}, err={}", basic.getCode(), ex.getMessage());
+            markEastMoneyFail(ex.getMessage(), basic.getCode());
         }
+    }
+
+    private HttpResponse httpGet(String url, String referer) {
+        return HttpRequest.get(url)
+                .timeout(10000)
+                .header("User-Agent", browserUa())
+                .header("Accept", "application/json,text/plain,*/*")
+                .header("Accept-Language", "zh-CN,zh;q=0.9")
+                .header("Connection", "close")
+                .header("Referer", referer)
+                .execute();
+    }
+
+    private boolean isEastMoneyCoolingDown() {
+        return System.currentTimeMillis() < eastMoneyCooldownUntil.get();
+    }
+
+    private void markEastMoneySuccess() {
+        eastMoneyFailCount.set(0);
+    }
+
+    private void markEastMoneyFail(String err, String code) {
+        int fails = eastMoneyFailCount.incrementAndGet();
+        if (fails >= EM_FAIL_THRESHOLD) {
+            long until = System.currentTimeMillis() + EM_COOLDOWN_MS;
+            eastMoneyCooldownUntil.set(until);
+            eastMoneyFailCount.set(0);
+            log.warn("东财接口连续失败，熔断 {} 分钟（不再逐票请求）。lastCode={}, err={}",
+                    EM_COOLDOWN_MS / 60000, code, err);
+            return;
+        }
+        log.debug("东财补充失败（{}/{}），code={}, err={}", fails, EM_FAIL_THRESHOLD, code, err);
     }
 
     private boolean needValuationFallback(StockBasic basic) {
@@ -251,6 +294,10 @@ public class StockQuoteClient {
             return "bj" + code;
         }
         return "sz" + code;
+    }
+
+    private String browserUa() {
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
     }
 
     private BigDecimal yiToYuan(String yiValue) {

@@ -43,7 +43,8 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> implements IBarDailyService {
 
-    private static final int MAX_PARALLEL = 3;
+    /** 降低并发，减轻行情源限流 */
+    private static final int MAX_PARALLEL = 2;
     private static final int MAX_GROUP_CODES = 80;
 
     @Resource
@@ -251,9 +252,9 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         }
 
         String status = failCount == 0 ? "SUCCESS" : (successCount == 0 ? "FAIL" : "PARTIAL");
-        String sourceLabel = details.stream().anyMatch(d -> d.contains("(" + DailyBarClient.SOURCE_SINA + ")"))
-                ? DailyBarClient.SOURCE_SINA
-                : DailyBarClient.SOURCE_EASTMONEY;
+        // 多数走新浪；仅当明细里完全没有新浪成功标记时才记东财
+        boolean anySina = details.stream().anyMatch(d -> d.contains("(" + DailyBarClient.SOURCE_SINA + ")"));
+        String sourceLabel = anySina ? DailyBarClient.SOURCE_SINA : DailyBarClient.SOURCE_EASTMONEY;
         // 明细可能很长，日志只保留摘要 + 截断后的明细，避免撑爆 message 字段
         String message = buildSyncLogMessage(successCount, failCount, barCount, details);
         DataSyncLog syncLog = DataSyncLog.builder()
@@ -295,8 +296,8 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
 
     private SyncItem syncOne(String code, String beginDate, String endDate) {
         try {
-            // 轻微错峰，降低数据源限流
-            Thread.sleep(80L + (Math.abs(code.hashCode()) % 120));
+            // 错峰请求，降低行情源限流概率
+            Thread.sleep(220L + (Math.abs(code.hashCode()) % 280));
             List<BarDaily> bars = dailyBarClient.fetchDailyBars(code, beginDate, endDate);
             int upserted = upsertBars(bars);
             upsertStockBasic(code, MarketCodeUtils.resolveMarket(code));

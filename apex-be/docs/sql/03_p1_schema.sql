@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS backtest_job (
     annual_return DECIMAL(12, 6) NULL COMMENT '年化收益',
     max_drawdown DECIMAL(12, 6) NULL COMMENT '最大回撤',
     sharpe DECIMAL(12, 6) NULL COMMENT '夏普',
+    sortino DECIMAL(12, 6) NULL COMMENT 'Sortino',
     win_rate DECIMAL(12, 6) NULL COMMENT '胜率',
     profit_factor DECIMAL(12, 6) NULL COMMENT '盈亏比',
     avg_hold_days DECIMAL(12, 4) NULL COMMENT '平均持仓天数',

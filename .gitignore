@@ -27,3 +27,5 @@ logs/
 # Env overrides (keep .env.development example values only if non-secret)
 **/.env.local
 **/.env.*.local
+scripts/market_data/.env
+scripts/market_data/.progress/

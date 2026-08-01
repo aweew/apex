@@ -18,7 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 日线行情客户端（东财优先，新浪兜底）
+ * 日线行情客户端（新浪优先；东财仅作兜底，避免 push2his 断连刷屏）
  */
 @Slf4j
 @Component
@@ -41,23 +41,25 @@ public class DailyBarClient {
      */
     public List<BarDaily> fetchDailyBars(String code, String beginDate, String endDate) {
         String pureCode = MarketCodeUtils.normalizeCode(code);
-        Exception lastError = null;
-        for (int i = 0; i < 2; i++) {
-            try {
-                List<BarDaily> bars = fetchFromEastMoney(pureCode, beginDate, endDate);
-                if (!bars.isEmpty()) {
-                    return bars;
-                }
-            } catch (Exception ex) {
-                lastError = ex;
-                log.warn("东财日线失败，重试/降级，code={}, err={}", pureCode, ex.getMessage());
-                sleepQuiet(400L);
+        Exception sinaError = null;
+        try {
+            List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate);
+            if (!sinaBars.isEmpty()) {
+                return sinaBars;
             }
+        } catch (Exception ex) {
+            sinaError = ex;
+            log.warn("新浪日线失败，尝试东财兜底，code={}, err={}", pureCode, ex.getMessage());
+            sleepQuiet(600L);
         }
         try {
-            return fetchFromSina(pureCode, beginDate, endDate);
+            List<BarDaily> emBars = fetchFromEastMoney(pureCode, beginDate, endDate);
+            if (!emBars.isEmpty()) {
+                return emBars;
+            }
+            throw new BusinessException("东财无数据");
         } catch (Exception ex) {
-            String msg = ObjectsMessage(lastError) + " | sina: " + ex.getMessage();
+            String msg = "sina: " + messageOf(sinaError) + " | eastmoney: " + ex.getMessage();
             throw new BusinessException("拉取日线失败: " + pureCode + ", " + msg, ex);
         }
     }
@@ -184,8 +186,11 @@ public class DailyBarClient {
 
     private String httpGet(String url, String referer) {
         try (HttpResponse response = HttpRequest.get(url)
-                .timeout(15000)
-                .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+                .timeout(20000)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Accept", "application/json,text/plain,*/*")
+                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                .header("Connection", "close")
                 .header("Referer", referer)
                 .execute()) {
             if (!response.isOk()) {
@@ -236,7 +241,7 @@ public class DailyBarClient {
         }
     }
 
-    private String ObjectsMessage(Exception ex) {
-        return ex == null ? "eastmoney: unknown" : "eastmoney: " + ex.getMessage();
+    private String messageOf(Exception ex) {
+        return ex == null ? "unknown" : ex.getMessage();
     }
 }
