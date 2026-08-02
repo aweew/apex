@@ -96,6 +96,7 @@ onMounted(load)
   <div class="page">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Daily</p>
         <h1>日终清单</h1>
         <p>
           建议买卖 + 持有离场条件 · 可一键录入真实成交
@@ -109,13 +110,23 @@ onMounted(load)
       <div class="actions">
         <el-input v-model="date" style="width: 140px" />
         <el-button type="primary" :loading="loading" @click="onRun">生成清单</el-button>
-        <el-button :loading="loading" @click="load">刷新</el-button>
+        <el-button plain @click="router.push('/decision')">智能决策</el-button>
+        <el-button text :loading="loading" @click="load">刷新</el-button>
       </div>
     </header>
 
-    <el-empty v-if="!loading && !rows.length" description="点击「生成清单」产出今日建议动作" :image-size="70" />
-    <el-table v-else v-loading="loading" :data="rows" height="360">
-      <el-table-column prop="action" label="动作" width="80" />
+    <div v-if="!loading && !rows.length" class="page-empty">
+      <h3>今日尚无日终清单</h3>
+      <p>生成后可模拟下单或录入真实成交；也可先看智能决策清单</p>
+      <el-button type="primary" :loading="loading" @click="onRun">生成清单</el-button>
+      <el-button plain @click="router.push('/decision')">去智能决策</el-button>
+    </div>
+    <el-table v-else v-loading="loading" :data="rows" height="360" stripe class="apex-table">
+      <el-table-column prop="action" label="动作" width="80">
+        <template #default="{ row }">
+          <span :class="{ up: row.action === 'BUY', down: row.action === 'SELL' }">{{ row.action }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="code" label="代码" width="100">
         <template #default="{ row }">
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
@@ -123,10 +134,15 @@ onMounted(load)
       </el-table-column>
       <el-table-column prop="name" label="名称" width="120" />
       <el-table-column prop="strategyId" label="策略" width="80" />
+      <el-table-column label="评分" width="100">
+        <template #default="{ row }">
+          <ScoreBar :score="row.score" />
+        </template>
+      </el-table-column>
       <el-table-column prop="suggestedWeight" label="建议仓位" width="100" />
       <el-table-column prop="exitRule" label="离场条件" min-width="160" />
       <el-table-column prop="reason" label="理由" min-width="180" show-overflow-tooltip />
-      <el-table-column label="操作" width="200">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="row.action !== 'HOLD'"
@@ -144,7 +160,11 @@ onMounted(load)
     </el-table>
 
     <h3>最近人工成交</h3>
-    <el-table :data="journals" size="small">
+    <div v-if="!journals.length" class="page-empty" style="padding: 20px">
+      <h3>尚无成交记录</h3>
+      <p>从日终清单或决策页录入真实成交后，会出现在这里</p>
+    </div>
+    <el-table v-else :data="journals" size="small" stripe>
       <el-table-column prop="tradeDate" label="日期" width="120" />
       <el-table-column prop="code" label="代码" width="100" />
       <el-table-column prop="side" label="方向" width="80" />

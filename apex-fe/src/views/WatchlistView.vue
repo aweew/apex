@@ -11,6 +11,7 @@ import {
   watchlistMovers,
 } from '../api/watchlist'
 import { fillWatchlistBars, syncBars, syncBarsGroup, syncStaleBars } from '../api/bars'
+import { saveObserve } from '../api/observe'
 
 const router = useRouter()
 
@@ -82,6 +83,22 @@ async function loadList() {
     ElMessage.error(e.message || '加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function addObserve(row) {
+  if (!row?.code) return
+  try {
+    await saveObserve({
+      code: row.code,
+      name: row.name || '',
+      status: 'WATCHING',
+      reason: '自选关注',
+      tags: 'watchlist',
+    })
+    ElMessage.success(`${row.code} 已进观察池`)
+  } catch (e) {
+    ElMessage.error(e.message || '加入失败')
   }
 }
 
@@ -206,26 +223,29 @@ onMounted(loadList)
   <div class="page">
     <header class="header">
       <div>
-        <h1>Apex 自选</h1>
-        <p>导入 → 同步日线 → 看行情 → 进 K 线 / 回测</p>
+        <p class="eyebrow">Apex · Watchlist</p>
+        <h1>自选股</h1>
+        <p>导入 → 同步日线 → 看行情 → 进决策 / 观察池 / K线</p>
       </div>
       <div class="actions">
         <el-input v-model="filePath" style="width: 280px" placeholder="妙想导出文件名" />
         <el-input v-model="groupName" style="width: 120px" placeholder="分组" />
         <el-button type="primary" :loading="loading" @click="onImport">导入自选</el-button>
-        <el-button :loading="loading" @click="loadList">刷新</el-button>
         <el-button type="success" :loading="syncing" @click="onSyncSelected">同步勾选</el-button>
         <el-button type="warning" :loading="syncing" @click="onSyncGroup">同步全组K线</el-button>
         <el-button type="warning" plain :loading="syncing" @click="onSyncStale">只同步过期</el-button>
         <el-button :loading="syncing" @click="onFillBars">多轮补齐K线</el-button>
         <el-button :loading="syncing" @click="onRefreshQuotes">刷新行情</el-button>
         <el-button :loading="syncing" @click="onFillQuotes">多轮补齐行情</el-button>
+        <el-button plain @click="router.push('/decision')">决策</el-button>
+        <el-button plain @click="router.push('/observe')">观察池</el-button>
+        <el-button plain @click="router.push('/pipeline')">流水线</el-button>
         <el-link
           type="primary"
           :href="`http://127.0.0.1:8080/apex/api/export/watchlist?groupName=${encodeURIComponent(groupName)}`"
           target="_blank"
-        >导出自选</el-link>
-        <el-button @click="router.push('/pipeline')">流水线</el-button>
+        >导出</el-link>
+        <el-button text :loading="loading" @click="loadList">刷新</el-button>
       </div>
     </header>
 
@@ -264,7 +284,7 @@ onMounted(loadList)
       </el-table-column>
     </el-table>
 
-    <div class="toolbar">
+    <div class="toolbar-bar">
       <el-input v-model="keyword" clearable placeholder="搜索代码/名称/行业" style="width: 220px" />
       <el-select v-model="statusFilter" clearable placeholder="同步状态" style="width: 140px">
         <el-option label="正常" value="OK" />
@@ -356,9 +376,10 @@ onMounted(loadList)
           <el-tag size="small" :type="statusTag(row.syncStatus)">{{ row.syncStatus }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">K线</el-button>
+          <el-button link type="warning" @click="addObserve(row)">观察</el-button>
           <el-button link @click="router.push({ path: '/backtest', query: { code: row.code } })">回测</el-button>
         </template>
       </el-table-column>

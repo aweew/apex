@@ -1,13 +1,20 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listHoldings, refreshHoldingQuotes, removeHolding, saveHolding } from '../api/holding'
+import { saveObserve } from '../api/observe'
 
 const router = useRouter()
 const loading = ref(false)
 const refreshing = ref(false)
 const rows = ref([])
+const totalPnl = computed(() =>
+  rows.value.reduce((sum, r) => sum + (Number(r.pnl) || 0), 0),
+)
+const totalMv = computed(() =>
+  rows.value.reduce((sum, r) => sum + (Number(r.marketValue) || 0), 0),
+)
 const dialogVisible = ref(false)
 const saving = ref(false)
 const form = reactive({
@@ -97,6 +104,27 @@ async function onSave() {
   }
 }
 
+async function addObserve(row) {
+  if (!row?.code) return
+  try {
+    await saveObserve({
+      code: row.code,
+      name: row.name || '',
+      status: 'WATCHING',
+      side: 'BUY',
+      reason: '持仓跟踪',
+      tags: 'holding',
+      stopLoss: row.stopLoss || undefined,
+      targetPrice: row.takeProfit || undefined,
+      basePrice: row.costPrice || undefined,
+      priority: 4,
+    })
+    ElMessage.success(`${row.code} 已进观察池`)
+  } catch (e) {
+    ElMessage.error(e.message || '加入失败')
+  }
+}
+
 async function onRemove(row) {
   try {
     await ElMessageBox.confirm(`确认删除持仓 ${row.code} ${row.name || ''}？`, '删除持仓', {
@@ -128,22 +156,45 @@ onMounted(async () => {
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
-        <h1>我的持仓</h1>
-        <p>手动维护持仓；现价/盈亏来自行情刷新（支持 A 股与港股通）。智能决策卖出/持有读这里</p>
+        <p class="eyebrow">Apex · Holding</p>
+        <h1>真实持仓</h1>
+        <p>手动维护持仓；决策卖出/持有读这里 · 支持 A 股与港股通</p>
       </div>
       <div class="actions">
         <el-button type="primary" @click="openCreate">添加持仓</el-button>
         <el-button type="success" :loading="refreshing" @click="onRefreshQuotes(false)">刷新行情</el-button>
-        <el-button @click="load">刷新列表</el-button>
-        <el-button @click="router.push('/decision')">智能决策</el-button>
+        <el-button plain @click="router.push('/decision')">智能决策</el-button>
+        <el-button plain @click="router.push('/observe')">观察池</el-button>
+        <el-button text @click="load">刷新</el-button>
       </div>
     </header>
 
-    <el-empty v-if="!loading && !rows.length" description="还没有持仓，点「添加持仓」开始录入">
-      <el-button type="primary" @click="openCreate">添加持仓</el-button>
-    </el-empty>
+    <div v-if="rows.length" class="stat-cards">
+      <div class="stat-card">
+        <label>持仓只数</label>
+        <b>{{ rows.length }}</b>
+      </div>
+      <div class="stat-card">
+        <label>总市值</label>
+        <b>{{ totalMv ? totalMv.toFixed(0) : '-' }}</b>
+      </div>
+      <div class="stat-card">
+        <label>浮盈亏</label>
+        <b :class="totalPnl >= 0 ? 'up' : 'down'">{{ totalPnl ? totalPnl.toFixed(0) : '-' }}</b>
+      </div>
+      <div class="stat-card">
+        <label>下一步</label>
+        <b style="font-size: 14px; font-weight: 650">跑决策看卖点</b>
+      </div>
+    </div>
 
-    <el-table v-else :data="rows" size="small" stripe>
+    <div v-if="!loading && !rows.length" class="page-empty">
+      <h3>还没有持仓</h3>
+      <p>录入后，智能决策会据此给出卖出 / 继续持有建议</p>
+      <el-button type="primary" @click="openCreate">添加持仓</el-button>
+    </div>
+
+    <el-table v-if="rows.length" :data="rows" size="small" stripe>
       <el-table-column prop="code" label="代码" width="100" fixed sortable>
         <template #default="{ row }">
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
@@ -167,9 +218,10 @@ onMounted(async () => {
       <el-table-column prop="stopLoss" label="止损" width="100" sortable />
       <el-table-column prop="takeProfit" label="止盈" width="100" sortable />
       <el-table-column prop="note" label="备注" min-width="140" show-overflow-tooltip sortable />
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="warning" @click="addObserve(row)">观察</el-button>
           <el-button link type="danger" @click="onRemove(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -206,3 +258,16 @@ onMounted(async () => {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.up { color: var(--up); }
+.down { color: var(--down); }
+</style>

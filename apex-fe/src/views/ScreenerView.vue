@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { runScreener } from '../api/screener'
 import { batchBacktest } from '../api/backtest'
+import { saveObserve } from '../api/observe'
 
 const router = useRouter()
 const loading = ref(false)
@@ -72,6 +73,22 @@ async function onRun() {
   }
 }
 
+async function addObserve(row) {
+  if (!row?.code) return
+  try {
+    await saveObserve({
+      code: row.code,
+      name: row.name || '',
+      status: 'WATCHING',
+      reason: '条件选股',
+      tags: 'screener',
+    })
+    ElMessage.success(`${row.code} 已进观察池`)
+  } catch (e) {
+    ElMessage.error(e.message || '加入失败')
+  }
+}
+
 async function onBatchBacktest() {
   if (!rows.value.length) {
     ElMessage.warning('请先选股')
@@ -103,12 +120,14 @@ onMounted(onRun)
   <div class="page">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Screener</p>
         <h1>条件选股</h1>
-        <p>PE/PB/行业/K线过滤 · 可对结果批量回测（对齐聚宽式筛选+验证）</p>
+        <p>PE/PB/行业/量能过滤 · 结果可进观察池或批量回测</p>
       </div>
       <div class="actions">
         <el-button type="primary" :loading="loading" @click="onRun">运行选股</el-button>
         <el-button :loading="loading" @click="onBatchBacktest">批量回测前8</el-button>
+        <el-button plain @click="router.push('/decision')">智能决策</el-button>
       </div>
     </header>
 
@@ -136,7 +155,14 @@ onMounted(onRun)
       <el-form-item><el-checkbox v-model="form.excludeLimitDown">排除跌停</el-checkbox></el-form-item>
     </el-form>
 
-    <el-table v-loading="loading" :data="rows" height="360">
+    <div v-if="!loading && !rows.length" class="page-empty">
+      <h3>暂无筛选结果</h3>
+      <p>调整 PE/量能/RS 条件后运行；结果可一键进观察池或批量回测</p>
+      <el-button type="primary" :loading="loading" @click="onRun">运行选股</el-button>
+      <el-button plain @click="router.push('/valuation')">估值筛选</el-button>
+    </div>
+
+    <el-table v-else v-loading="loading" :data="rows" height="360" stripe>
       <el-table-column prop="code" label="代码" width="100">
         <template #default="{ row }">
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
@@ -144,9 +170,21 @@ onMounted(onRun)
       </el-table-column>
       <el-table-column prop="name" label="名称" width="120" />
       <el-table-column prop="latestPrice" label="现价" width="90" />
-      <el-table-column prop="pctChg" label="今日%" width="80" />
-      <el-table-column prop="pctChg5" label="5日%" width="80" />
-      <el-table-column prop="pctChg20" label="20日%" width="80" />
+      <el-table-column prop="pctChg" label="今日%" width="80">
+        <template #default="{ row }">
+          <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ row.pctChg ?? '-' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="pctChg5" label="5日%" width="80">
+        <template #default="{ row }">
+          <span :class="Number(row.pctChg5) >= 0 ? 'up' : 'down'">{{ row.pctChg5 ?? '-' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="pctChg20" label="20日%" width="80">
+        <template #default="{ row }">
+          <span :class="Number(row.pctChg20) >= 0 ? 'up' : 'down'">{{ row.pctChg20 ?? '-' }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="volumeRatio" label="量比" width="80" />
       <el-table-column prop="upDays" label="连涨" width="70" />
       <el-table-column prop="rs20VsHs300" label="RS20" width="80" sortable />
@@ -160,9 +198,10 @@ onMounted(onRun)
       </el-table-column>
       <el-table-column prop="industry" label="行业" width="120" />
       <el-table-column prop="barCount" label="K线" width="80" />
-      <el-table-column label="操作" width="140">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button link @click="router.push({ path: '/backtest', query: { code: row.code } })">回测</el-button>
+          <el-button link type="warning" @click="addObserve(row)">观察</el-button>
           <el-button link @click="router.push({ path: '/paper', query: { code: row.code, side: 'BUY' } })">模拟</el-button>
         </template>
       </el-table-column>
@@ -195,5 +234,12 @@ onMounted(onRun)
 </template>
 
 <style scoped>
-/* 共用样式见 style.css；表单由全局 .page .el-form 承载 */
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
 </style>

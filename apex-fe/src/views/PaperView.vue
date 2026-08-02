@@ -329,8 +329,10 @@ onMounted(load)
   <div class="page">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Paper</p>
         <h1>模拟盘</h1>
-        <p v-if="account">账户 {{ account.accountName }} · 现金 {{ account.cash }}</p>
+        <p v-if="account">账户 {{ account.accountName }} · 现金 {{ account.cash }} · 对照决策清单验证执行</p>
+        <p v-else>信号建议下单 · 止损止盈 · 再平衡</p>
       </div>
       <div class="actions">
         <el-button :loading="loading" @click="onRefreshMarks">刷新市价</el-button>
@@ -349,7 +351,9 @@ onMounted(load)
           :href="`http://127.0.0.1:8080/apex/api/export/paper/orders?accountId=${account?.id || ''}`"
           target="_blank"
         >导出订单CSV</el-link>
-        <el-button @click="load" :loading="loading">刷新</el-button>
+        <el-button plain @click="router.push('/decision')">决策清单</el-button>
+        <el-button plain @click="router.push('/holding')">真实持仓</el-button>
+        <el-button text @click="load" :loading="loading">刷新</el-button>
       </div>
     </header>
 
@@ -480,7 +484,12 @@ onMounted(load)
     </el-table>
 
     <h3>持仓</h3>
-    <el-empty v-if="!positions.length" description="暂无持仓" :image-size="60" />
+    <div v-if="!positions.length" class="page-empty">
+      <h3>模拟盘暂无持仓</h3>
+      <p>从决策清单或信号页一键下单，验证策略执行与止损止盈</p>
+      <el-button type="primary" @click="router.push('/decision')">去决策清单</el-button>
+      <el-button plain @click="router.push('/signals')">看策略信号</el-button>
+    </div>
     <el-table v-else :data="positions" size="small">
       <el-table-column prop="code" label="代码" width="100">
         <template #default="{ row }">

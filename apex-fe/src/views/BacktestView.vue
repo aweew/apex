@@ -309,10 +309,15 @@ onMounted(loadJobs)
   <div class="page">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Backtest</p>
         <h1>策略回测</h1>
-        <p>含佣金/印花税/滑点 · 过去表现不代表未来收益</p>
+        <p>含佣金/印花税/滑点 · 过去表现不代表未来收益 · 对照决策页策略强度</p>
       </div>
-      <el-button @click="router.push(`/stock/${form.code}`)">看K线</el-button>
+      <div class="actions">
+        <el-button type="primary" plain @click="router.push(`/stock/${form.code}`)">看K线</el-button>
+        <el-button plain @click="router.push('/decision')">智能决策</el-button>
+        <el-button plain @click="router.push('/signals')">信号</el-button>
+      </div>
     </header>
 
     <el-form :inline="true" class="form">
@@ -471,15 +476,41 @@ onMounted(loadJobs)
       <el-table-column prop="tradeCount" label="成交" width="80" />
     </el-table>
 
-    <div v-if="job" class="metrics">
-      <div>累计收益 {{ job.totalReturn != null ? (Number(job.totalReturn) * 100).toFixed(2) + '%' : '-' }}</div>
-      <div>年化 {{ job.annualReturn != null ? (Number(job.annualReturn) * 100).toFixed(2) + '%' : '-' }}</div>
-      <div>最大回撤 {{ job.maxDrawdown != null ? (Number(job.maxDrawdown) * 100).toFixed(2) + '%' : '-' }}</div>
-      <div>夏普 {{ job.sharpe != null ? Number(job.sharpe).toFixed(2) : '-' }}</div>
-      <div>Sortino {{ job.sortino != null ? Number(job.sortino).toFixed(2) : '-' }}</div>
-      <div>胜率 {{ job.winRate != null ? (Number(job.winRate) * 100).toFixed(1) + '%' : '-' }}</div>
-      <div>期望/笔 {{ expectancy != null ? expectancy : '-' }}</div>
-      <div>成交 {{ job.tradeCount }}</div>
+    <div v-if="job" class="stat-cards" style="grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px">
+      <div class="stat-card">
+        <label>累计收益</label>
+        <b :class="Number(job.totalReturn) >= 0 ? 'up' : 'down'">
+          {{ job.totalReturn != null ? (Number(job.totalReturn) * 100).toFixed(2) + '%' : '-' }}
+        </b>
+      </div>
+      <div class="stat-card">
+        <label>年化</label>
+        <b>{{ job.annualReturn != null ? (Number(job.annualReturn) * 100).toFixed(2) + '%' : '-' }}</b>
+      </div>
+      <div class="stat-card">
+        <label>最大回撤</label>
+        <b class="down">{{ job.maxDrawdown != null ? (Number(job.maxDrawdown) * 100).toFixed(2) + '%' : '-' }}</b>
+      </div>
+      <div class="stat-card">
+        <label>夏普</label>
+        <b>{{ job.sharpe != null ? Number(job.sharpe).toFixed(2) : '-' }}</b>
+      </div>
+      <div class="stat-card">
+        <label>Sortino</label>
+        <b>{{ job.sortino != null ? Number(job.sortino).toFixed(2) : '-' }}</b>
+      </div>
+      <div class="stat-card">
+        <label>胜率</label>
+        <b>{{ job.winRate != null ? (Number(job.winRate) * 100).toFixed(1) + '%' : '-' }}</b>
+      </div>
+      <div class="stat-card">
+        <label>期望/笔</label>
+        <b>{{ expectancy != null ? expectancy : '-' }}</b>
+      </div>
+      <div class="stat-card">
+        <label>成交</label>
+        <b>{{ job.tradeCount ?? '-' }}</b>
+      </div>
     </div>
 
     <div ref="chartRef" class="chart" />

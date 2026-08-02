@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchHotOverview, refreshHot } from '../api/hot'
+import { saveObserve } from '../api/observe'
 import { addWatchlistCodes } from '../api/watchlist'
 
 const router = useRouter()
@@ -69,6 +70,24 @@ async function addToWatch(rows) {
   }
 }
 
+/** 热点共振股一键进观察池 */
+async function addToObserve(row) {
+  if (!row?.code) return
+  try {
+    await saveObserve({
+      code: row.code,
+      name: row.name || '',
+      status: 'WATCHING',
+      reason: '热点共振',
+      tags: 'hot',
+      priority: Math.min(5, Number(row.sourceCount) || 3),
+    })
+    ElMessage.success(`${row.code} 已进观察池`)
+  } catch (e) {
+    ElMessage.error(e.message || '加入观察池失败')
+  }
+}
+
 async function onRefresh(sources = 'eastmoney,xueqiu,baidu') {
   refreshing.value = true
   try {
@@ -92,6 +111,7 @@ onMounted(load)
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Hot</p>
         <h1>市场热点</h1>
         <p>
           {{ data?.message || '聚合东财人气 / 雪球关注 / 百度热搜，多源共振优先看' }}
@@ -101,12 +121,24 @@ onMounted(load)
         <el-button type="primary" :loading="refreshing" @click="onRefresh()">刷新全部</el-button>
         <el-button :loading="refreshing" @click="onRefresh('eastmoney,baidu')">快刷(跳过雪球)</el-button>
         <el-button :disabled="!confluence.length" @click="addToWatch(confluence)">共振进自选</el-button>
-        <el-button @click="load">重新加载</el-button>
-        <el-button @click="router.push('/decision')">智能决策</el-button>
+        <el-button plain @click="router.push('/decision')">智能决策</el-button>
+        <el-button plain @click="router.push('/observe')">观察池</el-button>
+        <el-button text @click="load">刷新</el-button>
       </div>
     </header>
 
-    <div class="summary" v-if="data">
+    <div
+      v-if="!loading && !eastmoney.length && !xueqiu.length && !baidu.length && !confluence.length"
+      class="page-empty"
+    >
+      <h3>暂无热点数据</h3>
+      <p>先快刷东财+百度，再看多源共振；共振股可进自选或观察池</p>
+      <el-button type="primary" :loading="refreshing" @click="onRefresh('eastmoney,baidu')">快刷</el-button>
+      <el-button plain :loading="refreshing" @click="onRefresh()">刷新全部</el-button>
+      <el-button plain @click="router.push('/decision')">智能决策</el-button>
+    </div>
+
+    <div class="summary" v-else-if="data">
       <div>
         <label>东财快照</label>
         <span>{{ fmtTime(data.snapshotTimes?.eastmoney) }}</span>
@@ -137,7 +169,11 @@ onMounted(load)
       @close="lastLog = ''"
     />
 
-    <el-tabs v-model="activeTab" class="tabs">
+    <el-tabs
+      v-if="eastmoney.length || xueqiu.length || baidu.length || confluence.length"
+      v-model="activeTab"
+      class="tabs"
+    >
       <el-tab-pane :label="`多源共振 (${confluence.length})`" name="confluence">
         <el-alert
           class="hint"
@@ -169,9 +205,10 @@ onMounted(load)
             </template>
           </el-table-column>
           <el-table-column prop="price" label="现价" width="100" sortable />
-          <el-table-column label="操作" width="100" fixed="right">
+          <el-table-column label="操作" width="160" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" :disabled="!row.code" @click="addToWatch([row])">自选</el-button>
+              <el-button link type="warning" :disabled="!row.code" @click="addToObserve(row)">观察</el-button>
             </template>
           </el-table-column>
         </el-table>
