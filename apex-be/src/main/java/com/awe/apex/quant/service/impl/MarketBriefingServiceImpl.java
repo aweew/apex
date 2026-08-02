@@ -1,6 +1,11 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.MarketFactorItem;
@@ -10,9 +15,11 @@ import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.entity.IndexBar;
 import com.awe.apex.quant.domain.entity.LimitUpPool;
 import com.awe.apex.quant.domain.entity.SectorQuote;
+import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.mapper.IndexBarMapper;
 import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.SectorQuoteMapper;
+import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.ISectorBoardService;
@@ -57,6 +64,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     @Resource
     private ISectorBoardService sectorBoardService;
 
+    @Resource
+    private StockBasicMapper stockBasicMapper;
+
     /**
      * 生成市场简报
      *
@@ -80,9 +90,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
     private MarketBriefingResp buildBriefing() {
         List<IndexBar> sh = loadBars("CN_SH", 60);
-        List<IndexBar> sz = loadBars("CN_SZ", 30);
+        List<IndexBar> sz = loadBars("CN_SZ", 60);
         List<IndexBar> cyb = loadBars("CN_CYB", 30);
         List<IndexBar> kc = loadBars("CN_KC50", 30);
+        List<IndexBar> bj = loadBars("CN_BJ50", 60);
 
         LocalDate asOf = latestDate(sh, sz, cyb);
         List<MarketFactorItem> factors = new ArrayList<>();
@@ -96,12 +107,12 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         BigDecimal szPct = lastPct(sz);
         BigDecimal cybPct = lastPct(cyb);
         BigDecimal kcPct = lastPct(kc);
-        indexLines.add(lineOf("上证", sh));
-        indexLines.add(lineOf("深成指", sz));
-        indexLines.add(lineOf("创业板", cyb));
-        indexes.add(indexItemOf("上证", sh));
-        indexes.add(indexItemOf("深成指", sz));
-        indexes.add(indexItemOf("创业板", cyb));
+        indexLines.add(lineOf("上证指数", sh));
+        indexLines.add(lineOf("深圳成指", sz));
+        indexLines.add(lineOf("创业板指", cyb));
+        indexes.add(indexItemOf("上证指数", sh));
+        indexes.add(indexItemOf("深圳成指", sz));
+        indexes.add(indexItemOf("创业板指", cyb));
         if (CollUtil.isNotEmpty(kc)) {
             indexLines.add(lineOf("科创50", kc));
             indexes.add(indexItemOf("科创50", kc));
@@ -167,35 +178,44 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             }
         }
 
-        // —— 量能 ——
-        VolumeStat vol = volumeStat(sh, 5);
+        // —— 三市成交额（沪+深+京）与量能 ——
+        VolumeStat vol = threeMarketAmountStat(sh, sz, bj, 5);
         String volumeTrend = null;
         BigDecimal volumeVsMa5Pct = null;
+        BigDecimal indexVolume = null;
+        String indexVolumeText = null;
         if (Objects.nonNull(vol)) {
             volumeTrend = vol.trend;
             volumeVsMa5Pct = vol.vsMa5Pct;
+            // 展示优先实时三市成交额；库内 amount 常为空
+            BigDecimal liveAmount = fetchLiveThreeMarketAmount();
+            indexVolume = Objects.nonNull(liveAmount) && liveAmount.signum() > 0 ? liveAmount : vol.volume;
+            indexVolumeText = formatAmount(indexVolume);
             String volSignal = "中性";
             if ("放量".equals(vol.trend) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) >= 0) {
                 volSignal = "偏多";
                 score += 8;
-                tips.add(tip("info", "放量上涨，资金参与度上升，可关注强度板块与持仓加仓机会。"));
+                tips.add(tip("info", "三市放量上涨，资金参与度上升，可关注强度板块与持仓加仓机会。"));
             } else if ("放量".equals(vol.trend) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) < 0) {
                 volSignal = "偏空";
                 score -= 10;
-                tips.add(tip("danger", "放量下跌，抛压较重，谨慎抄底，优先减仓弱势持仓。"));
+                tips.add(tip("danger", "三市放量下跌，抛压较重，谨慎抄底，优先减仓弱势持仓。"));
             } else if ("缩量".equals(vol.trend) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) > 0) {
                 volSignal = "提示";
                 score -= 2;
-                tips.add(tip("warn", "缩量上涨，上攻动能不足，追高性价比偏低。"));
+                tips.add(tip("warn", "三市缩量上涨，上攻动能不足，追高性价比偏低。"));
             } else if ("缩量".equals(vol.trend)) {
                 volSignal = "提示";
-                tips.add(tip("info", "成交缩量，观望资金较多，等待放量确认方向。"));
+                tips.add(tip("info", "三市成交缩量，观望资金较多，等待放量确认方向。"));
             }
+            String factorValue = Objects.nonNull(indexVolumeText)
+                    ? (indexVolumeText + " · " + vol.trend + " · 较5日均额" + fmtPct(vol.vsMa5Pct))
+                    : (vol.trend + " · 较5日均额" + fmtPct(vol.vsMa5Pct));
             factors.add(MarketFactorItem.builder()
-                    .name("成交量能")
-                    .value(vol.trend + " · 较5日均量" + fmtPct(vol.vsMa5Pct))
+                    .name("三市成交")
+                    .value(factorValue)
                     .signal(volSignal)
-                    .note("上证量能")
+                    .note(vol.usedAmount ? "上证+深成+北证50 成交额合计" : "本地成交额缺失，量能用成交量合计近似；总额优先东财实时")
                     .build());
         }
 
@@ -261,10 +281,11 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                     .build());
         }
 
-        // —— 市场广度（行业上涨/下跌家数汇总）——
+        // —— 市场广度（全市场涨/平/跌，平盘单独计、不并入涨）——
         int[] breadth = marketBreadth(asOf);
         Integer breadthUp = breadth[0] > 0 || breadth[1] > 0 ? breadth[0] : null;
         Integer breadthDown = breadth[0] > 0 || breadth[1] > 0 ? breadth[1] : null;
+        Integer breadthFlat = Objects.nonNull(breadthUp) ? breadth[2] : null;
         if (Objects.nonNull(breadthUp)) {
             String bSignal = "中性";
             if (breadthUp > breadthDown * 1.5) {
@@ -277,9 +298,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             }
             factors.add(MarketFactorItem.builder()
                     .name("市场广度")
-                    .value("涨" + breadthUp + " / 跌" + breadthDown)
+                    .value("涨" + breadthUp + " / 平" + breadthFlat + " / 跌" + breadthDown)
                     .signal(bSignal)
-                    .note("行业板块涨跌家数汇总")
+                    .note("全市场涨跌家数（平盘单列）")
                     .build());
         }
 
@@ -351,34 +372,190 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .indexes(indexes)
                 .volumeTrend(volumeTrend)
                 .volumeVsMa5Pct(volumeVsMa5Pct)
+                .indexVolume(indexVolume)
+                .indexVolumeText(indexVolumeText)
+                .limitDownCount(countLimitDown())
                 .hotThemes(hotThemes)
                 .dataLevel(dataLevel)
                 .dataSufficient(dataSufficient)
                 .breadthUp(breadthUp)
                 .breadthDown(breadthDown)
+                .breadthFlat(breadthFlat)
                 .message(Objects.nonNull(asOf)
                         ? ("市场简报 · " + asOf + " · 立场「" + stance + "」· 数据" + dataLevel)
                         : "市场简报（指数数据不足）· 数据" + dataLevel)
                 .build();
     }
 
+    /** @return [上涨, 下跌, 平盘]，平盘绝不并入上涨 */
     private int[] marketBreadth(LocalDate asOf) {
+        int[] live = fetchLiveMarketBreadth();
+        if (live[0] > 0 || live[1] > 0) {
+            return live;
+        }
+        int[] fromBasic = breadthFromStockBasic();
+        if (fromBasic[0] > 0 || fromBasic[1] > 0) {
+            return fromBasic;
+        }
+        return breadthFromSectorQuote(asOf);
+    }
+
+    /**
+     * 东财涨跌分布（全市场），失败时用沪深成份涨跌家数相加兜底
+     */
+    private int[] fetchLiveMarketBreadth() {
+        int[] fromFenbu = fetchBreadthFromZdFenBu();
+        if (fromFenbu[0] > 0 || fromFenbu[1] > 0) {
+            return fromFenbu;
+        }
+        return fetchBreadthFromIndexUlist();
+    }
+
+    private int[] fetchBreadthFromZdFenBu() {
+        String url = "https://push2ex.eastmoney.com/getTopicZDFenBu"
+                + "?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt";
+        try (HttpResponse response = HttpRequest.get(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Referer", "https://quote.eastmoney.com/")
+                .header("Accept", "application/json,text/plain,*/*")
+                .timeout(5000)
+                .execute()) {
+            if (!response.isOk()) {
+                return new int[]{0, 0, 0};
+            }
+            JSONObject data = JSONUtil.parseObj(response.body()).getJSONObject("data");
+            if (Objects.isNull(data)) {
+                return new int[]{0, 0, 0};
+            }
+            JSONArray fenbu = data.getJSONArray("fenbu");
+            if (Objects.isNull(fenbu) || fenbu.isEmpty()) {
+                return new int[]{0, 0, 0};
+            }
+            // 档位：>0 上涨，<0 下跌，0 平盘（绝不并入涨）
+            int up = 0;
+            int down = 0;
+            int flat = 0;
+            for (int i = 0; i < fenbu.size(); i++) {
+                Object raw = fenbu.get(i);
+                if (Objects.isNull(raw)) {
+                    continue;
+                }
+                JSONObject bucket = raw instanceof JSONObject
+                        ? (JSONObject) raw
+                        : JSONUtil.parseObj(raw);
+                for (Map.Entry<String, Object> entry : bucket.entrySet()) {
+                    int level;
+                    try {
+                        level = Integer.parseInt(String.valueOf(entry.getKey()).trim());
+                    } catch (Exception ignored) {
+                        continue;
+                    }
+                    int count;
+                    try {
+                        count = new BigDecimal(String.valueOf(entry.getValue())).intValue();
+                    } catch (Exception ignored) {
+                        continue;
+                    }
+                    if (level > 0) {
+                        up += count;
+                    } else if (level < 0) {
+                        down += count;
+                    } else {
+                        flat += count;
+                    }
+                }
+            }
+            return new int[]{up, down, flat};
+        } catch (Exception ex) {
+            log.debug("东财涨跌分布失败: {}", ex.getMessage());
+            return new int[]{0, 0, 0};
+        }
+    }
+
+    private int[] fetchBreadthFromIndexUlist() {
+        // f104 上涨 / f105 下跌 / f106 平盘（分列，不合并）
+        String url = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
+                + "?fltt=2&secids=1.000001,0.399001&fields=f104,f105,f106,f12";
+        try (HttpResponse response = HttpRequest.get(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Referer", "https://quote.eastmoney.com/")
+                .header("Accept", "application/json,text/plain,*/*")
+                .timeout(5000)
+                .execute()) {
+            if (!response.isOk()) {
+                return new int[]{0, 0, 0};
+            }
+            JSONObject data = JSONUtil.parseObj(response.body()).getJSONObject("data");
+            if (Objects.isNull(data)) {
+                return new int[]{0, 0, 0};
+            }
+            JSONArray diff = data.getJSONArray("diff");
+            if (Objects.isNull(diff) || diff.isEmpty()) {
+                return new int[]{0, 0, 0};
+            }
+            int up = 0;
+            int down = 0;
+            int flat = 0;
+            for (int i = 0; i < diff.size(); i++) {
+                JSONObject row = diff.getJSONObject(i);
+                if (Objects.isNull(row)) {
+                    continue;
+                }
+                up += row.getInt("f104", 0);
+                down += row.getInt("f105", 0);
+                flat += row.getInt("f106", 0);
+            }
+            return new int[]{up, down, flat};
+        } catch (Exception ex) {
+            log.debug("东财指数涨跌家数失败: {}", ex.getMessage());
+            return new int[]{0, 0, 0};
+        }
+    }
+
+    private int[] breadthFromStockBasic() {
+        try {
+            Long up = stockBasicMapper.selectCount(Wrappers.<StockBasic>lambdaQuery()
+                    .isNotNull(StockBasic::getPctChg)
+                    .gt(StockBasic::getPctChg, ZERO));
+            Long down = stockBasicMapper.selectCount(Wrappers.<StockBasic>lambdaQuery()
+                    .isNotNull(StockBasic::getPctChg)
+                    .lt(StockBasic::getPctChg, ZERO));
+            Long flat = stockBasicMapper.selectCount(Wrappers.<StockBasic>lambdaQuery()
+                    .isNotNull(StockBasic::getPctChg)
+                    .eq(StockBasic::getPctChg, ZERO));
+            return new int[]{
+                    Objects.nonNull(up) ? up.intValue() : 0,
+                    Objects.nonNull(down) ? down.intValue() : 0,
+                    Objects.nonNull(flat) ? flat.intValue() : 0
+            };
+        } catch (Exception ex) {
+            return new int[]{0, 0, 0};
+        }
+    }
+
+    private int[] breadthFromSectorQuote(LocalDate asOf) {
         int up = 0;
         int down = 0;
         LocalDate day = asOf;
-        if (Objects.isNull(day)) {
+        List<SectorQuote> rows = new ArrayList<>();
+        if (Objects.nonNull(day)) {
+            rows = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
+                    .eq(SectorQuote::getBoardType, "INDUSTRY")
+                    .eq(SectorQuote::getTradeDate, day));
+        }
+        if (CollUtil.isEmpty(rows)) {
             SectorQuote latest = sectorQuoteMapper.selectOne(Wrappers.<SectorQuote>lambdaQuery()
                     .eq(SectorQuote::getBoardType, "INDUSTRY")
                     .orderByDesc(SectorQuote::getTradeDate)
                     .last("LIMIT 1"));
             if (Objects.isNull(latest)) {
-                return new int[]{0, 0};
+                return new int[]{0, 0, 0};
             }
             day = latest.getTradeDate();
+            rows = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
+                    .eq(SectorQuote::getBoardType, "INDUSTRY")
+                    .eq(SectorQuote::getTradeDate, day));
         }
-        List<SectorQuote> rows = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
-                .eq(SectorQuote::getBoardType, "INDUSTRY")
-                .eq(SectorQuote::getTradeDate, day));
         for (SectorQuote row : rows) {
             if (Objects.nonNull(row.getUpCount())) {
                 up += row.getUpCount();
@@ -387,7 +564,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 down += row.getDownCount();
             }
         }
-        return new int[]{up, down};
+        // 板块汇总无平盘字段，且存在重复计票，仅作兜底
+        return new int[]{up, down, 0};
     }
 
     private String resolveDataLevel(List<IndexBar> sh, LocalDate asOf, LimitUpStat lu) {
@@ -498,19 +676,38 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         return ra.subtract(rb).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private VolumeStat volumeStat(List<IndexBar> bars, int maN) {
-        if (CollUtil.isEmpty(bars) || bars.size() <= maN) {
+    /**
+     * 三市成交额序列：优先 amount，缺失则用 volume 近似做量能对比
+     */
+    private VolumeStat threeMarketAmountStat(List<IndexBar> sh, List<IndexBar> sz, List<IndexBar> bj, int maN) {
+        Map<LocalDate, BigDecimal> amountByDate = new HashMap<>();
+        Map<LocalDate, BigDecimal> volumeByDate = new HashMap<>();
+        mergeMetric(amountByDate, sh, true);
+        mergeMetric(amountByDate, sz, true);
+        mergeMetric(amountByDate, bj, true);
+        mergeMetric(volumeByDate, sh, false);
+        mergeMetric(volumeByDate, sz, false);
+        mergeMetric(volumeByDate, bj, false);
+
+        boolean usedAmount = CollUtil.isNotEmpty(amountByDate);
+        Map<LocalDate, BigDecimal> series = usedAmount ? amountByDate : volumeByDate;
+        if (CollUtil.isEmpty(series)) {
             return null;
         }
-        IndexBar last = bars.get(bars.size() - 1);
-        BigDecimal vol = last.getVolume();
-        if (Objects.isNull(vol) || vol.signum() <= 0) {
+        List<LocalDate> dates = new ArrayList<>(series.keySet());
+        dates.sort(LocalDate::compareTo);
+        if (dates.size() <= maN) {
+            return null;
+        }
+        LocalDate lastDate = dates.get(dates.size() - 1);
+        BigDecimal last = series.get(lastDate);
+        if (Objects.isNull(last) || last.signum() <= 0) {
             return null;
         }
         BigDecimal sum = ZERO;
         int cnt = 0;
-        for (int i = bars.size() - 1 - maN; i < bars.size() - 1; i++) {
-            BigDecimal v = bars.get(i).getVolume();
+        for (int i = dates.size() - 1 - maN; i < dates.size() - 1; i++) {
+            BigDecimal v = series.get(dates.get(i));
             if (Objects.isNull(v) || v.signum() <= 0) {
                 continue;
             }
@@ -521,7 +718,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             return null;
         }
         BigDecimal ma = sum.divide(BigDecimal.valueOf(cnt), 6, RoundingMode.HALF_UP);
-        BigDecimal vs = vol.subtract(ma).divide(ma, 6, RoundingMode.HALF_UP)
+        BigDecimal vs = last.subtract(ma).divide(ma, 6, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
         String trend;
         if (vs.compareTo(new BigDecimal("8")) >= 0) {
@@ -534,7 +731,160 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         VolumeStat stat = new VolumeStat();
         stat.trend = trend;
         stat.vsMa5Pct = vs;
+        // 展示用成交额：有 amount 用 amount，否则留给实时拉取
+        stat.volume = usedAmount ? last : null;
+        stat.usedAmount = usedAmount;
         return stat;
+    }
+
+    private void mergeMetric(Map<LocalDate, BigDecimal> target, List<IndexBar> bars, boolean useAmount) {
+        if (CollUtil.isEmpty(bars)) {
+            return;
+        }
+        for (IndexBar bar : bars) {
+            if (Objects.isNull(bar) || Objects.isNull(bar.getTradeDate())) {
+                continue;
+            }
+            BigDecimal v = useAmount ? bar.getAmount() : bar.getVolume();
+            if (Objects.isNull(v) || v.signum() <= 0) {
+                continue;
+            }
+            target.merge(bar.getTradeDate(), v, BigDecimal::add);
+        }
+    }
+
+    /**
+     * 实时三市成交额：上证 + 深成 + 北证50（元）
+     */
+    private BigDecimal fetchLiveThreeMarketAmount() {
+        BigDecimal fromEm = fetchThreeMarketAmountFromEastMoney();
+        if (Objects.nonNull(fromEm) && fromEm.signum() > 0) {
+            return fromEm;
+        }
+        return fetchThreeMarketAmountFromSina();
+    }
+
+    private BigDecimal fetchThreeMarketAmountFromEastMoney() {
+        // ulist 的 f48 对指数常为 "-"；stock/get + push2delay 更稳
+        String[] secids = {"1.000001", "0.399001", "0.899050"};
+        String[] hosts = {
+                "https://push2delay.eastmoney.com",
+                "https://push2.eastmoney.com"
+        };
+        BigDecimal sum = ZERO;
+        int hit = 0;
+        for (String secid : secids) {
+            BigDecimal amount = null;
+            for (String host : hosts) {
+                amount = fetchIndexAmount(host, secid);
+                if (Objects.nonNull(amount) && amount.signum() > 0) {
+                    break;
+                }
+            }
+            if (Objects.nonNull(amount) && amount.signum() > 0) {
+                sum = sum.add(amount);
+                hit++;
+            }
+        }
+        return hit > 0 ? sum : null;
+    }
+
+    private BigDecimal fetchIndexAmount(String host, String secid) {
+        String url = host + "/api/qt/stock/get?fltt=2&invt=2&secid=" + secid + "&fields=f48,f57,f58";
+        try (HttpResponse response = HttpRequest.get(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Referer", "https://quote.eastmoney.com/")
+                .header("Accept", "application/json,text/plain,*/*")
+                .timeout(5000)
+                .execute()) {
+            if (!response.isOk()) {
+                return null;
+            }
+            JSONObject root = JSONUtil.parseObj(response.body());
+            JSONObject data = root.getJSONObject("data");
+            if (Objects.isNull(data)) {
+                return null;
+            }
+            Object raw = data.get("f48");
+            if (Objects.isNull(raw) || "-".equals(String.valueOf(raw))) {
+                return null;
+            }
+            return data.getBigDecimal("f48");
+        } catch (Exception ex) {
+            log.debug("东财指数成交额失败 secid={}: {}", secid, ex.getMessage());
+            return null;
+        }
+    }
+
+    private BigDecimal fetchThreeMarketAmountFromSina() {
+        // hq 字段：index9=成交量，index10=成交额
+        String url = "https://hq.sinajs.cn/list=sh000001,sz399001,bj899050";
+        try (HttpResponse response = HttpRequest.get(url)
+                .header("User-Agent", "Mozilla/5.0")
+                .header("Referer", "https://finance.sina.com.cn/")
+                .timeout(5000)
+                .execute()) {
+            if (!response.isOk() || StringUtils.isBlank(response.body())) {
+                return null;
+            }
+            BigDecimal sum = ZERO;
+            int hit = 0;
+            String[] lines = response.body().split(";");
+            for (String line : lines) {
+                int q1 = line.indexOf('"');
+                int q2 = line.lastIndexOf('"');
+                if (q1 < 0 || q2 <= q1) {
+                    continue;
+                }
+                String[] parts = line.substring(q1 + 1, q2).split(",");
+                if (parts.length < 10) {
+                    continue;
+                }
+                try {
+                    BigDecimal amount = new BigDecimal(parts[9].trim());
+                    if (amount.signum() > 0) {
+                        sum = sum.add(amount);
+                        hit++;
+                    }
+                } catch (Exception ignored) {
+                    // skip
+                }
+            }
+            return hit > 0 ? sum : null;
+        } catch (Exception ex) {
+            log.debug("新浪三市成交额失败: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    private Integer countLimitDown() {
+        try {
+            Long cnt = stockBasicMapper.selectCount(Wrappers.<StockBasic>lambdaQuery()
+                    .isNotNull(StockBasic::getPctChg)
+                    .le(StockBasic::getPctChg, new BigDecimal("-9.5")));
+            return Objects.nonNull(cnt) ? cnt.intValue() : null;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private String formatAmount(BigDecimal amount) {
+        if (Objects.isNull(amount) || amount.signum() <= 0) {
+            return null;
+        }
+        BigDecimal wanYi = new BigDecimal("1000000000000");
+        BigDecimal yi = new BigDecimal("100000000");
+        BigDecimal wan = new BigDecimal("10000");
+        if (amount.compareTo(wanYi) >= 0) {
+            return amount.divide(wanYi, 2, RoundingMode.HALF_UP).toPlainString() + "万亿";
+        }
+        if (amount.compareTo(yi) >= 0) {
+            return amount.divide(yi, 0, RoundingMode.HALF_UP).toPlainString() + "亿";
+        }
+        if (amount.compareTo(wan) >= 0) {
+            return amount.divide(wan, 1, RoundingMode.HALF_UP).toPlainString() + "万";
+        }
+        return amount.setScale(0, RoundingMode.HALF_UP).toPlainString();
     }
 
     private LimitUpStat limitUpStat(LocalDate preferDate) {
@@ -680,6 +1030,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     private static final class VolumeStat {
         private String trend;
         private BigDecimal vsMa5Pct;
+        /** 三市成交额（元），可能为空待实时补 */ private BigDecimal volume;
+        private boolean usedAmount;
     }
 
     private static final class LimitUpStat {

@@ -61,12 +61,16 @@ public class DashboardHomeResp {
         /** 数据等级 */ private String dataLevel;
         /** 主线题材 */ private List<String> hotThemes;
         /** 涨停家数 */ private Integer limitUpCount;
-        /** 上涨家数（宽度） */ private Integer breadthUp;
-        /** 下跌家数（宽度） */ private Integer breadthDown;
+        /** 跌停家数 */ private Integer limitDownCount;
+        /** 上涨家数（不含平盘） */ private Integer breadthUp;
+        /** 下跌家数（不含平盘） */ private Integer breadthDown;
+        /** 平盘家数 */ private Integer breadthFlat;
         /** 指数一行 */ private List<String> indexLines;
         /** 指数小看板 */ private List<MarketIndexItem> indexes;
         /** 量能：放量/缩量/平量 */ private String volumeTrend;
         /** 较5日均量% */ private BigDecimal volumeVsMa5Pct;
+        /** 三市成交总额（元） */ private BigDecimal indexVolume;
+        /** 三市成交总额文案 */ private String indexVolumeText;
         /** 提示 Top */ private List<String> tips;
     }
 

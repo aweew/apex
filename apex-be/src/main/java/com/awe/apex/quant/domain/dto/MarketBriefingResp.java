@@ -79,6 +79,21 @@ public class MarketBriefingResp {
     private BigDecimal volumeVsMa5Pct;
 
     /**
+     * 三市成交总额（元，上证+深成+北证50）
+     */
+    private BigDecimal indexVolume;
+
+    /**
+     * 三市成交总额展示文案
+     */
+    private String indexVolumeText;
+
+    /**
+     * 跌停家数
+     */
+    private Integer limitDownCount;
+
+    /**
      * 热点板块/题材
      */
     private List<String> hotThemes;
@@ -94,14 +109,19 @@ public class MarketBriefingResp {
     private Boolean dataSufficient;
 
     /**
-     * 上涨家数（行业板块汇总近似）
+     * 上涨家数（全市场，不含平盘）
      */
     private Integer breadthUp;
 
     /**
-     * 下跌家数
+     * 下跌家数（不含平盘）
      */
     private Integer breadthDown;
+
+    /**
+     * 平盘家数
+     */
+    private Integer breadthFlat;
 
     /**
      * 说明

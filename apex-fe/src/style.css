@@ -156,6 +156,70 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+/* 展示型指标/徽章：禁止文本选中，避免出现 I 型移动光标 */
+.card,
+.metric,
+.kpi,
+.index-card,
+.limit-badge,
+.vol-badge,
+.breadth-box,
+.count-chip,
+.theme-chip,
+.pill,
+.stance-pill,
+.score-ring,
+.factor,
+.tip-item,
+.health-stats {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* 导航与通用交互控件：禁止选中文字 */
+.header,
+.header h1,
+.header p,
+.actions,
+.panel-head,
+.section-head,
+.el-button,
+.el-tag,
+.el-link,
+.el-tabs__item,
+.el-radio-button__inner,
+.el-checkbox,
+.el-switch,
+.el-breadcrumb,
+.el-pagination,
+.el-menu,
+.el-menu-item,
+.el-sub-menu__title {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.el-button,
+.el-link,
+.el-tabs__item,
+.el-menu-item,
+.el-sub-menu__title {
+  cursor: pointer;
+}
+
+/* 输入类组件保持可选中 */
+.el-input,
+.el-textarea,
+.el-input__inner,
+.el-textarea__inner,
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
 /* —— glass surfaces —— */
 .cards,
 .board-grid {

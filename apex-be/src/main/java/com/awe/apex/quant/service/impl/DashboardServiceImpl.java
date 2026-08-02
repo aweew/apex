@@ -119,13 +119,17 @@ public class DashboardServiceImpl implements IDashboardService {
                         ? briefing.getHotThemes().subList(0, Math.min(6, briefing.getHotThemes().size()))
                         : List.of())
                 .limitUpCount(full.getLimitUpCount())
+                .limitDownCount(Objects.nonNull(briefing) ? briefing.getLimitDownCount() : null)
                 .breadthUp(Objects.nonNull(briefing) ? briefing.getBreadthUp() : null)
                 .breadthDown(Objects.nonNull(briefing) ? briefing.getBreadthDown() : null)
+                .breadthFlat(Objects.nonNull(briefing) ? briefing.getBreadthFlat() : null)
                 .indexLines(Objects.nonNull(briefing) ? briefing.getIndexLines() : List.of())
                 .indexes(Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getIndexes())
                         ? briefing.getIndexes() : List.of())
                 .volumeTrend(Objects.nonNull(briefing) ? briefing.getVolumeTrend() : null)
                 .volumeVsMa5Pct(Objects.nonNull(briefing) ? briefing.getVolumeVsMa5Pct() : null)
+                .indexVolume(Objects.nonNull(briefing) ? briefing.getIndexVolume() : null)
+                .indexVolumeText(Objects.nonNull(briefing) ? briefing.getIndexVolumeText() : null)
                 .tips(tips)
                 .build();
 

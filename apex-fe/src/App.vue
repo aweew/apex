@@ -21,7 +21,7 @@ const navGroups = [
   {
     label: '市场',
     items: [
-      { to: '/dashboard', label: '决策看板' },
+      { to: '/dashboard', label: '看板' },
       { to: '/market', label: '大盘' },
       { to: '/sector', label: '板块' },
       { to: '/limit-up', label: '涨停' },
@@ -282,6 +282,8 @@ onBeforeUnmount(() => {
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .brand-block {
@@ -390,6 +392,9 @@ onBeforeUnmount(() => {
   padding: 6px 10px;
   border-radius: 980px;
   white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
   transition: background 0.15s ease, color 0.15s ease;
 }
 

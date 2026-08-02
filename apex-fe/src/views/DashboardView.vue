@@ -54,10 +54,13 @@ function fmtIndexPct(v) {
   return `${sign}${n.toFixed(2)}%`
 }
 
-function volumeTone(trend) {
-  if (trend === '放量') return 'vol-up'
-  if (trend === '缩量') return 'vol-down'
-  if (trend === '平量') return 'vol-flat'
+/** 量能红绿：放量/正比为红，缩量/负比为绿 */
+function volumeDir(trend, vsMa5Pct) {
+  if (trend === '放量') return 'up'
+  if (trend === '缩量') return 'down'
+  const n = Number(vsMa5Pct)
+  if (!Number.isNaN(n) && n > 0) return 'up'
+  if (!Number.isNaN(n) && n < 0) return 'down'
   return ''
 }
 
@@ -67,13 +70,21 @@ const breadth = computed(() => {
   if (Number.isNaN(up) || Number.isNaN(down) || (up <= 0 && down <= 0)) {
     return null
   }
-  const total = up + down
+  // 缺字段时不要当成 0，避免「平盘家数为什么是 0」的误导
+  const flatRaw = market.value?.breadthFlat
+  const hasFlat = flatRaw != null && flatRaw !== '' && !Number.isNaN(Number(flatRaw))
+  const flatN = hasFlat ? Math.max(0, Number(flatRaw)) : null
+  const total = up + down + (flatN || 0)
   const upPct = total > 0 ? (up / total) * 100 : 50
+  const flatPct = total > 0 && flatN != null ? (flatN / total) * 100 : 0
   return {
     up,
     down,
+    flat: flatN,
+    hasFlat,
     upPct,
-    downPct: 100 - upPct,
+    flatPct,
+    downPct: Math.max(0, 100 - upPct - flatPct),
     ratio: down > 0 ? (up / down).toFixed(2) : up > 0 ? '∞' : '-',
   }
 })
@@ -191,7 +202,7 @@ async function load() {
     home.value = null
     const msg = e.message || '加载失败'
     loadError.value = msg.includes('404') || msg.includes('Not Found')
-      ? '决策看板接口未就绪：请重启后端后再刷新（/api/dashboard/home）'
+      ? '看板接口未就绪：请重启后端后再刷新（/api/dashboard/home）'
       : msg
     ElMessage.error(loadError.value)
   } finally {
@@ -232,7 +243,7 @@ onBeforeUnmount(() => {
     <header class="header dash-header">
       <div>
         <p class="eyebrow">Apex · Command</p>
-        <h1>决策看板</h1>
+        <h1>看板</h1>
         <p class="sub">{{ home?.message || '先看市场立场，再处理买卖行动' }}</p>
       </div>
       <div class="actions">
@@ -308,55 +319,83 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="stance-side">
-        <div class="index-board-head">
-          <span>大盘快照</span>
-          <el-button link type="primary" @click="router.push('/market')">大盘页</el-button>
-        </div>
-        <div v-if="indexCards.length" class="index-board">
-          <div
-            v-for="idx in indexCards.slice(0, 4)"
-            :key="idx.name"
-            class="index-card"
-            :class="idx.direction || 'flat'"
-          >
-            <div class="idx-name">{{ idx.name }}</div>
-            <div class="idx-pct" :class="idx.direction">{{ fmtIndexPct(idx.pctChg) }}</div>
-            <div class="idx-close">{{ idx.close != null ? Number(idx.close).toFixed(2) : '-' }}</div>
-          </div>
-        </div>
-        <div v-else class="index-board placeholder">
-          <div v-for="name in ['上证', '深成指', '创业板', '科创50']" :key="name" class="index-card ghost">
-            <div class="idx-name">{{ name }}</div>
-            <div class="idx-pct">-</div>
-            <div class="idx-close">待同步</div>
-          </div>
-        </div>
-        <div class="meta-row">
-          <span v-if="market?.limitUpCount != null" class="limit-badge">
-            涨停 <b>{{ market.limitUpCount }}</b> 家
-          </span>
-          <span
-            v-if="market?.volumeTrend"
-            class="vol-badge"
-            :class="volumeTone(market.volumeTrend)"
-            :title="market.volumeVsMa5Pct != null ? `较5日均量 ${fmtIndexPct(market.volumeVsMa5Pct)}` : ''"
-          >
-            {{ market.volumeTrend }}
-            <b v-if="market.volumeVsMa5Pct != null">{{ fmtIndexPct(market.volumeVsMa5Pct) }}</b>
-          </span>
-          <div v-if="breadth" class="breadth-box" :title="`涨跌比 ${breadth.ratio}`">
-            <div class="breadth-nums">
-              <span class="up">涨 {{ breadth.up }}</span>
-              <span class="sep">/</span>
-              <span class="down">跌 {{ breadth.down }}</span>
-            </div>
-            <div class="breadth-bar" aria-hidden="true">
-              <i class="up-seg" :style="{ width: breadth.upPct + '%' }" />
-              <i class="down-seg" :style="{ width: breadth.downPct + '%' }" />
+        <div class="market-block">
+          <div class="market-top">
+            <span class="market-title">大盘</span>
+            <div class="market-links">
+              <button type="button" class="text-link" @click="router.push('/market')">详情</button>
+              <button type="button" class="text-link" @click="router.push('/sync')">同步</button>
             </div>
           </div>
-          <el-button link type="primary" @click="router.push('/sync')">去同步</el-button>
-          <el-button link type="primary" @click="router.push('/decision')">完整简报</el-button>
+
+          <div class="index-lines">
+            <template v-if="indexCards.length">
+              <div
+                v-for="idx in indexCards.slice(0, 4)"
+                :key="idx.name"
+                class="index-line"
+              >
+                <span class="n">{{ idx.name }}</span>
+                <span class="c" :class="idx.direction">{{ idx.close != null ? Number(idx.close).toFixed(2) : '-' }}</span>
+                <span class="p" :class="idx.direction">{{ fmtIndexPct(idx.pctChg) }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <div v-for="name in ['上证指数', '深圳成指', '创业板指', '科创50']" :key="name" class="index-line muted">
+                <span class="n">{{ name }}</span>
+                <span class="c">--</span>
+                <span class="p">--</span>
+              </div>
+            </template>
+          </div>
+
+          <div class="stat-line">
+            <span
+              class="stat"
+              :title="market?.volumeVsMa5Pct != null ? `较5日均额 ${fmtIndexPct(market.volumeVsMa5Pct)}` : '沪深京成交额合计'"
+            >
+              <em>三市</em>
+              <b :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)">{{ market?.indexVolumeText || '--' }}</b>
+              <i
+                v-if="market?.volumeTrend || market?.volumeVsMa5Pct != null"
+                :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)"
+              >
+                <template v-if="market?.volumeTrend">{{ market.volumeTrend }}</template>
+                <template v-if="market?.volumeVsMa5Pct != null">{{ fmtIndexPct(market.volumeVsMa5Pct) }}</template>
+              </i>
+            </span>
+            <span class="dot" aria-hidden="true" />
+            <span
+              class="stat"
+              :title="breadth
+                ? `涨跌比 ${breadth.ratio}${breadth.hasFlat ? ` · 平 ${breadth.flat}` : ''}`
+                : '暂无全市场涨跌家数'"
+            >
+              <em>涨跌</em>
+              <template v-if="breadth">
+                <b class="up">{{ breadth.up }}</b>
+                <span class="slash">/</span>
+                <b class="flat">{{ breadth.hasFlat ? breadth.flat : '--' }}</b>
+                <span class="slash">/</span>
+                <b class="down">{{ breadth.down }}</b>
+              </template>
+              <b v-else class="miss">--</b>
+            </span>
+            <span class="dot" aria-hidden="true" />
+            <span class="stat">
+              <em>涨停</em>
+              <b class="up">{{ market?.limitUpCount ?? '--' }}</b>
+            </span>
+            <span class="stat">
+              <em>跌停</em>
+              <b class="down">{{ market?.limitDownCount ?? '--' }}</b>
+            </span>
+          </div>
+          <div v-if="breadth" class="breadth-track" aria-hidden="true">
+            <i class="up-seg" :style="{ width: breadth.upPct + '%' }" />
+            <i class="flat-seg" :style="{ width: breadth.flatPct + '%' }" />
+            <i class="down-seg" :style="{ width: breadth.downPct + '%' }" />
+          </div>
         </div>
       </div>
     </section>
@@ -823,194 +862,176 @@ onBeforeUnmount(() => {
   color: var(--slate);
 }
 
-.index-board-head {
+.market-block {
+  user-select: none;
+}
+
+.market-top {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
   margin-bottom: 8px;
-  font-size: 11px;
+}
+
+.market-title {
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-.index-board {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.index-card {
-  position: relative;
-  padding: 10px 12px 9px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--line);
-  overflow: hidden;
-  min-height: 72px;
-}
-
-.index-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--muted);
-}
-
-.index-card.up::before {
-  background: var(--up);
-}
-
-.index-card.down::before {
-  background: var(--down);
-}
-
-.index-card.up {
-  background: linear-gradient(135deg, rgba(255, 59, 48, 0.08), rgba(255, 255, 255, 0.75));
-  border-color: rgba(255, 59, 48, 0.14);
-}
-
-.index-card.down {
-  background: linear-gradient(135deg, rgba(52, 199, 89, 0.1), rgba(255, 255, 255, 0.75));
-  border-color: rgba(52, 199, 89, 0.16);
-}
-
-.index-card.ghost {
-  border-style: dashed;
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.index-card.ghost::before {
-  display: none;
-}
-
-.idx-name {
-  font-size: 11px;
-  font-weight: 500;
   color: var(--slate);
-  margin-bottom: 4px;
 }
 
-.idx-pct {
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-  color: var(--ink-soft);
-}
-
-.idx-pct.up {
-  color: var(--up);
-}
-
-.idx-pct.down {
-  color: var(--down);
-}
-
-.idx-close {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.meta-row {
-  margin-top: 12px;
+.market-links {
   display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+}
+
+.text-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
   font-size: 12px;
-}
-
-.limit-badge,
-.vol-badge {
-  padding: 4px 10px;
-  border-radius: 999px;
-  color: var(--ink-soft);
-  font-size: 12px;
-}
-
-.limit-badge {
-  background: rgba(255, 59, 48, 0.08);
-}
-
-.limit-badge b {
-  color: var(--up);
-  font-variant-numeric: tabular-nums;
-}
-
-.vol-badge {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.vol-badge b {
-  margin-left: 4px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 650;
-}
-
-.vol-badge.vol-up {
-  background: rgba(255, 59, 48, 0.1);
-  color: var(--up);
-}
-
-.vol-badge.vol-down {
-  background: rgba(52, 199, 89, 0.12);
-  color: #248a3d;
-}
-
-.vol-badge.vol-flat {
-  background: rgba(0, 113, 227, 0.08);
   color: var(--accent);
+  cursor: pointer;
 }
 
-.breadth-box {
-  min-width: 132px;
-  padding: 4px 10px 5px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid var(--line);
+.text-link:hover {
+  opacity: 0.8;
 }
 
-.breadth-nums {
+.index-lines {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.index-line {
   display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  cursor: default;
+}
+
+.index-line.muted {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.index-line .n {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.index-line .c {
+  font-size: 10px;
+  color: var(--ink-soft);
+  order: 1;
+}
+
+.index-line .p {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  color: var(--ink-soft);
+}
+
+.index-line .c.up,
+.index-line .p.up { color: var(--up); }
+.index-line .c.down,
+.index-line .p.down { color: var(--down); }
+.index-line.muted .c,
+.index-line.muted .p { color: var(--muted); font-weight: 400; }
+
+.stat-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.stat {
+  display: inline-flex;
   align-items: baseline;
   gap: 4px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  margin-bottom: 4px;
+  color: var(--ink-soft);
 }
 
-.breadth-nums .sep {
+.stat em {
+  font-style: normal;
   color: var(--muted);
 }
 
-.breadth-bar {
+.stat b {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.stat i {
+  font-style: normal;
+  color: var(--slate);
+  font-size: 11px;
+}
+
+.stat .slash,
+.stat .miss {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.stat b.up,
+.stat i.up,
+.stat .up { color: var(--up); }
+.stat b.down,
+.stat i.down,
+.stat .down { color: var(--down); }
+.stat b.flat,
+.stat .flat { color: var(--slate); }
+
+.stat-line .dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.15);
+  flex: 0 0 auto;
+}
+
+.breadth-track {
   display: flex;
-  height: 4px;
+  height: 3px;
+  margin-top: 8px;
   border-radius: 999px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.06);
 }
 
-.breadth-bar i {
+.breadth-track .up-seg {
   display: block;
   height: 100%;
+  background: rgba(255, 59, 48, 0.55);
 }
 
-.breadth-bar .up-seg {
-  background: var(--up);
+.breadth-track .flat-seg {
+  display: block;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.12);
 }
 
-.breadth-bar .down-seg {
-  background: var(--down);
+.breadth-track .down-seg {
+  display: block;
+  height: 100%;
+  background: rgba(52, 199, 89, 0.55);
 }
 
 /* —— panels —— */
@@ -1222,6 +1243,8 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid var(--line);
+  user-select: none;
+  cursor: default;
   transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -1368,10 +1391,6 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .meta-row {
-    justify-content: flex-start;
-  }
-
   .count-date {
     margin-left: 0;
     width: 100%;
@@ -1384,8 +1403,8 @@ onBeforeUnmount(() => {
     align-items: flex-start;
   }
 
-  .index-board {
-    grid-template-columns: 1fr;
+  .index-lines {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .kpi-row {
