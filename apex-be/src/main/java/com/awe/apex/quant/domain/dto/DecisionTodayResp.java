@@ -53,6 +53,46 @@ public class DecisionTodayResp {
     private List<DecisionItemResp> items;
 
     /**
+     * 买入条数
+     */
+    private Integer buyCount;
+
+    /**
+     * 卖出条数
+     */
+    private Integer sellCount;
+
+    /**
+     * 持有条数
+     */
+    private Integer holdCount;
+
+    /**
+     * 可执行提示条数（executableHint=true）
+     */
+    private Integer executableCount;
+
+    /**
+     * 主线匹配条数
+     */
+    private Integer mainlineMatchCount;
+
+    /**
+     * 低估/偏低条数
+     */
+    private Integer valuationCheapCount;
+
+    /**
+     * 合理估值条数
+     */
+    private Integer valuationFairCount;
+
+    /**
+     * 高估/偏高条数
+     */
+    private Integer valuationRichCount;
+
+    /**
      * 风控摘要
      */
     private String riskNote;

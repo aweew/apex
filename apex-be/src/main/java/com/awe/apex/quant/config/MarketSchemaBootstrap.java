@@ -51,7 +51,21 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     "ALTER TABLE daily_action ADD COLUMN score_explain VARCHAR(512) NULL");
             ensureColumn("daily_action", "strategies_csv",
                     "ALTER TABLE daily_action ADD COLUMN strategies_csv VARCHAR(64) NULL");
-            log.info("schema ready: daily_action attribution columns");
+            ensureColumn("daily_action", "valuation_level",
+                    "ALTER TABLE daily_action ADD COLUMN valuation_level VARCHAR(32) NULL");
+            ensureColumn("daily_action", "valuation_label",
+                    "ALTER TABLE daily_action ADD COLUMN valuation_label VARCHAR(32) NULL");
+            ensureColumn("daily_action", "valuation_score",
+                    "ALTER TABLE daily_action ADD COLUMN valuation_score DECIMAL(10, 2) NULL");
+            ensureColumn("daily_action", "valuation_summary",
+                    "ALTER TABLE daily_action ADD COLUMN valuation_summary VARCHAR(256) NULL");
+            ensureColumn("daily_action", "link_hint",
+                    "ALTER TABLE daily_action ADD COLUMN link_hint VARCHAR(64) NULL");
+            ensureColumn("daily_action", "risk_flags",
+                    "ALTER TABLE daily_action ADD COLUMN risk_flags VARCHAR(256) NULL");
+            ensureColumn("daily_action", "executable_hint",
+                    "ALTER TABLE daily_action ADD COLUMN executable_hint TINYINT NULL");
+            log.info("schema ready: daily_action attribution/valuation columns");
             jdbcTemplate.execute("""
                     CREATE TABLE IF NOT EXISTS observe_pool (
                         id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',

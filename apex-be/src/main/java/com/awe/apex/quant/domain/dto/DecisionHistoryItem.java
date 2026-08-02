@@ -38,6 +38,31 @@ public class DecisionHistoryItem {
     private Integer holdCount;
 
     /**
+     * 可执行提示条数
+     */
+    private Integer executableCount;
+
+    /**
+     * 低估/偏低条数
+     */
+    private Integer valuationCheapCount;
+
+    /**
+     * 合理估值条数
+     */
+    private Integer valuationFairCount;
+
+    /**
+     * 高估/偏高条数
+     */
+    private Integer valuationRichCount;
+
+    /**
+     * 主线匹配条数
+     */
+    private Integer mainlineMatchCount;
+
+    /**
      * 买入建议次日平均涨跌幅%（有日线时）
      */
     private BigDecimal nextDayAvgPct;

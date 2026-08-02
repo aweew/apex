@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import { fetchLimitUpLadder, refreshLimitUpLadder } from '../api/limitUp'
+import { saveObserve } from '../api/observe'
 import { getSyncJob, startSyncJob } from '../api/sync'
 import { useTradeDateStore } from '../stores/tradeDate'
 
@@ -45,6 +46,24 @@ function disableUnavailableDate(date) {
 function fmtRate(v) {
   if (v == null || v === '') return ''
   return `${Number(v).toFixed(1)}%`
+}
+
+async function addObserve(stock, e) {
+  e?.stopPropagation?.()
+  if (!stock?.code) return
+  try {
+    await saveObserve({
+      code: stock.code,
+      name: stock.name || '',
+      status: 'WATCHING',
+      reason: `涨停复盘 ${stock.lianban || 1}板`,
+      tags: 'limitup',
+      priority: Math.min(5, Number(stock.lianban) || 3),
+    })
+    ElMessage.success(`${stock.code} 已进观察池`)
+  } catch (err) {
+    ElMessage.error(err.message || '加入失败')
+  }
 }
 
 function fmtSealAmount(v) {
@@ -143,8 +162,9 @@ onBeforeUnmount(() => {
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Limit-Up</p>
         <h1>涨停复盘</h1>
-        <p class="sub">{{ data?.message || '连板天梯 · 东财涨停池' }}</p>
+        <p>{{ data?.message || '连板天梯 · 东财涨停池 · 情绪与接力参考' }}</p>
       </div>
       <div class="actions">
         <el-date-picker
@@ -157,6 +177,9 @@ onBeforeUnmount(() => {
           :disabled-date="disableUnavailableDate"
         />
         <el-button type="primary" :loading="refreshing" @click="onRefresh">刷新</el-button>
+        <el-button plain @click="router.push('/sector')">板块</el-button>
+        <el-button plain @click="router.push('/hot')">热点</el-button>
+        <el-button plain @click="router.push('/decision')">决策</el-button>
       </div>
     </header>
 
@@ -191,7 +214,12 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <div v-if="!tiers.length" class="empty">暂无数据，请点击刷新拉取涨停池</div>
+    <div v-if="!tiers.length" class="page-empty">
+      <h3>暂无涨停复盘</h3>
+      <p>刷新东财涨停池后看连板天梯与题材分布，卡片上「观」可进观察池</p>
+      <el-button type="primary" :loading="refreshing" @click="onRefresh">立即刷新</el-button>
+      <el-button plain @click="router.push('/hot')">市场热点</el-button>
+    </div>
 
     <section
       v-for="tier in tiers"
@@ -217,6 +245,12 @@ onBeforeUnmount(() => {
             <span class="badges">
               <i v-if="s.lianban > 1" class="badge lb">{{ s.lianban }}</i>
               <i v-if="s.breakCount > 0" class="badge break">炸</i>
+              <button
+                type="button"
+                class="badge obs"
+                title="加入观察池"
+                @click="addObserve(s, $event)"
+              >观</button>
             </span>
           </div>
           <div class="card-name">{{ s.name || s.code }}</div>
@@ -404,6 +438,17 @@ onBeforeUnmount(() => {
 
 .badge.break {
   background: #e6a23c;
+}
+
+.badge.obs {
+  border: 0;
+  cursor: pointer;
+  background: #0071e3;
+  font-family: inherit;
+}
+
+.badge.obs:hover {
+  filter: brightness(1.08);
 }
 
 .card-name {

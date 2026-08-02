@@ -203,20 +203,26 @@ onBeforeUnmount(() => {
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Market</p>
         <h1>大盘看板</h1>
         <p>{{ data?.message || 'A股 / 港股 / 日韩 / 美股主流指数 · 含历史与成交量较昨日对比' }}</p>
       </div>
       <div class="actions">
         <el-button type="primary" :loading="refreshing" @click="onRefresh('20180101')">同步历史并刷新</el-button>
         <el-button :loading="refreshing" @click="onRefresh('20240101')">快刷(自2024)</el-button>
-        <el-button @click="load">重新加载</el-button>
-        <el-button @click="router.push('/news')">资讯</el-button>
+        <el-button plain @click="router.push('/sector')">板块</el-button>
+        <el-button plain @click="router.push('/decision')">决策</el-button>
+        <el-button plain @click="router.push('/news')">资讯</el-button>
+        <el-button text @click="load">刷新</el-button>
       </div>
     </header>
 
-    <el-empty v-if="!loading && sections.every((s) => !s.items.length)" description="暂无指数数据">
+    <div v-if="!loading && sections.every((s) => !s.items.length)" class="page-empty">
+      <h3>暂无指数数据</h3>
+      <p>同步历史后看 A股/港股/美股等主流指数与量能对比</p>
       <el-button type="primary" :loading="refreshing" @click="onRefresh('20180101')">拉取历史指数</el-button>
-    </el-empty>
+      <el-button plain @click="router.push('/decision')">智能决策</el-button>
+    </div>
 
     <section v-for="sec in sections" :key="sec.key" class="market-sec" v-show="sec.items.length">
       <h2>{{ sec.title }}</h2>

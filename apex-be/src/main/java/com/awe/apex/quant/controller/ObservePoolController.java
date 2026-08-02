@@ -38,15 +38,17 @@ public class ObservePoolController {
     /**
      * 观察池列表
      *
-     * @param status  状态
+     * @param status  状态；空则默认排除归档；READY=TRIGGERED+NEAR
+     * @param side    方向 BUY/SELL/MOOD
      * @param keyword 关键字
      * @return 列表
      */
     @GetMapping("/list")
     public Result<List<ObservePoolResp>> list(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String side,
             @RequestParam(required = false) String keyword) {
-        return Result.success(observePoolService.list(status, keyword));
+        return Result.success(observePoolService.list(status, side, keyword));
     }
 
     /**

@@ -120,6 +120,16 @@ a {
   line-height: 1.55;
 }
 
+.header .eyebrow,
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
 .actions,
 .header-actions {
   display: flex;
@@ -405,6 +415,158 @@ textarea {
 .page .el-input__wrapper.is-focus,
 .page .el-select__wrapper.is-focused {
   box-shadow: 0 0 0 1px rgba(0, 113, 227, 0.45) inset, 0 0 0 3px rgba(0, 113, 227, 0.12) !important;
+}
+
+/* 评分强度条（决策/信号通用） */
+.score-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+}
+
+.score-bar .score-bar-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  min-width: 36px;
+}
+
+.score-bar .score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.score-bar .score-bar-fill.hot {
+  background: #ff3b30;
+}
+
+.score-bar .score-bar-fill.warm {
+  background: #ff9f0a;
+}
+
+.score-bar .score-bar-num {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.4em;
+}
+
+.page-empty {
+  padding: 36px 20px;
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.page-empty h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.page-empty p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.toolbar-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--glass);
+}
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.stat-card {
+  padding: 12px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.stat-card label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.stat-card b {
+  font-size: 20px;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .stat-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 终端紧凑密度（App.vue shell.dense） */
+.shell.dense .page {
+  padding: 14px 16px 28px;
+}
+
+.shell.dense .header {
+  margin-bottom: 12px;
+}
+
+.shell.dense .header h1 {
+  font-size: clamp(22px, 2.8vw, 28px);
+}
+
+.shell.dense .header p {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.shell.dense .el-table {
+  font-size: 12px;
+}
+
+.shell.dense .el-table .cell {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.shell.dense .stat-cards {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.shell.dense .stat-card {
+  padding: 8px 10px;
+}
+
+.shell.dense .stat-card b {
+  font-size: 17px;
+}
+
+.shell.dense .nav {
+  height: 48px;
+}
+
+.shell.dense .page {
+  min-height: calc(100vh - 48px);
 }
 
 @keyframes pageIn {

@@ -24,6 +24,7 @@ const saving = ref(false)
 const rows = ref([])
 const templates = ref([])
 const sideTab = ref('BUY')
+const statusFilter = ref('')
 const keyword = ref('')
 const dialogVisible = ref(false)
 const guideOpenId = ref(null)
@@ -56,15 +57,6 @@ const TRIGGER_OPTS = [
   { value: 'BREAK_HIGH', label: '突破前高' },
   { value: 'MANUAL', label: '手工确认' },
 ]
-
-const STATUS_LABEL = {
-  WATCHING: '观察中',
-  NEAR: '接近',
-  TRIGGERED: '可执行',
-  HIT_TARGET: '达目标',
-  STOPPED: '已止损',
-  ARCHIVED: '已归档',
-}
 
 function sideOf(row) {
   const blob = `${row?.tags || ''} ${row?.reason || ''} ${row?.guideText || ''}`
@@ -132,7 +124,10 @@ function actTone(row) {
   return 'quiet'
 }
 
-const activeRows = computed(() => rows.value.filter((r) => r.status !== 'ARCHIVED'))
+const activeRows = computed(() => {
+  if (statusFilter.value === 'ARCHIVED') return rows.value
+  return rows.value.filter((r) => r.status !== 'ARCHIVED')
+})
 
 const buyCount = computed(() => activeRows.value.filter((r) => sideOf(r) === 'BUY').length)
 const moodCount = computed(() => activeRows.value.filter((r) => sideOf(r) === 'MOOD').length)
@@ -143,6 +138,11 @@ const visibleRows = computed(() => {
   if (sideTab.value === 'BUY') list = list.filter((r) => sideOf(r) === 'BUY')
   if (sideTab.value === 'MOOD') list = list.filter((r) => sideOf(r) === 'MOOD')
   if (sideTab.value === 'SELL') list = list.filter((r) => sideOf(r) === 'SELL')
+  if (statusFilter.value === 'READY') {
+    list = list.filter((r) => r.status === 'TRIGGERED' || r.status === 'NEAR')
+  } else if (statusFilter.value) {
+    list = list.filter((r) => r.status === statusFilter.value)
+  }
   return [...list].sort((a, b) => {
     const order = { TRIGGERED: 0, NEAR: 1, WATCHING: 2, HIT_TARGET: 3, STOPPED: 4, ARCHIVED: 5 }
     const da = order[a.status] ?? 9
@@ -173,12 +173,27 @@ async function load() {
   try {
     const res = await listObserve({
       keyword: keyword.value || undefined,
+      // READY/ARCHIVED 走服务端；其余状态仍前端筛（现场评估与落库可能不一致）
+      status:
+        statusFilter.value === 'ARCHIVED' || statusFilter.value === 'READY'
+          ? statusFilter.value
+          : undefined,
     })
     rows.value = res.data || []
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+/** 切换状态；READY/归档需重新请求后端 */
+async function setStatusFilter(next) {
+  const prev = statusFilter.value
+  statusFilter.value = next
+  const serverStatuses = new Set(['ARCHIVED', 'READY'])
+  if (serverStatuses.has(prev) || serverStatuses.has(next)) {
+    await load()
   }
 }
 
@@ -397,6 +412,21 @@ function strategyLabel(row) {
   return id || '策略'
 }
 
+/** 去掉与顶部芯片重复的「策略/估值」行，避免中间叠字 */
+function displayPickReasons(row) {
+  const list = row?.pickReasons || []
+  const out = []
+  for (const raw of list) {
+    const text = String(raw || '').trim()
+    if (!text) continue
+    if (text.startsWith('策略：') || text.startsWith('策略:')) continue
+    if (text.startsWith('估值：') || text.startsWith('估值:')) continue
+    out.push(text)
+    if (out.length >= 3) break
+  }
+  return out
+}
+
 function shortReason(row) {
   const side = sideOf(row)
   let raw = String(row.reason || '')
@@ -416,6 +446,14 @@ function shortReason(row) {
   const prefix = side === 'SELL' ? '卖出 · ' : side === 'MOOD' ? '情绪 · ' : '观察 · '
   const body = raw.length > 72 ? raw.slice(0, 72) + '…' : raw || '—'
   return prefix + body
+}
+
+/** 从理由/备注提取估值×策略联动提示 */
+function linkHintOf(row) {
+  const blob = `${row?.reason || ''} ${row?.note || ''} ${row?.statusHint || ''}`
+  if (blob.includes('低估回调优先')) return '低估回调优先'
+  if (blob.includes('高估突破降权')) return '高估突破降权'
+  return ''
 }
 
 function statusTone(status) {
@@ -450,8 +488,9 @@ onMounted(async () => {
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Observe</p>
         <h1>观察池</h1>
-        <p>买入机会 + 情绪风向标（如德明利式焦点票，跌也值得盯）</p>
+        <p>买入机会 + 情绪风向标；优先处理「接近 / 可执行」</p>
       </div>
       <div class="actions">
         <button type="button" class="btn btn-primary" :disabled="deciding" @click="onAutoDecide">
@@ -461,6 +500,12 @@ onMounted(async () => {
           {{ refreshing ? '评估中…' : '重估' }}
         </button>
         <button type="button" class="btn btn-ghost" @click="openCreate()">手动加</button>
+        <a
+          class="btn btn-text"
+          href="http://127.0.0.1:8080/apex/api/export/observe"
+          target="_blank"
+          rel="noopener"
+        >导出CSV</a>
         <button type="button" class="btn btn-text" @click="router.push('/decision')">决策明细</button>
       </div>
     </header>
@@ -493,6 +538,17 @@ onMounted(async () => {
         placeholder="搜代码/名称"
         class="search"
       />
+    </div>
+
+    <div class="status-chips">
+      <button type="button" class="chip" :class="{ on: !statusFilter }" @click="setStatusFilter('')">全部状态</button>
+      <button type="button" class="chip ready" :class="{ on: statusFilter === 'READY' }" @click="setStatusFilter('READY')">
+        优先处理 {{ stats.buyReady || 0 }}
+      </button>
+      <button type="button" class="chip" :class="{ on: statusFilter === 'TRIGGERED' }" @click="setStatusFilter('TRIGGERED')">可执行</button>
+      <button type="button" class="chip" :class="{ on: statusFilter === 'NEAR' }" @click="setStatusFilter('NEAR')">接近</button>
+      <button type="button" class="chip" :class="{ on: statusFilter === 'WATCHING' }" @click="setStatusFilter('WATCHING')">观察中</button>
+      <button type="button" class="chip" :class="{ on: statusFilter === 'ARCHIVED' }" @click="setStatusFilter('ARCHIVED')">已归档</button>
     </div>
 
     <el-empty
@@ -532,7 +588,6 @@ onMounted(async () => {
               class="act"
               :class="[actTone(row), sideOf(row) === 'MOOD' ? 'mood' : '']"
             >{{ actionLabel(row) }}</span>
-            <span class="st">{{ STATUS_LABEL[row.status] || row.status }}</span>
           </div>
           <div class="price">
             <b :class="Number(row.pctChg) > 0 ? 'up' : Number(row.pctChg) < 0 ? 'down' : ''">
@@ -558,11 +613,16 @@ onMounted(async () => {
                 }"
                 @click.stop="router.push({ path: '/valuation', query: { code: row.code } })"
               >估·{{ row.valuationLabel }}</span>
+              <span
+                v-if="linkHintOf(row)"
+                class="link-chip"
+                :class="{ down: linkHintOf(row).includes('降权') }"
+              >{{ linkHintOf(row) }}</span>
               <span v-if="row.pct2d != null" class="span-muted">2日 {{ fmtPct(row.pct2d) }}</span>
               <span v-if="row.pct5d != null" class="span-muted">5日 {{ fmtPct(row.pct5d) }}</span>
             </div>
-            <ul v-if="row.pickReasons?.length" class="pick-reasons">
-              <li v-for="(r, idx) in row.pickReasons.slice(0, 4)" :key="idx">{{ r }}</li>
+            <ul v-if="displayPickReasons(row).length" class="pick-reasons">
+              <li v-for="(r, idx) in displayPickReasons(row)" :key="idx">{{ r }}</li>
             </ul>
             <div v-else class="reason">{{ shortReason(row) }}</div>
             <div class="risks">
@@ -777,6 +837,9 @@ onMounted(async () => {
   font-weight: 500;
   padding-left: 8px;
   padding-right: 8px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .btn.sm {
@@ -784,19 +847,61 @@ onMounted(async () => {
   font-size: 12px;
 }
 
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--accent, #0071e3);
+  text-transform: uppercase;
+}
+
 .summary {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   align-items: stretch;
-  margin-bottom: 18px;
+  margin-bottom: 10px;
+}
+
+.status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.status-chips .chip {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 980px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--ink-soft, #3a3a3c);
+  cursor: pointer;
+}
+
+.status-chips .chip.on {
+  background: var(--accent-soft, rgba(0, 113, 227, 0.12));
+  color: var(--accent, #0071e3);
+  border-color: rgba(0, 113, 227, 0.25);
+  font-weight: 650;
+}
+
+.status-chips .chip.ready.on {
+  background: rgba(255, 159, 10, 0.14);
+  color: #b36b00;
+  border-color: rgba(255, 159, 10, 0.35);
 }
 
 .sum {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 140px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+  min-width: 168px;
   padding: 12px 16px;
   border-radius: 12px;
   border: 1px solid var(--line, #e8e8ed);
@@ -807,19 +912,28 @@ onMounted(async () => {
 }
 
 .sum span {
+  grid-column: 1;
+  grid-row: 1;
   font-size: 13px;
   color: var(--slate, #64748b);
 }
 
 .sum b {
+  grid-column: 2;
+  grid-row: 1 / span 2;
   font-size: 22px;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  align-self: center;
 }
 
 .sum small {
-  margin-left: auto;
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
   font-size: 11px;
   color: var(--muted, #8e8e93);
+  white-space: nowrap;
 }
 
 .sum.buy b { color: var(--ink, #1d1d1f); }
@@ -843,7 +957,7 @@ onMounted(async () => {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 12px;
   align-items: stretch;
 }
@@ -856,9 +970,14 @@ onMounted(async () => {
   border: 1px solid var(--line, #e8e8ed);
   border-radius: 14px;
   padding: 16px 16px 12px;
-  background: rgba(255, 255, 255, 0.78);
+  /* 实底 + 关掉全局 glass blur，避免中间字出现重影挡住正文 */
+  background: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-top: 3px solid rgba(0, 0, 0, 0.08);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  overflow: hidden;
+  isolation: isolate;
 }
 
 .card-main {
@@ -871,14 +990,22 @@ onMounted(async () => {
 .card:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  background: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
+.card.near:hover { background: #fffbf2; }
+.card.trig:hover { background: #f5f9ff; }
+.card.mood:hover { background: #fffaf0; }
+.card.sell.trig:hover { background: #f3fbf5; }
+
 .card.buy { border-top-color: rgba(0, 0, 0, 0.14); }
-.card.mood { border-top-color: rgba(180, 120, 20, 0.55); background: rgba(255, 196, 80, 0.06); }
+.card.mood { border-top-color: rgba(180, 120, 20, 0.55); background: #fffaf0; }
 .card.sell { border-top-color: rgba(52, 199, 89, 0.55); }
-.card.near { background: rgba(255, 196, 80, 0.08); border-top-color: rgba(200, 140, 20, 0.65); }
-.card.trig { background: rgba(0, 113, 227, 0.04); border-top-color: rgba(0, 113, 227, 0.55); }
-.card.sell.trig { background: rgba(52, 199, 89, 0.06); border-top-color: rgba(52, 199, 89, 0.65); }
+.card.near { background: #fffbf2; border-top-color: rgba(200, 140, 20, 0.65); }
+.card.trig { background: #f5f9ff; border-top-color: rgba(0, 113, 227, 0.55); }
+.card.sell.trig { background: #f3fbf5; border-top-color: rgba(52, 199, 89, 0.65); }
 .card.ok { border-top-color: #34c759; }
 .card.stop { opacity: 0.82; }
 
@@ -973,15 +1100,11 @@ onMounted(async () => {
   color: #8a5a00;
 }
 
-.st {
-  font-size: 11px;
-  color: var(--muted, #8e8e93);
-}
-
 .price {
   text-align: right;
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
+  min-width: 72px;
 }
 
 .price b {
@@ -994,15 +1117,18 @@ onMounted(async () => {
 }
 
 .hint {
+  position: relative;
+  z-index: 1;
   font-size: 12px;
   color: var(--slate, #64748b);
   margin: 0 0 10px;
-  line-height: 1.4;
-  min-height: 2.8em;
+  line-height: 1.45;
+  min-height: 1.45em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  background: transparent;
 }
 
 .triple {
@@ -1051,9 +1177,12 @@ onMounted(async () => {
 }
 
 .pick {
+  position: relative;
+  z-index: 1;
   margin: 0 0 8px;
-  flex: 1 1 auto;
-  min-height: 96px;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .pick-head {
@@ -1099,6 +1228,20 @@ onMounted(async () => {
 }
 
 .pick-head .val-chip.rich {
+  color: #8a3b28;
+  background: rgba(138, 59, 40, 0.1);
+}
+
+.pick-head .link-chip {
+  font-size: 11px;
+  font-weight: 650;
+  color: #1f6b3a;
+  background: rgba(31, 107, 58, 0.1);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.pick-head .link-chip.down {
   color: #8a3b28;
   background: rgba(138, 59, 40, 0.1);
 }

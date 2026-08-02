@@ -10,6 +10,7 @@ import jakarta.annotation.Resource;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -21,6 +22,10 @@ import java.util.Objects;
 public class S1MaTrendStrategy implements Strategy {
 
     public static final String ID = "S1";
+
+    private static final BigDecimal SCORE_MIN = new BigDecimal("65");
+    private static final BigDecimal SCORE_MAX = new BigDecimal("92");
+    private static final BigDecimal BUY_BASE = new BigDecimal("68");
 
     @Resource
     private StrategyParams strategyParams;
@@ -44,16 +49,31 @@ public class S1MaTrendStrategy implements Strategy {
         }
         if (shouldEnter(series, index)) {
             int fast = strategyParams.s1FastMa();
+            int volMaN = strategyParams.s1VolMa();
+            BigDecimal maFast = IndicatorUtils.ma(series.getCloses(), fast, index);
+            BigDecimal maSlow = IndicatorUtils.ma(series.getCloses(), slow, index);
+            BigDecimal close = series.getCloses().get(index);
+            BigDecimal volMa = IndicatorUtils.ma(series.getVolumes(), volMaN, index);
+            BigDecimal volume = series.getVolumes().get(index);
+            BigDecimal crossPct = pctAbove(maFast, maSlow);
+            BigDecimal volRatio = safeDivide(volume, volMa);
+            BigDecimal closeVsMa = pctAbove(close, maFast);
+            BigDecimal score = strengthScore(crossPct, volRatio, closeVsMa);
+
             Map<String, Object> reason = new HashMap<>();
             reason.put("rule", "MA" + fast + "上穿MA" + slow + "且放量");
-            reason.put("maFast", IndicatorUtils.ma(series.getCloses(), fast, index));
-            reason.put("maSlow", IndicatorUtils.ma(series.getCloses(), slow, index));
+            reason.put("maFast", maFast);
+            reason.put("maSlow", maSlow);
+            reason.put("crossPct", crossPct);
+            reason.put("volRatio", volRatio);
+            reason.put("closeVsMaFast", closeVsMa);
+            reason.put("strengthScore", score);
             return StrategySignalResult.builder()
                     .strategyId(ID)
                     .code(code)
                     .signalDate(series.getDates().get(index))
                     .side(SignalSide.BUY)
-                    .score(new BigDecimal("80"))
+                    .score(score)
                     .reason(reason)
                     .build();
         }
@@ -107,5 +127,63 @@ public class S1MaTrendStrategy implements Strategy {
             return false;
         }
         return close.compareTo(maFast) < 0;
+    }
+
+    /**
+     * 连续强度分：金叉幅度 + 量比 + 收盘相对快线位置，落在 [65,92]
+     */
+    private BigDecimal strengthScore(BigDecimal crossPct, BigDecimal volRatio, BigDecimal closeVsMa) {
+        BigDecimal score = BUY_BASE;
+        // 金叉幅度：0~2% → +0~10
+        if (Objects.nonNull(crossPct) && crossPct.signum() > 0) {
+            BigDecimal boost = crossPct.multiply(new BigDecimal("5")).min(new BigDecimal("10"));
+            score = score.add(boost);
+        }
+        // 量比：1~3 → +0~8
+        if (Objects.nonNull(volRatio) && volRatio.compareTo(BigDecimal.ONE) > 0) {
+            BigDecimal boost = volRatio.subtract(BigDecimal.ONE).multiply(new BigDecimal("4"))
+                    .min(new BigDecimal("8"));
+            score = score.add(boost);
+        }
+        // 收盘略高于快线加分，过高略减（追涨）
+        if (Objects.nonNull(closeVsMa)) {
+            if (closeVsMa.compareTo(new BigDecimal("0.5")) >= 0
+                    && closeVsMa.compareTo(new BigDecimal("3")) <= 0) {
+                score = score.add(new BigDecimal("6"));
+            } else if (closeVsMa.compareTo(new BigDecimal("3")) > 0
+                    && closeVsMa.compareTo(new BigDecimal("6")) <= 0) {
+                score = score.add(new BigDecimal("3"));
+            } else if (closeVsMa.compareTo(new BigDecimal("6")) > 0) {
+                score = score.add(new BigDecimal("1"));
+            }
+        }
+        return clampScore(score);
+    }
+
+    private static BigDecimal clampScore(BigDecimal score) {
+        if (score.compareTo(SCORE_MIN) < 0) {
+            return SCORE_MIN;
+        }
+        if (score.compareTo(SCORE_MAX) > 0) {
+            return SCORE_MAX;
+        }
+        return score.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal pctAbove(BigDecimal upper, BigDecimal lower) {
+        if (Objects.isNull(upper) || Objects.isNull(lower) || lower.signum() <= 0) {
+            return null;
+        }
+        return upper.subtract(lower)
+                .divide(lower, 6, RoundingMode.HALF_UP)
+                .multiply(new BigDecimal("100"))
+                .setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal safeDivide(BigDecimal a, BigDecimal b) {
+        if (Objects.isNull(a) || Objects.isNull(b) || b.signum() <= 0) {
+            return null;
+        }
+        return a.divide(b, 4, RoundingMode.HALF_UP);
     }
 }

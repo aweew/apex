@@ -13,15 +13,42 @@ const loading = ref(false)
 const results = ref([])
 const inputRef = ref(null)
 const glossaryRef = ref(null)
+/** 终端紧凑密度：缩小表格与页边距 */
+const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 let healthTimer
 let searchSeq = 0
 let debounceTimer
 
+function toggleDense() {
+  denseMode.value = !denseMode.value
+  localStorage.setItem('apex.ui.dense', denseMode.value ? '1' : '0')
+}
+
+/** 对齐终端工作流：看板→研判→交易→市场→工具 */
 const navGroups = [
+  {
+    label: '主线',
+    items: [
+      { to: '/dashboard', label: '看板' },
+      { to: '/decision', label: '决策' },
+      { to: '/observe', label: '观察池' },
+      { to: '/holding', label: '持仓' },
+      { to: '/paper', label: '模拟盘' },
+    ],
+  },
+  {
+    label: '研究',
+    items: [
+      { to: '/signals', label: '信号' },
+      { to: '/valuation', label: '估值' },
+      { to: '/screener', label: '选股' },
+      { to: '/pipeline', label: '流水线' },
+      { to: '/backtest', label: '回测' },
+    ],
+  },
   {
     label: '市场',
     items: [
-      { to: '/dashboard', label: '看板' },
       { to: '/market', label: '大盘' },
       { to: '/sector', label: '板块' },
       { to: '/limit-up', label: '涨停' },
@@ -30,26 +57,11 @@ const navGroups = [
     ],
   },
   {
-    label: '交易',
-    items: [
-      { to: '/decision', label: '决策' },
-      { to: '/holding', label: '持仓' },
-      { to: '/observe', label: '观察池' },
-      { to: '/paper', label: '模拟盘' },
-      { to: '/signals', label: '信号' },
-      { to: '/backtest', label: '回测' },
-      { to: '/daily', label: '日终' },
-      { to: '/pipeline', label: '流水线' },
-      { to: '/screener', label: '选股' },
-      { to: '/valuation', label: '估值' },
-    ],
-  },
-  {
     label: '数据',
     items: [
-      { to: '/sync', label: '同步中心' },
       { to: '/watchlist', label: '自选' },
-      { to: '/stock', label: '个股' },
+      { to: '/sync', label: '同步' },
+      { to: '/daily', label: '日终' },
       { to: '/config', label: '参数' },
     ],
   },
@@ -100,6 +112,7 @@ function markHtml(text, keyword) {
 
 async function openSearch() {
   searchOpen.value = true
+  loadRecentStocks()
   await nextTick()
   inputRef.value?.focus?.()
 }
@@ -143,8 +156,33 @@ async function runSearch(keyword) {
   }
 }
 
-function goStock(code) {
+const RECENT_KEY = 'apex.search.recent'
+const recentStocks = ref([])
+
+function loadRecentStocks() {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+    recentStocks.value = Array.isArray(list) ? list.slice(0, 8) : []
+  } catch {
+    recentStocks.value = []
+  }
+}
+
+function rememberStock(code, name = '') {
+  const c = String(code || '').trim()
+  if (!c) return
+  const next = [{ code: c, name: name || '' }, ...recentStocks.value.filter((r) => r.code !== c)].slice(0, 8)
+  recentStocks.value = next
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+  } catch {
+    /* ignore */
+  }
+}
+
+function goStock(code, name = '') {
   if (!code) return
+  rememberStock(code, name)
   router.push(`/stock/${code}`)
   closeSearch()
 }
@@ -153,7 +191,7 @@ function onEnter() {
   const keyword = String(query.value || '').trim()
   const code = keyword.replace(/\D/g, '').slice(0, 6)
   if (results.value.length) {
-    goStock(results.value[0].code)
+    goStock(results.value[0].code, results.value[0].name)
     return
   }
   if (code.length === 6) goStock(code)
@@ -173,6 +211,20 @@ function onGlobalKeydown(e) {
     e.preventDefault()
     openGlossary()
   }
+  // Ctrl+Shift+D 切换紧凑密度
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+    e.preventDefault()
+    toggleDense()
+  }
+  // Ctrl+1..4 主线快捷跳转（终端习惯）
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    const map = { '1': '/dashboard', '2': '/decision', '3': '/observe', '4': '/holding' }
+    const path = map[e.key]
+    if (path) {
+      e.preventDefault()
+      router.push(path)
+    }
+  }
 }
 
 onMounted(() => {
@@ -188,7 +240,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ dense: denseMode }">
     <nav class="nav">
       <div class="brand-block">
         <strong class="brand">Apex</strong>
@@ -198,6 +250,15 @@ onBeforeUnmount(() => {
         <i class="dot" />
         {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
       </span>
+      <button
+        type="button"
+        class="search-btn density-btn"
+        :class="{ on: denseMode }"
+        title="紧凑密度 Ctrl+Shift+D"
+        @click="toggleDense"
+      >
+        <span>{{ denseMode ? '紧凑' : '舒适' }}</span>
+      </button>
       <div class="links">
         <div v-for="group in navGroups" :key="group.label" class="nav-group">
           <span class="group-label">{{ group.label }}</span>
@@ -244,11 +305,29 @@ onBeforeUnmount(() => {
         </div>
         <div class="search-body">
           <div v-if="loading" class="search-tip">搜索中…</div>
-          <div v-else-if="!query.trim()" class="search-tip">输入后回车打开第一条结果</div>
+          <template v-else-if="!query.trim()">
+            <div v-if="recentStocks.length" class="search-recent">
+              <div class="search-tip">最近浏览</div>
+              <ul class="search-list">
+                <li v-for="item in recentStocks" :key="item.code">
+                  <button type="button" class="search-item" @click="goStock(item.code, item.name)">
+                    <span class="code">{{ item.code }}</span>
+                    <span class="name">{{ item.name || '-' }}</span>
+                  </button>
+                </li>
+              </ul>
+            </div>
+            <div v-else class="search-tip">
+              输入后回车打开第一条结果
+              <div class="search-keys">
+                Ctrl+K 搜索 · Ctrl+/ 名词 · Ctrl+Shift+D 紧凑 · Ctrl+1~4 看板/决策/观察/持仓
+              </div>
+            </div>
+          </template>
           <div v-else-if="!results.length" class="search-tip">无匹配</div>
           <ul v-else class="search-list">
             <li v-for="item in results" :key="item.code">
-              <button type="button" class="search-item" @click="goStock(item.code)">
+              <button type="button" class="search-item" @click="goStock(item.code, item.name)">
                 <span class="code" v-html="item.codeHtml" />
                 <span class="name" v-html="item.nameHtml" />
                 <span v-if="item.market" class="market">{{ item.market }}</span>
@@ -268,6 +347,14 @@ onBeforeUnmount(() => {
 <style scoped>
 .shell {
   min-height: 100vh;
+}
+
+.shell.dense .nav {
+  height: 48px;
+}
+
+.shell.dense .nav-group .group-label {
+  font-size: 9px;
 }
 
 .nav {
@@ -433,6 +520,12 @@ onBeforeUnmount(() => {
   color: var(--ink);
 }
 
+.density-btn.on {
+  color: var(--accent);
+  border-color: rgba(0, 113, 227, 0.28);
+  background: rgba(0, 113, 227, 0.1);
+}
+
 .search-layer {
   position: fixed;
   inset: 0;
@@ -505,6 +598,13 @@ onBeforeUnmount(() => {
   text-align: center;
   color: var(--muted);
   font-size: 13px;
+}
+
+.search-keys {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--slate);
+  letter-spacing: 0.01em;
 }
 
 .search-list {

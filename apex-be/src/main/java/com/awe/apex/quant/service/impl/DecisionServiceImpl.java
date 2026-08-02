@@ -2,6 +2,9 @@ package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.decision.DecisionScoreReq;
+import com.awe.apex.quant.decision.DecisionScoreResp;
+import com.awe.apex.quant.decision.DecisionScorer;
 import com.awe.apex.quant.decision.MainlineMatcher;
 import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
@@ -83,20 +86,14 @@ import java.util.Set;
 public class DecisionServiceImpl implements IDecisionService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final BigDecimal BASE_WEIGHT = new BigDecimal("0.10");
-    private static final BigDecimal CONFLUENCE_WEIGHT = new BigDecimal("0.12");
     private static final BigDecimal ROE_EXCLUDE = new BigDecimal("3");
     private static final BigDecimal ROE_WEAK = new BigDecimal("8");
     private static final BigDecimal DEBT_EXCLUDE = new BigDecimal("80");
     private static final BigDecimal DEBT_WEAK = new BigDecimal("70");
-    private static final BigDecimal SCORE_BOOST_CONFLUENCE = new BigDecimal("12");
-    private static final BigDecimal SCORE_BOOST_HOT = new BigDecimal("8");
-    private static final BigDecimal SCORE_BOOST_HOT_TRIPLE = new BigDecimal("4");
-    private static final BigDecimal SCORE_PENALTY_FUND = new BigDecimal("8");
-    private static final BigDecimal SCORE_BOOST_MAINLINE = new BigDecimal("10");
-    private static final BigDecimal SCORE_PENALTY_OFF_MAINLINE = new BigDecimal("5");
     /** 买入扫描：全A有行情候选上限（再经股票池质量/日线过滤） */
     private static final int MARKET_BUY_CANDIDATE_LIMIT = 2500;
+    /** 主线行业补充候选上限（缓解纯大市值漏扫） */
+    private static final int MAINLINE_EXTRA_CANDIDATE_LIMIT = 300;
 
     @Resource
     private IUniverseService universeService;
@@ -152,6 +149,9 @@ public class DecisionServiceImpl implements IDecisionService {
     @Resource
     private IValuationService valuationService;
 
+    @Resource
+    private DecisionScorer decisionScorer;
+
     /**
      * 一键生成今日决策：刷新股票池 → 跑策略 → 共振/基本面/风控 → 落库 → 同步观察池
      *
@@ -178,8 +178,8 @@ public class DecisionServiceImpl implements IDecisionService {
             posMap.put(holding.getCode(), holding);
         }
 
-        // 2. 刷新全A观察候选池（宽松质量：有日线即可，不因估值硬踢）；无数据时回退自选
-        List<String> marketCodes = loadMarketBuyCandidateCodes(MARKET_BUY_CANDIDATE_LIMIT);
+        // 2. 刷新全A观察候选池（宽松质量：有日线即可，不因估值硬踢）；主线行业额外补扫
+        List<String> marketCodes = loadMarketBuyCandidateCodes(MARKET_BUY_CANDIDATE_LIMIT, mainlineNames);
         UniverseRefreshReq universeReq = new UniverseRefreshReq();
         universeReq.setLooseFilter(true);
         if (CollUtil.isNotEmpty(marketCodes)) {
@@ -223,8 +223,10 @@ public class DecisionServiceImpl implements IDecisionService {
         }
         List<StrategySignalEntity> signals = signalService.run(signalReq);
 
-        // 4. 多策略共振（近 5 日 ≥2）
-        SignalConfluenceResp confluenceResp = signalService.confluence(5, 2);
+        // 4. 多策略共振（窗口/最少策略数可配置）
+        SignalConfluenceResp confluenceResp = signalService.confluence(
+                strategyParams.decisionConfluenceWindow(),
+                strategyParams.decisionConfluenceMinStrategies());
         Map<String, SignalConfluenceItem> buyConfluence = new HashMap<>();
         Map<String, SignalConfluenceItem> sellConfluence = new HashMap<>();
         if (Objects.nonNull(confluenceResp) && CollUtil.isNotEmpty(confluenceResp.getItems())) {
@@ -285,14 +287,12 @@ public class DecisionServiceImpl implements IDecisionService {
                 }
                 SignalConfluenceItem cf = sellConfluence.get(code);
                 int cfCount = Objects.nonNull(cf) ? cf.getStrategyCount() : 1;
-                BigDecimal score = baseScore(signal.getScore());
-                if (cfCount >= 2) {
-                    score = score.add(SCORE_BOOST_CONFLUENCE);
-                }
                 HotConfluenceItem hot = hotMap.get(code);
-                score = applyHotBoost(score, hot);
+                int hotCnt = Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount()) ? hot.getSourceCount() : 0;
+                BigDecimal score = decisionScorer.scoreSell(baseScore(signal.getScore()), cfCount, hotCnt);
                 String reason = humanReason(signal, cf, null, "持仓卖出", hot);
                 String exitRule = exitRuleOf(signal.getStrategyId());
+                int minCf = strategyParams.decisionConfluenceMinStrategies();
                 DecisionItemResp item = DecisionItemResp.builder()
                         .actionDate(actionDate)
                         .code(code)
@@ -304,12 +304,13 @@ public class DecisionServiceImpl implements IDecisionService {
                         .suggestedWeight(null)
                         .exitRule(exitRule)
                         .confluenceCount(cfCount)
-                        .confluence(cfCount >= 2)
+                        .confluence(cfCount >= minCf)
                         .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
                         .fundNote(fundNoteOf(fundMap.get(code)))
                         .signalId(signal.getId())
                         .scoreExplain("策略" + signal.getStrategyId() + " 卖出 · " + exitRule
-                                + (cfCount >= 2 ? " · 多策略共振卖出" : ""))
+                                + (cfCount >= minCf ? " · 多策略共振卖出" : ""))
+                        .executableHint(false)
                         .build();
                 sells.add(item);
                 covered.add(code);
@@ -325,23 +326,12 @@ public class DecisionServiceImpl implements IDecisionService {
             FundGate gate = evaluateFund(fund);
             SignalConfluenceItem cf = buyConfluence.get(code);
             int cfCount = Objects.nonNull(cf) ? cf.getStrategyCount() : 1;
-            BigDecimal score = baseScore(signal.getScore());
-            if (cfCount >= 2) {
-                score = score.add(SCORE_BOOST_CONFLUENCE);
-            }
             HotConfluenceItem hot = hotMap.get(code);
-            score = applyHotBoost(score, hot);
-            if (gate.weak) {
-                score = score.subtract(SCORE_PENALTY_FUND);
-            }
+            int hotCnt = Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount()) ? hot.getSourceCount() : 0;
             String industry = Objects.nonNull(basic) ? basic.getIndustry() : null;
             MainlineMatcher.Hit mainHit = MainlineMatcher.match(industry, mainlineNames);
-            if (mainHit.match) {
-                score = score.add(SCORE_BOOST_MAINLINE);
-            } else if (CollUtil.isNotEmpty(mainlineNames) && StringUtils.isNotBlank(industry)) {
-                score = score.subtract(SCORE_PENALTY_OFF_MAINLINE);
-            }
-            boolean hotOk = Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount()) && hot.getSourceCount() >= 2;
+            boolean offMainline = !mainHit.match && CollUtil.isNotEmpty(mainlineNames)
+                    && StringUtils.isNotBlank(industry);
             boolean alreadyHeld = Objects.nonNull(holdingInMap);
             String buyLabel = alreadyHeld ? "加仓" : "买入";
             String reason = humanReason(signal, cf, gate, buyLabel, hot);
@@ -350,7 +340,7 @@ public class DecisionServiceImpl implements IDecisionService {
             }
             if (mainHit.match) {
                 reason = trimReason(reason + " · 主线「" + mainHit.name + "」同向");
-            } else if (CollUtil.isNotEmpty(mainlineNames) && StringUtils.isNotBlank(industry)) {
+            } else if (offMainline) {
                 reason = trimReason(reason + " · 逆主线降权");
             }
             if (buyFactor.compareTo(BigDecimal.ONE) != 0) {
@@ -362,15 +352,32 @@ public class DecisionServiceImpl implements IDecisionService {
             if (Objects.nonNull(valBrief) && StringUtils.isNotBlank(valBrief.getLevelLabel())
                     && !"UNKNOWN".equals(valBrief.getLevel())) {
                 reason = trimReason(reason + " · 估值" + valBrief.getLevelLabel());
-                if (valBrief.getScoreDelta() != 0) {
-                    score = score.add(BigDecimal.valueOf(valBrief.getScoreDelta()));
-                }
+            }
+
+            int minCf = strategyParams.decisionConfluenceMinStrategies();
+            DecisionScoreReq scoreReq = DecisionScoreReq.builder()
+                    .signalScore(baseScore(signal.getScore()))
+                    .strategyId(signal.getStrategyId())
+                    .confluenceCount(cfCount)
+                    .hotSourceCount(hotCnt)
+                    .fundExclude(gate.exclude)
+                    .fundWeak(gate.weak)
+                    .mainlineMatch(mainHit.match)
+                    .offMainline(offMainline)
+                    .valuation(valBrief)
+                    .marketStance(briefing.getStance())
+                    .buyWeightFactor(buyFactor)
+                    .singleLimit(singleLimit)
+                    .observeOnly(gate.exclude)
+                    .build();
+            DecisionScoreResp scored = decisionScorer.scoreBuy(scoreReq);
+            if (StringUtils.isNotBlank(scored.getLinkHint())) {
+                reason = trimReason(reason + " · " + scored.getLinkHint());
             }
 
             // 基本面硬剔除：不进「今日买入」，但仍可进观察池盯信号
             if (gate.exclude) {
                 if (!alreadyHeld && observeCodes.add(code)) {
-                    BigDecimal watchScore = score.subtract(new BigDecimal("10")).max(new BigDecimal("45"));
                     observeCandidates.add(DecisionItemResp.builder()
                             .actionDate(actionDate)
                             .code(code)
@@ -378,58 +385,29 @@ public class DecisionServiceImpl implements IDecisionService {
                             .action("BUY")
                             .strategyId(signal.getStrategyId())
                             .reason(trimReason("观察：" + reason + " · 基本面警示仅观察不急买"))
-                            .score(watchScore)
+                            .score(scored.getFinalScore())
                             .suggestedWeight(BigDecimal.ZERO)
                             .exitRule(exitRuleOf(signal.getStrategyId()))
                             .confluenceCount(cfCount)
-                            .confluence(cfCount >= 2)
+                            .confluence(cfCount >= minCf)
                             .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
                             .fundNote(gate.note)
                             .signalId(signal.getId())
                             .mainlineMatch(mainHit.match)
                             .mainlineName(mainHit.name)
-                            .scoreExplain("观察候选 · 策略有信号但基本面未过买入门槛")
+                            .scoreExplain(scored.getScoreExplain())
                             .valuationLevel(Objects.nonNull(valBrief) ? valBrief.getLevel() : null)
                             .valuationLabel(Objects.nonNull(valBrief) ? valBrief.getLevelLabel() : null)
                             .valuationScore(Objects.nonNull(valBrief) ? valBrief.getScore() : null)
                             .valuationSummary(Objects.nonNull(valBrief) ? valBrief.getSummary() : null)
+                            .riskFlags(scored.getRiskFlags())
+                            .executableHint(false)
+                            .linkHint(scored.getLinkHint())
                             .build());
                 }
                 continue;
             }
 
-            BigDecimal weight = suggestWeight(cfCount >= 2 || hotOk || mainHit.match, !gate.weak, singleLimit);
-            if (mainHit.match) {
-                weight = weight.multiply(new BigDecimal("1.08"));
-            } else if (CollUtil.isNotEmpty(mainlineNames) && StringUtils.isNotBlank(industry)) {
-                weight = weight.multiply(new BigDecimal("0.85"));
-            }
-            // 明显高估缩仓；明显低估略放宽（仍受单票上限约束）
-            if (Objects.nonNull(valBrief)) {
-                if ("OVERVALUED".equals(valBrief.getLevel())) {
-                    weight = weight.multiply(new BigDecimal("0.70"));
-                } else if ("SLIGHTLY_EXPENSIVE".equals(valBrief.getLevel())) {
-                    weight = weight.multiply(new BigDecimal("0.85"));
-                } else if ("UNDERVALUED".equals(valBrief.getLevel())) {
-                    weight = weight.multiply(new BigDecimal("1.08"));
-                }
-            }
-            weight = weight.multiply(buyFactor).min(singleLimit).setScale(4, RoundingMode.HALF_UP);
-            if ("防守".equals(briefing.getStance())) {
-                score = score.subtract(new BigDecimal("6"));
-            } else if ("进攻".equals(briefing.getStance()) && cfCount >= 2) {
-                score = score.add(new BigDecimal("3"));
-            }
-            boolean offMainline = !mainHit.match && CollUtil.isNotEmpty(mainlineNames)
-                    && StringUtils.isNotBlank(industry);
-            String scoreExplain = buildBuyScoreExplain(signal.getStrategyId(), signal.getScore(),
-                    cfCount, hot, gate, mainHit, offMainline, briefing.getStance(), buyFactor, weight);
-            if (Objects.nonNull(valBrief) && !"UNKNOWN".equals(valBrief.getLevel())) {
-                scoreExplain = trimReason(scoreExplain + " · 估值" + valBrief.getLevelLabel()
-                        + (valBrief.getScoreDelta() != 0
-                        ? (valBrief.getScoreDelta() > 0 ? "+" : "") + valBrief.getScoreDelta()
-                        : ""));
-            }
             DecisionItemResp item = DecisionItemResp.builder()
                     .actionDate(actionDate)
                     .code(code)
@@ -437,21 +415,24 @@ public class DecisionServiceImpl implements IDecisionService {
                     .action("BUY")
                     .strategyId(signal.getStrategyId())
                     .reason(reason)
-                    .score(score)
-                    .suggestedWeight(weight)
+                    .score(scored.getFinalScore())
+                    .suggestedWeight(scored.getSuggestedWeight())
                     .exitRule(exitRuleOf(signal.getStrategyId()))
                     .confluenceCount(cfCount)
-                    .confluence(cfCount >= 2)
+                    .confluence(cfCount >= minCf)
                     .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
                     .fundNote(gate.note)
                     .signalId(signal.getId())
                     .mainlineMatch(mainHit.match)
                     .mainlineName(mainHit.name)
-                    .scoreExplain(scoreExplain)
+                    .scoreExplain(scored.getScoreExplain())
                     .valuationLevel(Objects.nonNull(valBrief) ? valBrief.getLevel() : null)
                     .valuationLabel(Objects.nonNull(valBrief) ? valBrief.getLevelLabel() : null)
                     .valuationScore(Objects.nonNull(valBrief) ? valBrief.getScore() : null)
                     .valuationSummary(Objects.nonNull(valBrief) ? valBrief.getSummary() : null)
+                    .riskFlags(scored.getRiskFlags())
+                    .executableHint(scored.isExecutableHint())
+                    .linkHint(scored.getLinkHint())
                     .build();
             buys.add(item);
             if (!alreadyHeld && observeCodes.add(code)) {
@@ -694,6 +675,25 @@ public class DecisionServiceImpl implements IDecisionService {
             if (StringUtils.isNotBlank(scoreExplain) && scoreExplain.length() > 512) {
                 scoreExplain = scoreExplain.substring(0, 512);
             }
+            String riskFlagsCsv = null;
+            if (CollUtil.isNotEmpty(item.getRiskFlags())) {
+                riskFlagsCsv = String.join(",", item.getRiskFlags());
+                if (riskFlagsCsv.length() > 256) {
+                    riskFlagsCsv = riskFlagsCsv.substring(0, 256);
+                }
+            }
+            String linkHint = item.getLinkHint();
+            if (StringUtils.isNotBlank(linkHint) && linkHint.length() > 64) {
+                linkHint = linkHint.substring(0, 64);
+            }
+            String valSummary = item.getValuationSummary();
+            if (StringUtils.isNotBlank(valSummary) && valSummary.length() > 256) {
+                valSummary = valSummary.substring(0, 256);
+            }
+            Integer executableHint = null;
+            if (Objects.nonNull(item.getExecutableHint())) {
+                executableHint = Boolean.TRUE.equals(item.getExecutableHint()) ? 1 : 0;
+            }
             DailyAction row = DailyAction.builder()
                     .actionDate(actionDate)
                     .code(item.getCode())
@@ -711,6 +711,13 @@ public class DecisionServiceImpl implements IDecisionService {
                     .mainlineName(item.getMainlineName())
                     .scoreExplain(scoreExplain)
                     .strategiesCsv(strategiesCsv)
+                    .valuationLevel(item.getValuationLevel())
+                    .valuationLabel(item.getValuationLabel())
+                    .valuationScore(item.getValuationScore())
+                    .valuationSummary(valSummary)
+                    .linkHint(linkHint)
+                    .riskFlags(riskFlagsCsv)
+                    .executableHint(executableHint)
                     .createTime(now)
                     .updateTime(now)
                     .deleted(0)
@@ -745,6 +752,28 @@ public class DecisionServiceImpl implements IDecisionService {
                     + (Objects.nonNull(briefing.getStanceScore()) ? (" " + briefing.getStanceScore()) : "");
         }
 
+        int executableCount = 0;
+        int mainlineMatchCount = 0;
+        int valuationCheapCount = 0;
+        int valuationFairCount = 0;
+        int valuationRichCount = 0;
+        for (DecisionItemResp item : all) {
+            if (Boolean.TRUE.equals(item.getExecutableHint())) {
+                executableCount++;
+            }
+            if (Boolean.TRUE.equals(item.getMainlineMatch())) {
+                mainlineMatchCount++;
+            }
+            String level = item.getValuationLevel();
+            if ("UNDERVALUED".equals(level) || "SLIGHTLY_CHEAP".equals(level)) {
+                valuationCheapCount++;
+            } else if ("FAIR".equals(level)) {
+                valuationFairCount++;
+            } else if ("OVERVALUED".equals(level) || "SLIGHTLY_EXPENSIVE".equals(level)) {
+                valuationRichCount++;
+            }
+        }
+
         return DecisionTodayResp.builder()
                 .actionDate(actionDate)
                 .groupName(groupName)
@@ -753,6 +782,14 @@ public class DecisionServiceImpl implements IDecisionService {
                 .sells(sells)
                 .holds(holds)
                 .items(all)
+                .buyCount(buys.size())
+                .sellCount(sells.size())
+                .holdCount(holds.size())
+                .executableCount(executableCount)
+                .mainlineMatchCount(mainlineMatchCount)
+                .valuationCheapCount(valuationCheapCount)
+                .valuationFairCount(valuationFairCount)
+                .valuationRichCount(valuationRichCount)
                 .riskNote(riskNote)
                 .marketBriefing(briefing)
                 .observeCreated(observeCreated)
@@ -761,6 +798,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 .message("市场「" + briefing.getStance() + "」· 买入 " + buys.size()
                         + " · 卖出 " + sells.size()
                         + " · 持有 " + holds.size()
+                        + " · 可执行 " + executableCount
                         + " · 股票池 " + universeCount
                         + " · 持仓 " + holdings.size()
                         + " · 热点扩扫 " + hotScanCount
@@ -833,6 +871,11 @@ public class DecisionServiceImpl implements IDecisionService {
             if (CollUtil.isEmpty(strategies) && StringUtils.isNotBlank(row.getStrategyId())) {
                 strategies = List.of(row.getStrategyId());
             }
+            List<String> riskFlags = parseStrategiesCsv(row.getRiskFlags());
+            Boolean executableHint = null;
+            if (Objects.nonNull(row.getExecutableHint())) {
+                executableHint = row.getExecutableHint() == 1;
+            }
             DecisionItemResp item = DecisionItemResp.builder()
                     .id(row.getId())
                     .actionDate(row.getActionDate())
@@ -852,6 +895,13 @@ public class DecisionServiceImpl implements IDecisionService {
                     .mainlineMatch(mainlineMatch)
                     .mainlineName(mainlineName)
                     .scoreExplain(row.getScoreExplain())
+                    .valuationLevel(row.getValuationLevel())
+                    .valuationLabel(row.getValuationLabel())
+                    .valuationScore(row.getValuationScore())
+                    .valuationSummary(row.getValuationSummary())
+                    .linkHint(row.getLinkHint())
+                    .riskFlags(riskFlags)
+                    .executableHint(executableHint)
                     .build();
             all.add(item);
             if ("BUY".equalsIgnoreCase(row.getAction())) {
@@ -862,10 +912,32 @@ public class DecisionServiceImpl implements IDecisionService {
                 holds.add(item);
             }
         }
+        int executableCount = 0;
+        int mainlineMatchCount = 0;
+        int valuationCheapCount = 0;
+        int valuationFairCount = 0;
+        int valuationRichCount = 0;
+        for (DecisionItemResp item : all) {
+            if (Boolean.TRUE.equals(item.getExecutableHint())) {
+                executableCount++;
+            }
+            if (Boolean.TRUE.equals(item.getMainlineMatch())) {
+                mainlineMatchCount++;
+            }
+            String level = item.getValuationLevel();
+            if ("UNDERVALUED".equals(level) || "SLIGHTLY_CHEAP".equals(level)) {
+                valuationCheapCount++;
+            } else if ("FAIR".equals(level)) {
+                valuationFairCount++;
+            } else if ("OVERVALUED".equals(level) || "SLIGHTLY_EXPENSIVE".equals(level)) {
+                valuationRichCount++;
+            }
+        }
         String message = CollUtil.isEmpty(all)
                 ? "今日尚无决策，请点击「一键生成决策」；下方市场简报已可参考"
                 : "市场「" + briefing.getStance() + "」· 买 " + buys.size()
-                + " / 卖 " + sells.size() + " / 持有 " + holds.size();
+                + " / 卖 " + sells.size() + " / 持有 " + holds.size()
+                + " · 可执行 " + executableCount;
         return DecisionTodayResp.builder()
                 .actionDate(actionDate)
                 .groupName(group)
@@ -874,6 +946,14 @@ public class DecisionServiceImpl implements IDecisionService {
                 .sells(sells)
                 .holds(holds)
                 .items(all)
+                .buyCount(buys.size())
+                .sellCount(sells.size())
+                .holdCount(holds.size())
+                .executableCount(executableCount)
+                .mainlineMatchCount(mainlineMatchCount)
+                .valuationCheapCount(valuationCheapCount)
+                .valuationFairCount(valuationFairCount)
+                .valuationRichCount(valuationRichCount)
                 .riskNote(Objects.nonNull(briefing.getPositionAdvice()) ? briefing.getPositionAdvice() : null)
                 .marketBriefing(briefing)
                 .message(message)
@@ -937,6 +1017,11 @@ public class DecisionServiceImpl implements IDecisionService {
             int buy = 0;
             int sell = 0;
             int hold = 0;
+            int executable = 0;
+            int cheap = 0;
+            int fair = 0;
+            int rich = 0;
+            int mainline = 0;
             List<String> buyCodes = new ArrayList<>();
             for (DailyAction row : rows) {
                 if ("BUY".equalsIgnoreCase(row.getAction())) {
@@ -948,6 +1033,20 @@ public class DecisionServiceImpl implements IDecisionService {
                     sell++;
                 } else {
                     hold++;
+                }
+                if (Objects.nonNull(row.getExecutableHint()) && row.getExecutableHint() == 1) {
+                    executable++;
+                }
+                if (Objects.nonNull(row.getMainlineMatch()) && row.getMainlineMatch() == 1) {
+                    mainline++;
+                }
+                String level = row.getValuationLevel();
+                if ("UNDERVALUED".equals(level) || "SLIGHTLY_CHEAP".equals(level)) {
+                    cheap++;
+                } else if ("FAIR".equals(level)) {
+                    fair++;
+                } else if ("OVERVALUED".equals(level) || "SLIGHTLY_EXPENSIVE".equals(level)) {
+                    rich++;
                 }
             }
             BigDecimal avg = avgNextDayPct(buyCodes, day);
@@ -964,6 +1063,11 @@ public class DecisionServiceImpl implements IDecisionService {
                     .buyCount(buy)
                     .sellCount(sell)
                     .holdCount(hold)
+                    .executableCount(executable)
+                    .valuationCheapCount(cheap)
+                    .valuationFairCount(fair)
+                    .valuationRichCount(rich)
+                    .mainlineMatchCount(mainline)
                     .nextDayAvgPct(avg)
                     .stance(Objects.nonNull(snap) ? snap.getStance() : null)
                     .dataLevel(Objects.nonNull(snap) ? snap.getDataLevel() : null)
@@ -1180,27 +1284,50 @@ public class DecisionServiceImpl implements IDecisionService {
     }
 
     /**
-     * 观察池买入候选：近端涨幅过大则降权并标注「勿追高」
+     * 观察池买入候选：近端涨幅过大则降权并标注「勿追高」；低估+S2 再提权
      */
     private DecisionItemResp toObserveBuyCandidate(DecisionItemResp item, StockBasic basic) {
         BigDecimal score = Objects.nonNull(item.getScore()) ? item.getScore() : new BigDecimal("50");
         String reason = nullToEmpty(item.getReason());
         String explain = nullToEmpty(item.getScoreExplain());
+        List<String> riskFlags = Objects.nonNull(item.getRiskFlags())
+                ? new ArrayList<>(item.getRiskFlags()) : new ArrayList<>();
+        Boolean executableHint = item.getExecutableHint();
         BigDecimal pct = Objects.nonNull(basic) ? basic.getPctChg() : null;
         if (Objects.nonNull(pct) && pct.compareTo(new BigDecimal("5")) >= 0) {
             score = score.subtract(new BigDecimal("12")).max(new BigDecimal("42"));
             reason = trimReason(reason + " · 今日涨幅偏大勿追高，等回踩再评估");
             explain = trimReason(explain + " · 近端强势降权，避免买在短期高点");
+            riskFlags.add("勿追高·等回踩");
+            executableHint = false;
         }
         if ("S3".equalsIgnoreCase(item.getStrategyId())
                 && Objects.nonNull(pct) && pct.compareTo(new BigDecimal("3")) >= 0) {
             score = score.subtract(new BigDecimal("6")).max(new BigDecimal("40"));
             reason = trimReason(reason + " · 突破后已走高，优先观察回踩确认");
             explain = trimReason(explain + " · S3突破不追高");
+            riskFlags.add("S3突破不追高");
+            executableHint = false;
         }
         if ("S2".equalsIgnoreCase(item.getStrategyId())) {
             score = score.add(new BigDecimal("4"));
             explain = trimReason(explain + " · S2回调类优先于追涨");
+        }
+        // 低估 + S2：观察池配额排序再提权
+        boolean cheap = "UNDERVALUED".equals(item.getValuationLevel())
+                || "SLIGHTLY_CHEAP".equals(item.getValuationLevel());
+        if (cheap && "S2".equalsIgnoreCase(item.getStrategyId())) {
+            score = score.add(new BigDecimal("3"));
+            explain = trimReason(explain + " · 低估回调优先入池");
+        }
+        // 高估 + S3：禁止可执行
+        boolean rich = "OVERVALUED".equals(item.getValuationLevel())
+                || "SLIGHTLY_EXPENSIVE".equals(item.getValuationLevel());
+        if (rich && "S3".equalsIgnoreCase(item.getStrategyId())) {
+            executableHint = false;
+            if (!riskFlags.contains("高估突破降权")) {
+                riskFlags.add("高估突破降权");
+            }
         }
         return DecisionItemResp.builder()
                 .actionDate(item.getActionDate())
@@ -1224,6 +1351,9 @@ public class DecisionServiceImpl implements IDecisionService {
                 .valuationLabel(item.getValuationLabel())
                 .valuationScore(item.getValuationScore())
                 .valuationSummary(item.getValuationSummary())
+                .riskFlags(riskFlags)
+                .executableHint(executableHint)
+                .linkHint(item.getLinkHint())
                 .build();
     }
 
@@ -1261,14 +1391,24 @@ public class DecisionServiceImpl implements IDecisionService {
         }
         Comparator<DecisionItemResp> byScore = Comparator.comparing(
                 (DecisionItemResp x) -> Objects.nonNull(x.getScore()) ? x.getScore() : BigDecimal.ZERO).reversed();
-        s2.sort(byScore);
+        // 低估/偏低 + S2 优先进配额
+        Comparator<DecisionItemResp> byS2Priority = Comparator
+                .<DecisionItemResp>comparingInt(x -> {
+                    String lv = x.getValuationLevel();
+                    if ("UNDERVALUED".equals(lv) || "SLIGHTLY_CHEAP".equals(lv)) {
+                        return 0;
+                    }
+                    return 1;
+                })
+                .thenComparing(byScore);
+        s2.sort(byS2Priority);
         s1.sort(byScore);
         s3.sort(byScore);
         other.sort(byScore);
         moods.sort(byScore);
 
         List<DecisionItemResp> buys = new ArrayList<>();
-        // 优先回调(S2) → 趋势(S1) → 其它 → 突破(S3，且过滤极端追高)
+        // 优先回调(S2，低估优先) → 趋势(S1) → 其它 → 突破(S3，且过滤极端追高)
         for (DecisionItemResp item : s2) {
             if (buys.size() >= 12) {
                 break;
@@ -1335,9 +1475,13 @@ public class DecisionServiceImpl implements IDecisionService {
     }
 
     /**
-     * 全A买入候选：有最新价、非 ST、优先流通市值靠前（再交股票池做日线/估值过滤）
+     * 全A买入候选：流通市值优先 + 主线行业补扫（再交股票池做日线/估值过滤）
+     *
+     * @param limit          市值池上限
+     * @param mainlineNames  当日主线题材名
+     * @return 候选代码
      */
-    private List<String> loadMarketBuyCandidateCodes(int limit) {
+    private List<String> loadMarketBuyCandidateCodes(int limit, List<String> mainlineNames) {
         int cap = Math.max(200, Math.min(limit, 4000));
         List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
                 .isNotNull(StockBasic::getLatestPrice)
@@ -1354,21 +1498,73 @@ public class DecisionServiceImpl implements IDecisionService {
         List<String> codes = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (StockBasic basic : basics) {
-            if (Objects.isNull(basic) || StringUtils.isBlank(basic.getCode())) {
-                continue;
-            }
-            String name = basic.getName();
-            if (StringUtils.isNotBlank(name) && name.toUpperCase().contains("ST")) {
-                continue;
-            }
-            String code = MarketCodeUtils.normalizeCode(basic.getCode());
-            if (StringUtils.isBlank(code) || !seen.add(code)) {
-                continue;
-            }
-            codes.add(code);
+            appendCandidateCode(basic, codes, seen);
         }
-        log.info("全A买入候选加载 count={}", codes.size());
+        int mvCount = codes.size();
+        int mainlineAdded = appendMainlineIndustryCandidates(codes, seen, mainlineNames);
+        log.info("全A买入候选加载 mvCount={} mainlineAdded={} total={}", mvCount, mainlineAdded, codes.size());
         return codes;
+    }
+
+    /**
+     * 按主线题材名模糊匹配行业，补充中小市值漏扫票
+     */
+    private int appendMainlineIndustryCandidates(List<String> codes, Set<String> seen, List<String> mainlineNames) {
+        if (CollUtil.isEmpty(mainlineNames) || codes.size() >= MARKET_BUY_CANDIDATE_LIMIT + MAINLINE_EXTRA_CANDIDATE_LIMIT) {
+            return 0;
+        }
+        List<String> themes = new ArrayList<>();
+        for (String name : mainlineNames) {
+            if (StringUtils.isNotBlank(name) && name.trim().length() >= 2 && themes.size() < 6) {
+                themes.add(name.trim());
+            }
+        }
+        if (themes.isEmpty()) {
+            return 0;
+        }
+        int before = codes.size();
+        int remain = MAINLINE_EXTRA_CANDIDATE_LIMIT;
+        for (String theme : themes) {
+            if (remain <= 0) {
+                break;
+            }
+            List<StockBasic> industryRows = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                    .isNotNull(StockBasic::getLatestPrice)
+                    .gt(StockBasic::getLatestPrice, BigDecimal.ZERO)
+                    .isNotNull(StockBasic::getIndustry)
+                    .like(StockBasic::getIndustry, theme)
+                    .and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0))
+                    .orderByDesc(StockBasic::getCircMv)
+                    .last("LIMIT " + Math.min(remain, 120)));
+            if (CollUtil.isEmpty(industryRows)) {
+                continue;
+            }
+            for (StockBasic basic : industryRows) {
+                if (remain <= 0) {
+                    break;
+                }
+                if (appendCandidateCode(basic, codes, seen)) {
+                    remain--;
+                }
+            }
+        }
+        return codes.size() - before;
+    }
+
+    private boolean appendCandidateCode(StockBasic basic, List<String> codes, Set<String> seen) {
+        if (Objects.isNull(basic) || StringUtils.isBlank(basic.getCode())) {
+            return false;
+        }
+        String name = basic.getName();
+        if (StringUtils.isNotBlank(name) && name.toUpperCase().contains("ST")) {
+            return false;
+        }
+        String code = MarketCodeUtils.normalizeCode(basic.getCode());
+        if (StringUtils.isBlank(code) || !seen.add(code)) {
+            return false;
+        }
+        codes.add(code);
+        return true;
     }
 
     private Map<String, StockBasic> loadBasics(Set<String> codes) {
@@ -1487,29 +1683,8 @@ public class DecisionServiceImpl implements IDecisionService {
         return sb.isEmpty() ? null : sb.toString();
     }
 
-    private BigDecimal suggestWeight(boolean confluence, boolean fundOk, BigDecimal singleLimit) {
-        BigDecimal weight = BASE_WEIGHT;
-        if (confluence && fundOk) {
-            weight = singleLimit.min(new BigDecimal("0.15"));
-        } else if (confluence) {
-            weight = CONFLUENCE_WEIGHT;
-        }
-        return weight.min(singleLimit).setScale(4, RoundingMode.HALF_UP);
-    }
-
     private BigDecimal baseScore(BigDecimal score) {
         return Objects.nonNull(score) ? score : new BigDecimal("60");
-    }
-
-    private BigDecimal applyHotBoost(BigDecimal score, HotConfluenceItem hot) {
-        if (Objects.isNull(hot) || Objects.isNull(hot.getSourceCount()) || hot.getSourceCount() < 2) {
-            return score;
-        }
-        BigDecimal result = score.add(SCORE_BOOST_HOT);
-        if (hot.getSourceCount() >= 3) {
-            result = result.add(SCORE_BOOST_HOT_TRIPLE);
-        }
-        return result;
     }
 
     private String humanReason(StrategySignalEntity signal, SignalConfluenceItem cf, FundGate gate,
@@ -1665,43 +1840,6 @@ public class DecisionServiceImpl implements IDecisionService {
         } catch (Exception ex) {
             return null;
         }
-    }
-
-    private String buildBuyScoreExplain(String strategyId, BigDecimal signalScore, int cfCount,
-                                        HotConfluenceItem hot, FundGate gate, MainlineMatcher.Hit mainHit,
-                                        boolean offMainline, String stance, BigDecimal buyFactor,
-                                        BigDecimal weight) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("策略").append(strategyId)
-                .append(" 基分").append(baseScore(signalScore).setScale(0, RoundingMode.HALF_UP));
-        if (cfCount >= 2) {
-            sb.append(" · 共振+").append(SCORE_BOOST_CONFLUENCE.toPlainString());
-        }
-        if (Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount())) {
-            if (hot.getSourceCount() >= 3) {
-                sb.append(" · 热点+").append(SCORE_BOOST_HOT.add(SCORE_BOOST_HOT_TRIPLE).toPlainString());
-            } else if (hot.getSourceCount() >= 2) {
-                sb.append(" · 热点+").append(SCORE_BOOST_HOT.toPlainString());
-            }
-        }
-        if (Objects.nonNull(gate) && gate.weak) {
-            sb.append(" · 基本面-").append(SCORE_PENALTY_FUND.toPlainString());
-        }
-        if (Objects.nonNull(mainHit) && mainHit.match) {
-            sb.append(" · 主线+").append(SCORE_BOOST_MAINLINE.toPlainString());
-        } else if (offMainline) {
-            sb.append(" · 逆主线-").append(SCORE_PENALTY_OFF_MAINLINE.toPlainString());
-        }
-        if ("防守".equals(stance)) {
-            sb.append(" · 防守-6");
-        } else if ("进攻".equals(stance) && cfCount >= 2) {
-            sb.append(" · 进攻共振+3");
-        }
-        sb.append(" · 仓位").append(pctText(weight));
-        if (Objects.nonNull(buyFactor) && buyFactor.compareTo(BigDecimal.ONE) != 0) {
-            sb.append("（市场×").append(buyFactor.setScale(2, RoundingMode.HALF_UP)).append("）");
-        }
-        return sb.toString();
     }
 
     private List<String> resolveMainlineNames(MarketBriefingResp briefing) {

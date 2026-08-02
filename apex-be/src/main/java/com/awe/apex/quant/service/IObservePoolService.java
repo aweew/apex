@@ -17,11 +17,20 @@ public interface IObservePoolService {
     /**
      * 观察池列表（含现场评估）
      *
-     * @param status  状态过滤
+     * @param status  状态过滤；空则默认排除 ARCHIVED
+     * @param side    方向 BUY/SELL/MOOD
      * @param keyword 代码/名称关键字
      * @return 列表
      */
-    List<ObservePoolResp> list(String status, String keyword);
+    List<ObservePoolResp> list(String status, String side, String keyword);
+
+    /**
+     * 看板用轻量告警：仅现价评估 TRIGGERED/NEAR，不做估值与技术指标
+     *
+     * @param limit 返回条数上限
+     * @return 接近/已触发列表
+     */
+    List<ObservePoolResp> listReadyAlerts(int limit);
 
     /**
      * 新增或更新

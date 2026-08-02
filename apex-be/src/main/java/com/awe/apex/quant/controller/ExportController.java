@@ -12,16 +12,22 @@ import com.awe.apex.quant.domain.dto.WatchlistResp;
 import com.awe.apex.quant.domain.entity.BacktestTrade;
 import com.awe.apex.quant.domain.entity.JournalTrade;
 import com.awe.apex.quant.domain.entity.PaperOrder;
+import com.awe.apex.quant.domain.dto.DecisionItemResp;
+import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.SignalItemResp;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.service.IBacktestService;
+import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IJournalService;
+import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.ISignalService;
 import com.awe.apex.quant.service.IUniverseService;
 import com.awe.apex.quant.service.IWatchlistService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,7 +36,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 导出 CSV
@@ -56,6 +64,103 @@ public class ExportController {
 
     @Resource
     private IWatchlistService watchlistService;
+
+    @Resource
+    private IDecisionService decisionService;
+
+    @Resource
+    private IObservePoolService observePoolService;
+
+    /**
+     * 导出观察池
+     *
+     * @param status   状态；空则排除归档
+     * @param side     方向
+     * @param response HTTP 响应
+     */
+    @GetMapping("/observe")
+    public void exportObserve(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String side,
+            HttpServletResponse response) {
+        try {
+            List<ObservePoolResp> rows = observePoolService.list(status, side, null);
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            response.setContentType("text/csv;charset=UTF-8");
+            response.setHeader("Content-Disposition", "attachment; filename=observe_pool.csv");
+            PrintWriter writer = response.getWriter();
+            writer.println("code,name,side,status,priority,reason,strategy_id,trigger_type,trigger_price,"
+                    + "stop_loss,target_price,valuation_level,valuation_label,valuation_score,tags,note");
+            for (ObservePoolResp row : rows) {
+                writer.printf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
+                        row.getCode(),
+                        safe(row.getName()),
+                        safe(row.getSide()),
+                        safe(row.getStatus()),
+                        row.getPriority(),
+                        safe(row.getReason()),
+                        safe(row.getStrategyId()),
+                        safe(row.getTriggerType()),
+                        row.getTriggerPrice(),
+                        row.getStopLoss(),
+                        row.getTargetPrice(),
+                        safe(row.getValuationLevel()),
+                        safe(row.getValuationLabel()),
+                        row.getValuationScore(),
+                        safe(row.getTags()),
+                        safe(row.getNote()));
+            }
+            writer.flush();
+        } catch (Exception ex) {
+            throw new BusinessException("导出失败: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * 导出今日决策清单
+     *
+     * @param date      决策日，默认今天
+     * @param groupName 自选分组
+     * @param response  HTTP 响应
+     */
+    @GetMapping("/decision")
+    public void exportDecision(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) String groupName,
+            HttpServletResponse response) {
+        try {
+            LocalDate actionDate = Objects.nonNull(date) ? date : LocalDate.now();
+            DecisionTodayResp today = decisionService.today(actionDate, groupName);
+            List<DecisionItemResp> items = Objects.nonNull(today.getItems()) ? today.getItems() : List.of();
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            response.setContentType("text/csv;charset=UTF-8");
+            response.setHeader("Content-Disposition",
+                    "attachment; filename=decision_" + actionDate + ".csv");
+            PrintWriter writer = response.getWriter();
+            writer.println("action_date,code,name,action,strategy_id,score,suggested_weight,"
+                    + "valuation_level,valuation_label,executable_hint,mainline_match,link_hint,reason,exit_rule");
+            for (DecisionItemResp item : items) {
+                writer.printf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
+                        actionDate,
+                        item.getCode(),
+                        safe(item.getName()),
+                        safe(item.getAction()),
+                        safe(item.getStrategyId()),
+                        item.getScore(),
+                        item.getSuggestedWeight(),
+                        safe(item.getValuationLevel()),
+                        safe(item.getValuationLabel()),
+                        item.getExecutableHint(),
+                        item.getMainlineMatch(),
+                        safe(item.getLinkHint()),
+                        safe(item.getReason()),
+                        safe(item.getExitRule()));
+            }
+            writer.flush();
+        } catch (Exception ex) {
+            throw new BusinessException("导出失败: " + ex.getMessage());
+        }
+    }
 
     /**
      * 导出回测成交

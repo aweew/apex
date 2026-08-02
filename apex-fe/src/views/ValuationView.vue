@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { saveObserve } from '../api/observe'
 import { fetchValuation, fetchValuationScreen } from '../api/valuation'
 
 const route = useRoute()
@@ -70,6 +71,44 @@ function goStock() {
   if (c) router.push({ path: `/stock/${c}` })
 }
 
+/** 当前估值标的加入观察池 */
+async function addCurrentToObserve() {
+  const c = detail.value?.code || code.value?.trim()
+  if (!c) return
+  try {
+    await saveObserve({
+      code: c,
+      name: detail.value?.name || '',
+      status: 'WATCHING',
+      reason: `估值${detail.value?.levelLabel || ''}`.trim() || '估值关注',
+      tags: 'valuation',
+      note: detail.value?.actionHint || '',
+      priority: detail.value?.level === 'UNDERVALUED' ? 4 : 3,
+    })
+    ElMessage.success('已加入观察池')
+  } catch (e) {
+    ElMessage.error(e.message || '加入失败')
+  }
+}
+
+async function addScreenObserve(row, e) {
+  e?.stopPropagation?.()
+  if (!row?.code) return
+  try {
+    await saveObserve({
+      code: row.code,
+      name: row.name || '',
+      status: 'WATCHING',
+      reason: `估值筛选 ${row.levelLabel || ''}`.trim() || '估值筛选',
+      tags: 'valuation',
+      priority: row.level === 'UNDERVALUED' ? 4 : 3,
+    })
+    ElMessage.success(`${row.code} 已进观察池`)
+  } catch (err) {
+    ElMessage.error(err.message || '加入失败')
+  }
+}
+
 function fmt(v, d = 2) {
   if (v == null || v === '') return '-'
   const n = Number(v)
@@ -109,8 +148,9 @@ onMounted(() => {
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Valuation</p>
         <h1>估值系统</h1>
-        <p>行业相对 PE/PB · PEG · 简化内在价值 · 财务质量，综合给出低估/合理/高估</p>
+        <p>行业相对 PE/PB · PEG · 简化内在价值 · 财务质量 → 低估 / 合理 / 高估</p>
       </div>
       <div class="actions">
         <el-input
@@ -121,6 +161,9 @@ onMounted(() => {
         />
         <el-button type="primary" @click="loadDetail">评估</el-button>
         <el-button @click="goStock" :disabled="!detail?.code">个股详情</el-button>
+        <el-button type="warning" plain :disabled="!detail?.code" @click="addCurrentToObserve">加入观察池</el-button>
+        <el-button plain @click="router.push('/decision')">决策</el-button>
+        <el-button text @click="router.push('/observe')">看观察池</el-button>
       </div>
     </header>
 
@@ -238,7 +281,14 @@ onMounted(() => {
           <el-button :loading="screenLoading" @click="loadScreen">刷新</el-button>
         </div>
       </div>
-      <el-table :data="screenRows" size="small" stripe v-loading="screenLoading" @row-click="openRow">
+      <el-table
+        :data="screenRows"
+        size="small"
+        stripe
+        v-loading="screenLoading"
+        empty-text="暂无筛选结果，可切换全市场/自选/观察池或档位后刷新"
+        @row-click="openRow"
+      >
         <el-table-column prop="code" label="代码" width="90" />
         <el-table-column prop="name" label="名称" width="100" />
         <el-table-column prop="industry" label="行业" min-width="110" show-overflow-tooltip />
@@ -262,7 +312,12 @@ onMounted(() => {
         <el-table-column prop="marginOfSafety" label="安全边际" width="90">
           <template #default="{ row }">{{ row.marginOfSafety != null ? fmtPct(row.marginOfSafety) : '-' }}</template>
         </el-table-column>
-        <el-table-column prop="summary" label="摘要" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="summary" label="摘要" min-width="180" show-overflow-tooltip />
+        <el-table-column label="操作" width="88" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="warning" @click="addScreenObserve(row, $event)">观察</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </section>
   </div>
@@ -272,6 +327,14 @@ onMounted(() => {
 .page {
   padding: 20px 24px 40px;
   max-width: 1200px;
+}
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-transform: uppercase;
 }
 .header {
   display: flex;

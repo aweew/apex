@@ -12,6 +12,7 @@ import {
   syncStockBasic,
 } from '../api/stock'
 import { syncBars } from '../api/bars'
+import { saveObserve } from '../api/observe'
 import { aggregateBars, tdSequential } from '../utils/kline'
 
 const route = useRoute()
@@ -1454,6 +1455,28 @@ function go() {
   load(false)
 }
 
+const observeSaving = ref(false)
+
+/** 一键加入观察池（默认 WATCHING） */
+async function quickAddObserve() {
+  const stockCode = code.value.trim()
+  if (!stockCode) return
+  observeSaving.value = true
+  try {
+    await saveObserve({
+      code: stockCode,
+      name: basic.value?.name || '',
+      status: 'WATCHING',
+      reason: '个股页快捷加入',
+    })
+    ElMessage.success('已加入观察池')
+  } catch (e) {
+    ElMessage.error(e.message || '加入失败')
+  } finally {
+    observeSaving.value = false
+  }
+}
+
 function onResize() {
   chart?.resize()
 }
@@ -1506,9 +1529,24 @@ watch(
   { deep: true },
 )
 
+function rememberRecentStock(stockCode, stockName) {
+  const c = String(stockCode || '').trim()
+  if (!c) return
+  try {
+    const key = 'apex.search.recent'
+    const prev = JSON.parse(localStorage.getItem(key) || '[]')
+    const list = Array.isArray(prev) ? prev : []
+    const next = [{ code: c, name: stockName || '' }, ...list.filter((r) => r.code !== c)].slice(0, 8)
+    localStorage.setItem(key, JSON.stringify(next))
+  } catch {
+    /* ignore */
+  }
+}
+
 onMounted(async () => {
   loadChartPrefs()
   await load(false)
+  rememberRecentStock(code.value, basic.value?.name)
   if (isIntraday.value) {
     await loadIntraday()
     startIntradayPoll()
@@ -1583,25 +1621,21 @@ function dash(v) {
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Stock</p>
         <h1>{{ basic?.name || '股票详情' }} <span class="code">{{ basic?.code || code }}</span></h1>
-        <p>{{ note }}</p>
+        <p>{{ note || 'K线 · 估值 · 回测 · 观察池一站式研判' }}</p>
       </div>
       <div class="actions">
         <el-input v-model="code" style="width: 120px" placeholder="代码" @keyup.enter="go" />
         <el-button type="primary" @click="go">查询</el-button>
         <el-button :loading="refreshing" @click="refreshQuoteOnly">刷新行情</el-button>
         <el-button type="success" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
-        <el-button @click="router.push({ path: '/valuation', query: { code: code.trim() } })">估值</el-button>
-        <el-button @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
-        <el-button @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">模拟买</el-button>
-        <el-button
-          type="warning"
-          plain
-          @click="router.push({
-            path: '/observe',
-            query: { code: code.trim(), name: basic?.name || '' },
-          })"
-        >加入观察池</el-button>
+        <el-button plain @click="router.push('/decision')">决策</el-button>
+        <el-button plain @click="router.push({ path: '/valuation', query: { code: code.trim() } })">估值</el-button>
+        <el-button plain @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
+        <el-button plain @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">模拟买</el-button>
+        <el-button type="warning" plain :loading="observeSaving" @click="quickAddObserve">加入观察池</el-button>
+        <el-button text @click="router.push({ path: '/observe', query: { code: code.trim() } })">看观察池</el-button>
       </div>
     </header>
 

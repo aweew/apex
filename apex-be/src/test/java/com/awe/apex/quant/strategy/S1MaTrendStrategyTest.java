@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -52,6 +53,25 @@ class S1MaTrendStrategyTest {
             }
         }
         assertFalse(entered);
+    }
+
+    @Test
+    void buyScoreIsContinuousWithinBand() {
+        List<BarDaily> bars = buildBars(true);
+        BarSeries series = BarSeries.from(bars);
+        StrategySignalResult buy = null;
+        for (int i = 60; i < series.size(); i++) {
+            if (strategy.shouldEnter(series, i)) {
+                BarSeries slice = BarSeries.from(bars.subList(0, i + 1));
+                buy = strategy.evaluate("000001", slice);
+                break;
+            }
+        }
+        assertNotNull(buy);
+        assertTrue(buy.getScore().compareTo(new BigDecimal("65")) >= 0);
+        assertTrue(buy.getScore().compareTo(new BigDecimal("92")) <= 0);
+        assertNotNull(buy.getReason().get("strengthScore"));
+        assertNotNull(buy.getReason().get("volRatio"));
     }
 
     private List<BarDaily> buildBars(boolean strongVolumeOnCrossWindow) {

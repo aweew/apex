@@ -10,9 +10,9 @@ import com.awe.apex.quant.domain.dto.EquityPointResp;
 import com.awe.apex.quant.domain.dto.IndustryPnlResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.MarketTipItem;
+import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.PaperMetricsResp;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
-import com.awe.apex.quant.domain.dto.WatchlistResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.LimitUpPool;
 import com.awe.apex.quant.domain.entity.PaperAccount;
@@ -20,18 +20,20 @@ import com.awe.apex.quant.domain.entity.PaperOrder;
 import com.awe.apex.quant.domain.entity.PaperPosition;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
+import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StrategySignalMapper;
+import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.paper.PaperEquityCalculator;
 import com.awe.apex.quant.service.IDailyActionService;
 import com.awe.apex.quant.service.IDashboardService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
-import com.awe.apex.quant.service.IWatchlistService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -47,6 +49,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 仪表盘实现
@@ -82,10 +87,19 @@ public class DashboardServiceImpl implements IDashboardService {
     private IDecisionService decisionService;
 
     @Resource
-    private IWatchlistService watchlistService;
+    private IObservePoolService observePoolService;
+
+    @Resource
+    private WatchlistMapper watchlistMapper;
+
+    private static final ExecutorService HOME_POOL = Executors.newFixedThreadPool(4, r -> {
+        Thread t = new Thread(r, "dashboard-home");
+        t.setDaemon(true);
+        return t;
+    });
 
     /**
-     * 决策看板首页聚合
+     * 决策看板首页聚合（轻量路径：不做权益回放/全量观察池估值）
      *
      * @param accountId 账户，可空
      * @param groupName 自选分组，可空
@@ -94,9 +108,36 @@ public class DashboardServiceImpl implements IDashboardService {
     @Override
     public DashboardHomeResp home(Long accountId, String groupName) {
         String group = StringUtils.isNotBlank(groupName) ? groupName.trim() : "我的自选";
-        DashboardResp full = overview(accountId);
 
-        MarketBriefingResp briefing = full.getMarketBriefing();
+        // 1. 并行拉取互不依赖的块：简报、决策、观察告警、账户摘要
+        CompletableFuture<MarketBriefingResp> briefingFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return marketBriefingService.briefing();
+            } catch (Exception ex) {
+                return null;
+            }
+        }, HOME_POOL);
+        CompletableFuture<DecisionTodayResp> todayFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return decisionService.today(LocalDate.now(), group);
+            } catch (Exception ex) {
+                return null;
+            }
+        }, HOME_POOL);
+        CompletableFuture<List<ObservePoolResp>> alertsFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return observePoolService.listReadyAlerts(6);
+            } catch (Exception ex) {
+                return List.of();
+            }
+        }, HOME_POOL);
+        CompletableFuture<DashboardHomeResp.AccountBlock> accountFuture = CompletableFuture.supplyAsync(
+                () -> buildLightAccount(accountId), HOME_POOL);
+        CompletableFuture<DashboardHomeResp.DataHealthBlock> healthFuture = CompletableFuture.supplyAsync(
+                () -> buildLightDataHealth(group), HOME_POOL);
+
+        MarketBriefingResp briefing = briefingFuture.join();
+        Integer limitUpCount = resolveLimitUpCount(briefing);
         List<String> tips = new ArrayList<>();
         if (Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getTips())) {
             for (MarketTipItem tip : briefing.getTips()) {
@@ -118,7 +159,7 @@ public class DashboardServiceImpl implements IDashboardService {
                 .hotThemes(Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getHotThemes())
                         ? briefing.getHotThemes().subList(0, Math.min(6, briefing.getHotThemes().size()))
                         : List.of())
-                .limitUpCount(full.getLimitUpCount())
+                .limitUpCount(limitUpCount)
                 .limitDownCount(Objects.nonNull(briefing) ? briefing.getLimitDownCount() : null)
                 .breadthUp(Objects.nonNull(briefing) ? briefing.getBreadthUp() : null)
                 .breadthDown(Objects.nonNull(briefing) ? briefing.getBreadthDown() : null)
@@ -133,17 +174,19 @@ public class DashboardServiceImpl implements IDashboardService {
                 .tips(tips)
                 .build();
 
-        DecisionTodayResp today = null;
-        try {
-            today = decisionService.today(LocalDate.now(), group);
-        } catch (Exception ignored) {
-            // 决策读失败不阻断首页
-        }
+        DecisionTodayResp today = todayFuture.join();
         List<DashboardHomeResp.HomeActionItem> topBuys = new ArrayList<>();
         List<DashboardHomeResp.HomeActionItem> topSells = new ArrayList<>();
         int buyCount = 0;
         int sellCount = 0;
         int holdCount = 0;
+        int executableCount = 0;
+        int valuationCheapCount = 0;
+        int valuationFairCount = 0;
+        int valuationRichCount = 0;
+        int mainlineMatchCount = 0;
+        String riskNote = null;
+        String stance = Objects.nonNull(briefing) ? briefing.getStance() : null;
         boolean hasToday = false;
         LocalDate actionDate = LocalDate.now();
         if (Objects.nonNull(today)) {
@@ -151,9 +194,18 @@ public class DashboardServiceImpl implements IDashboardService {
             List<DecisionItemResp> buys = Objects.nonNull(today.getBuys()) ? today.getBuys() : List.of();
             List<DecisionItemResp> sells = Objects.nonNull(today.getSells()) ? today.getSells() : List.of();
             List<DecisionItemResp> holds = Objects.nonNull(today.getHolds()) ? today.getHolds() : List.of();
-            buyCount = buys.size();
-            sellCount = sells.size();
-            holdCount = holds.size();
+            buyCount = Objects.nonNull(today.getBuyCount()) ? today.getBuyCount() : buys.size();
+            sellCount = Objects.nonNull(today.getSellCount()) ? today.getSellCount() : sells.size();
+            holdCount = Objects.nonNull(today.getHoldCount()) ? today.getHoldCount() : holds.size();
+            executableCount = Objects.nonNull(today.getExecutableCount()) ? today.getExecutableCount() : 0;
+            valuationCheapCount = Objects.nonNull(today.getValuationCheapCount()) ? today.getValuationCheapCount() : 0;
+            valuationFairCount = Objects.nonNull(today.getValuationFairCount()) ? today.getValuationFairCount() : 0;
+            valuationRichCount = Objects.nonNull(today.getValuationRichCount()) ? today.getValuationRichCount() : 0;
+            mainlineMatchCount = Objects.nonNull(today.getMainlineMatchCount()) ? today.getMainlineMatchCount() : 0;
+            riskNote = today.getRiskNote();
+            if (Objects.nonNull(today.getMarketBriefing()) && Objects.nonNull(today.getMarketBriefing().getStance())) {
+                stance = today.getMarketBriefing().getStance();
+            }
             hasToday = buyCount + sellCount + holdCount > 0;
             for (DecisionItemResp item : buys) {
                 if (topBuys.size() >= 3) {
@@ -169,7 +221,10 @@ public class DashboardServiceImpl implements IDashboardService {
             }
         }
         String decisionSummary = hasToday
-                ? ("买 " + buyCount + " / 卖 " + sellCount + " / 持有 " + holdCount)
+                ? ("买 " + buyCount + " / 卖 " + sellCount + " / 持有 " + holdCount
+                + " · 可执行 " + executableCount
+                + " · 低估 " + valuationCheapCount
+                + " · 主线 " + mainlineMatchCount)
                 : "今日尚无决策，点击「一键生成决策」";
         DashboardHomeResp.DecisionBlock decision = DashboardHomeResp.DecisionBlock.builder()
                 .actionDate(actionDate)
@@ -177,73 +232,169 @@ public class DashboardServiceImpl implements IDashboardService {
                 .buyCount(buyCount)
                 .sellCount(sellCount)
                 .holdCount(holdCount)
+                .executableCount(executableCount)
+                .valuationCheapCount(valuationCheapCount)
+                .valuationFairCount(valuationFairCount)
+                .valuationRichCount(valuationRichCount)
+                .mainlineMatchCount(mainlineMatchCount)
+                .stance(stance)
+                .riskNote(riskNote)
                 .topBuys(topBuys)
                 .topSells(topSells)
                 .summary(decisionSummary)
                 .build();
 
-        PaperMetricsResp metrics = full.getPaperMetrics();
-        RiskOverviewResp risk = full.getRisk();
-        DashboardHomeResp.AccountBlock account = DashboardHomeResp.AccountBlock.builder()
-                .totalAsset(Objects.nonNull(risk) ? risk.getTotalAsset() : null)
-                .totalReturn(Objects.nonNull(metrics) ? metrics.getTotalReturn() : null)
-                .positionRatio(Objects.nonNull(risk) ? risk.getPositionRatio() : null)
-                .maxDrawdown(Objects.nonNull(metrics) ? metrics.getMaxDrawdown() : null)
-                .winRate(Objects.nonNull(metrics) ? metrics.getWinRate() : null)
-                .criticalCount(Objects.nonNull(risk) ? risk.getCriticalCount() : 0)
-                .warnCount(Objects.nonNull(risk) ? risk.getWarnCount() : 0)
-                .positionCount(Objects.nonNull(metrics) ? metrics.getPositionCount() : 0)
-                .build();
-
-        DashboardHomeResp.DataHealthBlock dataHealth = buildDataHealth(group, market.getDataLevel());
+        List<ObservePoolResp> observeAlerts = alertsFuture.join();
+        if (Objects.isNull(observeAlerts)) {
+            observeAlerts = List.of();
+        }
+        DashboardHomeResp.AccountBlock account = accountFuture.join();
+        DashboardHomeResp.DataHealthBlock dataHealth = healthFuture.join();
+        if (Objects.isNull(dataHealth)) {
+            dataHealth = buildLightDataHealth(group);
+        }
+        // 用简报等级校准数据健康（轻量统计可能滞后）
+        String briefingLevel = market.getDataLevel();
+        if (StringUtils.isNotBlank(briefingLevel) && !"RED".equals(dataHealth.getLevel())) {
+            if ("RED".equals(briefingLevel)) {
+                dataHealth.setLevel("RED");
+                dataHealth.setSuggestion("数据不足，请先同步指数/板块/自选日线后再决策");
+            } else if ("YELLOW".equals(briefingLevel) && "GREEN".equals(dataHealth.getLevel())) {
+                dataHealth.setLevel("YELLOW");
+                dataHealth.setSuggestion("部分数据过期，建议同步后使用");
+            }
+        }
 
         return DashboardHomeResp.builder()
                 .market(market)
                 .decision(decision)
+                .observeAlerts(observeAlerts)
                 .account(account)
                 .dataHealth(dataHealth)
-                .equityCurve(full.getEquityCurve())
+                // 权益曲线改由前端延后拉取 overview，避免首屏卡死
+                .equityCurve(List.of())
                 .message(market.getStance() + " · " + decisionSummary)
                 .build();
     }
 
-    private DashboardHomeResp.HomeActionItem toHomeItem(DecisionItemResp item) {
-        return DashboardHomeResp.HomeActionItem.builder()
-                .code(item.getCode())
-                .name(item.getName())
-                .action(item.getAction())
-                .strategyId(item.getStrategyId())
-                .score(item.getScore())
-                .suggestedWeight(item.getSuggestedWeight())
-                .mainlineMatch(item.getMainlineMatch())
-                .mainlineName(item.getMainlineName())
-                .reason(item.getReason())
-                .exitRule(item.getExitRule())
-                .build();
+    /**
+     * 轻量账户摘要：持仓市值 + 现金，跳过风控 N+1 与权益回放
+     */
+    private DashboardHomeResp.AccountBlock buildLightAccount(Long accountId) {
+        try {
+            PaperAccount account = paperService.defaultAccount();
+            Long id = Objects.nonNull(accountId) ? accountId : account.getId();
+            List<PaperPosition> positions = paperService.listPositions(id);
+            BigDecimal initCash = Objects.nonNull(account.getInitCash()) ? account.getInitCash() : BigDecimal.valueOf(1000000);
+            BigDecimal cash = Objects.nonNull(account.getCash()) ? account.getCash() : BigDecimal.ZERO;
+            BigDecimal positionValue = BigDecimal.ZERO;
+            if (CollUtil.isNotEmpty(positions)) {
+                for (PaperPosition position : positions) {
+                    if (Objects.nonNull(position.getMarketValue())) {
+                        positionValue = positionValue.add(position.getMarketValue());
+                    }
+                }
+            }
+            BigDecimal totalAsset = cash.add(positionValue);
+            BigDecimal totalReturn = initCash.signum() == 0 ? BigDecimal.ZERO
+                    : totalAsset.subtract(initCash).divide(initCash, 4, RoundingMode.HALF_UP);
+            BigDecimal positionRatio = totalAsset.signum() == 0 ? BigDecimal.ZERO
+                    : positionValue.divide(totalAsset, 4, RoundingMode.HALF_UP);
+            return DashboardHomeResp.AccountBlock.builder()
+                    .totalAsset(totalAsset)
+                    .totalReturn(totalReturn)
+                    .positionRatio(positionRatio)
+                    .maxDrawdown(null)
+                    .winRate(null)
+                    .criticalCount(0)
+                    .warnCount(0)
+                    .positionCount(CollUtil.isEmpty(positions) ? 0 : positions.size())
+                    .build();
+        } catch (Exception ex) {
+            return DashboardHomeResp.AccountBlock.builder()
+                    .criticalCount(0)
+                    .warnCount(0)
+                    .positionCount(0)
+                    .build();
+        }
     }
 
-    private DashboardHomeResp.DataHealthBlock buildDataHealth(String group, String briefingLevel) {
+    /**
+     * 涨停家数（单次 count，失败返回 null）
+     */
+    private Integer resolveLimitUpCount(MarketBriefingResp briefing) {
+        try {
+            LocalDate luDate = Objects.nonNull(briefing) && Objects.nonNull(briefing.getAsOf())
+                    ? briefing.getAsOf() : LocalDate.now();
+            Long cnt = limitUpPoolMapper.selectCount(Wrappers.<LimitUpPool>lambdaQuery()
+                    .eq(LimitUpPool::getTradeDate, luDate));
+            if (Objects.isNull(cnt) || cnt == 0) {
+                LimitUpPool latest = limitUpPoolMapper.selectOne(Wrappers.<LimitUpPool>lambdaQuery()
+                        .orderByDesc(LimitUpPool::getTradeDate)
+                        .last("LIMIT 1"));
+                if (Objects.nonNull(latest)) {
+                    cnt = limitUpPoolMapper.selectCount(Wrappers.<LimitUpPool>lambdaQuery()
+                            .eq(LimitUpPool::getTradeDate, latest.getTradeDate()));
+                }
+            }
+            return Objects.nonNull(cnt) ? cnt.intValue() : 0;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 轻量数据健康：只查最新日线日期，不拉 140 日收盘与相对强弱
+     */
+    private DashboardHomeResp.DataHealthBlock buildLightDataHealth(String group) {
         int stale = 0;
         int empty = 0;
         int total = 0;
         try {
-            List<WatchlistResp> list = watchlistService.listWatchlist(group);
+            List<Watchlist> list = watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
+                    .eq(StringUtils.isNotBlank(group), Watchlist::getGroupName, group)
+                    .select(Watchlist::getCode));
             total = list.size();
-            for (WatchlistResp row : list) {
-                String status = row.getSyncStatus();
-                if ("STALE".equals(status)) {
-                    stale++;
-                } else if (!"OK".equals(status)) {
-                    empty++;
+            if (total > 0) {
+                Set<String> codes = new HashSet<>();
+                for (Watchlist item : list) {
+                    if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getCode())) {
+                        codes.add(item.getCode());
+                    }
+                }
+                Map<String, LocalDate> lastBarMap = new HashMap<>();
+                if (!codes.isEmpty()) {
+                    List<Map<String, Object>> stats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
+                            .select("code", "MAX(trade_date) AS tradeDate")
+                            .in("code", codes)
+                            .groupBy("code"));
+                    for (Map<String, Object> row : stats) {
+                        String code = String.valueOf(row.get("code"));
+                        Object tradeDate = row.get("tradeDate");
+                        if (Objects.nonNull(tradeDate)) {
+                            lastBarMap.put(code, LocalDate.parse(String.valueOf(tradeDate).substring(0, 10)));
+                        }
+                    }
+                }
+                LocalDate staleBefore = LocalDate.now().minusDays(10);
+                for (String code : codes) {
+                    LocalDate lastBar = lastBarMap.get(code);
+                    if (Objects.isNull(lastBar)) {
+                        empty++;
+                    } else if (lastBar.isBefore(staleBefore)) {
+                        stale++;
+                    }
                 }
             }
         } catch (Exception ignored) {
             // ignore
         }
-        String level = StringUtils.isNotBlank(briefingLevel) ? briefingLevel : "YELLOW";
+        String level = "GREEN";
         if (total > 0 && empty > total / 2) {
             level = "RED";
-        } else if (total > 0 && stale > total / 3 && !"RED".equals(level)) {
+        } else if (total > 0 && stale > total / 3) {
+            level = "YELLOW";
+        } else if (total == 0) {
             level = "YELLOW";
         }
         String suggestion;
@@ -260,6 +411,25 @@ public class DashboardServiceImpl implements IDashboardService {
                 .barsStaleCount(stale)
                 .barsEmptyCount(empty)
                 .watchlistCount(total)
+                .build();
+    }
+
+    private DashboardHomeResp.HomeActionItem toHomeItem(DecisionItemResp item) {
+        return DashboardHomeResp.HomeActionItem.builder()
+                .code(item.getCode())
+                .name(item.getName())
+                .action(item.getAction())
+                .strategyId(item.getStrategyId())
+                .score(item.getScore())
+                .suggestedWeight(item.getSuggestedWeight())
+                .mainlineMatch(item.getMainlineMatch())
+                .mainlineName(item.getMainlineName())
+                .valuationLevel(item.getValuationLevel())
+                .valuationLabel(item.getValuationLabel())
+                .executableHint(item.getExecutableHint())
+                .linkHint(item.getLinkHint())
+                .reason(item.getReason())
+                .exitRule(item.getExitRule())
                 .build();
     }
 

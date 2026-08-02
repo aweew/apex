@@ -30,6 +30,23 @@ function slaLevelLabel(level) {
 const autoSync = computed(() => rows.value.find((r) => r.configKey === 'auto_sync_enabled'))
 const autoGroup = computed(() => rows.value.find((r) => r.configKey === 'auto_sync_group'))
 
+/** 决策/策略参数置顶，方便终端调参 */
+const sortedRows = computed(() => {
+  const rank = (key) => {
+    const k = String(key || '')
+    if (k.startsWith('decision.')) return 0
+    if (k.startsWith('strategy.')) return 1
+    if (k.startsWith('auto_sync')) return 2
+    return 3
+  }
+  return [...rows.value].sort((a, b) => {
+    const ra = rank(a.configKey)
+    const rb = rank(b.configKey)
+    if (ra !== rb) return ra - rb
+    return String(a.configKey || '').localeCompare(String(b.configKey || ''))
+  })
+})
+
 async function load() {
   loading.value = true
   try {
@@ -62,6 +79,19 @@ async function ensureAutoSyncKeys() {
     { configKey: 'strategy.s2.rsi_overbought', configValue: '70' },
     { configKey: 'strategy.s3.lookback', configValue: '20' },
     { configKey: 'strategy.s3.volume_ratio', configValue: '1.5' },
+    { configKey: 'decision.score.confluence', configValue: '12' },
+    { configKey: 'decision.score.hot', configValue: '8' },
+    { configKey: 'decision.score.hot_triple', configValue: '4' },
+    { configKey: 'decision.score.mainline', configValue: '10' },
+    { configKey: 'decision.score.off_mainline', configValue: '5' },
+    { configKey: 'decision.score.fund_penalty', configValue: '8' },
+    { configKey: 'decision.score.defense', configValue: '6' },
+    { configKey: 'decision.score.offense', configValue: '3' },
+    { configKey: 'decision.link.undervalued_s2', configValue: '6' },
+    { configKey: 'decision.link.overvalued_s3', configValue: '8' },
+    { configKey: 'decision.executable.score', configValue: '88' },
+    { configKey: 'decision.confluence.window', configValue: '5' },
+    { configKey: 'decision.confluence.min_strategies', configValue: '2' },
   ]
   for (const item of keys) {
     if (!rows.value.find((r) => r.configKey === item.configKey)) {
@@ -119,13 +149,15 @@ onMounted(load)
   <div class="page">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Config</p>
         <h1>参数与登录</h1>
-        <p>成本假设 / 撮合模式 · 本地单用户登录 · 定时同步</p>
+        <p>成本假设 / 撮合模式 · 本地单用户登录 · 定时同步 · 决策评分阈值</p>
       </div>
       <div class="actions">
         <el-button @click="ensureAutoSyncKeys">补齐同步/策略参数</el-button>
-        <el-button @click="router.push('/pipeline')">流水线</el-button>
-        <el-button @click="router.push('/dashboard')">看板</el-button>
+        <el-button plain @click="router.push('/pipeline')">流水线</el-button>
+        <el-button plain @click="router.push('/decision')">决策</el-button>
+        <el-button text @click="router.push('/dashboard')">看板</el-button>
       </div>
     </header>
 
@@ -187,7 +219,7 @@ onMounted(load)
     </el-table>
 
     <h3>系统参数</h3>
-    <el-table v-loading="loading" :data="rows">
+    <el-table v-loading="loading" :data="sortedRows" stripe>
       <el-table-column prop="configKey" label="键" width="180" />
       <el-table-column label="值" min-width="180">
         <template #default="{ row }">
@@ -202,10 +234,22 @@ onMounted(load)
       </el-table-column>
     </el-table>
 
+    <el-alert
+      class="decision-hint"
+      type="info"
+      :closable="false"
+      show-icon
+      title="决策评分与估值联动参数"
+      description="系统参数中含 decision.score.* / decision.link.* / decision.executable.score：低估+S2 提权，高估+S3 降权且不可直接 TRIGGERED。改完后重新「一键生成决策」生效。"
+      style="margin: 16px 0 12px"
+    />
+
     <div class="exports">
+      <a :href="'http://127.0.0.1:8080/apex/api/export/decision'" target="_blank">导出决策 CSV</a>
+      <a :href="'http://127.0.0.1:8080/apex/api/export/observe'" target="_blank">导出观察池 CSV</a>
+      <a :href="'http://127.0.0.1:8080/apex/api/export/signals'" target="_blank">导出信号 CSV</a>
       <a :href="'http://127.0.0.1:8080/apex/api/export/journal'" target="_blank">导出 journal CSV</a>
       <a :href="'http://127.0.0.1:8080/apex/api/export/paper/orders'" target="_blank">导出模拟盘订单</a>
-      <a :href="'http://127.0.0.1:8080/apex/api/export/signals'" target="_blank">导出信号 CSV</a>
       <a :href="'http://127.0.0.1:8080/apex/api/export/universe'" target="_blank">导出股票池 CSV</a>
       <a :href="'http://127.0.0.1:8080/apex/api/export/watchlist'" target="_blank">导出自选 CSV</a>
       <span>回测导出：/api/export/backtest/{jobId}</span>

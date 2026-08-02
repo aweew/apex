@@ -66,4 +66,55 @@ class S3BreakoutVolumeStrategyTest {
         assertNotNull(sell);
         assertEquals(SignalSide.SELL, sell.getSide());
     }
+
+    @Test
+    void buyScoreReflectsBreakoutStrength() {
+        StrategySignalResult buy = strategy.evaluate("000001", BarSeries.from(buildBreakoutBars(5000)));
+        assertNotNull(buy);
+        assertEquals(SignalSide.BUY, buy.getSide());
+        assertTrue(buy.getScore().compareTo(new BigDecimal("65")) >= 0);
+        assertTrue(buy.getScore().compareTo(new BigDecimal("92")) <= 0);
+        assertNotNull(buy.getReason().get("breakoutPct"));
+        assertNotNull(buy.getReason().get("volumeRatio"));
+    }
+
+    @Test
+    void strongerVolumeScoresHigherThanWeakBreakout() {
+        StrategySignalResult weak = strategy.evaluate("000001", BarSeries.from(buildBreakoutBars(1600)));
+        StrategySignalResult strong = strategy.evaluate("000001", BarSeries.from(buildBreakoutBars(6000)));
+        assertNotNull(weak);
+        assertNotNull(strong);
+        assertEquals(SignalSide.BUY, weak.getSide());
+        assertEquals(SignalSide.BUY, strong.getSide());
+        assertTrue(strong.getScore().compareTo(weak.getScore()) > 0,
+                "强放量突破分应高于弱放量: strong=" + strong.getScore() + " weak=" + weak.getScore());
+    }
+
+    private List<BarDaily> buildBreakoutBars(double breakoutVolume) {
+        List<BarDaily> bars = new ArrayList<>();
+        LocalDate date = LocalDate.of(2024, 1, 2);
+        for (int i = 0; i < 21; i++) {
+            double close = 10.0;
+            double high = 10.2;
+            double low = 9.8;
+            double vol = 1000;
+            if (i == 20) {
+                close = 10.5;
+                high = 10.6;
+                low = 10.2;
+                vol = breakoutVolume;
+            }
+            bars.add(BarDaily.builder()
+                    .code("000001")
+                    .tradeDate(date)
+                    .openPrice(BigDecimal.valueOf(close))
+                    .highPrice(BigDecimal.valueOf(high))
+                    .lowPrice(BigDecimal.valueOf(low))
+                    .closePrice(BigDecimal.valueOf(close))
+                    .volume(BigDecimal.valueOf(vol))
+                    .build());
+            date = date.plusDays(1);
+        }
+        return bars;
+    }
 }

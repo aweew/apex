@@ -40,6 +40,13 @@ public class DailyAction implements Serializable {
     /** 匹配主线名称 */ private String mainlineName;
     /** 评分/仓位拆解 */ private String scoreExplain;
     /** 共振策略ID列表 CSV */ private String strategiesCsv;
+    /** 估值档位 */ private String valuationLevel;
+    /** 估值中文标签 */ private String valuationLabel;
+    /** 估值综合分 */ private BigDecimal valuationScore;
+    /** 估值一句话 */ private String valuationSummary;
+    /** 估值×策略联动提示 */ private String linkHint;
+    /** 风险旗标 CSV */ private String riskFlags;
+    /** 是否可执行提示 1/0 */ private Integer executableHint;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     @TableLogic private Integer deleted;

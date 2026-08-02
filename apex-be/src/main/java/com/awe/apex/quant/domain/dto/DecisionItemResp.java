@@ -127,4 +127,19 @@ public class DecisionItemResp {
      * 估值一句话
      */
     private String valuationSummary;
+
+    /**
+     * 风险旗标（决策评分产出）
+     */
+    private List<String> riskFlags;
+
+    /**
+     * 是否允许高分直接可执行（观察池）
+     */
+    private Boolean executableHint;
+
+    /**
+     * 估值×策略联动提示
+     */
+    private String linkHint;
 }

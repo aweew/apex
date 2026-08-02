@@ -6,6 +6,7 @@ import cn.hutool.http.HttpResponse;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.MarketFactorItem;
@@ -14,10 +15,12 @@ import com.awe.apex.quant.domain.dto.MarketTipItem;
 import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.entity.IndexBar;
 import com.awe.apex.quant.domain.entity.LimitUpPool;
+import com.awe.apex.quant.domain.entity.MarketBriefingSnapshot;
 import com.awe.apex.quant.domain.entity.SectorQuote;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.mapper.IndexBarMapper;
 import com.awe.apex.quant.mapper.LimitUpPoolMapper;
+import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
 import com.awe.apex.quant.mapper.SectorQuoteMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.TradingCalendar;
@@ -37,6 +40,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 每日市场简报：大盘趋势 + 风格 + 量能 + 涨停情绪 + 主线题材
@@ -46,9 +51,11 @@ import java.util.Objects;
 public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
-    private static final long CACHE_TTL_MS = 180_000L;
+    /** 内存缓存 10 分钟，避免每次进看板都重建 */
+    private static final long CACHE_TTL_MS = 600_000L;
 
     private final Object cacheLock = new Object();
+    private final AtomicBoolean rebuildScheduled = new AtomicBoolean(false);
     private MarketBriefingResp cachedBriefing;
     private long cachedAtMs;
 
@@ -67,6 +74,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     @Resource
     private StockBasicMapper stockBasicMapper;
 
+    @Resource
+    private MarketBriefingSnapshotMapper marketBriefingSnapshotMapper;
+
     /**
      * 生成市场简报
      *
@@ -80,12 +90,69 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 return cachedBriefing;
             }
         }
-        MarketBriefingResp built = buildBriefing();
-        synchronized (cacheLock) {
-            cachedBriefing = built;
-            cachedAtMs = now;
+        // 有近三日快照则先秒回，再后台重建，避免看板白等
+        MarketBriefingResp snap = loadRecentSnapshot();
+        if (Objects.nonNull(snap)) {
+            synchronized (cacheLock) {
+                if (Objects.isNull(cachedBriefing) || System.currentTimeMillis() - cachedAtMs >= CACHE_TTL_MS) {
+                    cachedBriefing = snap;
+                    cachedAtMs = System.currentTimeMillis();
+                }
+            }
+            scheduleRebuild();
+            return snap;
         }
-        return built;
+        synchronized (cacheLock) {
+            if (Objects.nonNull(cachedBriefing) && System.currentTimeMillis() - cachedAtMs < CACHE_TTL_MS) {
+                return cachedBriefing;
+            }
+            MarketBriefingResp built = buildBriefing();
+            cachedBriefing = built;
+            cachedAtMs = System.currentTimeMillis();
+            return built;
+        }
+    }
+
+    /**
+     * 后台单飞重建简报，刷新内存缓存
+     */
+    private void scheduleRebuild() {
+        if (!rebuildScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                MarketBriefingResp built = buildBriefing();
+                synchronized (cacheLock) {
+                    cachedBriefing = built;
+                    cachedAtMs = System.currentTimeMillis();
+                }
+            } catch (Exception ex) {
+                log.warn("后台重建市场简报失败: {}", ex.getMessage());
+            } finally {
+                rebuildScheduled.set(false);
+            }
+        });
+    }
+
+    /**
+     * 优先读近 3 日简报快照，供看板秒开
+     */
+    private MarketBriefingResp loadRecentSnapshot() {
+        try {
+            MarketBriefingSnapshot row = marketBriefingSnapshotMapper.selectOne(
+                    Wrappers.<MarketBriefingSnapshot>lambdaQuery()
+                            .ge(MarketBriefingSnapshot::getTradeDate, LocalDate.now().minusDays(3))
+                            .orderByDesc(MarketBriefingSnapshot::getTradeDate)
+                            .last("LIMIT 1"));
+            if (Objects.isNull(row) || StringUtils.isBlank(row.getPayloadJson())) {
+                return null;
+            }
+            return JsonUtils.parseObject(row.getPayloadJson(), MarketBriefingResp.class);
+        } catch (Exception ex) {
+            log.debug("读取简报快照失败: {}", ex.getMessage());
+            return null;
+        }
     }
 
     private MarketBriefingResp buildBriefing() {
@@ -187,9 +254,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (Objects.nonNull(vol)) {
             volumeTrend = vol.trend;
             volumeVsMa5Pct = vol.vsMa5Pct;
-            // 展示优先实时三市成交额；库内 amount 常为空
-            BigDecimal liveAmount = fetchLiveThreeMarketAmount();
-            indexVolume = Objects.nonNull(liveAmount) && liveAmount.signum() > 0 ? liveAmount : vol.volume;
+            // 看板首屏不用外网实时额（东财/新浪串行可达十余秒）；库内量能足够出立场
+            indexVolume = vol.volume;
             indexVolumeText = formatAmount(indexVolume);
             String volSignal = "中性";
             if ("放量".equals(vol.trend) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) >= 0) {

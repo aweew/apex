@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   fetchSyncJob,
@@ -8,6 +9,7 @@ import {
   stopSyncJob,
 } from '../api/sync'
 
+const router = useRouter()
 const loading = ref(false)
 const overview = ref(null)
 const activeJob = ref(null)
@@ -223,6 +225,7 @@ onUnmounted(stopPoll)
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Sync</p>
         <h1>数据同步</h1>
         <p>
           {{ overview?.message || '统一管理行情 / 板块 / 热点 / 资讯 / 基本面等同步任务，可看进度、可启停' }}
@@ -230,7 +233,8 @@ onUnmounted(stopPoll)
       </div>
       <div class="actions">
         <el-tag v-if="runningJobs.length" type="warning">运行中 {{ runningJobs.length }}</el-tag>
-        <el-button @click="load">刷新状态</el-button>
+        <el-button plain @click="router.push('/pipeline')">流水线</el-button>
+        <el-button text @click="load">刷新状态</el-button>
       </div>
     </header>
 
@@ -239,10 +243,15 @@ onUnmounted(stopPoll)
         <div v-for="[group, list] in groups" :key="group" class="group">
           <h3>{{ group }}</h3>
           <div class="task-grid">
-            <div v-for="task in list" :key="task.taskType" class="task-card">
+            <div
+              v-for="task in list"
+              :key="task.taskType"
+              class="task-card"
+              :class="{ running: task.running }"
+            >
               <div class="task-top">
                 <strong>{{ task.name }}</strong>
-                <el-tag v-if="task.running" size="small" type="warning">运行中</el-tag>
+                <el-tag v-if="task.running" size="small" type="warning" effect="dark">运行中</el-tag>
                 <el-tag
                   v-else-if="task.latestJob"
                   size="small"
@@ -406,6 +415,12 @@ onUnmounted(stopPoll)
   border-radius: var(--radius);
   padding: 12px 14px;
   box-shadow: var(--shadow-soft);
+}
+
+.task-card.running {
+  border-color: rgba(255, 159, 10, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 159, 10, 0.18), var(--shadow-soft);
+  background: rgba(255, 159, 10, 0.08);
 }
 
 .task-top {

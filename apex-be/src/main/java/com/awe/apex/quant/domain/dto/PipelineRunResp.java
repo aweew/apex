@@ -57,6 +57,36 @@ public class PipelineRunResp {
     private Integer dailyCount;
 
     /**
+     * 智能决策买入数
+     */
+    private Integer decisionBuyCount;
+
+    /**
+     * 智能决策卖出数
+     */
+    private Integer decisionSellCount;
+
+    /**
+     * 智能决策持有数
+     */
+    private Integer decisionHoldCount;
+
+    /**
+     * 可执行提示条数
+     */
+    private Integer decisionExecutableCount;
+
+    /**
+     * 低估/偏低条数
+     */
+    private Integer decisionValuationCheapCount;
+
+    /**
+     * 观察池写入数
+     */
+    private Integer observeUpserted;
+
+    /**
      * 步骤摘要
      */
     private List<String> steps;

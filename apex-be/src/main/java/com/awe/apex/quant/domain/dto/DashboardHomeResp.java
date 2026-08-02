@@ -29,6 +29,11 @@ public class DashboardHomeResp {
     private DecisionBlock decision;
 
     /**
+     * 观察池可执行/接近 Top（最多 6）
+     */
+    private List<ObservePoolResp> observeAlerts;
+
+    /**
      * 账户快览
      */
     private AccountBlock account;
@@ -84,6 +89,13 @@ public class DashboardHomeResp {
         /** 买 */ private Integer buyCount;
         /** 卖 */ private Integer sellCount;
         /** 持有 */ private Integer holdCount;
+        /** 可执行提示条数 */ private Integer executableCount;
+        /** 低估/偏低条数 */ private Integer valuationCheapCount;
+        /** 合理估值条数 */ private Integer valuationFairCount;
+        /** 高估/偏高条数 */ private Integer valuationRichCount;
+        /** 主线匹配条数 */ private Integer mainlineMatchCount;
+        /** 市场立场 */ private String stance;
+        /** 风控摘要 */ private String riskNote;
         /** 买入 Top */ private List<HomeActionItem> topBuys;
         /** 卖出 Top（持仓行动） */ private List<HomeActionItem> topSells;
         /** 摘要文案 */ private String summary;
@@ -102,6 +114,10 @@ public class DashboardHomeResp {
         /** 建议仓位 */ private BigDecimal suggestedWeight;
         /** 主线匹配 */ private Boolean mainlineMatch;
         /** 主线名 */ private String mainlineName;
+        /** 估值档位 */ private String valuationLevel;
+        /** 估值标签 */ private String valuationLabel;
+        /** 可执行提示 */ private Boolean executableHint;
+        /** 联动提示 */ private String linkHint;
         /** 理由 */ private String reason;
         /** 离场规则 */ private String exitRule;
     }

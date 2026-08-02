@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchNewsOverview, refreshNews } from '../api/news'
+import { saveObserve } from '../api/observe'
 import NewsShareDialog from '../components/share/NewsShareDialog.vue'
 
 const router = useRouter()
@@ -76,6 +77,32 @@ function openUrl(row, event) {
   if (row?.url) window.open(row.url, '_blank', 'noopener')
 }
 
+/** 资讯关联代码批量进观察池（最多 3 只） */
+async function addRelatedObserve(row) {
+  const codes = (row?.relatedCodes || []).filter(Boolean).slice(0, 3)
+  if (!codes.length) {
+    ElMessage.warning('无关联代码')
+    return
+  }
+  let ok = 0
+  for (const code of codes) {
+    try {
+      await saveObserve({
+        code,
+        status: 'WATCHING',
+        reason: '资讯关联',
+        tags: 'news',
+        note: String(row.title || '').slice(0, 80),
+      })
+      ok++
+    } catch {
+      /* 单票失败继续 */
+    }
+  }
+  if (ok) ElMessage.success(`已将 ${ok} 只关联股写入观察池`)
+  else ElMessage.error('加入观察池失败')
+}
+
 function openShare(row, event) {
   event?.preventDefault?.()
   event?.stopPropagation?.()
@@ -108,14 +135,16 @@ onMounted(load)
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · News</p>
         <h1>新闻资讯</h1>
         <p>{{ data?.message || '聚合东财 / 财联社 / 同花顺 / 新浪财经热点快讯' }}</p>
       </div>
       <div class="actions">
         <el-button type="primary" :loading="refreshing" @click="onRefresh()">刷新全部</el-button>
         <el-button :loading="refreshing" @click="onRefresh('eastmoney,cls')">快刷(东财+财联社)</el-button>
-        <el-button @click="load">重新加载</el-button>
-        <el-button @click="router.push('/hot')">市场热点</el-button>
+        <el-button plain @click="router.push('/hot')">市场热点</el-button>
+        <el-button plain @click="router.push('/decision')">智能决策</el-button>
+        <el-button text @click="load">刷新</el-button>
       </div>
     </header>
 
@@ -147,9 +176,13 @@ onMounted(load)
       </el-select>
     </div>
 
-    <el-empty v-if="!loading && !items.length" description="暂无新闻，点击「刷新全部」拉取">
+    <div v-if="!loading && !items.length" class="page-empty">
+      <h3>暂无资讯</h3>
+      <p>拉取东财 / 财联社等快讯后，可交叉对照热点与决策清单</p>
       <el-button type="primary" :loading="refreshing" @click="onRefresh()">立即刷新</el-button>
-    </el-empty>
+      <el-button plain @click="router.push('/hot')">看市场热点</el-button>
+      <el-button plain @click="router.push('/decision')">智能决策</el-button>
+    </div>
 
     <div v-else class="news-list">
       <article v-for="row in items" :key="row.id" class="news-card">
@@ -180,6 +213,11 @@ onMounted(load)
             type="primary"
             @click="router.push(`/stock/${code}`)"
           >{{ code }}</el-button>
+          <el-button
+            link
+            type="warning"
+            @click="addRelatedObserve(row)"
+          >相关进观察</el-button>
         </div>
         <div class="news-ops">
           <button

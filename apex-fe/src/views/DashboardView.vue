@@ -3,27 +3,53 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { dashboardHome } from '../api/dashboard'
+import { dashboardHome, dashboardOverview } from '../api/dashboard'
 import { runDecision } from '../api/decision'
-import { listObserve } from '../api/observe'
-
 const router = useRouter()
+const HOME_CACHE_KEY = 'apex.dashboard.home.v2'
 const loading = ref(false)
+const refreshing = ref(false)
 const running = ref(false)
 const home = ref(null)
 const loadError = ref('')
 const chartRef = ref(null)
-const observeAlerts = ref([])
 let chart
+let equityTimer = null
+
+function readHomeCache() {
+  try {
+    const raw = sessionStorage.getItem(HOME_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function writeHomeCache(data) {
+  try {
+    if (data) sessionStorage.setItem(HOME_CACHE_KEY, JSON.stringify(data))
+  } catch {
+    // ignore quota
+  }
+}
 
 const market = computed(() => home.value?.market || null)
 const decision = computed(() => home.value?.decision || null)
+const observeAlerts = computed(() => home.value?.observeAlerts || [])
 const account = computed(() => home.value?.account || null)
 const dataHealth = computed(() => home.value?.dataHealth || null)
 const themes = computed(() => market.value?.hotThemes || [])
 const tips = computed(() => market.value?.tips || [])
 const topBuys = computed(() => decision.value?.topBuys || [])
 const topSells = computed(() => decision.value?.topSells || [])
+const valuationDistTotal = computed(() => {
+  const d = decision.value
+  if (!d) return 0
+  return (Number(d.valuationCheapCount) || 0)
+    + (Number(d.valuationFairCount) || 0)
+    + (Number(d.valuationRichCount) || 0)
+})
 const hasEquity = computed(() => (home.value?.equityCurve || []).length > 0)
 const indexCards = computed(() => {
   const rows = market.value?.indexes
@@ -192,36 +218,64 @@ function renderEquity(points) {
   })
 }
 
-async function loadObserveAlerts() {
+async function loadEquityLazy() {
   try {
-    const res = await listObserve({})
-    const list = res.data || []
-    observeAlerts.value = list
-      .filter((r) => r.status === 'NEAR' || r.status === 'TRIGGERED')
-      .slice(0, 6)
+    const res = await dashboardOverview()
+    const curve = res.data?.equityCurve || []
+    const metrics = res.data?.paperMetrics
+    if (!home.value) return
+    home.value = {
+      ...home.value,
+      equityCurve: curve,
+      account: home.value.account
+        ? {
+            ...home.value.account,
+            maxDrawdown: metrics?.maxDrawdown ?? home.value.account.maxDrawdown,
+            winRate: metrics?.winRate ?? home.value.account.winRate,
+          }
+        : home.value.account,
+    }
+    writeHomeCache(home.value)
+    await nextTick()
+    renderEquity(curve)
   } catch {
-    observeAlerts.value = []
+    // 权益曲线延后失败不影响首屏
   }
 }
 
-async function load() {
-  loading.value = true
+function scheduleEquityLazy() {
+  if (equityTimer) clearTimeout(equityTimer)
+  // 错开首屏竞争，避免一进页就打沉重 overview
+  equityTimer = setTimeout(() => {
+    loadEquityLazy()
+  }, 1200)
+}
+
+async function load(opts = {}) {
+  const silent = !!opts.silent
+  const hasCache = !!home.value
+  if (!silent && !hasCache) loading.value = true
+  refreshing.value = true
   loadError.value = ''
   try {
     const res = await dashboardHome()
     home.value = res.data
+    writeHomeCache(res.data)
     await nextTick()
     renderEquity(home.value?.equityCurve)
-    await loadObserveAlerts()
+    scheduleEquityLazy()
   } catch (e) {
-    home.value = null
-    const msg = e.message || '加载失败'
-    loadError.value = msg.includes('404') || msg.includes('Not Found')
-      ? '看板接口未就绪：请重启后端后再刷新（/api/dashboard/home）'
-      : msg
-    ElMessage.error(loadError.value)
+    if (!hasCache) {
+      home.value = null
+      const msg = e.message || '加载失败'
+      loadError.value = msg.includes('404') || msg.includes('Not Found')
+        ? '看板接口未就绪：请重启后端后再刷新（/api/dashboard/home）'
+        : msg
+      ElMessage.error(loadError.value)
+    }
   } finally {
     loading.value = false
+    refreshing.value = false
   }
 }
 
@@ -248,11 +302,20 @@ function onResize() {
 }
 
 onMounted(() => {
-  load()
+  const cached = readHomeCache()
+  if (cached) {
+    home.value = cached
+    nextTick(() => renderEquity(cached.equityCurve))
+    // 有缓存先秒开，再静默刷新
+    load({ silent: true })
+  } else {
+    load()
+  }
   window.addEventListener('resize', onResize)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  if (equityTimer) clearTimeout(equityTimer)
   chart?.dispose()
   chart = null
 })
@@ -264,7 +327,12 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">Apex · Command</p>
         <h1>看板</h1>
-        <p class="sub">{{ home?.message || '先看市场立场，再处理买卖行动' }}</p>
+        <p class="sub">
+          {{
+            home?.message
+              || (loading || refreshing ? '正在加载市场与决策…' : '先看市场立场，再处理买卖行动')
+          }}
+        </p>
       </div>
       <div class="actions">
         <el-button type="primary" class="cta" :loading="running" @click="onRunDecision">
@@ -272,7 +340,7 @@ onBeforeUnmount(() => {
         </el-button>
         <el-button @click="router.push('/decision')">智能决策</el-button>
         <el-button plain @click="router.push('/sync')">同步健康</el-button>
-        <el-button text @click="load">刷新</el-button>
+        <el-button text :loading="refreshing" @click="load()">刷新</el-button>
       </div>
     </header>
 
@@ -289,6 +357,33 @@ onBeforeUnmount(() => {
       </template>
     </el-alert>
 
+    <nav class="workflow-strip" aria-label="今日工作流">
+      <button type="button" class="wf-step" @click="router.push('/sync')">
+        <span class="wf-idx">1</span>
+        <span class="wf-label">同步数据</span>
+      </button>
+      <span class="wf-sep" aria-hidden="true" />
+      <button type="button" class="wf-step" @click="onRunDecision">
+        <span class="wf-idx">2</span>
+        <span class="wf-label">生成决策</span>
+      </button>
+      <span class="wf-sep" aria-hidden="true" />
+      <button type="button" class="wf-step" @click="router.push('/decision')">
+        <span class="wf-idx">3</span>
+        <span class="wf-label">看买卖清单</span>
+      </button>
+      <span class="wf-sep" aria-hidden="true" />
+      <button type="button" class="wf-step" @click="router.push('/observe')">
+        <span class="wf-idx">4</span>
+        <span class="wf-label">盯观察池</span>
+      </button>
+      <span class="wf-sep" aria-hidden="true" />
+      <button type="button" class="wf-step" @click="router.push('/paper')">
+        <span class="wf-idx">5</span>
+        <span class="wf-label">模拟执行</span>
+      </button>
+    </nav>
+
     <!-- ① 市场立场（始终占位，避免整块消失） -->
     <section
       class="stance-panel enter"
@@ -297,7 +392,7 @@ onBeforeUnmount(() => {
       <div class="stance-glow" aria-hidden="true" />
       <div class="stance-main">
         <div class="kicker">
-          <span>市场立场 · {{ market?.asOf || '待加载' }}</span>
+          <span>市场立场 · {{ market?.asOf || (loading || refreshing ? '加载中' : '待加载') }}</span>
           <el-tag
             v-if="market"
             size="small"
@@ -307,7 +402,9 @@ onBeforeUnmount(() => {
           >
             数据{{ dataLevelLabel(market.dataLevel) }}
           </el-tag>
-          <el-tag v-else size="small" type="info" effect="plain" round>未加载</el-tag>
+          <el-tag v-else size="small" type="info" effect="plain" round>
+            {{ loading || refreshing ? '加载中' : '未加载' }}
+          </el-tag>
         </div>
         <div class="stance-title-row">
           <div
@@ -329,11 +426,18 @@ onBeforeUnmount(() => {
                 market?.stanceReason
                   || (loadError
                     ? '首页接口未返回市场简报，请先重启后端并刷新'
-                    : '正在等待市场简报；若长期空白，请先同步指数/板块/涨停')
+                    : (loading || refreshing
+                      ? '正在拉取市场简报…'
+                      : '若长期空白，请先同步指数/板块/涨停'))
               }}
             </p>
             <p class="advice">
-              {{ market?.positionAdvice || '同步行情后，这里会给出进攻 / 均衡 / 防守与仓位建议' }}
+              {{
+                market?.positionAdvice
+                  || (loading || refreshing
+                    ? '仓位建议加载中'
+                    : '同步行情后，这里会给出进攻 / 均衡 / 防守与仓位建议')
+              }}
             </p>
           </div>
         </div>
@@ -446,7 +550,7 @@ onBeforeUnmount(() => {
 
     <div class="two-col">
       <!-- ② 今日决策 -->
-      <section class="panel enter delay-1">
+      <section class="panel action-panel enter delay-1">
         <div class="panel-head">
           <div>
             <h3>今日决策</h3>
@@ -455,64 +559,115 @@ onBeforeUnmount(() => {
           <el-button link type="primary" @click="router.push('/decision')">全部</el-button>
         </div>
 
-        <div v-if="decision?.hasToday" class="count-row">
-          <span class="count-chip buy">买 <b>{{ decision.buyCount }}</b></span>
-          <span class="count-chip sell">卖 <b>{{ decision.sellCount }}</b></span>
-          <span class="count-chip hold">持有 <b>{{ decision.holdCount }}</b></span>
-          <span class="count-date">{{ decision.actionDate }}</span>
+        <div class="panel-meta">
+          <div class="meta-line">
+            <span class="meta-date">{{ decision?.actionDate || '-' }}</span>
+            <span v-if="decision?.hasToday" class="meta-counts">
+              买 {{ decision.buyCount ?? 0 }}
+              · 卖 {{ decision.sellCount ?? 0 }}
+              · 可执行 {{ decision.executableCount ?? 0 }}
+            </span>
+            <span v-else class="meta-counts">{{ loading || refreshing ? '加载中…' : '尚无清单' }}</span>
+          </div>
+          <p class="meta-note">
+            {{
+              decision?.riskNote
+                || (loading || refreshing ? '正在读取今日决策…' : '生成决策后显示买入 Top3 与仓位建议')
+            }}
+          </p>
+          <div
+            v-if="decision?.hasToday && valuationDistTotal > 0"
+            class="val-dist"
+            :title="`低估 ${decision.valuationCheapCount ?? 0} · 合理 ${decision.valuationFairCount ?? 0} · 高估 ${decision.valuationRichCount ?? 0}`"
+          >
+            <i class="cheap" :style="{ flex: decision.valuationCheapCount || 0 }" />
+            <i class="fair" :style="{ flex: decision.valuationFairCount || 0 }" />
+            <i class="rich" :style="{ flex: decision.valuationRichCount || 0 }" />
+          </div>
+          <div v-else class="val-dist val-dist-placeholder" aria-hidden="true" />
         </div>
-        <p v-else class="panel-desc soft">今日尚无决策清单</p>
 
-        <el-empty
-          v-if="!decision?.hasToday"
-          class="dash-empty"
-          description="生成后将在此显示买入 Top3"
-          :image-size="56"
-        >
-          <el-button type="primary" size="small" :loading="running" @click="onRunDecision">
-            一键生成决策
-          </el-button>
-        </el-empty>
-        <el-table
-          v-else
-          :data="topBuys"
-          size="small"
-          class="dash-table"
-          empty-text="暂无买入建议"
-          stripe
-        >
-          <el-table-column prop="code" label="代码" width="88">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
-                {{ row.code }}
-              </el-button>
-            </template>
-          </el-table-column>
-          <el-table-column prop="name" label="名称" width="90" />
-          <el-table-column prop="strategyId" label="策略" width="56" />
-          <el-table-column label="评分" width="56">
-            <template #default="{ row }">
-              <span class="num">{{ fmtScore(row.score) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="仓位" width="64">
-            <template #default="{ row }">
-              <span class="num">{{ fmtWeight(row.suggestedWeight) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="主线" min-width="88">
-            <template #default="{ row }">
-              <el-tag v-if="row.mainlineMatch" size="small" type="warning" effect="light" round>
-                {{ row.mainlineName || '匹配' }}
-              </el-tag>
-              <span v-else class="muted">-</span>
-            </template>
-          </el-table-column>
-        </el-table>
+        <div class="panel-body">
+          <el-empty
+            v-if="!decision?.hasToday"
+            class="dash-empty"
+            :description="loading || refreshing ? '决策加载中…' : '生成后将在此显示买入 Top3'"
+            :image-size="56"
+          >
+            <el-button
+              v-if="!loading && !refreshing"
+              type="primary"
+              size="small"
+              :loading="running"
+              @click="onRunDecision"
+            >
+              一键生成决策
+            </el-button>
+          </el-empty>
+          <el-table
+            v-else
+            :data="topBuys"
+            size="small"
+            class="dash-table"
+            empty-text="暂无买入建议"
+            stripe
+          >
+            <el-table-column prop="code" label="代码" width="88">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
+                  {{ row.code }}
+                </el-button>
+              </template>
+            </el-table-column>
+            <el-table-column prop="name" label="名称" width="90" />
+            <el-table-column prop="strategyId" label="策略" width="56" />
+            <el-table-column label="评分" width="110">
+              <template #default="{ row }">
+                <ScoreBar :score="row.score" />
+              </template>
+            </el-table-column>
+            <el-table-column label="估值" width="88">
+              <template #default="{ row }">
+                <span class="muted">{{ row.valuationLabel || '-' }}</span>
+                <el-tag
+                  v-if="row.executableHint"
+                  size="small"
+                  type="success"
+                  effect="plain"
+                  style="margin-left: 4px"
+                >可执行</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="仓位" width="64">
+              <template #default="{ row }">
+                <span class="num">{{ fmtWeight(row.suggestedWeight) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="联动" min-width="88">
+              <template #default="{ row }">
+                <el-tag
+                  v-if="row.linkHint"
+                  size="small"
+                  effect="plain"
+                  :type="String(row.linkHint).includes('降权') ? 'danger' : 'success'"
+                >{{ row.linkHint }}</el-tag>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="主线" min-width="72">
+              <template #default="{ row }">
+                <el-tag v-if="row.mainlineMatch" size="small" type="warning" effect="light" round>
+                  {{ row.mainlineName || '匹配' }}
+                </el-tag>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </section>
 
       <!-- ③ 持仓行动 -->
-      <section class="panel enter delay-2">
+      <section class="panel action-panel enter delay-2">
         <div class="panel-head">
           <div>
             <h3>持仓行动</h3>
@@ -521,30 +676,49 @@ onBeforeUnmount(() => {
           <el-button link type="primary" @click="router.push('/holding')">我的持仓</el-button>
         </div>
 
-        <el-empty
-          v-if="!topSells.length"
-          class="dash-empty"
-          description="持仓暂无卖点"
-          :image-size="56"
-        />
-        <el-table v-else :data="topSells" size="small" class="dash-table" stripe>
-          <el-table-column prop="code" label="代码" width="88">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
-                {{ row.code }}
-              </el-button>
-            </template>
-          </el-table-column>
-          <el-table-column prop="name" label="名称" width="90" />
-          <el-table-column label="策略" width="72">
-            <template #default="{ row }">
-              <span :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
-                {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="exitRule" label="触发" min-width="140" show-overflow-tooltip />
-        </el-table>
+        <div class="panel-meta">
+          <div class="meta-line">
+            <span class="meta-date">{{ decision?.actionDate || '-' }}</span>
+            <span class="meta-counts">
+              卖点 {{ topSells.length }}
+              · 优先风控 / 策略卖出
+            </span>
+          </div>
+          <p class="meta-note">对照今日决策清单执行，卖出优先处理</p>
+          <div class="val-dist val-dist-placeholder" aria-hidden="true" />
+        </div>
+
+        <div class="panel-body">
+          <el-empty
+            v-if="!topSells.length"
+            class="dash-empty"
+            :description="loading || refreshing ? '卖点加载中…' : '持仓暂无卖点'"
+            :image-size="56"
+          />
+          <el-table v-else :data="topSells" size="small" class="dash-table" stripe>
+            <el-table-column prop="code" label="代码" width="88">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
+                  {{ row.code }}
+                </el-button>
+              </template>
+            </el-table-column>
+            <el-table-column prop="name" label="名称" width="90" />
+            <el-table-column label="策略" width="72">
+              <template #default="{ row }">
+                <span :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
+                  {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="评分" width="100">
+              <template #default="{ row }">
+                <ScoreBar :score="row.score" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="exitRule" label="触发" min-width="120" show-overflow-tooltip />
+          </el-table>
+        </div>
       </section>
     </div>
 
@@ -566,9 +740,9 @@ onBeforeUnmount(() => {
         </span>
       </div>
       <div v-else class="empty-guide">
-        <p>暂无主线题材</p>
-        <span>先在同步中心刷新「板块行情」，看板才会显示今日主线芯片与操作提示。</span>
-        <el-button size="small" round @click="router.push('/sync')">去同步板块</el-button>
+        <p>{{ loading || refreshing ? '主线加载中…' : '暂无主线题材' }}</p>
+        <span v-if="!loading && !refreshing">先在同步中心刷新「板块行情」，看板才会显示今日主线芯片与操作提示。</span>
+        <el-button v-if="!loading && !refreshing" size="small" round @click="router.push('/sync')">去同步板块</el-button>
       </div>
       <div v-if="tips.length" class="tip-list">
         <div v-for="(t, i) in tips" :key="i" class="tip-item">
@@ -703,6 +877,68 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.workflow-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--glass);
+}
+
+.wf-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font: inherit;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.wf-step:hover {
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--accent);
+}
+
+.wf-idx {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+}
+
+.wf-label {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.wf-sep {
+  width: 18px;
+  height: 1px;
+  background: var(--line-strong);
+  margin: 0 2px;
+}
+
+@media (max-width: 720px) {
+  .wf-sep {
+    display: none;
+  }
+}
+
 /* —— enter motion —— */
 .enter {
   animation: dashIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -730,6 +966,62 @@ onBeforeUnmount(() => {
   grid-template-columns: 1fr 1fr;
   gap: 14px;
   margin-bottom: 14px;
+  align-items: stretch;
+}
+
+.action-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.action-panel .panel-head {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+}
+
+.panel-meta {
+  flex: 0 0 auto;
+  min-height: 72px;
+  margin-bottom: 10px;
+}
+
+.meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin-bottom: 4px;
+}
+
+.meta-date {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.meta-counts {
+  font-size: 12px;
+  color: var(--slate);
+  font-variant-numeric: tabular-nums;
+}
+
+.meta-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.9em;
+}
+
+.panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .observe-strip {
@@ -1167,49 +1459,31 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 
-.panel-desc.soft {
-  margin-bottom: 8px;
-}
-
 .panel-links {
   display: flex;
   gap: 4px;
 }
 
-.count-row {
+.val-dist {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.count-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  height: 6px;
   border-radius: 999px;
-  font-size: 12px;
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--slate);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.06);
 }
 
-.count-chip b {
-  font-variant-numeric: tabular-nums;
-  font-size: 14px;
+.val-dist-placeholder {
+  visibility: hidden;
 }
 
-.count-chip.buy b { color: var(--up); }
-.count-chip.sell b { color: var(--down); }
-.count-chip.hold b { color: var(--ink-soft); }
-
-.count-date {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+.val-dist i {
+  display: block;
+  min-width: 0;
 }
+
+.val-dist .cheap { background: #34c759; }
+.val-dist .fair { background: #86868b; }
+.val-dist .rich { background: #ff3b30; }
 
 .dash-table {
   --el-table-bg-color: transparent;

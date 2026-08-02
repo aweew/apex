@@ -34,7 +34,12 @@ public class PipelineRunReq {
     private Boolean runSignals;
 
     /**
-     * 是否生成日终清单
+     * 是否生成日终清单（旧路径；开启智能决策时可跳过）
      */
     private Boolean runDaily;
+
+    /**
+     * 是否运行智能决策（全A池→信号→研判→观察池）
+     */
+    private Boolean runDecision;
 }

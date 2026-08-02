@@ -11,6 +11,7 @@ import {
   refreshSectorBoard,
   refreshSectorConstituents,
 } from '../api/sector'
+import { saveObserve } from '../api/observe'
 import { getSyncJob, startSyncJob } from '../api/sync'
 import { useTradeDateStore } from '../stores/tradeDate'
 
@@ -194,6 +195,22 @@ function openMainline(row) {
   openConstituents(row)
 }
 
+async function addObserve(row) {
+  if (!row?.code) return
+  try {
+    await saveObserve({
+      code: row.code,
+      name: row.name || '',
+      status: 'WATCHING',
+      reason: `板块 ${currentSector.value?.name || ''}`.trim() || '板块成分',
+      tags: 'sector',
+    })
+    ElMessage.success(`${row.code} 已进观察池`)
+  } catch (e) {
+    ElMessage.error(e.message || '加入失败')
+  }
+}
+
 async function loadConstituents() {
   if (!currentSector.value?.code) return
   drawerLoading.value = true
@@ -293,7 +310,9 @@ onBeforeUnmount(() => {
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
+        <p class="eyebrow">Apex · Sector</p>
         <h1>板块行情</h1>
+        <p>主线强弱 · 涨停家数 · 联动决策候选</p>
       </div>
       <div class="actions">
         <el-date-picker
@@ -318,6 +337,8 @@ onBeforeUnmount(() => {
           <el-option label="升序" value="asc" />
         </el-select>
         <el-button type="primary" :loading="refreshing" @click="onRefresh">刷新</el-button>
+        <el-button plain @click="router.push('/limit-up')">涨停</el-button>
+        <el-button plain @click="router.push('/decision')">决策</el-button>
       </div>
     </header>
 
@@ -483,6 +504,11 @@ onBeforeUnmount(() => {
         <el-table-column label="涨跌幅" width="90" sortable prop="pctChg">
           <template #default="{ row }">
             <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="88" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="warning" :disabled="!row.code" @click="addObserve(row)">观察</el-button>
           </template>
         </el-table-column>
       </el-table>

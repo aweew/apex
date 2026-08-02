@@ -19,18 +19,70 @@ const data = ref(null)
 const activeTab = ref('buys')
 const history = ref([])
 const playbook = ref(null)
-const showRules = ref(true)
 const attribution = ref(null)
+const morePanels = ref([])
+const FILTER_PREF_KEY = 'apex.decision.buyFilters'
+const savedFilters = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(FILTER_PREF_KEY) || '{}')
+  } catch {
+    return {}
+  }
+})()
+const buyStrategyFilter = ref(savedFilters.strategy || '')
+const buyMinScore = ref(savedFilters.minScore ?? '')
+const buyMainlineOnly = ref(!!savedFilters.mainlineOnly)
+const buyExecutableOnly = ref(!!savedFilters.executableOnly)
+const buyCheapOnly = ref(!!savedFilters.cheapOnly)
+
+function persistBuyFilters() {
+  try {
+    localStorage.setItem(
+      FILTER_PREF_KEY,
+      JSON.stringify({
+        strategy: buyStrategyFilter.value,
+        minScore: buyMinScore.value,
+        mainlineOnly: buyMainlineOnly.value,
+        executableOnly: buyExecutableOnly.value,
+        cheapOnly: buyCheapOnly.value,
+      }),
+    )
+  } catch {
+    /* ignore */
+  }
+}
 
 const buys = computed(() => data.value?.buys || [])
 const sells = computed(() => data.value?.sells || [])
 const holds = computed(() => data.value?.holds || [])
+const filteredBuys = computed(() => {
+  const min = buyMinScore.value !== '' ? Number(buyMinScore.value) : null
+  return buys.value.filter((row) => {
+    if (buyStrategyFilter.value && row.strategyId !== buyStrategyFilter.value) return false
+    if (buyMainlineOnly.value && !row.mainlineMatch) return false
+    if (buyExecutableOnly.value && row.executableHint !== true) return false
+    if (
+      buyCheapOnly.value &&
+      row.valuationLevel !== 'UNDERVALUED' &&
+      row.valuationLevel !== 'SLIGHTLY_CHEAP'
+    ) {
+      return false
+    }
+    if (min != null && !Number.isNaN(min) && Number(row.score || 0) < min) return false
+    return true
+  })
+})
 const briefing = computed(() => data.value?.marketBriefing || null)
 const factors = computed(() => briefing.value?.factors || [])
 const tips = computed(() => briefing.value?.tips || [])
 const indexLines = computed(() => briefing.value?.indexLines || [])
 const hotThemes = computed(() => briefing.value?.hotThemes || [])
 const strategies = computed(() => playbook.value?.strategies || [])
+const scorePct = computed(() => {
+  const s = Number(briefing.value?.stanceScore)
+  if (Number.isNaN(s)) return 0
+  return Math.max(0, Math.min(100, s))
+})
 
 function stanceClass(s) {
   if (s === '进攻') return 'stance-attack'
@@ -142,7 +194,6 @@ async function openHistoryDay(row) {
 }
 
 function pickDefaultTab() {
-  // 优先展示买入机会（不局限持仓）；有持仓卖出时再切到卖出
   if (buys.value.length) activeTab.value = 'buys'
   else if (sells.value.length) activeTab.value = 'sells'
   else activeTab.value = 'holds'
@@ -160,6 +211,21 @@ function fmtScore(v) {
   if (v == null) return '-'
   return Number(v).toFixed(1)
 }
+
+function parseIndexLine(line) {
+  const raw = String(line || '')
+  const m = raw.match(/^(.+?)\s+([+-]?\d+(?:\.\d+)?)%\s*[·•]\s*(.+)$/)
+  if (!m) return { name: raw, pct: null, close: '', dir: '' }
+  const pct = Number(m[2])
+  return {
+    name: m[1].trim(),
+    pct,
+    close: m[3].trim(),
+    dir: pct > 0 ? 'up' : pct < 0 ? 'down' : '',
+  }
+}
+
+const indexCards = computed(() => (indexLines.value || []).map(parseIndexLine).filter((x) => x.name))
 
 async function onPaperOrder(row) {
   if (!row || row.action === 'HOLD') return
@@ -211,388 +277,832 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page" v-loading="loading">
-    <header class="header">
+  <div class="page decision" v-loading="loading">
+    <header class="header dec-header">
       <div>
+        <p class="eyebrow">Apex · Decision</p>
         <h1>智能决策</h1>
-        <p>
-          {{ data?.message || '先看市场立场 → 再按策略战法出单；评分与仓位有明确交易规则' }}
-          <span v-if="data?.riskNote"> · {{ data.riskNote }}</span>
+        <p class="sub">
+          {{ data?.message || '先看市场立场，再按评分出买卖单' }}
         </p>
       </div>
       <div class="actions">
-        <el-input v-model="groupName" style="width: 130px" placeholder="自选分组" />
-        <el-button type="primary" :loading="loading" @click="onRun">一键生成决策</el-button>
-        <el-button type="warning" @click="router.push('/observe')">观察池剧本</el-button>
-        <el-button @click="load">刷新</el-button>
-        <el-button @click="showRules = !showRules">{{ showRules ? '收起战法' : '策略战法' }}</el-button>
-        <el-button @click="router.push('/signals')">信号明细</el-button>
+        <el-input v-model="groupName" class="group-input" placeholder="自选分组" clearable />
+        <el-button type="primary" class="cta" :loading="loading" @click="onRun">一键生成决策</el-button>
+        <el-button type="warning" plain @click="router.push('/observe')">观察池</el-button>
+        <el-link
+          type="primary"
+          :href="`http://127.0.0.1:8080/apex/api/export/decision?groupName=${encodeURIComponent(groupName || '')}`"
+          target="_blank"
+        >导出CSV</el-link>
+        <el-button text @click="load">刷新</el-button>
       </div>
     </header>
 
-    <section v-if="showRules && playbook" class="playbook">
-      <div class="playbook-head">
-        <h2>策略战法</h2>
-        <span class="muted">{{ playbook.message }}</span>
-      </div>
-      <div class="strategy-grid">
-        <article v-for="s in strategies" :key="s.strategyId" class="strategy-card">
-          <header>
-            <b>{{ s.strategyId }} · {{ s.name }}</b>
-            <el-tag size="small">{{ s.style }}</el-tag>
-          </header>
-          <p><label>买入</label>{{ s.buyRule }}</p>
-          <p><label>离场</label>{{ s.exitRule }}</p>
-          <p class="fit"><label>市况</label>{{ s.marketFit }}</p>
-          <p v-if="s.paramsHint" class="params"><label>参数</label>{{ s.paramsHint }}</p>
-        </article>
-      </div>
-      <div class="rules-grid">
-        <div>
-          <h3>流水线</h3>
-          <ol>
-            <li v-for="(step, i) in playbook.pipelineSteps || []" :key="i">{{ step.replace(/^\d+\.\s*/, '') }}</li>
-          </ol>
+    <!-- ① 市场立场 -->
+    <section
+      v-if="briefing"
+      class="stance-panel"
+      :class="stanceClass(briefing.stance)"
+    >
+      <div class="stance-main">
+        <div class="kicker">
+          <span>市场简报 · {{ briefing.asOf || '-' }}</span>
+          <el-tag
+            v-if="briefing.dataLevel"
+            size="small"
+            effect="plain"
+            :type="dataLevelType(briefing.dataLevel)"
+            round
+          >
+            数据{{ briefing.dataLevel }}
+          </el-tag>
         </div>
-        <div>
-          <h3>评分规则</h3>
-          <ul>
-            <li v-for="(r, i) in playbook.scoreRules || []" :key="'s'+i">{{ r }}</li>
-          </ul>
-          <h3>仓位规则</h3>
-          <ul>
-            <li v-for="(r, i) in playbook.positionRules || []" :key="'p'+i">{{ r }}</li>
-          </ul>
-        </div>
-        <div>
-          <h3>基本面门禁</h3>
-          <ul>
-            <li v-for="(r, i) in playbook.fundRules || []" :key="'f'+i">{{ r }}</li>
-          </ul>
-          <h3>卖出优先级</h3>
-          <ul>
-            <li v-for="(r, i) in playbook.sellRules || []" :key="'e'+i">{{ r }}</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <section v-if="briefing" class="briefing" :class="stanceClass(briefing.stance)">
-      <div class="brief-head">
-        <div>
-          <div class="brief-kicker">
-            每日市场简报 · {{ briefing.asOf || '-' }}
-            <el-tag v-if="briefing.dataLevel" size="small" :type="dataLevelType(briefing.dataLevel)" class="data-tag">
-              数据{{ briefing.dataLevel }}
-            </el-tag>
+        <div class="stance-title-row">
+          <div class="score-ring" :style="{ '--pct': scorePct }">
+            <div class="score-ring-inner">
+              <strong>{{ briefing.stanceScore ?? '-' }}</strong>
+              <small>/100</small>
+            </div>
           </div>
-          <h2>
-            立场
-            <span class="stance-pill">{{ briefing.stance || '均衡' }}</span>
-            <span class="score">{{ briefing.stanceScore ?? '-' }}/100</span>
-          </h2>
-          <p class="brief-reason">{{ briefing.stanceReason }}</p>
-          <p class="brief-pos">{{ briefing.positionAdvice }}</p>
-        </div>
-        <div class="brief-side">
-          <div v-if="indexLines.length" class="index-lines">
-            <div v-for="line in indexLines" :key="line">{{ line }}</div>
+          <div class="stance-copy">
+            <h2><span class="pill">{{ briefing.stance || '均衡' }}</span></h2>
+            <p class="reason">{{ briefing.stanceReason }}</p>
+            <p class="advice">{{ briefing.positionAdvice || data?.riskNote }}</p>
           </div>
-          <div v-if="hotThemes.length" class="theme-row">
+        </div>
+      </div>
+      <div class="stance-side">
+        <div class="side-block">
+          <div class="side-title">大盘</div>
+          <div class="index-list">
+            <div v-for="idx in indexCards.slice(0, 4)" :key="idx.name" class="index-line">
+              <span class="n">{{ idx.name }}</span>
+              <span class="c" :class="idx.dir">{{ idx.close || '-' }}</span>
+              <span class="p" :class="idx.dir">
+                {{ idx.pct == null ? '-' : (idx.pct > 0 ? '+' : '') + Number(idx.pct).toFixed(2) + '%' }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div v-if="hotThemes.length" class="side-block">
+          <div class="side-title">主线题材</div>
+          <div class="theme-row">
             <span v-for="t in hotThemes.slice(0, 6)" :key="t" class="theme-chip">{{ t }}</span>
           </div>
         </div>
       </div>
-
-      <div v-if="factors.length" class="factor-grid">
-        <div v-for="f in factors" :key="f.name" class="factor">
-          <label>{{ f.name }}</label>
-          <b :class="signalClass(f.signal)">{{ f.value }}</b>
-          <span class="factor-signal" :class="signalClass(f.signal)">{{ f.signal }}</span>
-          <p>{{ f.note }}</p>
-        </div>
-      </div>
-
-      <div v-if="tips.length" class="tips">
-        <el-alert
-          v-for="(tip, idx) in tips"
-          :key="idx"
-          class="tip-item"
-          :type="tipType(tip.level)"
-          :closable="false"
-          show-icon
-          :title="tip.text"
-        />
-      </div>
     </section>
 
-    <div class="summary" v-if="data">
-      <div><label>决策日</label><b>{{ data.actionDate || '-' }}</b></div>
-      <div><label>分组</label><span>{{ data.groupName || '-' }}</span></div>
-      <div><label>股票池</label><span>{{ data.universeCount ?? '-' }}</span></div>
-      <div><label>建议买入</label><b class="up">{{ buys.length }}</b></div>
-      <div><label>建议卖出</label><b class="down">{{ sells.length }}</b></div>
-      <div><label>继续持有</label><span>{{ holds.length }}</span></div>
+    <div v-if="factors.length" class="factor-strip">
+      <div v-for="f in factors" :key="f.name" class="factor-cell">
+        <label>{{ f.name }}</label>
+        <div class="factor-val">
+          <b :class="signalClass(f.signal)">{{ f.value }}</b>
+          <em :class="signalClass(f.signal)">{{ f.signal }}</em>
+        </div>
+        <p>{{ f.note }}</p>
+      </div>
     </div>
 
-    <el-tabs v-model="activeTab" class="tabs">
-      <el-tab-pane :label="`建议买入 (${buys.length})`" name="buys">
-        <el-alert
-          class="tab-hint"
-          type="info"
-          :closable="false"
-          show-icon
-          title="买入来自「自选」股票池 + 多平台热点共振扩扫；多策略/热点共振会加分抬仓，基本面偏弱降权；已持仓标的会标注为加仓"
-        />
-        <el-table :data="buys" size="small" stripe empty-text="暂无买入机会（可先充实自选并同步日线后重跑）">
-          <el-table-column prop="code" label="代码" width="100" fixed>
-            <template #default="{ row }">
-              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-            </template>
-          </el-table-column>
-          <el-table-column prop="name" label="名称" width="110" />
-          <el-table-column label="策略" width="120">
-            <template #default="{ row }">{{ strategyName(row.strategyId) }}</template>
-          </el-table-column>
-          <el-table-column label="评分" width="70">
-            <template #default="{ row }">{{ fmtScore(row.score) }}</template>
-          </el-table-column>
-          <el-table-column label="建议仓位" width="90">
-            <template #default="{ row }">{{ fmtPct(row.suggestedWeight) }}</template>
-          </el-table-column>
-          <el-table-column width="120">
-            <template #header><TermTip term="confluence">共振策略</TermTip></template>
-            <template #default="{ row }">
-              <span v-if="row.strategies?.length">{{ row.strategies.join('+') }}</span>
-              <span v-else>{{ row.confluenceCount || '-' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="主线匹配" width="110">
-            <template #default="{ row }">
-              <el-tag v-if="row.mainlineMatch" size="small" type="warning">{{ row.mainlineName || '匹配' }}</el-tag>
-              <span v-else class="muted">-</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="估值" width="100">
-            <template #default="{ row }">
-              <el-button
-                v-if="row.valuationLabel"
-                link
-                type="primary"
-                @click="router.push({ path: '/valuation', query: { code: row.code } })"
-              >{{ row.valuationLabel }}</el-button>
-              <span v-else class="muted">-</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="scoreExplain" label="评分拆解" min-width="200" show-overflow-tooltip />
-          <el-table-column prop="reason" label="理由" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="fundNote" label="基本面" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="exitRule" label="离场规则" width="140" show-overflow-tooltip />
-          <el-table-column label="操作" width="170" fixed="right">
-            <template #default="{ row }">
-              <el-button type="primary" link :loading="ordering" @click="onPaperOrder(row)">模拟买</el-button>
-              <el-button
-                link
-                type="warning"
-                @click="router.push({ path: '/observe', query: { code: row.code, name: row.name || '' } })"
-              >观察</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
+    <div v-if="tips.length" class="tips-row">
+      <el-alert
+        v-for="(tip, idx) in tips.slice(0, 3)"
+        :key="idx"
+        class="tip-item"
+        :type="tipType(tip.level)"
+        :closable="false"
+        show-icon
+        :title="tip.text"
+      />
+    </div>
 
-      <el-tab-pane :label="`建议卖出 (${sells.length})`" name="sells">
-        <el-alert
-          class="tab-hint"
-          type="warning"
-          :closable="false"
-          show-icon
-          title="卖出只针对「我的持仓」：策略卖出信号或触及止损/止盈"
-        />
-        <el-table :data="sells" size="small" stripe empty-text="持仓暂无卖出建议">
-          <el-table-column prop="code" label="代码" width="100" fixed>
-            <template #default="{ row }">
-              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-            </template>
-          </el-table-column>
-          <el-table-column prop="name" label="名称" width="110" />
-          <el-table-column label="策略" width="120">
-            <template #default="{ row }">{{ strategyName(row.strategyId) }}</template>
-          </el-table-column>
-          <el-table-column label="评分" width="70">
-            <template #default="{ row }">{{ fmtScore(row.score) }}</template>
-          </el-table-column>
-          <el-table-column prop="exitRule" label="触发规则" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="scoreExplain" label="卖出拆解" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="reason" label="理由" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="fundNote" label="基本面" min-width="140" show-overflow-tooltip />
-          <el-table-column label="操作" width="110" fixed="right">
-            <template #default="{ row }">
-              <el-button type="danger" link :loading="ordering" @click="onPaperOrder(row)">模拟卖</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
-
-      <el-tab-pane :label="`继续持有 (${holds.length})`" name="holds">
-        <el-alert
-          class="tab-hint"
-          type="info"
-          :closable="false"
-          show-icon
-          title="仅展示「我的持仓」中暂无卖出信号的标的"
-        />
-        <el-table :data="holds" size="small" stripe empty-text="「我的持仓」为空，或持仓均已有买卖建议">
-          <el-table-column prop="code" label="代码" width="100">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-            </template>
-          </el-table-column>
-          <el-table-column prop="name" label="名称" width="120" />
-          <el-table-column prop="reason" label="理由" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="exitRule" label="止损/止盈" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="fundNote" label="基本面" min-width="180" show-overflow-tooltip />
-        </el-table>
-      </el-tab-pane>
-    </el-tabs>
-
-    <section v-if="attribution" class="attribution">
-      <h3>复盘归因</h3>
-      <p class="muted">{{ attribution.message }}</p>
-      <div class="attr-grid">
+    <!-- ② 今日清单 -->
+    <section class="action-panel">
+      <div class="action-head">
         <div>
-          <h4>按策略</h4>
-          <el-table :data="attribution.byStrategy || []" size="small" stripe empty-text="暂无">
-            <el-table-column prop="label" label="桶" width="80" />
-            <el-table-column prop="sampleCount" label="样本" width="60" />
-            <el-table-column label="次日均%" width="90">
-              <template #default="{ row }">
-                <span :class="Number(row.avgNextPct) > 0 ? 'up' : Number(row.avgNextPct) < 0 ? 'down' : ''">
-                  {{ row.avgNextPct == null ? '-' : Number(row.avgNextPct).toFixed(2) + '%' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="胜率" width="70">
-              <template #default="{ row }">{{ row.winRate == null ? '-' : row.winRate + '%' }}</template>
-            </el-table-column>
-          </el-table>
+          <h2>今日清单</h2>
+          <p class="muted">
+            {{ data?.actionDate || '-' }}
+            <template v-if="data?.groupName"> · {{ data.groupName }}</template>
+            <template v-if="data?.universeCount != null"> · 池 {{ data.universeCount }}</template>
+          </p>
         </div>
-        <div>
-          <h4>按共振</h4>
-          <el-table :data="attribution.byConfluence || []" size="small" stripe empty-text="暂无">
-            <el-table-column prop="label" label="桶" width="80" />
-            <el-table-column prop="sampleCount" label="样本" width="60" />
-            <el-table-column label="次日均%" width="90">
-              <template #default="{ row }">
-                <span :class="Number(row.avgNextPct) > 0 ? 'up' : Number(row.avgNextPct) < 0 ? 'down' : ''">
-                  {{ row.avgNextPct == null ? '-' : Number(row.avgNextPct).toFixed(2) + '%' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="胜率" width="70">
-              <template #default="{ row }">{{ row.winRate == null ? '-' : row.winRate + '%' }}</template>
-            </el-table-column>
-          </el-table>
-        </div>
-        <div>
-          <h4>按主线</h4>
-          <el-table :data="attribution.byMainline || []" size="small" stripe empty-text="暂无">
-            <el-table-column prop="label" label="桶" width="90" />
-            <el-table-column prop="sampleCount" label="样本" width="60" />
-            <el-table-column label="次日均%" width="90">
-              <template #default="{ row }">
-                <span :class="Number(row.avgNextPct) > 0 ? 'up' : Number(row.avgNextPct) < 0 ? 'down' : ''">
-                  {{ row.avgNextPct == null ? '-' : Number(row.avgNextPct).toFixed(2) + '%' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="胜率" width="70">
-              <template #default="{ row }">{{ row.winRate == null ? '-' : row.winRate + '%' }}</template>
-            </el-table-column>
-          </el-table>
-        </div>
-        <div>
-          <h4>按市场立场</h4>
-          <el-table :data="attribution.byStance || []" size="small" stripe empty-text="暂无">
-            <el-table-column prop="label" label="桶" width="90" />
-            <el-table-column prop="sampleCount" label="样本" width="60" />
-            <el-table-column label="次日均%" width="90">
-              <template #default="{ row }">
-                <span :class="Number(row.avgNextPct) > 0 ? 'up' : Number(row.avgNextPct) < 0 ? 'down' : ''">
-                  {{ row.avgNextPct == null ? '-' : Number(row.avgNextPct).toFixed(2) + '%' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="胜率" width="70">
-              <template #default="{ row }">{{ row.winRate == null ? '-' : row.winRate + '%' }}</template>
-            </el-table-column>
-          </el-table>
-        </div>
-        <div>
-          <h4>卖出按策略（次日表现，越负越好）</h4>
-          <el-table :data="attribution.bySellStrategy || []" size="small" stripe empty-text="暂无卖出样本">
-            <el-table-column prop="label" label="桶" width="100" />
-            <el-table-column prop="sampleCount" label="样本" width="60" />
-            <el-table-column label="次日均%" width="90">
-              <template #default="{ row }">
-                <span :class="Number(row.avgNextPct) < 0 ? 'up' : Number(row.avgNextPct) > 0 ? 'down' : ''">
-                  {{ row.avgNextPct == null ? '-' : Number(row.avgNextPct).toFixed(2) + '%' }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="胜率*" width="70">
-              <template #default="{ row }">
-                <span class="muted">{{ row.winRate == null ? '-' : row.winRate + '%' }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <p class="muted tiny">* 卖出桶的「胜率」仍是次日上涨占比，解读时宜看次日均%是否为负</p>
+        <div class="metric-row">
+          <div class="metric">
+            <label>买入</label>
+            <b class="up">{{ data?.buyCount ?? buys.length }}</b>
+          </div>
+          <div class="metric">
+            <label>卖出</label>
+            <b class="down">{{ data?.sellCount ?? sells.length }}</b>
+          </div>
+          <div class="metric">
+            <label>持有</label>
+            <b>{{ data?.holdCount ?? holds.length }}</b>
+          </div>
+          <div class="metric">
+            <label>可执行</label>
+            <b>{{ data?.executableCount ?? 0 }}</b>
+          </div>
+          <div class="metric">
+            <label>低估</label>
+            <b class="up">{{ data?.valuationCheapCount ?? 0 }}</b>
+          </div>
+          <div class="metric">
+            <label>高估</label>
+            <b class="down">{{ data?.valuationRichCount ?? 0 }}</b>
+          </div>
+          <div class="metric">
+            <label>主线</label>
+            <b>{{ data?.mainlineMatchCount ?? 0 }}</b>
+          </div>
         </div>
       </div>
+
+      <el-tabs v-model="activeTab" class="tabs">
+        <el-tab-pane :label="`建议买入 (${buys.length})`" name="buys">
+          <div v-if="buys.length" class="toolbar-bar">
+            <el-select
+              v-model="buyStrategyFilter"
+              clearable
+              placeholder="策略"
+              style="width: 110px"
+              @change="persistBuyFilters"
+            >
+              <el-option label="S1" value="S1" />
+              <el-option label="S2" value="S2" />
+              <el-option label="S3" value="S3" />
+            </el-select>
+            <el-input
+              v-model="buyMinScore"
+              clearable
+              placeholder="最低分"
+              style="width: 100px"
+              @change="persistBuyFilters"
+            />
+            <el-checkbox v-model="buyMainlineOnly" @change="persistBuyFilters">仅主线</el-checkbox>
+            <el-checkbox v-model="buyExecutableOnly" @change="persistBuyFilters">仅可执行</el-checkbox>
+            <el-checkbox v-model="buyCheapOnly" @change="persistBuyFilters">仅低估</el-checkbox>
+            <span class="muted">显示 {{ filteredBuys.length }} / {{ buys.length }}</span>
+          </div>
+          <div v-if="!buys.length" class="page-empty">
+            <h3>暂无买入机会</h3>
+            <p>先同步日线，再一键生成决策；系统会扫全 A + 热点并写入观察池</p>
+            <el-button type="primary" :loading="loading" @click="onRun">一键生成决策</el-button>
+          </div>
+          <el-table
+            v-else
+            :data="filteredBuys"
+            size="small"
+            stripe
+            empty-text="当前筛选下无买入标的"
+          >
+            <el-table-column prop="code" label="代码" width="96" fixed>
+              <template #default="{ row }">
+                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+              </template>
+            </el-table-column>
+            <el-table-column prop="name" label="名称" width="100" />
+            <el-table-column label="策略" width="108">
+              <template #default="{ row }">{{ strategyName(row.strategyId) }}</template>
+            </el-table-column>
+            <el-table-column label="评分" width="110">
+              <template #default="{ row }"><ScoreBar :score="row.score" /></template>
+            </el-table-column>
+            <el-table-column label="仓位" width="72">
+              <template #default="{ row }">{{ fmtPct(row.suggestedWeight) }}</template>
+            </el-table-column>
+            <el-table-column width="100">
+              <template #header><TermTip term="confluence">共振</TermTip></template>
+              <template #default="{ row }">
+                <span v-if="row.strategies?.length">{{ row.strategies.join('+') }}</span>
+                <span v-else>{{ row.confluenceCount || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="主线" width="96">
+              <template #default="{ row }">
+                <el-tag v-if="row.mainlineMatch" size="small" type="warning" effect="plain">
+                  {{ row.mainlineName || '匹配' }}
+                </el-tag>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="估值" width="88">
+              <template #default="{ row }">
+                <el-button
+                  v-if="row.valuationLabel"
+                  link
+                  type="primary"
+                  @click="router.push({ path: '/valuation', query: { code: row.code } })"
+                >{{ row.valuationLabel }}</el-button>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="联动" width="110">
+              <template #default="{ row }">
+                <el-tag
+                  v-if="row.linkHint"
+                  size="small"
+                  effect="plain"
+                  :type="row.linkHint.includes('降权') ? 'danger' : 'success'"
+                >{{ row.linkHint }}</el-tag>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="scoreExplain" label="评分拆解" min-width="200" show-overflow-tooltip />
+            <el-table-column label="风险" width="120">
+              <template #default="{ row }">
+                <template v-if="row.riskFlags?.length">
+                  <el-tag
+                    v-for="(rf, idx) in row.riskFlags.slice(0, 2)"
+                    :key="idx"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                    class="risk-tag"
+                  >{{ rf }}</el-tag>
+                </template>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="reason" label="理由" min-width="160" show-overflow-tooltip />
+            <el-table-column label="操作" width="140" fixed="right">
+              <template #default="{ row }">
+                <el-button type="primary" link :loading="ordering" @click="onPaperOrder(row)">模拟买</el-button>
+                <el-button
+                  link
+                  type="warning"
+                  @click="router.push({ path: '/observe', query: { code: row.code, name: row.name || '' } })"
+                >观察</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane :label="`建议卖出 (${sells.length})`" name="sells">
+          <el-table :data="sells" size="small" stripe empty-text="持仓暂无卖出建议">
+            <el-table-column prop="code" label="代码" width="96" fixed>
+              <template #default="{ row }">
+                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+              </template>
+            </el-table-column>
+            <el-table-column prop="name" label="名称" width="100" />
+            <el-table-column label="策略" width="120">
+              <template #default="{ row }">{{ strategyName(row.strategyId) }}</template>
+            </el-table-column>
+          <el-table-column label="评分" width="110">
+            <template #default="{ row }"><ScoreBar :score="row.score" /></template>
+          </el-table-column>
+          <el-table-column prop="exitRule" label="触发规则" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="scoreExplain" label="拆解" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="reason" label="理由" min-width="160" show-overflow-tooltip />
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button type="danger" link :loading="ordering" @click="onPaperOrder(row)">模拟卖</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane :label="`继续持有 (${holds.length})`" name="holds">
+          <el-table :data="holds" size="small" stripe empty-text="持仓为空，或均已有买卖建议">
+            <el-table-column prop="code" label="代码" width="96">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+              </template>
+            </el-table-column>
+            <el-table-column prop="name" label="名称" width="110" />
+            <el-table-column prop="reason" label="理由" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="exitRule" label="止损/止盈" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="fundNote" label="基本面" min-width="160" show-overflow-tooltip />
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
     </section>
 
-    <section v-if="history.length" class="history">
-      <h3>决策历史 · 事后收益</h3>
-      <p class="muted tiny">点击某一行可回看当日买卖清单（与复盘归因对照）</p>
-      <el-table :data="history" size="small" stripe highlight-current-row @row-click="openHistoryDay" class="history-table">
-        <el-table-column prop="actionDate" label="日期" width="120" />
-        <el-table-column prop="stance" label="立场" width="70" />
-        <el-table-column prop="dataLevel" label="数据" width="70" />
-        <el-table-column prop="buyCount" label="买" width="60" />
-        <el-table-column prop="sellCount" label="卖" width="60" />
-        <el-table-column prop="holdCount" label="持有" width="60" />
-        <el-table-column label="买入次日均涨跌%" width="140">
-          <template #default="{ row }">
-            <span :class="Number(row.nextDayAvgPct) > 0 ? 'up' : Number(row.nextDayAvgPct) < 0 ? 'down' : ''">
-              {{ row.nextDayAvgPct == null ? '-' : Number(row.nextDayAvgPct).toFixed(2) + '%' }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="note" label="说明" min-width="220" show-overflow-tooltip />
-      </el-table>
-    </section>
+    <!-- ③ 次要信息折叠 -->
+    <div v-if="(data?.executableCount || 0) > 0" class="exec-bar">
+      <span>
+        今日可执行提示 <b>{{ data.executableCount }}</b>
+        · 低估 <b class="up">{{ data.valuationCheapCount ?? 0 }}</b>
+      </span>
+      <div class="exec-actions">
+        <el-button size="small" type="warning" plain @click="router.push('/observe')">去观察池处理</el-button>
+        <el-button size="small" type="primary" plain @click="buyExecutableOnly = true; persistBuyFilters(); activeTab = 'buys'">
+          筛选可执行买入
+        </el-button>
+      </div>
+    </div>
+
+    <el-collapse v-model="morePanels" class="more-collapse">
+      <el-collapse-item v-if="playbook" name="playbook">
+        <template #title>
+          <span class="collapse-title">策略战法与规则</span>
+          <span class="collapse-sub">S1 / S2 / S3 · 评分与仓位</span>
+        </template>
+        <div class="strategy-grid">
+          <article v-for="s in strategies" :key="s.strategyId" class="strategy-card">
+            <header>
+              <b>{{ s.strategyId }} · {{ s.name }}</b>
+              <el-tag size="small" effect="plain">{{ s.style }}</el-tag>
+            </header>
+            <p><label>买入</label>{{ s.buyRule }}</p>
+            <p><label>离场</label>{{ s.exitRule }}</p>
+            <p class="fit"><label>市况</label>{{ s.marketFit }}</p>
+          </article>
+        </div>
+        <div class="rules-grid">
+          <div>
+            <h3>流水线</h3>
+            <ol>
+              <li v-for="(step, i) in playbook.pipelineSteps || []" :key="i">
+                {{ step.replace(/^\d+\.\s*/, '') }}
+              </li>
+            </ol>
+          </div>
+          <div>
+            <h3>评分 / 仓位</h3>
+            <ul>
+              <li v-for="(r, i) in playbook.scoreRules || []" :key="'s'+i">{{ r }}</li>
+              <li v-for="(r, i) in playbook.positionRules || []" :key="'p'+i">{{ r }}</li>
+            </ul>
+          </div>
+          <div>
+            <h3>门禁 / 卖出</h3>
+            <ul>
+              <li v-for="(r, i) in playbook.fundRules || []" :key="'f'+i">{{ r }}</li>
+              <li v-for="(r, i) in playbook.sellRules || []" :key="'e'+i">{{ r }}</li>
+            </ul>
+          </div>
+        </div>
+      </el-collapse-item>
+
+      <el-collapse-item v-if="attribution" name="attr">
+        <template #title>
+          <span class="collapse-title">复盘归因</span>
+          <span class="collapse-sub">{{ attribution.message }}</span>
+        </template>
+        <div class="attr-grid">
+          <div v-for="block in [
+            { title: '按策略', rows: attribution.byStrategy },
+            { title: '按共振', rows: attribution.byConfluence },
+            { title: '按主线', rows: attribution.byMainline },
+            { title: '按市场立场', rows: attribution.byStance },
+          ]" :key="block.title">
+            <h4>{{ block.title }}</h4>
+            <el-table :data="block.rows || []" size="small" stripe empty-text="暂无">
+              <el-table-column prop="label" label="桶" width="90" />
+              <el-table-column prop="sampleCount" label="样本" width="60" />
+              <el-table-column label="次日均%" width="90">
+                <template #default="{ row }">
+                  <span :class="Number(row.avgNextPct) > 0 ? 'up' : Number(row.avgNextPct) < 0 ? 'down' : ''">
+                    {{ row.avgNextPct == null ? '-' : Number(row.avgNextPct).toFixed(2) + '%' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="胜率" width="70">
+                <template #default="{ row }">{{ row.winRate == null ? '-' : row.winRate + '%' }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </el-collapse-item>
+
+      <el-collapse-item v-if="history.length" name="history">
+        <template #title>
+          <span class="collapse-title">决策历史</span>
+          <span class="collapse-sub">点击行回看当日清单</span>
+        </template>
+        <el-table
+          :data="history"
+          size="small"
+          stripe
+          highlight-current-row
+          class="history-table"
+          @row-click="openHistoryDay"
+        >
+          <el-table-column prop="actionDate" label="日期" width="120" />
+          <el-table-column prop="stance" label="立场" width="70" />
+          <el-table-column prop="buyCount" label="买" width="60" />
+          <el-table-column prop="sellCount" label="卖" width="60" />
+          <el-table-column prop="holdCount" label="持有" width="60" />
+          <el-table-column prop="executableCount" label="可执行" width="70" />
+          <el-table-column prop="valuationCheapCount" label="低估" width="60" />
+          <el-table-column prop="mainlineMatchCount" label="主线" width="60" />
+          <el-table-column label="买入次日均%" width="120">
+            <template #default="{ row }">
+              <span :class="Number(row.nextDayAvgPct) > 0 ? 'up' : Number(row.nextDayAvgPct) < 0 ? 'down' : ''">
+                {{ row.nextDayAvgPct == null ? '-' : Number(row.nextDayAvgPct).toFixed(2) + '%' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="note" label="说明" min-width="200" show-overflow-tooltip />
+        </el-table>
+      </el-collapse-item>
+    </el-collapse>
   </div>
 </template>
 
 <style scoped>
-.playbook {
-  margin-bottom: 16px;
-  padding: 14px 16px;
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.decision .header {
+  margin-bottom: 0;
+}
+
+.dec-header .eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.dec-header .sub {
+  margin: 6px 0 0;
+  max-width: 52ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dec-header .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-input {
+  width: 130px;
+}
+
+.cta {
+  min-width: 128px;
+}
+
+/* —— 市场立场 —— */
+.stance-panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.45fr 1fr;
+  gap: 18px;
+  padding: 18px 20px;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.stance-panel.stance-attack {
+  border-color: rgba(255, 59, 48, 0.22);
+  background:
+    linear-gradient(135deg, rgba(255, 59, 48, 0.06), transparent 42%),
+    var(--glass-strong);
+}
+
+.stance-panel.stance-defend {
+  border-color: rgba(0, 113, 227, 0.22);
+  background:
+    linear-gradient(135deg, rgba(0, 113, 227, 0.07), transparent 42%),
+    var(--glass-strong);
+}
+
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stance-title-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.score-ring {
+  --pct: 0;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: conic-gradient(
+    var(--accent) calc(var(--pct) * 1%),
+    rgba(0, 0, 0, 0.06) 0
+  );
+  display: grid;
+  place-items: center;
+}
+
+.stance-attack .score-ring {
+  background: conic-gradient(
+    #ff3b30 calc(var(--pct) * 1%),
+    rgba(0, 0, 0, 0.06) 0
+  );
+}
+
+.score-ring-inner {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+}
+
+.score-ring-inner strong {
+  font-size: 20px;
+  font-family: var(--font-display);
+}
+
+.score-ring-inner small {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.stance-copy h2 {
+  margin: 0 0 8px;
+}
+
+.pill {
+  display: inline-flex;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 18px;
+  font-weight: 750;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.stance-attack .pill {
+  color: #c45656;
+  background: rgba(255, 59, 48, 0.12);
+}
+
+.stance-defend .pill {
+  color: #0058b0;
+  background: rgba(0, 113, 227, 0.12);
+}
+
+.reason,
+.advice {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.advice {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.stance-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-left: 1px solid var(--line);
+  padding-left: 18px;
+}
+
+.side-title {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.index-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.index-line {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.index-line .n {
+  color: var(--ink-soft);
+}
+
+.index-line .c,
+.index-line .p {
+  font-weight: 650;
+  min-width: 4.5em;
+  text-align: right;
+}
+
+.theme-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.theme-chip {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--ink-soft);
+}
+
+/* —— 因子条 —— */
+.factor-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.factor-cell {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   background: var(--glass);
 }
 
-.playbook-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 12px;
+.factor-cell label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
 }
 
-.playbook-head h2 {
+.factor-val {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.factor-val b {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.factor-val em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.factor-cell p {
   margin: 0;
-  font-size: 16px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tips-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tip-item {
+  margin: 0;
+}
+
+/* —— 清单主面板 —— */
+.action-panel {
+  padding: 16px 18px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.action-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.action-head h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-family: var(--font-display);
+}
+
+.metric-row {
+  display: flex;
+  gap: 18px;
+}
+
+.metric label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.metric b {
+  font-size: 22px;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabs {
+  margin-top: 4px;
+}
+
+.tabs :deep(.el-tabs__header) {
+  margin-bottom: 10px;
+}
+
+.risk-tag {
+  margin-right: 4px;
+}
+
+.exec-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(0, 113, 227, 0.22);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: var(--shadow-soft);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.exec-bar b {
+  font-variant-numeric: tabular-nums;
+}
+
+.exec-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* —— 折叠次要区 —— */
+.more-collapse {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass);
+  overflow: hidden;
+}
+
+.more-collapse :deep(.el-collapse-item__header) {
+  padding: 0 16px;
+  height: 48px;
+  background: transparent;
+  border-bottom-color: var(--line);
+  font-size: 14px;
+}
+
+.more-collapse :deep(.el-collapse-item__wrap) {
+  border-bottom-color: var(--line);
+  background: transparent;
+}
+
+.more-collapse :deep(.el-collapse-item__content) {
+  padding: 14px 16px 18px;
+}
+
+.collapse-title {
+  font-weight: 700;
+  margin-right: 10px;
+}
+
+.collapse-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
 }
 
 .strategy-grid {
@@ -603,9 +1113,10 @@ onMounted(load)
 }
 
 .strategy-card {
-  padding: 10px 12px;
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .strategy-card header {
@@ -619,7 +1130,6 @@ onMounted(load)
   margin: 4px 0;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--text);
 }
 
 .strategy-card label {
@@ -627,60 +1137,29 @@ onMounted(load)
   margin-right: 6px;
 }
 
-.strategy-card .fit,
-.strategy-card .params {
+.strategy-card .fit {
   color: var(--muted);
 }
 
 .rules-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
-.rules-grid h3 {
-  margin: 0 0 6px;
+.rules-grid h3,
+.attr-grid h4 {
+  margin: 0 0 8px;
   font-size: 13px;
 }
 
 .rules-grid ol,
 .rules-grid ul {
-  margin: 0 0 12px;
+  margin: 0;
   padding-left: 18px;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--muted);
-}
-
-.muted {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-@media (max-width: 960px) {
-  .strategy-grid,
-  .rules-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.attribution {
-  margin-top: 20px;
-}
-
-.attribution h3 {
-  margin: 0 0 6px;
-  font-size: 15px;
-}
-
-.attribution h4 {
-  margin: 0 0 8px;
-  font-size: 13px;
-}
-
-.tiny {
-  margin: 6px 0 0;
-  font-size: 12px;
 }
 
 .attr-grid {
@@ -689,67 +1168,8 @@ onMounted(load)
   gap: 12px;
 }
 
-@media (max-width: 960px) {
-  .attr-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.history {
-  margin-top: 20px;
-}
-
 .history-table :deep(.el-table__row) {
   cursor: pointer;
-}
-
-.history h3 {
-  margin: 0 0 10px;
-  font-size: 15px;
-}
-
-.up {
-  color: var(--up, #ef5350);
-}
-
-.down {
-  color: var(--down, #26a69a);
-}
-
-.briefing {
-  margin-bottom: 16px;
-  padding: 16px 18px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  background: var(--glass);
-}
-
-.briefing.stance-attack {
-  border-color: rgba(239, 83, 80, 0.35);
-}
-
-.briefing.stance-defend {
-  border-color: rgba(64, 158, 255, 0.4);
-}
-
-.brief-head {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 16px;
-  margin-bottom: 14px;
-}
-
-.brief-kicker {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.data-tag {
-  vertical-align: middle;
 }
 
 .muted {
@@ -757,161 +1177,42 @@ onMounted(load)
   font-size: 12px;
 }
 
-.brief-head h2 {
-  margin: 0 0 8px;
-  font-size: 22px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+.up {
+  color: var(--up);
 }
 
-.stance-pill {
-  display: inline-flex;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 700;
-  background: rgba(0, 0, 0, 0.06);
+.down {
+  color: var(--down);
 }
 
-.stance-attack .stance-pill {
-  color: #c45656;
-  background: rgba(239, 83, 80, 0.12);
-}
-
-.stance-defend .stance-pill {
-  color: #3a7bd5;
-  background: rgba(64, 158, 255, 0.14);
-}
-
-.stance-balance .stance-pill {
-  color: #6b7280;
-}
-
-.score {
-  font-size: 14px;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.brief-reason,
-.brief-pos {
-  margin: 0 0 4px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.brief-pos {
-  color: inherit;
-  font-weight: 600;
-}
-
-.index-lines {
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.theme-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.theme-chip {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.factor-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.factor {
-  padding: 10px 12px;
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.45);
-}
-
-.factor label {
-  display: block;
-  font-size: 11px;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
-
-.factor b {
-  display: block;
-  font-size: 13px;
-  line-height: 1.35;
-  margin-bottom: 4px;
-}
-
-.factor-signal {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.factor p {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.tips {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.tip-item {
-  margin: 0;
-}
-
-.summary {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.summary > div {
-  background: var(--glass);
-  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  box-shadow: var(--shadow-soft);
-}
-
-.summary label {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-  margin-bottom: 6px;
-}
-
-.tabs {
-  margin-top: 4px;
-}
-
-.tab-hint {
-  margin-bottom: 10px;
+@media (max-width: 1100px) {
+  .factor-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
-  .brief-head,
-  .factor-grid,
-  .summary {
-    grid-template-columns: 1fr 1fr;
+  .stance-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .stance-side {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+
+  .factor-strip,
+  .strategy-grid,
+  .rules-grid,
+  .attr-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-head {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

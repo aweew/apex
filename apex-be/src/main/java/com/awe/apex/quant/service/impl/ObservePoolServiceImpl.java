@@ -20,6 +20,7 @@ import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IValuationService;
 import com.awe.apex.quant.strategy.BarSeries;
+import com.awe.apex.quant.strategy.StrategyParams;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
@@ -57,8 +58,6 @@ public class ObservePoolServiceImpl implements IObservePoolService {
     private static final int AUTO_WATCH_LIMIT = 30;
     /** 情绪风向标自动写入上限 */
     private static final int AUTO_MOOD_LIMIT = 15;
-    /** 仅极强信号标为「可执行」触发，其余默认观察中等回调 */
-    private static final BigDecimal EXECUTABLE_SCORE = new BigDecimal("88");
     private static final int TECH_LOOKBACK_DAYS = 220;
     private static final BigDecimal VOL_SURGE = new BigDecimal("1.5");
     /** 仅归档锁定；HIT_TARGET/STOPPED 允许按现价重估，避免买卖逻辑错判后锁死 */
@@ -78,18 +77,34 @@ public class ObservePoolServiceImpl implements IObservePoolService {
     @Resource
     private IValuationService valuationService;
 
+    @Resource
+    private StrategyParams strategyParams;
+
     /**
      * 观察池列表（含现场评估）
      *
-     * @param status  状态过滤
+     * @param status  状态过滤；空则默认排除 ARCHIVED
+     * @param side    方向 BUY/SELL/MOOD
      * @param keyword 代码/名称关键字
      * @return 列表
      */
     @Override
-    public List<ObservePoolResp> list(String status, String keyword) {
+    public List<ObservePoolResp> list(String status, String side, String keyword) {
         LambdaQueryWrapper<ObservePool> qw = Wrappers.<ObservePool>lambdaQuery()
                 .orderByAsc(ObservePool::getPriority)
                 .orderByDesc(ObservePool::getUpdateTime);
+        String statusFilter = StringUtils.isNotBlank(status) ? status.trim().toUpperCase() : null;
+        if (StringUtils.isBlank(statusFilter)) {
+            qw.ne(ObservePool::getStatus, "ARCHIVED");
+        } else if ("ARCHIVED".equals(statusFilter)) {
+            qw.eq(ObservePool::getStatus, "ARCHIVED");
+        } else {
+            // 现场评估状态可能与落库不同，库内不过滤非归档状态
+            qw.ne(ObservePool::getStatus, "ARCHIVED");
+        }
+        if (StringUtils.isNotBlank(side)) {
+            qw.eq(ObservePool::getSide, side.trim().toUpperCase());
+        }
         if (StringUtils.isNotBlank(keyword)) {
             String kw = keyword.trim();
             qw.and(w -> w.like(ObservePool::getCode, kw).or().like(ObservePool::getName, kw));
@@ -108,17 +123,130 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         }
         Map<String, ValuationBriefResp> valuationMap = valuationService.briefBatch(codes);
         List<ObservePoolResp> result = new ArrayList<>();
-        String statusFilter = StringUtils.isNotBlank(status) ? status.trim().toUpperCase() : null;
         for (ObservePool row : rows) {
             // 列表现场评估状态（不落库）；落库走 refresh
             ObservePoolResp item = toResp(row, basics.get(row.getCode()), barsByCode.get(row.getCode()),
                     valuationMap.get(row.getCode()));
-            if (StringUtils.isNotBlank(statusFilter) && !statusFilter.equals(item.getStatus())) {
-                continue;
+            if (StringUtils.isNotBlank(statusFilter)) {
+                if ("READY".equals(statusFilter)) {
+                    String st = item.getStatus();
+                    if (!"TRIGGERED".equals(st) && !"NEAR".equals(st)) {
+                        continue;
+                    }
+                } else if (!statusFilter.equals(item.getStatus())) {
+                    continue;
+                }
             }
             result.add(item);
         }
+        result.sort((a, b) -> {
+            int da = statusOrder(a.getStatus());
+            int db = statusOrder(b.getStatus());
+            if (da != db) {
+                return Integer.compare(da, db);
+            }
+            int sa = sideOrder(a.getSide());
+            int sb = sideOrder(b.getSide());
+            if (sa != sb) {
+                return Integer.compare(sa, sb);
+            }
+            int pa = Objects.nonNull(a.getPriority()) ? a.getPriority() : 3;
+            int pb = Objects.nonNull(b.getPriority()) ? b.getPriority() : 3;
+            return Integer.compare(pa, pb);
+        });
         return result;
+    }
+
+    /**
+     * 看板用轻量告警：仅现价评估 TRIGGERED/NEAR，不做估值与技术指标
+     *
+     * @param limit 返回条数上限
+     * @return 接近/已触发列表
+     */
+    @Override
+    public List<ObservePoolResp> listReadyAlerts(int limit) {
+        int cap = limit > 0 ? limit : 6;
+        List<ObservePool> rows = observePoolMapper.selectList(Wrappers.<ObservePool>lambdaQuery()
+                .ne(ObservePool::getStatus, "ARCHIVED")
+                .orderByAsc(ObservePool::getPriority)
+                .orderByDesc(ObservePool::getUpdateTime));
+        if (CollUtil.isEmpty(rows)) {
+            return List.of();
+        }
+        Map<String, StockBasic> basics = loadBasics(rows);
+        List<ObservePoolResp> ready = new ArrayList<>();
+        for (ObservePool row : rows) {
+            StockBasic basic = basics.get(row.getCode());
+            BigDecimal latest = Objects.nonNull(basic) ? basic.getLatestPrice() : null;
+            String status = evaluateStatus(row, latest);
+            if (!"TRIGGERED".equals(status) && !"NEAR".equals(status)) {
+                continue;
+            }
+            String name = row.getName();
+            if (StringUtils.isBlank(name) && Objects.nonNull(basic)) {
+                name = basic.getName();
+            }
+            ready.add(ObservePoolResp.builder()
+                    .id(row.getId())
+                    .code(row.getCode())
+                    .name(name)
+                    .market(row.getMarket())
+                    .side(resolveSide(row.getSide(), row.getTags(), row.getReason()))
+                    .priority(row.getPriority())
+                    .status(status)
+                    .latestPrice(latest)
+                    .pctChg(Objects.nonNull(basic) ? basic.getPctChg() : null)
+                    .build());
+        }
+        ready.sort((a, b) -> {
+            int da = statusOrder(a.getStatus());
+            int db = statusOrder(b.getStatus());
+            if (da != db) {
+                return Integer.compare(da, db);
+            }
+            int pa = Objects.nonNull(a.getPriority()) ? a.getPriority() : 3;
+            int pb = Objects.nonNull(b.getPriority()) ? b.getPriority() : 3;
+            return Integer.compare(pa, pb);
+        });
+        if (ready.size() > cap) {
+            return ready.subList(0, cap);
+        }
+        return ready;
+    }
+
+    private int statusOrder(String status) {
+        if ("TRIGGERED".equals(status)) {
+            return 0;
+        }
+        if ("NEAR".equals(status)) {
+            return 1;
+        }
+        if ("WATCHING".equals(status)) {
+            return 2;
+        }
+        if ("HIT_TARGET".equals(status)) {
+            return 3;
+        }
+        if ("STOPPED".equals(status)) {
+            return 4;
+        }
+        if ("ARCHIVED".equals(status)) {
+            return 5;
+        }
+        return 9;
+    }
+
+    private int sideOrder(String side) {
+        if ("BUY".equalsIgnoreCase(side)) {
+            return 0;
+        }
+        if ("MOOD".equalsIgnoreCase(side)) {
+            return 1;
+        }
+        if ("SELL".equalsIgnoreCase(side)) {
+            return 2;
+        }
+        return 9;
     }
 
     /**
@@ -589,9 +717,17 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         } else if (buySide) {
             boolean chaseRisk = nullToEmpty(item.getReason()).contains("勿追")
                     || nullToEmpty(item.getReason()).contains("回踩再评估")
-                    || nullToEmpty(item.getReason()).contains("优先观察回踩");
-            boolean executable = !chaseRisk && Objects.nonNull(item.getScore())
-                    && item.getScore().compareTo(EXECUTABLE_SCORE) >= 0;
+                    || nullToEmpty(item.getReason()).contains("优先观察回踩")
+                    || containsRiskFlag(item, "勿追高");
+            // Scorer 禁止可执行 / 高估突破：一律等回踩，不得因高分直接 TRIGGERED
+            boolean scorerBlock = Boolean.FALSE.equals(item.getExecutableHint())
+                    || containsRiskFlag(item, "高估突破降权");
+            BigDecimal executableFloor = strategyParams.decisionExecutableScore();
+            boolean scoreOk = Objects.nonNull(item.getScore())
+                    && item.getScore().compareTo(executableFloor) >= 0;
+            boolean hintOk = Objects.isNull(item.getExecutableHint())
+                    || Boolean.TRUE.equals(item.getExecutableHint());
+            boolean executable = !chaseRisk && !scorerBlock && scoreOk && hintOk;
             if (executable) {
                 triggerType = "PRICE_ABOVE";
                 triggerPrice = latest;
@@ -737,6 +873,9 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         if (Objects.nonNull(item.getActionDate())) {
             sb.append(' ').append(item.getActionDate());
         }
+        if (StringUtils.isNotBlank(item.getLinkHint())) {
+            sb.append(" · ").append(item.getLinkHint());
+        }
         if (StringUtils.isNotBlank(item.getScoreExplain())) {
             sb.append(" · ").append(item.getScoreExplain());
         }
@@ -744,6 +883,21 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             sb.append(" · ").append(item.getFundNote());
         }
         return trim(sb.toString(), 240);
+    }
+
+    /**
+     * 决策风险旗标是否包含关键字
+     */
+    private boolean containsRiskFlag(DecisionItemResp item, String keyword) {
+        if (Objects.isNull(item) || CollUtil.isEmpty(item.getRiskFlags()) || StringUtils.isBlank(keyword)) {
+            return false;
+        }
+        for (String flag : item.getRiskFlags()) {
+            if (StringUtils.isNotBlank(flag) && flag.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
