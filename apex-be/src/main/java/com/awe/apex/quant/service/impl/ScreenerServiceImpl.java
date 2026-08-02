@@ -1,12 +1,16 @@
 package com.awe.apex.quant.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.ScreenerReq;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
+import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.mapper.BarDailyMapper;
+import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.service.IScreenerService;
 import com.awe.apex.quant.service.IWatchlistService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -26,11 +30,16 @@ import java.util.Objects;
 @Service
 public class ScreenerServiceImpl implements IScreenerService {
 
+    private static final String MARKET_SCOPE = "__MARKET__";
+
     @Resource
     private IWatchlistService watchlistService;
 
     @Resource
     private BarDailyMapper barDailyMapper;
+
+    @Resource
+    private StockBasicMapper stockBasicMapper;
 
     /**
      * 运行选股
@@ -41,11 +50,14 @@ public class ScreenerServiceImpl implements IScreenerService {
     @Override
     public List<WatchlistResp> run(ScreenerReq req) {
         ScreenerReq safe = Objects.nonNull(req) ? req : new ScreenerReq();
-        List<WatchlistResp> list = watchlistService.listWatchlist(safe.getGroupName());
+        boolean marketScope = isMarketScope(safe.getGroupName());
+        List<WatchlistResp> list = marketScope
+                ? listMarketUniverse(safe)
+                : watchlistService.listWatchlist(normalizeGroupName(safe.getGroupName()));
         boolean excludeSt = !Boolean.FALSE.equals(safe.getExcludeSt());
         boolean excludeLimitUp = Boolean.TRUE.equals(safe.getExcludeLimitUp());
         boolean excludeLimitDown = Boolean.TRUE.equals(safe.getExcludeLimitDown());
-        int minBars = Objects.nonNull(safe.getMinBars()) ? safe.getMinBars() : 60;
+        int minBars = Objects.nonNull(safe.getMinBars()) ? safe.getMinBars() : 0;
         int limit = Objects.nonNull(safe.getLimit()) ? Math.max(1, Math.min(safe.getLimit(), 200)) : 50;
         BigDecimal limitUp = new BigDecimal("9.5");
         BigDecimal limitDown = new BigDecimal("-9.5");
@@ -54,6 +66,7 @@ public class ScreenerServiceImpl implements IScreenerService {
                 || Objects.nonNull(safe.getMaxAtrPct())
                 || Objects.nonNull(safe.getMinAtrPct());
 
+        // 全市场候选已在 SQL 侧做了基础过滤，这里再统一过一遍（含自选）
         List<WatchlistResp> filtered = new ArrayList<>();
         for (WatchlistResp row : list) {
             String name = row.getName();
@@ -66,7 +79,7 @@ public class ScreenerServiceImpl implements IScreenerService {
             if (excludeLimitDown && Objects.nonNull(row.getPctChg()) && row.getPctChg().compareTo(limitDown) <= 0) {
                 continue;
             }
-            if (Objects.nonNull(row.getBarCount()) && row.getBarCount() < minBars) {
+            if (minBars > 0 && Objects.nonNull(row.getBarCount()) && row.getBarCount() < minBars) {
                 continue;
             }
             if (Objects.nonNull(safe.getPeMin()) && (Objects.isNull(row.getPeTtm())
@@ -163,6 +176,137 @@ public class ScreenerServiceImpl implements IScreenerService {
         return filtered;
     }
 
+    /**
+     * 空 / 全部市场 / __MARKET__ 视为全市场；其余走自选分组
+     */
+    private boolean isMarketScope(String groupName) {
+        if (StringUtils.isBlank(groupName)) {
+            return true;
+        }
+        String text = groupName.trim();
+        return MARKET_SCOPE.equalsIgnoreCase(text)
+                || "全部市场".equals(text)
+                || "全市场".equals(text)
+                || "ALL".equalsIgnoreCase(text);
+    }
+
+    private String normalizeGroupName(String groupName) {
+        if (StringUtils.isBlank(groupName)) {
+            return null;
+        }
+        return groupName.trim();
+    }
+
+    /**
+     * 全市场候选：先在 stock_basic 上按估值/涨跌/市值预筛，再补 K 线根数
+     */
+    private List<WatchlistResp> listMarketUniverse(ScreenerReq safe) {
+        boolean excludeSt = !Boolean.FALSE.equals(safe.getExcludeSt());
+        boolean excludeLimitUp = Boolean.TRUE.equals(safe.getExcludeLimitUp());
+        boolean excludeLimitDown = Boolean.TRUE.equals(safe.getExcludeLimitDown());
+        int limit = Objects.nonNull(safe.getLimit()) ? Math.max(1, Math.min(safe.getLimit(), 200)) : 50;
+        int candidateLimit = Math.min(Math.max(limit * 10, 300), 1000);
+        BigDecimal limitUp = new BigDecimal("9.5");
+        BigDecimal limitDown = new BigDecimal("-9.5");
+
+        LambdaQueryWrapper<StockBasic> qw = Wrappers.<StockBasic>lambdaQuery();
+        if (excludeSt) {
+            qw.and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0));
+            qw.notLike(StockBasic::getName, "ST");
+        }
+        if (Objects.nonNull(safe.getPeMin())) {
+            qw.ge(StockBasic::getPeTtm, safe.getPeMin());
+        }
+        if (Objects.nonNull(safe.getPeMax())) {
+            qw.gt(StockBasic::getPeTtm, 0).le(StockBasic::getPeTtm, safe.getPeMax());
+        }
+        if (Objects.nonNull(safe.getPbMin())) {
+            qw.ge(StockBasic::getPb, safe.getPbMin());
+        }
+        if (Objects.nonNull(safe.getPbMax())) {
+            qw.gt(StockBasic::getPb, 0).le(StockBasic::getPb, safe.getPbMax());
+        }
+        if (StringUtils.isNotBlank(safe.getIndustry())) {
+            qw.like(StockBasic::getIndustry, safe.getIndustry().trim());
+        }
+        if (Objects.nonNull(safe.getPctChgMin())) {
+            qw.ge(StockBasic::getPctChg, safe.getPctChgMin());
+        }
+        if (Objects.nonNull(safe.getPctChgMax())) {
+            qw.le(StockBasic::getPctChg, safe.getPctChgMax());
+        }
+        if (excludeLimitUp) {
+            qw.and(w -> w.isNull(StockBasic::getPctChg).or().lt(StockBasic::getPctChg, limitUp));
+        }
+        if (excludeLimitDown) {
+            qw.and(w -> w.isNull(StockBasic::getPctChg).or().gt(StockBasic::getPctChg, limitDown));
+        }
+        if (Objects.nonNull(safe.getMinCircMv())) {
+            qw.ge(StockBasic::getCircMv, safe.getMinCircMv());
+        }
+        if (Objects.nonNull(safe.getMaxCircMv())) {
+            qw.le(StockBasic::getCircMv, safe.getMaxCircMv());
+        }
+        qw.orderByDesc(StockBasic::getPctChg).last("LIMIT " + candidateLimit);
+
+        List<StockBasic> basics = stockBasicMapper.selectList(qw);
+        if (CollUtil.isEmpty(basics)) {
+            return new ArrayList<>();
+        }
+
+        List<String> codes = new ArrayList<>();
+        for (StockBasic basic : basics) {
+            if (StringUtils.isNotBlank(basic.getCode())) {
+                codes.add(basic.getCode());
+            }
+        }
+        Map<String, Integer> barCountMap = loadBarCounts(codes);
+        List<WatchlistResp> rows = new ArrayList<>();
+        for (StockBasic basic : basics) {
+            rows.add(WatchlistResp.builder()
+                    .code(basic.getCode())
+                    .name(basic.getName())
+                    .market(basic.getMarket())
+                    .groupName("全部市场")
+                    .source(basic.getSource())
+                    .latestPrice(basic.getLatestPrice())
+                    .pctChg(basic.getPctChg())
+                    .peTtm(basic.getPeTtm())
+                    .pb(basic.getPb())
+                    .industry(basic.getIndustry())
+                    .totalMv(basic.getTotalMv())
+                    .circMv(basic.getCircMv())
+                    .barCount(barCountMap.getOrDefault(basic.getCode(), 0))
+                    .build());
+        }
+        return rows;
+    }
+
+    private Map<String, Integer> loadBarCounts(List<String> codes) {
+        Map<String, Integer> map = new HashMap<>();
+        if (CollUtil.isEmpty(codes)) {
+            return map;
+        }
+        // 分批，避免 IN 过长
+        int batchSize = 400;
+        for (int i = 0; i < codes.size(); i += batchSize) {
+            List<String> batch = codes.subList(i, Math.min(i + batchSize, codes.size()));
+            List<Map<String, Object>> stats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
+                    .select("code", "COUNT(1) AS cnt")
+                    .in("code", batch)
+                    .groupBy("code"));
+            for (Map<String, Object> row : stats) {
+                Object codeObj = row.get("code");
+                Object cnt = row.get("cnt");
+                if (Objects.isNull(codeObj) || Objects.isNull(cnt)) {
+                    continue;
+                }
+                map.put(String.valueOf(codeObj), Integer.parseInt(String.valueOf(cnt)));
+            }
+        }
+        return map;
+    }
+
     private Map<String, List<BarDaily>> loadRecentBars(List<WatchlistResp> rows, int limitPerCode) {
         Map<String, List<BarDaily>> map = new HashMap<>();
         List<String> codes = new ArrayList<>();
@@ -175,11 +319,12 @@ public class ScreenerServiceImpl implements IScreenerService {
             return map;
         }
         int per = Math.max(5, Math.min(limitPerCode, 120));
-        // 批量拉取后按 code 截取最近 N 根（倒序扫描首见）
+        // 控制全市场候选量时的拉取上限
+        int hardCap = Math.min(codes.size() * per, 20000);
         List<BarDaily> all = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
                 .in(BarDaily::getCode, codes)
                 .orderByDesc(BarDaily::getTradeDate)
-                .last("LIMIT " + Math.min(codes.size() * per, 12000)));
+                .last("LIMIT " + hardCap));
         Map<String, List<BarDaily>> descBuckets = new HashMap<>();
         for (BarDaily bar : all) {
             List<BarDaily> bucket = descBuckets.computeIfAbsent(bar.getCode(), k -> new ArrayList<>());
@@ -266,6 +411,8 @@ public class ScreenerServiceImpl implements IScreenerService {
         if (Objects.isNull(close) || close.signum() <= 0) {
             return null;
         }
-        return atr.divide(close, 6, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
+        return atr.divide(close, 6, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(2, RoundingMode.HALF_UP);
     }
 }

@@ -347,7 +347,8 @@ onMounted(loadList)
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="rs20VsHs300" label="RS20" width="90" sortable>
+      <el-table-column prop="rs20VsHs300" width="90" sortable>
+        <template #header><TermTip term="rs20">RS20</TermTip></template>
         <template #default="{ row }">
           <span :class="Number(row.rs20VsHs300) >= 0 ? 'up' : 'down'">
             {{ row.rs20VsHs300 != null ? Number(row.rs20VsHs300).toFixed(2) : '-' }}

@@ -632,7 +632,7 @@ onMounted(load)
       </el-table-column>
     </el-table>
 
-    <h3 v-if="atrStops?.items?.length">ATR 止损建议</h3>
+    <h3 v-if="atrStops?.items?.length"><TermTip term="atr">ATR</TermTip> 止损建议</h3>
     <el-table v-if="atrStops?.items?.length" :data="atrStops.items" size="small" style="margin-bottom: 12px">
       <el-table-column prop="code" label="代码" width="90" />
       <el-table-column prop="atr14" label="ATR14" width="90" />

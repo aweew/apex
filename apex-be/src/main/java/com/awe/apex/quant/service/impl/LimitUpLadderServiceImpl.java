@@ -208,6 +208,10 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 计算 N 板晋级率：今日 N 板家数 / 昨日 (N-1) 板家数。
+     * 采用市场常用口径，不依赖代码精确匹配，避免因代码格式差异导致全为 0%。
+     */
     private BigDecimal calcPromoteRate(int targetLianban, Map<String, Integer> prevLianban,
                                        List<LimitUpPool> today) {
         if (prevLianban.isEmpty()) {
@@ -222,16 +226,9 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
         if (base <= 0) {
             return null;
         }
-        Set<String> prevBase = new HashSet<>();
-        for (Map.Entry<String, Integer> e : prevLianban.entrySet()) {
-            if (Objects.nonNull(e.getValue()) && e.getValue() == targetLianban - 1) {
-                prevBase.add(e.getKey());
-            }
-        }
         int success = 0;
         for (LimitUpPool row : today) {
-            if (Objects.nonNull(row.getLianban()) && row.getLianban() == targetLianban
-                    && prevBase.contains(row.getCode())) {
+            if (Objects.nonNull(row.getLianban()) && row.getLianban() == targetLianban) {
                 success++;
             }
         }

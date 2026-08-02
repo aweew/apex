@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 public class ScreenerReq {
 
     /**
-     * 分组，可空=全部自选
+     * 选股范围：空/全部市场/__MARKET__=全市场；其余=自选分组名
      */
     private String groupName;
 

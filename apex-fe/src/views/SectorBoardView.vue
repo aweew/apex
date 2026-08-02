@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
@@ -16,6 +16,7 @@ import { getSyncJob, startSyncJob } from '../api/sync'
 import { useTradeDateStore } from '../stores/tradeDate'
 
 const router = useRouter()
+const route = useRoute()
 const tradeDateStore = useTradeDateStore()
 const { tradeDate } = storeToRefs(tradeDateStore)
 const loading = ref(false)
@@ -28,6 +29,7 @@ const mainline = ref([])
 const rotation = ref(null)
 const rotationLoading = ref(false)
 const availableDateSet = ref(new Set())
+const nameFilter = ref('')
 
 const drawerOpen = ref(false)
 const drawerLoading = ref(false)
@@ -45,7 +47,20 @@ const TAB_META = {
 
 const TYPE_LABEL = { INDUSTRY: '行业', CONCEPT: '概念', THEME: '题材' }
 
-const items = computed(() => board.value?.items || [])
+const items = computed(() => {
+  const list = board.value?.items || []
+  const kw = nameFilter.value.trim()
+  if (!kw) return list
+  return list.filter((row) => String(row.name || '').includes(kw))
+})
+
+function applyRouteQuery() {
+  const q = String(route.query.q || '').trim()
+  nameFilter.value = q
+  if (q) {
+    activeTab.value = 'THEME'
+  }
+}
 
 function syncAvailableDates(dates) {
   const list = (dates || []).map((d) => String(d).slice(0, 10))
@@ -300,7 +315,18 @@ watch([drawerSortBy, drawerOrder], () => {
   }
 })
 
-onMounted(load)
+watch(
+  () => route.query.q,
+  () => {
+    applyRouteQuery()
+    load()
+  },
+)
+
+onMounted(() => {
+  applyRouteQuery()
+  load()
+})
 onBeforeUnmount(() => {
   syncPollCancelled = true
 })
@@ -336,6 +362,12 @@ onBeforeUnmount(() => {
           <el-option label="降序" value="desc" />
           <el-option label="升序" value="asc" />
         </el-select>
+        <el-input
+          v-model="nameFilter"
+          clearable
+          placeholder="筛板块名"
+          style="width: 140px"
+        />
         <el-button type="primary" :loading="refreshing" @click="onRefresh">刷新</el-button>
         <el-button plain @click="router.push('/limit-up')">涨停</el-button>
         <el-button plain @click="router.push('/decision')">决策</el-button>

@@ -14,6 +14,7 @@ import {
 import { syncBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
 import { aggregateBars, tdSequential } from '../utils/kline'
+import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,6 +53,13 @@ const showTd9 = ref(true)
 const tdShowMode = ref('key')
 const BAR_LIMIT = 500
 const CHART_PREF_KEY = 'apex.stock.chartPrefs'
+const META_EXPAND_KEY = 'apex.stock.metaExpanded'
+const metaExpanded = ref(localStorage.getItem(META_EXPAND_KEY) === '1')
+
+function toggleMetaExpanded() {
+  metaExpanded.value = !metaExpanded.value
+  localStorage.setItem(META_EXPAND_KEY, metaExpanded.value ? '1' : '0')
+}
 const MA_META = [
   { name: 'MA5', color: '#1d1d1f' },
   { name: 'MA10', color: '#f59e0b' },
@@ -1610,6 +1618,7 @@ function onTabChange(name) {
   if (name === 'profile' && !profile.value) {
     loadProfile(false)
   }
+  // 综合研判 Tab 由 StockAnalysisPanel 自行按 code 加载
 }
 
 function dash(v) {
@@ -1623,13 +1632,14 @@ function dash(v) {
       <div>
         <p class="eyebrow">Apex · Stock</p>
         <h1>{{ basic?.name || '股票详情' }} <span class="code">{{ basic?.code || code }}</span></h1>
-        <p>{{ note || 'K线 · 估值 · 回测 · 观察池一站式研判' }}</p>
+        <p>{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>
       <div class="actions">
         <el-input v-model="code" style="width: 120px" placeholder="代码" @keyup.enter="go" />
         <el-button type="primary" @click="go">查询</el-button>
         <el-button :loading="refreshing" @click="refreshQuoteOnly">刷新行情</el-button>
         <el-button type="success" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
+        <el-button type="warning" plain @click="activeTab = 'analysis'">综合研判</el-button>
         <el-button plain @click="router.push('/decision')">决策</el-button>
         <el-button plain @click="router.push({ path: '/valuation', query: { code: code.trim() } })">估值</el-button>
         <el-button plain @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
@@ -1639,22 +1649,46 @@ function dash(v) {
       </div>
     </header>
 
-    <div class="meta" v-if="basic">
-      <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
-      <div><label>涨跌幅</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
-      <div><label><TermTip term="pe_ttm">市盈率</TermTip></label><span>{{ basic.peTtm ?? '-' }}</span></div>
-      <div><label><TermTip term="pb">市净率</TermTip></label><span>{{ basic.pb ?? '-' }}</span></div>
-      <div><label>总市值</label><span>{{ fmtMv(basic.totalMv) }}</span></div>
-      <div><label>流通市值</label><span>{{ fmtMv(basic.circMv) }}</span></div>
-      <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
-      <div><label>行业</label><span>{{ profile?.industryL2 || basic.industry || '-' }}</span></div>
-      <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>
-      <div><label>来源</label><span>{{ basic.source || '-' }}</span></div>
-      <div><label>本地日线</label><span>{{ barCount }}</span></div>
-      <div><label>RS20 vs沪深300</label><b :class="Number(rs20) >= 0 ? 'up' : 'down'">{{ rs20 != null ? rs20 + 'pp' : '-' }}</b></div>
-      <div><label>RS60 vs沪深300</label><b :class="Number(rs60) >= 0 ? 'up' : 'down'">{{ rs60 != null ? rs60 + 'pp' : '-' }}</b></div>
-      <div><label><TermTip term="volume_ratio">量比</TermTip></label><b :class="Number(volumeRatio) >= 1.5 ? 'up' : ''">{{ volumeRatio ?? '-' }}</b></div>
-    </div>
+    <section class="meta-panel" v-if="basic">
+      <div class="meta-bar">
+        <div class="meta-bar-main">
+          <span class="meta-price" :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</span>
+          <span class="meta-pct" :class="basic.pctChg >= 0 ? 'up' : 'down'">
+            {{ basic.pctChg != null ? (Number(basic.pctChg) > 0 ? '+' : '') + Number(basic.pctChg).toFixed(2) + '%' : '-' }}
+          </span>
+          <span class="meta-chip">PE {{ basic.peTtm ?? '-' }}</span>
+          <span class="meta-chip">PB {{ basic.pb ?? '-' }}</span>
+          <span class="meta-chip">总市值 {{ fmtMv(basic.totalMv) }}</span>
+          <span class="meta-chip">{{ profile?.industryL2 || basic.industry || basic.market || '-' }}</span>
+          <span class="meta-chip">量比 {{ volumeRatio ?? '-' }}</span>
+        </div>
+        <button type="button" class="meta-toggle" @click="toggleMetaExpanded">
+          {{ metaExpanded ? '收起指标' : '展开指标' }}
+        </button>
+      </div>
+      <div v-show="metaExpanded" class="meta">
+        <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
+        <div><label>涨跌幅</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
+        <div><label><TermTip term="pe_ttm">市盈率</TermTip></label><span>{{ basic.peTtm ?? '-' }}</span></div>
+        <div><label><TermTip term="pb">市净率</TermTip></label><span>{{ basic.pb ?? '-' }}</span></div>
+        <div><label>总市值</label><span>{{ fmtMv(basic.totalMv) }}</span></div>
+        <div><label>流通市值</label><span>{{ fmtMv(basic.circMv) }}</span></div>
+        <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
+        <div><label>行业</label><span>{{ profile?.industryL2 || basic.industry || '-' }}</span></div>
+        <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>
+        <div><label>来源</label><span>{{ basic.source || '-' }}</span></div>
+        <div><label>本地日线</label><span>{{ barCount }}</span></div>
+        <div>
+          <label><TermTip term="rs20">RS20 vs沪深300</TermTip></label>
+          <b :class="Number(rs20) >= 0 ? 'up' : 'down'">{{ rs20 != null ? rs20 + 'pp' : '-' }}</b>
+        </div>
+        <div>
+          <label><TermTip term="rs60">RS60 vs沪深300</TermTip></label>
+          <b :class="Number(rs60) >= 0 ? 'up' : 'down'">{{ rs60 != null ? rs60 + 'pp' : '-' }}</b>
+        </div>
+        <div><label><TermTip term="volume_ratio">量比</TermTip></label><b :class="Number(volumeRatio) >= 1.5 ? 'up' : ''">{{ volumeRatio ?? '-' }}</b></div>
+      </div>
+    </section>
 
     <el-alert
       v-if="!loading && bars.length && needSyncBars"
@@ -1666,6 +1700,9 @@ function dash(v) {
     />
 
     <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">
+      <el-tab-pane label="综合研判" name="analysis" lazy>
+        <StockAnalysisPanel v-if="basic?.code || code" :code="String(basic?.code || code).trim()" />
+      </el-tab-pane>
       <el-tab-pane label="行情图表" name="chart">
         <el-empty
           v-if="!loading && !bars.length && !isIntraday"
@@ -1741,6 +1778,12 @@ function dash(v) {
               <TermTip term="macd">MACD</TermTip>
               /
               <TermTip term="kdj">KDJ</TermTip>
+              · 常见还有
+              <TermTip term="rsi">RSI</TermTip>
+              /
+              <TermTip term="atr">ATR</TermTip>
+              /
+              <TermTip term="boll">布林带</TermTip>
             </template>
           </p>
           <p v-if="!isIntraday && tdTip && showTd9" class="macd-tip">{{ tdTip }}</p>
@@ -2209,11 +2252,70 @@ function dash(v) {
   letter-spacing: -0.02em;
 }
 
+.meta-panel {
+  margin-bottom: 12px;
+}
+
+.meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass);
+  box-shadow: var(--shadow-soft);
+}
+
+.meta-bar-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 14px;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta-price {
+  font-size: 22px;
+  font-weight: 750;
+  line-height: 1.1;
+}
+
+.meta-pct {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.meta-chip {
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.meta-toggle {
+  flex: 0 0 auto;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.meta-toggle:hover {
+  color: var(--ink);
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
 .meta {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-  margin-bottom: 12px;
+  margin-top: 10px;
 }
 
 .meta > div {
@@ -2233,6 +2335,17 @@ function dash(v) {
   font-size: 11px;
   font-weight: 500;
   margin-bottom: 6px;
+}
+
+@media (max-width: 720px) {
+  .meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .meta-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .hint {

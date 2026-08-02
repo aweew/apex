@@ -6,7 +6,7 @@ import { ElMessage } from 'element-plus'
 import { dashboardHome, dashboardOverview } from '../api/dashboard'
 import { runDecision } from '../api/decision'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v2'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v3'
 const loading = ref(false)
 const refreshing = ref(false)
 const running = ref(false)

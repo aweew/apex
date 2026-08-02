@@ -58,6 +58,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     private final AtomicBoolean rebuildScheduled = new AtomicBoolean(false);
     private MarketBriefingResp cachedBriefing;
     private long cachedAtMs;
+    /** 实时三市成交额短缓存，避免每次补全都打外网 */
+    private BigDecimal cachedLiveAmount;
+    private long cachedLiveAmountAtMs;
+    private static final long LIVE_AMOUNT_TTL_MS = 120_000L;
 
     @Resource
     private IndexBarMapper indexBarMapper;
@@ -87,12 +91,13 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         long now = System.currentTimeMillis();
         synchronized (cacheLock) {
             if (Objects.nonNull(cachedBriefing) && now - cachedAtMs < CACHE_TTL_MS) {
-                return cachedBriefing;
+                return fillMissingIndexVolume(cachedBriefing);
             }
         }
         // 有近三日快照则先秒回，再后台重建，避免看板白等
         MarketBriefingResp snap = loadRecentSnapshot();
         if (Objects.nonNull(snap)) {
+            snap = fillMissingIndexVolume(snap);
             synchronized (cacheLock) {
                 if (Objects.isNull(cachedBriefing) || System.currentTimeMillis() - cachedAtMs >= CACHE_TTL_MS) {
                     cachedBriefing = snap;
@@ -104,13 +109,32 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
         synchronized (cacheLock) {
             if (Objects.nonNull(cachedBriefing) && System.currentTimeMillis() - cachedAtMs < CACHE_TTL_MS) {
-                return cachedBriefing;
+                return fillMissingIndexVolume(cachedBriefing);
             }
-            MarketBriefingResp built = buildBriefing();
+            MarketBriefingResp built = fillMissingIndexVolume(buildBriefing());
             cachedBriefing = built;
             cachedAtMs = System.currentTimeMillis();
             return built;
         }
+    }
+
+    /**
+     * 库内指数成交额缺失时，用实时三市额补全展示（短超时 + 内存缓存）
+     */
+    private MarketBriefingResp fillMissingIndexVolume(MarketBriefingResp resp) {
+        if (Objects.isNull(resp)) {
+            return null;
+        }
+        if (StringUtils.isNotBlank(resp.getIndexVolumeText())) {
+            return resp;
+        }
+        BigDecimal live = fetchLiveThreeMarketAmount();
+        if (Objects.isNull(live) || live.signum() <= 0) {
+            return resp;
+        }
+        resp.setIndexVolume(live);
+        resp.setIndexVolumeText(formatAmount(live));
+        return resp;
     }
 
     /**
@@ -254,8 +278,11 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (Objects.nonNull(vol)) {
             volumeTrend = vol.trend;
             volumeVsMa5Pct = vol.vsMa5Pct;
-            // 看板首屏不用外网实时额（东财/新浪串行可达十余秒）；库内量能足够出立场
+            // 优先库内成交额；缺失则短超时拉实时三市额（新浪单请求优先）
             indexVolume = vol.volume;
+            if (Objects.isNull(indexVolume) || indexVolume.signum() <= 0) {
+                indexVolume = fetchLiveThreeMarketAmount();
+            }
             indexVolumeText = formatAmount(indexVolume);
             String volSignal = "中性";
             if ("放量".equals(vol.trend) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) >= 0) {
@@ -823,11 +850,26 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
      * 实时三市成交额：上证 + 深成 + 北证50（元）
      */
     private BigDecimal fetchLiveThreeMarketAmount() {
-        BigDecimal fromEm = fetchThreeMarketAmountFromEastMoney();
-        if (Objects.nonNull(fromEm) && fromEm.signum() > 0) {
-            return fromEm;
+        long now = System.currentTimeMillis();
+        synchronized (cacheLock) {
+            // 成功/失败都短缓存，避免看板反复打外网
+            if (cachedLiveAmountAtMs > 0 && now - cachedLiveAmountAtMs < LIVE_AMOUNT_TTL_MS) {
+                return cachedLiveAmount;
+            }
         }
-        return fetchThreeMarketAmountFromSina();
+        // 新浪一次拉三市，通常更快；失败再走东财
+        BigDecimal live = fetchThreeMarketAmountFromSina();
+        if (Objects.isNull(live) || live.signum() <= 0) {
+            live = fetchThreeMarketAmountFromEastMoney();
+        }
+        if (Objects.nonNull(live) && live.signum() <= 0) {
+            live = null;
+        }
+        synchronized (cacheLock) {
+            cachedLiveAmount = live;
+            cachedLiveAmountAtMs = System.currentTimeMillis();
+        }
+        return live;
     }
 
     private BigDecimal fetchThreeMarketAmountFromEastMoney() {
@@ -861,7 +903,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .header("Referer", "https://quote.eastmoney.com/")
                 .header("Accept", "application/json,text/plain,*/*")
-                .timeout(5000)
+                .timeout(2000)
                 .execute()) {
             if (!response.isOk()) {
                 return null;
@@ -888,7 +930,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         try (HttpResponse response = HttpRequest.get(url)
                 .header("User-Agent", "Mozilla/5.0")
                 .header("Referer", "https://finance.sina.com.cn/")
-                .timeout(5000)
+                .timeout(2000)
                 .execute()) {
             if (!response.isOk() || StringUtils.isBlank(response.body())) {
                 return null;

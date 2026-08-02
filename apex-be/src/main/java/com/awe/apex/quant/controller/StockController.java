@@ -2,12 +2,14 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.CompanyProfileResp;
+import com.awe.apex.quant.domain.dto.StockAnalysisResp;
 import com.awe.apex.quant.domain.dto.StockDetailResp;
 import com.awe.apex.quant.domain.dto.StockFundamentalResp;
 import com.awe.apex.quant.domain.dto.StockIntradayResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.service.ICompanyProfileService;
+import com.awe.apex.quant.service.IStockAnalysisService;
 import com.awe.apex.quant.service.IStockFundamentalService;
 import com.awe.apex.quant.service.IStockService;
 import jakarta.annotation.Resource;
@@ -35,6 +37,9 @@ public class StockController {
 
     @Resource
     private ICompanyProfileService companyProfileService;
+
+    @Resource
+    private IStockAnalysisService stockAnalysisService;
 
     /**
      * 搜索股票
@@ -123,5 +128,20 @@ public class StockController {
     @PostMapping("/{code}/profile/refresh")
     public Result<CompanyProfileResp> refreshProfile(@PathVariable String code) {
         return Result.success(companyProfileService.query(code, true));
+    }
+
+    /**
+     * 个股综合研判（技术 + 估值 + 资金情绪 + 策略结论）
+     *
+     * @param code     证券代码
+     * @param side     BUY/SELL
+     * @param barLimit K 线条数
+     * @return 综合研判
+     */
+    @GetMapping("/{code}/analysis")
+    public Result<StockAnalysisResp> analysis(@PathVariable String code,
+                                              @RequestParam(defaultValue = "BUY") String side,
+                                              @RequestParam(defaultValue = "120") Integer barLimit) {
+        return Result.success(stockAnalysisService.analyze(code, side, barLimit));
     }
 }
