@@ -5,6 +5,7 @@ import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { dashboardHome } from '../api/dashboard'
 import { runDecision } from '../api/decision'
+import { listObserve } from '../api/observe'
 
 const router = useRouter()
 const loading = ref(false)
@@ -12,6 +13,7 @@ const running = ref(false)
 const home = ref(null)
 const loadError = ref('')
 const chartRef = ref(null)
+const observeAlerts = ref([])
 let chart
 
 const market = computed(() => home.value?.market || null)
@@ -190,6 +192,18 @@ function renderEquity(points) {
   })
 }
 
+async function loadObserveAlerts() {
+  try {
+    const res = await listObserve({})
+    const list = res.data || []
+    observeAlerts.value = list
+      .filter((r) => r.status === 'NEAR' || r.status === 'TRIGGERED')
+      .slice(0, 6)
+  } catch {
+    observeAlerts.value = []
+  }
+}
+
 async function load() {
   loading.value = true
   loadError.value = ''
@@ -198,6 +212,7 @@ async function load() {
     home.value = res.data
     await nextTick()
     renderEquity(home.value?.equityCurve)
+    await loadObserveAlerts()
   } catch (e) {
     home.value = null
     const msg = e.message || '加载失败'
@@ -213,9 +228,14 @@ async function load() {
 async function onRunDecision() {
   running.value = true
   try {
-    await runDecision({ groupName: '我的自选' })
-    ElMessage.success('决策已生成')
-    router.push('/decision')
+    const res = await runDecision({ groupName: '我的自选' })
+    const obs = res.data?.observeUpserted
+    ElMessage.success(
+      obs != null
+        ? `决策已生成，观察池写入 ${obs} 条剧本`
+        : res.data?.message || '决策已生成',
+    )
+    router.push('/observe')
   } catch (e) {
     ElMessage.error(e.message || '生成失败')
   } finally {
@@ -397,6 +417,30 @@ onBeforeUnmount(() => {
             <i class="down-seg" :style="{ width: breadth.downPct + '%' }" />
           </div>
         </div>
+      </div>
+    </section>
+
+    <section v-if="observeAlerts.length" class="panel observe-strip enter delay-1">
+      <div class="panel-head">
+        <div>
+          <h3>观察池提醒</h3>
+          <p class="panel-desc">接近触发 / 已触发，优先处理</p>
+        </div>
+        <el-button link type="primary" @click="router.push('/observe')">打开观察池 →</el-button>
+      </div>
+      <div class="observe-chips">
+        <button
+          v-for="item in observeAlerts"
+          :key="item.id"
+          type="button"
+          class="observe-chip"
+          :class="item.status === 'TRIGGERED' ? 'trig' : 'near'"
+          @click="router.push(`/stock/${item.code}`)"
+        >
+          <b>{{ item.code }}</b>
+          <span>{{ item.name || '' }}</span>
+          <em>{{ item.status === 'TRIGGERED' ? '已触发' : '接近' }}</em>
+        </button>
       </div>
     </section>
 
@@ -686,6 +730,54 @@ onBeforeUnmount(() => {
   grid-template-columns: 1fr 1fr;
   gap: 14px;
   margin-bottom: 14px;
+}
+
+.observe-strip {
+  margin-bottom: 14px;
+}
+
+.observe-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.observe-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.observe-chip b {
+  font-weight: 700;
+}
+
+.observe-chip span {
+  font-size: 12px;
+  color: var(--slate);
+}
+
+.observe-chip em {
+  font-style: normal;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.observe-chip.near em {
+  background: rgba(255, 159, 10, 0.15);
+  color: #c93400;
+}
+
+.observe-chip.trig em {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--up);
 }
 
 /* —— stance hero —— */

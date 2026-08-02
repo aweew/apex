@@ -66,4 +66,19 @@ public class DecisionTodayResp {
      * 说明
      */
     private String message;
+
+    /**
+     * 同步观察池：新建数
+     */
+    private Integer observeCreated;
+
+    /**
+     * 同步观察池：更新数
+     */
+    private Integer observeUpdated;
+
+    /**
+     * 同步观察池：合计写入
+     */
+    private Integer observeUpserted;
 }

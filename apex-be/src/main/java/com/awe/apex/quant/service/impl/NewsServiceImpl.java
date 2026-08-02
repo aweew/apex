@@ -23,10 +23,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -72,10 +74,12 @@ public class NewsServiceImpl implements INewsService {
             counts.put(src, Objects.isNull(cnt) ? 0 : cnt.intValue());
         }
 
+        // 多取一些再按标题去重，避免同标题占满名额后条数不足
+        int fetchSize = Math.min(size * 3, 600);
         var query = Wrappers.<MarketNews>lambdaQuery()
                 .orderByDesc(MarketNews::getPublishedAt)
                 .orderByDesc(MarketNews::getId)
-                .last("LIMIT " + size);
+                .last("LIMIT " + fetchSize);
         if (StringUtils.isNotBlank(source) && !"all".equalsIgnoreCase(source.trim())) {
             query.eq(MarketNews::getSource, source.trim().toLowerCase());
         }
@@ -88,8 +92,16 @@ public class NewsServiceImpl implements INewsService {
         }
         List<MarketNews> rows = marketNewsMapper.selectList(query);
         List<NewsItemResp> items = new ArrayList<>();
+        Set<String> seenTitles = new HashSet<>();
         for (MarketNews row : rows) {
+            String titleKey = normalizeTitle(row.getTitle());
+            if (StringUtils.isBlank(titleKey) || !seenTitles.add(titleKey)) {
+                continue;
+            }
             items.add(toItem(row));
+            if (items.size() >= size) {
+                break;
+            }
         }
         String srcLabel = StringUtils.isBlank(source) || "all".equalsIgnoreCase(source) ? "全部" : source;
         return NewsOverviewResp.builder()
@@ -241,5 +253,15 @@ public class NewsServiceImpl implements INewsService {
         }
         String t = text.trim();
         return t.length() > 4000 ? t.substring(0, 4000) + "…" : t;
+    }
+
+    /**
+     * 标题归一化：去首尾空白，用于一模一样标题去重
+     */
+    private String normalizeTitle(String title) {
+        if (StringUtils.isBlank(title)) {
+            return "";
+        }
+        return title.trim();
     }
 }

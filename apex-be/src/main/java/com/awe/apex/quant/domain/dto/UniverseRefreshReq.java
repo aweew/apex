@@ -19,4 +19,9 @@ public class UniverseRefreshReq {
      * 分组
      */
     private String groupName;
+
+    /**
+     * 宽松质量过滤：仅剔 ST / 日线不足，不因 PE/PB/市值硬剔除（观察池扩候选用）
+     */
+    private Boolean looseFilter;
 }

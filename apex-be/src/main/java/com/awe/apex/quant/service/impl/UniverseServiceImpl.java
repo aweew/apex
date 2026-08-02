@@ -105,8 +105,12 @@ public class UniverseServiceImpl implements IUniverseService {
             if (barCount < MIN_BARS) {
                 continue;
             }
+            boolean loose = Objects.nonNull(req) && Boolean.TRUE.equals(req.getLooseFilter());
             List<String> tags = new ArrayList<>();
             tags.add("BARS_OK");
+            if (loose) {
+                tags.add("LOOSE");
+            }
             BigDecimal score = new BigDecimal("60");
 
             BigDecimal pe = Objects.nonNull(basic) ? basic.getPeTtm() : null;
@@ -115,32 +119,44 @@ public class UniverseServiceImpl implements IUniverseService {
 
             if (Objects.nonNull(pe)) {
                 if (pe.signum() <= 0 || pe.compareTo(MAX_PE) > 0) {
-                    continue;
+                    if (!loose) {
+                        continue;
+                    }
+                    tags.add("PE_SOFT");
+                } else {
+                    tags.add("PE_OK");
+                    // PE 越低越好，20 附近给满分加成
+                    BigDecimal peBonus = new BigDecimal("20").subtract(pe.abs().divide(new BigDecimal("4"), 4, RoundingMode.HALF_UP));
+                    score = score.add(peBonus.max(BigDecimal.ZERO).min(new BigDecimal("20")));
                 }
-                tags.add("PE_OK");
-                // PE 越低越好，20 附近给满分加成
-                BigDecimal peBonus = new BigDecimal("20").subtract(pe.abs().divide(new BigDecimal("4"), 4, RoundingMode.HALF_UP));
-                score = score.add(peBonus.max(BigDecimal.ZERO).min(new BigDecimal("20")));
             } else {
                 tags.add("PE_MISS");
             }
 
             if (Objects.nonNull(pb)) {
                 if (pb.signum() <= 0 || pb.compareTo(MAX_PB) > 0) {
-                    continue;
+                    if (!loose) {
+                        continue;
+                    }
+                    tags.add("PB_SOFT");
+                } else {
+                    tags.add("PB_OK");
+                    score = score.add(new BigDecimal("10").subtract(pb.min(new BigDecimal("10"))));
                 }
-                tags.add("PB_OK");
-                score = score.add(new BigDecimal("10").subtract(pb.min(new BigDecimal("10"))));
             } else {
                 tags.add("PB_MISS");
             }
 
             if (Objects.nonNull(circMv)) {
                 if (circMv.compareTo(MIN_CIRC_MV) < 0) {
-                    continue;
+                    if (!loose) {
+                        continue;
+                    }
+                    tags.add("MV_SOFT");
+                } else {
+                    tags.add("MV_OK");
+                    score = score.add(new BigDecimal("8"));
                 }
-                tags.add("MV_OK");
-                score = score.add(new BigDecimal("8"));
             } else {
                 tags.add("MV_MISS");
             }

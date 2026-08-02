@@ -3,11 +3,14 @@
 多源财经新闻同步 → market_news
 
 数据源：
-  - eastmoney : ak.stock_info_global_em（东财全球财经）
+  - eastmoney : 东财「要闻」栏目(np-listapi column=350) + ak.stock_info_global_em 快讯
   - cls       : ak.stock_info_global_cls（财联社电报）
   - ths       : ak.stock_info_global_ths（同花顺快讯）
   - sina      : ak.stock_info_global_sina（新浪财经）
   - cctv      : ak.news_cctv（央视新闻联播，较慢）
+
+说明：
+  App「要闻」≠「全球财经快讯」。旧逻辑只拉快讯，所以央行工作会议等要闻不会入库。
 
 示例：
   python sync_news.py --sources eastmoney,cls,ths,sina --limit 80
@@ -18,10 +21,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import sys
-from datetime import date, datetime, time, timedelta
+import time
+import urllib.error
+import urllib.request
+from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -70,8 +77,8 @@ def parse_dt(val: Any) -> Optional[datetime]:
     if isinstance(val, datetime):
         return val
     if isinstance(val, date) and not isinstance(val, datetime):
-        return datetime.combine(val, time.min)
-    if isinstance(val, time):
+        return datetime.combine(val, dt_time.min)
+    if isinstance(val, dt_time):
         return datetime.combine(date.today(), val)
     text = str(val).strip()
     if not text or text in {"-", "--", "None", "nan"}:
@@ -89,7 +96,7 @@ def combine_date_time(d: Any, t: Any) -> Optional[datetime]:
     dd = parse_dt(d)
     if dd is None:
         return parse_dt(t)
-    if isinstance(t, time):
+    if isinstance(t, dt_time):
         return datetime.combine(dd.date(), t)
     tt = parse_dt(t)
     if tt is None:
@@ -97,6 +104,86 @@ def combine_date_time(d: Any, t: Any) -> Optional[datetime]:
     if tt.year > 1970 and (tt.hour or tt.minute or tt.second):
         return datetime.combine(dd.date(), tt.time())
     return dd
+
+
+def http_get_json(url: str, referer: str = "https://finance.eastmoney.com/") -> Dict[str, Any]:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Referer": referer,
+            "Accept": "application/json,text/plain,*/*",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        raw = resp.read().decode("utf-8", "ignore")
+    data = json.loads(raw)
+    return data if isinstance(data, dict) else {}
+
+
+def fetch_eastmoney_yaowen(limit: int, snapshot_time: datetime) -> List[Dict[str, Any]]:
+    """东财 App/网站「要闻」栏目（非 7x24 快讯）。"""
+    # column=350 对应东财要闻流；与 App 要闻主头条高度重合
+    page_size = max(10, min(int(limit or 40), 50))
+    trace = str(int(time.time() * 1000))
+    url = (
+        "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns"
+        "?client=web&biz=web_news_col&column=350&order=1&needInteractData=0"
+        f"&page_index=1&page_size={page_size}&req_trace={trace}"
+        "&fields=code,showTime,title,mediaName,summary,url,uniqueUrl"
+    )
+    try:
+        payload = http_get_json(url)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as ex:
+        print(f"eastmoney yaowen: FAIL {ex}", file=sys.stderr)
+        return []
+
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    lst = data.get("list") if isinstance(data, dict) else None
+    if not isinstance(lst, list):
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for item in lst:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        summary = str(item.get("summary") or "").strip() or None
+        link = str(item.get("uniqueUrl") or item.get("url") or "").strip() or None
+        published = parse_dt(item.get("showTime"))
+        # 摘要加标记，前端可识别「要闻」
+        tagged = ("【要闻】" + summary) if summary else "【要闻】"
+        row = make_row("eastmoney", title, tagged, summary, link, published, snapshot_time)
+        if row:
+            # 与快讯区分 external_id，避免同标题互相覆盖错频道
+            row["external_id"] = ext_id("eastmoney-yaowen", title, published, link)
+            rows.append(row)
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def fetch_eastmoney_flash(limit: int, snapshot_time: datetime) -> List[Dict[str, Any]]:
+    """东财全球财经快讯（7x24 风格，不是要闻）。"""
+    import akshare as ak
+
+    df = ak.stock_info_global_em()
+    rows: List[Dict[str, Any]] = []
+    if df is None or df.empty:
+        return rows
+    for _, r in df.head(limit).iterrows():
+        title = str(r.get("标题") or "").strip()
+        summary = str(r.get("摘要") or "").strip() or None
+        url = str(r.get("链接") or "").strip() or None
+        published = parse_dt(r.get("发布时间"))
+        item = make_row("eastmoney", title, summary, summary, url, published, snapshot_time)
+        if item:
+            item["external_id"] = ext_id("eastmoney-flash", title, published, url)
+            rows.append(item)
+    return rows
 
 
 def extract_codes(text: str) -> str:
@@ -132,7 +219,34 @@ def clip(text: Optional[str], n: int) -> Optional[str]:
     return s if len(s) <= n else s[:n]
 
 
+def title_key(title: Optional[str]) -> str:
+    return (title or "").strip()
+
+
+def dedupe_by_title(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """标题一模一样只留一条；优先保留带【要闻】的。"""
+    if not rows:
+        return []
+    best: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for row in rows:
+        key = title_key(row.get("title"))
+        if not key:
+            continue
+        prev = best.get(key)
+        if prev is None:
+            best[key] = row
+            order.append(key)
+            continue
+        prev_yaowen = "【要闻】" in str(prev.get("summary") or "")
+        cur_yaowen = "【要闻】" in str(row.get("summary") or "")
+        if cur_yaowen and not prev_yaowen:
+            best[key] = row
+    return [best[k] for k in order]
+
+
 def upsert_rows(conn, rows: List[Dict[str, Any]]) -> int:
+    rows = dedupe_by_title(rows)
     if not rows:
         return 0
     sql = """
@@ -159,6 +273,30 @@ def upsert_rows(conn, rows: List[Dict[str, Any]]) -> int:
         cur.executemany(sql, rows)
     conn.commit()
     return len(rows)
+
+
+def soft_delete_duplicate_titles(conn) -> int:
+    """库内同标题多条时，只留最新一条，其余逻辑删除。"""
+    sql = """
+    UPDATE market_news t1
+    INNER JOIN (
+      SELECT title, MAX(id) AS keep_id
+      FROM market_news
+      WHERE deleted = 0
+        AND title IS NOT NULL
+        AND TRIM(title) <> ''
+      GROUP BY title
+      HAVING COUNT(*) > 1
+    ) t2 ON t1.title = t2.title
+    SET t1.deleted = 1, t1.update_time = NOW()
+    WHERE t1.deleted = 0
+      AND t1.id <> t2.keep_id
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        n = cur.rowcount
+    conn.commit()
+    return n
 
 
 def make_row(
@@ -189,21 +327,38 @@ def make_row(
 
 
 def fetch_eastmoney(limit: int, snapshot_time: datetime) -> List[Dict[str, Any]]:
-    import akshare as ak
+    """要闻优先，再补全球快讯；按标题去重。"""
+    cap = max(10, min(int(limit or 80), 200))
+    yaowen_n = max(15, min(cap // 2, 40))
+    flash_n = max(10, cap - yaowen_n)
 
-    df = ak.stock_info_global_em()
-    rows: List[Dict[str, Any]] = []
-    if df is None or df.empty:
-        return rows
-    for _, r in df.head(limit).iterrows():
-        title = str(r.get("标题") or "").strip()
-        summary = str(r.get("摘要") or "").strip() or None
-        url = str(r.get("链接") or "").strip() or None
-        published = parse_dt(r.get("发布时间"))
-        item = make_row("eastmoney", title, summary, summary, url, published, snapshot_time)
-        if item:
-            rows.append(item)
-    return rows
+    merged: List[Dict[str, Any]] = []
+    seen_titles: set[str] = set()
+
+    for item in fetch_eastmoney_yaowen(yaowen_n, snapshot_time):
+        key = (item.get("title") or "").strip()
+        if not key or key in seen_titles:
+            continue
+        seen_titles.add(key)
+        merged.append(item)
+
+    try:
+        flash_rows = fetch_eastmoney_flash(flash_n, snapshot_time)
+    except Exception as ex:  # noqa: BLE001
+        print(f"eastmoney flash: FAIL {ex}", file=sys.stderr)
+        flash_rows = []
+
+    for item in flash_rows:
+        key = (item.get("title") or "").strip()
+        if not key or key in seen_titles:
+            continue
+        seen_titles.add(key)
+        merged.append(item)
+        if len(merged) >= cap:
+            break
+
+    print(f"eastmoney: yaowen+flash merged={len(merged)} (cap={cap})")
+    return merged[:cap]
 
 
 def fetch_cls(limit: int, snapshot_time: datetime) -> List[Dict[str, Any]]:
@@ -331,19 +486,26 @@ def main() -> int:
     snapshot_time = datetime.now().replace(microsecond=0)
     conn = db_conn()
     ok = fail = total = 0
+    all_rows: List[Dict[str, Any]] = []
     try:
         for source in sources:
             try:
                 rows = FETCHERS[source](limit, snapshot_time)
-                n = upsert_rows(conn, rows)
-                total += n
+                all_rows.extend(rows)
                 ok += 1
-                print(f"{source}: upsert={n}")
+                print(f"{source}: fetched={len(rows)}")
             except Exception as ex:  # noqa: BLE001
                 fail += 1
                 print(f"{source}: FAIL {ex}", file=sys.stderr)
+        before = len(all_rows)
+        all_rows = dedupe_by_title(all_rows)
+        total = upsert_rows(conn, all_rows)
+        dup_removed = soft_delete_duplicate_titles(conn)
         cleaned = cleanup_old(conn, args.keep_days)
-        print(f"done sources_ok={ok} fail={fail} upsert={total} cleaned={cleaned} snapshot={snapshot_time}")
+        print(
+            f"done sources_ok={ok} fail={fail} fetched={before} unique_title={len(all_rows)} "
+            f"upsert={total} title_dup_soft_del={dup_removed} cleaned={cleaned} snapshot={snapshot_time}"
+        )
         return 0 if fail == 0 else 1
     finally:
         conn.close()

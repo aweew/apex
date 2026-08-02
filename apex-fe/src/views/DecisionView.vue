@@ -114,7 +114,11 @@ async function onRun() {
     data.value = res.data
     pickDefaultTab()
     await Promise.all([loadHistory(), loadAttribution()])
-    ElMessage.success(res.data?.message || '决策已生成')
+    const obs = res.data?.observeUpserted
+    ElMessage.success(
+      res.data?.message ||
+        (obs != null ? `决策已生成，并写入观察池 ${obs} 条` : '决策已生成'),
+    )
   } catch (e) {
     ElMessage.error(e.message || '生成失败')
   } finally {
@@ -219,6 +223,7 @@ onMounted(load)
       <div class="actions">
         <el-input v-model="groupName" style="width: 130px" placeholder="自选分组" />
         <el-button type="primary" :loading="loading" @click="onRun">一键生成决策</el-button>
+        <el-button type="warning" @click="router.push('/observe')">观察池剧本</el-button>
         <el-button @click="load">刷新</el-button>
         <el-button @click="showRules = !showRules">{{ showRules ? '收起战法' : '策略战法' }}</el-button>
         <el-button @click="router.push('/signals')">信号明细</el-button>
@@ -368,13 +373,29 @@ onMounted(load)
               <span v-else class="muted">-</span>
             </template>
           </el-table-column>
+          <el-table-column label="估值" width="100">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.valuationLabel"
+                link
+                type="primary"
+                @click="router.push({ path: '/valuation', query: { code: row.code } })"
+              >{{ row.valuationLabel }}</el-button>
+              <span v-else class="muted">-</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="scoreExplain" label="评分拆解" min-width="200" show-overflow-tooltip />
           <el-table-column prop="reason" label="理由" min-width="180" show-overflow-tooltip />
           <el-table-column prop="fundNote" label="基本面" min-width="140" show-overflow-tooltip />
           <el-table-column prop="exitRule" label="离场规则" width="140" show-overflow-tooltip />
-          <el-table-column label="操作" width="110" fixed="right">
+          <el-table-column label="操作" width="170" fixed="right">
             <template #default="{ row }">
               <el-button type="primary" link :loading="ordering" @click="onPaperOrder(row)">模拟买</el-button>
+              <el-button
+                link
+                type="warning"
+                @click="router.push({ path: '/observe', query: { code: row.code, name: row.name || '' } })"
+              >观察</el-button>
             </template>
           </el-table-column>
         </el-table>

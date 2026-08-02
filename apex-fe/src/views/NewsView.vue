@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchNewsOverview, refreshNews } from '../api/news'
+import NewsShareDialog from '../components/share/NewsShareDialog.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -12,6 +13,8 @@ const lastLog = ref('')
 const activeSource = ref('all')
 const keyword = ref('')
 const limit = ref(80)
+const shareOpen = ref(false)
+const shareItem = ref(null)
 
 const items = computed(() => data.value?.items || [])
 const counts = computed(() => data.value?.sourceCounts || {})
@@ -68,8 +71,27 @@ async function onRefresh(sources = 'eastmoney,cls,ths,sina') {
   }
 }
 
-function openUrl(row) {
+function openUrl(row, event) {
+  event?.stopPropagation?.()
   if (row?.url) window.open(row.url, '_blank', 'noopener')
+}
+
+function openShare(row, event) {
+  event?.preventDefault?.()
+  event?.stopPropagation?.()
+  if (!row) return
+  shareItem.value = { ...row }
+  shareOpen.value = true
+}
+
+function isYaowen(row) {
+  const text = `${row?.summary || ''}${row?.content || ''}`
+  return text.includes('【要闻】')
+}
+
+function displaySummary(row) {
+  const text = row?.summary || row?.content || ''
+  return String(text).replace(/^【要闻】/, '')
 }
 
 let debounceTimer
@@ -130,17 +152,27 @@ onMounted(load)
     </el-empty>
 
     <div v-else class="news-list">
-      <article v-for="row in items" :key="row.id" class="news-card" @click="openUrl(row)">
+      <article v-for="row in items" :key="row.id" class="news-card">
         <div class="news-head">
           <el-tag size="small" effect="plain">{{ sourceLabel(row.source) }}</el-tag>
+          <el-tag
+            v-if="isYaowen(row)"
+            size="small"
+            type="warning"
+            effect="dark"
+          >要闻</el-tag>
           <el-tag v-if="row.sentiment" size="small" :type="sentimentType(row.sentiment)" effect="light">
             {{ row.sentiment }}
           </el-tag>
           <time>{{ fmtTime(row.publishedAt) }}</time>
         </div>
-        <h3 class="news-title" :class="{ link: !!row.url }">{{ row.title }}</h3>
-        <p class="news-summary">{{ row.summary || row.content || '' }}</p>
-        <div v-if="row.relatedCodes?.length" class="news-codes" @click.stop>
+        <h3
+          class="news-title"
+          :class="{ link: !!row.url }"
+          @click="openUrl(row, $event)"
+        >{{ row.title }}</h3>
+        <p class="news-summary">{{ displaySummary(row) }}</p>
+        <div v-if="row.relatedCodes?.length" class="news-codes">
           <el-button
             v-for="code in row.relatedCodes"
             :key="code"
@@ -149,8 +181,23 @@ onMounted(load)
             @click="router.push(`/stock/${code}`)"
           >{{ code }}</el-button>
         </div>
+        <div class="news-ops">
+          <button
+            type="button"
+            class="op-btn"
+            :disabled="!row.url"
+            @click="openUrl(row, $event)"
+          >看原文</button>
+          <button
+            type="button"
+            class="op-btn primary"
+            @click="openShare(row, $event)"
+          >截图分享</button>
+        </div>
       </article>
     </div>
+
+    <NewsShareDialog v-model="shareOpen" :item="shareItem" />
 
     <el-collapse v-if="lastLog" style="margin-top: 16px">
       <el-collapse-item title="最近刷新日志" name="log">
@@ -232,6 +279,50 @@ onMounted(load)
   font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+.news-ops {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.op-btn {
+  appearance: none;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink, #1d1d1f);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.op-btn:hover:not(:disabled) {
+  border-color: rgba(0, 113, 227, 0.35);
+  color: var(--accent, #0071e3);
+}
+
+.op-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.op-btn.primary {
+  background: var(--accent, #0071e3);
+  border-color: var(--accent, #0071e3);
+  color: #fff;
+}
+
+.op-btn.primary:hover {
+  background: var(--accent-hover, #0077ed);
+  border-color: var(--accent-hover, #0077ed);
+  color: #fff;
 }
 
 .news-title {

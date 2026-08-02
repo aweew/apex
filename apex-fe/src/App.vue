@@ -34,12 +34,14 @@ const navGroups = [
     items: [
       { to: '/decision', label: '决策' },
       { to: '/holding', label: '持仓' },
+      { to: '/observe', label: '观察池' },
       { to: '/paper', label: '模拟盘' },
       { to: '/signals', label: '信号' },
       { to: '/backtest', label: '回测' },
       { to: '/daily', label: '日终' },
       { to: '/pipeline', label: '流水线' },
       { to: '/screener', label: '选股' },
+      { to: '/valuation', label: '估值' },
     ],
   },
   {

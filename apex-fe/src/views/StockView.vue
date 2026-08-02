@@ -1591,8 +1591,17 @@ function dash(v) {
         <el-button type="primary" @click="go">查询</el-button>
         <el-button :loading="refreshing" @click="refreshQuoteOnly">刷新行情</el-button>
         <el-button type="success" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
+        <el-button @click="router.push({ path: '/valuation', query: { code: code.trim() } })">估值</el-button>
         <el-button @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
         <el-button @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">模拟买</el-button>
+        <el-button
+          type="warning"
+          plain
+          @click="router.push({
+            path: '/observe',
+            query: { code: code.trim(), name: basic?.name || '' },
+          })"
+        >加入观察池</el-button>
       </div>
     </header>
 

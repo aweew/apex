@@ -9,8 +9,10 @@ import ConfigView from '../views/ConfigView.vue'
 import StockView from '../views/StockView.vue'
 import PipelineView from '../views/PipelineView.vue'
 import ScreenerView from '../views/ScreenerView.vue'
+import ValuationView from '../views/ValuationView.vue'
 import DecisionView from '../views/DecisionView.vue'
 import HoldingView from '../views/HoldingView.vue'
+import ObserveView from '../views/ObserveView.vue'
 import HotView from '../views/HotView.vue'
 import NewsView from '../views/NewsView.vue'
 import IndexBoardView from '../views/IndexBoardView.vue'
@@ -31,8 +33,10 @@ const router = createRouter({
     { path: '/hot', name: 'hot', component: HotView },
     { path: '/news', name: 'news', component: NewsView },
     { path: '/holding', name: 'holding', component: HoldingView },
+    { path: '/observe', name: 'observe', component: ObserveView },
     { path: '/pipeline', name: 'pipeline', component: PipelineView },
     { path: '/screener', name: 'screener', component: ScreenerView },
+    { path: '/valuation', name: 'valuation', component: ValuationView },
     { path: '/watchlist', name: 'watchlist', component: WatchlistView },
     { path: '/stock/:code?', name: 'stock', component: StockView },
     { path: '/signals', name: 'signals', component: SignalView },

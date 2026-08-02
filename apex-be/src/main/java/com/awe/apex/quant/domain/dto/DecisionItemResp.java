@@ -107,4 +107,24 @@ public class DecisionItemResp {
      * 评分/仓位可解释明细
      */
     private String scoreExplain;
+
+    /**
+     * 估值档位 UNDERVALUED / FAIR / OVERVALUED ...
+     */
+    private String valuationLevel;
+
+    /**
+     * 估值中文结论
+     */
+    private String valuationLabel;
+
+    /**
+     * 估值综合分
+     */
+    private BigDecimal valuationScore;
+
+    /**
+     * 估值一句话
+     */
+    private String valuationSummary;
 }

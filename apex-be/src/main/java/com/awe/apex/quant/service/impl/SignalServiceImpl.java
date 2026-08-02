@@ -89,7 +89,8 @@ public class SignalServiceImpl implements ISignalService {
         List<Strategy> selected = selectStrategies(req.getStrategyIds());
         Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(codes);
         List<StrategySignalEntity> saved = new ArrayList<>();
-        Map<String, StrategySignalEntity> bestByCode = new HashMap<>();
+        // 按 code|side 各留最高分，避免卖出分更高时把买入机会挤掉
+        Map<String, StrategySignalEntity> bestByCodeSide = new HashMap<>();
 
         for (String code : codes) {
             List<BarDaily> bars = barsByCode.get(code);
@@ -103,14 +104,16 @@ public class SignalServiceImpl implements ISignalService {
                     continue;
                 }
                 StrategySignalEntity entity = toEntity(result);
-                StrategySignalEntity existBest = bestByCode.get(code);
+                String side = StringUtils.isNotBlank(entity.getSide()) ? entity.getSide().toUpperCase() : "NA";
+                String key = code + "|" + side;
+                StrategySignalEntity existBest = bestByCodeSide.get(key);
                 if (Objects.isNull(existBest) || entity.getScore().compareTo(existBest.getScore()) > 0) {
-                    bestByCode.put(code, entity);
+                    bestByCodeSide.put(key, entity);
                 }
             }
         }
 
-        for (StrategySignalEntity entity : bestByCode.values()) {
+        for (StrategySignalEntity entity : bestByCodeSide.values()) {
             // 同代码+策略+信号日去重，避免重复堆积
             strategySignalMapper.delete(Wrappers.<StrategySignalEntity>lambdaQuery()
                     .eq(StrategySignalEntity::getCode, entity.getCode())
