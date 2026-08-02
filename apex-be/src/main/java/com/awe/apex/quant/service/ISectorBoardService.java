@@ -4,6 +4,7 @@ import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.dto.SectorBoardResp;
 import com.awe.apex.quant.domain.dto.SectorConstituentResp;
 import com.awe.apex.quant.domain.dto.SectorRefreshResp;
+import com.awe.apex.quant.domain.dto.SectorRotationResp;
 
 import java.util.List;
 
@@ -61,4 +62,14 @@ public interface ISectorBoardService {
      * @return 主线列表
      */
     List<SectorBoardItem> mainline(String tradeDate, Integer limit);
+
+    /**
+     * 板块轮动时间轴（按日 Top）
+     *
+     * @param boardType 类型
+     * @param days      天数
+     * @param topN      每日 Top
+     * @return 时间轴
+     */
+    SectorRotationResp rotation(String boardType, Integer days, Integer topN);
 }

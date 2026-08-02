@@ -2,12 +2,19 @@ package com.awe.apex.quant.job;
 
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.HotRefreshResp;
+import com.awe.apex.quant.domain.dto.IndexRefreshResp;
+import com.awe.apex.quant.domain.dto.LimitUpRefreshResp;
 import com.awe.apex.quant.domain.dto.SectorRefreshResp;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IHotService;
+import com.awe.apex.quant.service.IIndexBoardService;
+import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.IWatchlistService;
+
+import java.time.LocalDate;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -36,6 +43,12 @@ public class DataSyncScheduler {
 
     @Resource
     private ISectorBoardService sectorBoardService;
+
+    @Resource
+    private IIndexBoardService indexBoardService;
+
+    @Resource
+    private ILimitUpLadderService limitUpLadderService;
 
     /**
      * 工作日傍晚尝试同步过期日线
@@ -70,6 +83,47 @@ public class DataSyncScheduler {
         } catch (Exception ex) {
             log.warn("定时刷新行情失败: {}", ex.getMessage());
         }
+    }
+
+    /**
+     * 收盘同步包：INDEX → SECTOR → LIMIT_UP（16:35）
+     */
+    @Scheduled(cron = "0 35 16 * * MON-FRI")
+    public void closeBundleAfternoon() {
+        if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+            return;
+        }
+        if (!TradingCalendar.isTradingDay(LocalDate.now())) {
+            log.info("收盘包跳过：今日非交易日");
+            return;
+        }
+        int ok = 0;
+        int fail = 0;
+        try {
+            IndexRefreshResp indexResp = indexBoardService.refresh(null);
+            ok++;
+            log.info("收盘包·指数完成 message={}", indexResp.getMessage());
+        } catch (Exception ex) {
+            fail++;
+            log.warn("收盘包·指数失败: {}", ex.getMessage());
+        }
+        try {
+            SectorRefreshResp sectorResp = sectorBoardService.refresh("INDUSTRY,CONCEPT,THEME");
+            ok++;
+            log.info("收盘包·板块完成 message={}", sectorResp.getMessage());
+        } catch (Exception ex) {
+            fail++;
+            log.warn("收盘包·板块失败: {}", ex.getMessage());
+        }
+        try {
+            LimitUpRefreshResp luResp = limitUpLadderService.refresh(null);
+            ok++;
+            log.info("收盘包·涨停完成 message={}", luResp.getMessage());
+        } catch (Exception ex) {
+            fail++;
+            log.warn("收盘包·涨停失败: {}", ex.getMessage());
+        }
+        log.info("收盘包汇总 success={}, fail={}", ok, fail);
     }
 
     /**

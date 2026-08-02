@@ -1,5 +1,9 @@
 import http from './http'
 
+export function dashboardHome(accountId, groupName = '我的自选') {
+  return http.get('/api/dashboard/home', { params: { accountId, groupName } })
+}
+
 export function dashboardOverview(accountId) {
   return http.get('/api/dashboard/overview', { params: { accountId } })
 }

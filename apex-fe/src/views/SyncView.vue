@@ -48,6 +48,31 @@ function statusType(s) {
   return ''
 }
 
+function healthClass(level) {
+  if (level === 'GREEN') return 'health-green'
+  if (level === 'YELLOW') return 'health-yellow'
+  if (level === 'RED') return 'health-red'
+  if (level === 'RUNNING') return 'health-yellow'
+  return 'health-unknown'
+}
+
+function healthLabel(level) {
+  if (level === 'GREEN') return '正常'
+  if (level === 'YELLOW') return '预警'
+  if (level === 'RED') return '异常'
+  if (level === 'RUNNING') return '运行中'
+  return level || '未知'
+}
+
+function statusLabel(s) {
+  if (s === 'SUCCESS') return '成功'
+  if (s === 'FAILED') return '失败'
+  if (s === 'PENDING') return '等待'
+  if (s === 'CANCELLED') return '已取消'
+  if (s === 'RUNNING') return '运行中'
+  return s || '-'
+}
+
 function fmtTime(t) {
   if (!t) return '-'
   return String(t).replace('T', ' ').slice(0, 19)
@@ -223,11 +248,16 @@ onUnmounted(stopPoll)
                   size="small"
                   :type="statusType(task.latestJob.status)"
                 >
-                  {{ task.latestJob.status }}
+                  {{ statusLabel(task.latestJob.status) }}
                 </el-tag>
               </div>
               <p class="desc">{{ task.description }}</p>
               <p class="hint">{{ task.defaultParamsHint }}</p>
+              <div class="task-health">
+                <span class="health-dot" :class="healthClass(task.healthLevel)" />
+                <span :class="healthClass(task.healthLevel)">{{ healthLabel(task.healthLevel) }}</span>
+                <span class="health-time">最近成功 {{ fmtTime(task.lastSuccessAt) }}</span>
+              </div>
               <div class="task-actions">
                 <el-button
                   type="primary"
@@ -304,7 +334,7 @@ onUnmounted(stopPoll)
               <div><label>任务</label><b>#{{ activeJob.id }} {{ activeJob.taskName }}</b></div>
               <div>
                 <label>状态</label>
-                <el-tag size="small" :type="statusType(activeJob.status)">{{ activeJob.status }}</el-tag>
+                <el-tag size="small" :type="statusType(activeJob.status)">{{ statusLabel(activeJob.status) }}</el-tag>
               </div>
               <div><label>进度</label>{{ activeJob.progressPct ?? 0 }}%</div>
               <div v-if="activeJob.doneItems != null">
@@ -327,7 +357,7 @@ onUnmounted(stopPoll)
             <el-table-column prop="taskName" label="任务" min-width="100" />
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
-                <el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag>
+                <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="progressPct" label="%" width="50" />
@@ -396,6 +426,61 @@ onUnmounted(stopPoll)
   margin: 6px 0 10px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.task-health {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.health-dot.health-green {
+  background: #34c759;
+}
+
+.health-dot.health-yellow {
+  background: #e6a23c;
+}
+
+.health-dot.health-red {
+  background: #ff3b30;
+}
+
+.health-dot.health-unknown {
+  background: #c7c7cc;
+}
+
+span.health-green {
+  color: #248a3d;
+  font-weight: 600;
+}
+
+span.health-yellow {
+  color: #b8860b;
+  font-weight: 600;
+}
+
+span.health-red {
+  color: #d70015;
+  font-weight: 600;
+}
+
+span.health-unknown {
+  color: var(--muted);
+}
+
+.health-time {
+  color: var(--muted);
+  margin-left: auto;
 }
 
 .task-actions {

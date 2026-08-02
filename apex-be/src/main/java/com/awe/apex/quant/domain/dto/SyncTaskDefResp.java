@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 /**
  * 可启动的同步任务定义
  */
@@ -48,4 +50,14 @@ public class SyncTaskDefResp {
      * 最近任务
      */
     private SyncJobResp latestJob;
+
+    /**
+     * 最近成功时间
+     */
+    private LocalDateTime lastSuccessAt;
+
+    /**
+     * 健康色 GREEN/YELLOW/RED
+     */
+    private String healthLevel;
 }

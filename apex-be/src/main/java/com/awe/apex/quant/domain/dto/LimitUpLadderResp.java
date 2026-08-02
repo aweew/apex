@@ -54,6 +54,11 @@ public class LimitUpLadderResp {
     private LocalDateTime syncedAt;
 
     /**
+     * 赚钱效应（昨涨停今表现）
+     */
+    private LimitUpEffectResp effect;
+
+    /**
      * 说明
      */
     private String message;

@@ -92,4 +92,19 @@ public class DecisionItemResp {
      * 关联信号 ID（便于一键模拟下单）
      */
     private Long signalId;
+
+    /**
+     * 是否匹配当日主线
+     */
+    private Boolean mainlineMatch;
+
+    /**
+     * 匹配的主线名称
+     */
+    private String mainlineName;
+
+    /**
+     * 评分/仓位可解释明细
+     */
+    private String scoreExplain;
 }

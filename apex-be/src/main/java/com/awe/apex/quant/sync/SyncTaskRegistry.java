@@ -131,6 +131,15 @@ public class SyncTaskRegistry {
                 .defaultParamsHint("with-prev=true")
                 .timeoutSec(300)
                 .build());
+        register(SyncTaskSpec.builder()
+                .taskType("CLOSE_BUNDLE")
+                .name("收盘同步包")
+                .groupName("市场看板")
+                .description("顺序执行：指数 → 板块行情 → 涨停池")
+                .scriptFile("sync_close_bundle.py")
+                .defaultParamsHint("start=20180101 types=INDUSTRY,CONCEPT,THEME")
+                .timeoutSec(3600)
+                .build());
     }
 
     /**
@@ -288,6 +297,17 @@ public class SyncTaskRegistry {
                     args.add(safe.getStart().trim().replace("-", ""));
                 }
                 args.add("--with-prev");
+            }
+            case "CLOSE_BUNDLE" -> {
+                args.add("--start");
+                args.add(StringUtils.isNotBlank(safe.getStart()) ? safe.getStart().trim() : "20180101");
+                args.add("--types");
+                args.add(StringUtils.isNotBlank(safe.getTypes()) ? safe.getTypes().trim() : "INDUSTRY,CONCEPT,THEME");
+                if (StringUtils.isNotBlank(safe.getMode())) {
+                    // mode 可复用为涨停日期 yyyyMMdd
+                    args.add("--date");
+                    args.add(safe.getMode().trim().replace("-", ""));
+                }
             }
             default -> throw new BusinessException("未实现参数构建: " + type);
         }

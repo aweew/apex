@@ -47,9 +47,24 @@ public class LimitUpStockItem {
     private String firstSealTime;
 
     /**
+     * 最后封板时间
+     */
+    private String lastSealTime;
+
+    /**
      * 炸板次数
      */
     private Integer breakCount;
+
+    /**
+     * 封板资金（元）
+     */
+    private BigDecimal sealAmount;
+
+    /**
+     * 换手率%
+     */
+    private BigDecimal turnoverRate;
 
     /**
      * 题材/行业标签

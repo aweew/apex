@@ -165,20 +165,32 @@ public class ScreenerServiceImpl implements IScreenerService {
 
     private Map<String, List<BarDaily>> loadRecentBars(List<WatchlistResp> rows, int limitPerCode) {
         Map<String, List<BarDaily>> map = new HashMap<>();
+        List<String> codes = new ArrayList<>();
         for (WatchlistResp row : rows) {
-            if (StringUtils.isBlank(row.getCode())) {
-                continue;
+            if (StringUtils.isNotBlank(row.getCode())) {
+                codes.add(row.getCode());
             }
-            List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
-                    .eq(BarDaily::getCode, row.getCode())
-                    .orderByDesc(BarDaily::getTradeDate)
-                    .last("limit " + limitPerCode));
-            if (bars.isEmpty()) {
-                continue;
+        }
+        if (codes.isEmpty()) {
+            return map;
+        }
+        int per = Math.max(5, Math.min(limitPerCode, 120));
+        // 批量拉取后按 code 截取最近 N 根（倒序扫描首见）
+        List<BarDaily> all = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                .in(BarDaily::getCode, codes)
+                .orderByDesc(BarDaily::getTradeDate)
+                .last("LIMIT " + Math.min(codes.size() * per, 12000)));
+        Map<String, List<BarDaily>> descBuckets = new HashMap<>();
+        for (BarDaily bar : all) {
+            List<BarDaily> bucket = descBuckets.computeIfAbsent(bar.getCode(), k -> new ArrayList<>());
+            if (bucket.size() < per) {
+                bucket.add(bar);
             }
-            List<BarDaily> asc = new ArrayList<>(bars);
+        }
+        for (Map.Entry<String, List<BarDaily>> entry : descBuckets.entrySet()) {
+            List<BarDaily> asc = new ArrayList<>(entry.getValue());
             asc.sort(Comparator.comparing(BarDaily::getTradeDate));
-            map.put(row.getCode(), asc);
+            map.put(entry.getKey(), asc);
         }
         return map;
     }

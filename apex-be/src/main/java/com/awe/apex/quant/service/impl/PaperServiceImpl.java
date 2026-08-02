@@ -378,21 +378,31 @@ public class PaperServiceImpl implements IPaperService {
         if (codes.isEmpty()) {
             return map;
         }
-        for (String code : codes) {
-            StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
-                    .eq(StockBasic::getCode, code)
-                    .last("limit 1"));
-            if (Objects.nonNull(basic) && Objects.nonNull(basic.getLatestPrice())
-                    && basic.getLatestPrice().signum() > 0) {
-                map.put(code, basic.getLatestPrice());
+        List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                .in(StockBasic::getCode, codes));
+        Set<String> missing = new HashSet<>(codes);
+        for (StockBasic basic : basics) {
+            if (Objects.nonNull(basic.getLatestPrice()) && basic.getLatestPrice().signum() > 0) {
+                map.put(basic.getCode(), basic.getLatestPrice());
+                missing.remove(basic.getCode());
+            }
+        }
+        if (missing.isEmpty()) {
+            return map;
+        }
+        // 按交易日倒序扫描，首见即最新收盘
+        List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                .in(BarDaily::getCode, missing)
+                .orderByDesc(BarDaily::getTradeDate)
+                .last("LIMIT " + Math.min(Math.max(missing.size() * 40, 40), 8000)));
+        for (BarDaily bar : bars) {
+            if (Objects.isNull(bar.getClosePrice()) || !missing.contains(bar.getCode())) {
                 continue;
             }
-            BarDaily bar = barDailyMapper.selectOne(Wrappers.<BarDaily>lambdaQuery()
-                    .eq(BarDaily::getCode, code)
-                    .orderByDesc(BarDaily::getTradeDate)
-                    .last("limit 1"));
-            if (Objects.nonNull(bar) && Objects.nonNull(bar.getClosePrice())) {
-                map.put(code, bar.getClosePrice());
+            map.put(bar.getCode(), bar.getClosePrice());
+            missing.remove(bar.getCode());
+            if (missing.isEmpty()) {
+                break;
             }
         }
         return map;
@@ -1162,15 +1172,37 @@ public class PaperServiceImpl implements IPaperService {
         int buyN = 0;
         BigDecimal sellSlipSum = BigDecimal.ZERO;
         int sellN = 0;
+        Set<String> codes = new HashSet<>();
+        LocalDate minDate = null;
+        LocalDate maxDate = null;
         for (PaperOrder order : orders) {
             if (Objects.isNull(order.getPrice()) || Objects.isNull(order.getTradeDate())
                     || StringUtils.isBlank(order.getCode())) {
                 continue;
             }
-            BarDaily bar = barDailyMapper.selectOne(Wrappers.<BarDaily>lambdaQuery()
-                    .eq(BarDaily::getCode, order.getCode())
-                    .eq(BarDaily::getTradeDate, order.getTradeDate())
-                    .last("limit 1"));
+            codes.add(order.getCode());
+            if (Objects.isNull(minDate) || order.getTradeDate().isBefore(minDate)) {
+                minDate = order.getTradeDate();
+            }
+            if (Objects.isNull(maxDate) || order.getTradeDate().isAfter(maxDate)) {
+                maxDate = order.getTradeDate();
+            }
+        }
+        Map<String, BarDaily> barMap = new HashMap<>();
+        if (!codes.isEmpty() && Objects.nonNull(minDate) && Objects.nonNull(maxDate)) {
+            List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                    .in(BarDaily::getCode, codes)
+                    .between(BarDaily::getTradeDate, minDate, maxDate));
+            for (BarDaily bar : bars) {
+                barMap.put(bar.getCode() + "|" + bar.getTradeDate(), bar);
+            }
+        }
+        for (PaperOrder order : orders) {
+            if (Objects.isNull(order.getPrice()) || Objects.isNull(order.getTradeDate())
+                    || StringUtils.isBlank(order.getCode())) {
+                continue;
+            }
+            BarDaily bar = barMap.get(order.getCode() + "|" + order.getTradeDate());
             if (Objects.isNull(bar) || Objects.isNull(bar.getClosePrice()) || bar.getClosePrice().signum() <= 0) {
                 continue;
             }

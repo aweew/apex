@@ -2,9 +2,16 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.DataQualityResp;
+import com.awe.apex.quant.domain.dto.DataSourceHealthItem;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
+import com.awe.apex.quant.domain.entity.IndexBar;
+import com.awe.apex.quant.domain.entity.LimitUpPool;
+import com.awe.apex.quant.domain.entity.SectorQuote;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
+import com.awe.apex.quant.mapper.IndexBarMapper;
+import com.awe.apex.quant.mapper.LimitUpPoolMapper;
+import com.awe.apex.quant.mapper.SectorQuoteMapper;
 import com.awe.apex.quant.mapper.StrategySignalMapper;
 import com.awe.apex.quant.service.IUniverseService;
 import com.awe.apex.quant.service.IWatchlistService;
@@ -18,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -37,6 +45,15 @@ public class DataQualityController {
 
     @Resource
     private StrategySignalMapper strategySignalMapper;
+
+    @Resource
+    private IndexBarMapper indexBarMapper;
+
+    @Resource
+    private SectorQuoteMapper sectorQuoteMapper;
+
+    @Resource
+    private LimitUpPoolMapper limitUpPoolMapper;
 
     /**
      * 自选数据健康度
@@ -95,6 +112,19 @@ public class DataQualityController {
         } else {
             slaLevel = "RED";
         }
+
+        List<DataSourceHealthItem> marketSources = buildMarketSources();
+        String marketSla = "GREEN";
+        for (DataSourceHealthItem item : marketSources) {
+            if ("RED".equals(item.getLevel())) {
+                marketSla = "RED";
+                break;
+            }
+            if ("YELLOW".equals(item.getLevel()) && !"RED".equals(marketSla)) {
+                marketSla = "YELLOW";
+            }
+        }
+
         return Result.success(DataQualityResp.builder()
                 .watchlistCount(list.size())
                 .quotedCount(quoted)
@@ -109,6 +139,59 @@ public class DataQualityController {
                 .quoteCoverage(quoteCoverage)
                 .barsReadyCoverage(barsReadyCoverage)
                 .slaLevel(slaLevel)
+                .marketSources(marketSources)
+                .marketSlaLevel(marketSla)
                 .build());
+    }
+
+    private List<DataSourceHealthItem> buildMarketSources() {
+        List<DataSourceHealthItem> items = new ArrayList<>();
+
+        IndexBar index = indexBarMapper.selectOne(Wrappers.<IndexBar>lambdaQuery()
+                .eq(IndexBar::getCode, "CN_SH")
+                .orderByDesc(IndexBar::getTradeDate)
+                .last("LIMIT 1"));
+        items.add(sourceOf("大盘指数",
+                Objects.nonNull(index) ? index.getTradeDate() : null,
+                null,
+                Objects.nonNull(index) ? "上证最新日线" : "缺少上证指数日线"));
+
+        SectorQuote sector = sectorQuoteMapper.selectOne(Wrappers.<SectorQuote>lambdaQuery()
+                .orderByDesc(SectorQuote::getTradeDate)
+                .last("LIMIT 1"));
+        items.add(sourceOf("板块行情",
+                Objects.nonNull(sector) ? sector.getTradeDate() : null,
+                Objects.nonNull(sector) ? sector.getSyncedAt() : null,
+                Objects.nonNull(sector) ? "板块快照" : "缺少板块行情"));
+
+        LimitUpPool lu = limitUpPoolMapper.selectOne(Wrappers.<LimitUpPool>lambdaQuery()
+                .orderByDesc(LimitUpPool::getTradeDate)
+                .last("LIMIT 1"));
+        items.add(sourceOf("涨停池",
+                Objects.nonNull(lu) ? lu.getTradeDate() : null,
+                Objects.nonNull(lu) ? lu.getSyncedAt() : null,
+                Objects.nonNull(lu) ? "连板天梯数据" : "缺少涨停池"));
+
+        return items;
+    }
+
+    private DataSourceHealthItem sourceOf(String name, LocalDate asOf, LocalDateTime syncedAt, String note) {
+        String level;
+        if (Objects.isNull(asOf)) {
+            level = "RED";
+        } else if (asOf.isBefore(LocalDate.now().minusDays(5))) {
+            level = "RED";
+        } else if (asOf.isBefore(LocalDate.now().minusDays(2))) {
+            level = "YELLOW";
+        } else {
+            level = "GREEN";
+        }
+        return DataSourceHealthItem.builder()
+                .name(name)
+                .level(level)
+                .dataAsOf(asOf)
+                .syncedAt(syncedAt)
+                .note(note)
+                .build();
     }
 }

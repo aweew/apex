@@ -41,6 +41,7 @@ const macdTip = ref('')
 const tdTip = ref('')
 const intraday = ref(null)
 const intradayLoading = ref(false)
+const intradayAsOf = ref('')
 /** day | week | month | intraday */
 const klinePeriod = ref('day')
 /** 默认仅显示 MA5 / MA20 */
@@ -61,6 +62,7 @@ let chart
 let syncingFromLegend = false
 let resetZoomNext = true
 let savedZoom = { start: 45, end: 100 }
+let intradayPollTimer = null
 /** 当前图数据，供可视区高低点随缩放更新 */
 let chartPayload = null
 
@@ -249,23 +251,48 @@ function updateVisibleWindow() {
   })
 }
 
-async function loadIntraday() {
+async function loadIntraday(silent = false) {
   if (!code.value) return
-  intradayLoading.value = true
+  if (!silent) intradayLoading.value = true
   try {
     const res = await fetchStockIntraday(code.value.trim())
     intraday.value = res.data || null
+    const pts = intraday.value?.points || []
+    if (pts.length) {
+      const last = pts[pts.length - 1]
+      intradayAsOf.value = last.datetime
+        || (intraday.value?.tradeDate ? `${intraday.value.tradeDate} ${last.time}` : last.time)
+        || ''
+    } else {
+      intradayAsOf.value = ''
+    }
     if (activeTab.value === 'chart' && isIntraday.value) {
       await renderIntradayChart()
     }
   } catch (e) {
     intraday.value = null
-    if (isIntraday.value) {
+    intradayAsOf.value = ''
+    if (isIntraday.value && !silent) {
       disposeChart()
       ElMessage.error(e.message || '分时加载失败')
     }
   } finally {
-    intradayLoading.value = false
+    if (!silent) intradayLoading.value = false
+  }
+}
+
+function startIntradayPoll() {
+  stopIntradayPoll()
+  if (!isIntraday.value) return
+  intradayPollTimer = setInterval(() => {
+    if (isIntraday.value && activeTab.value === 'chart') loadIntraday(true)
+  }, 60000)
+}
+
+function stopIntradayPoll() {
+  if (intradayPollTimer) {
+    clearInterval(intradayPollTimer)
+    intradayPollTimer = null
   }
 }
 
@@ -1439,9 +1466,15 @@ watch(
       resetZoomNext = true
       profile.value = null
       intraday.value = null
+      intradayAsOf.value = ''
       load(false)
       if (activeTab.value === 'profile') loadProfile(false)
-      if (activeTab.value === 'chart' && isIntraday.value) loadIntraday()
+      if (activeTab.value === 'chart' && isIntraday.value) {
+        loadIntraday()
+        startIntradayPoll()
+      } else {
+        stopIntradayPoll()
+      }
     }
   },
 )
@@ -1452,8 +1485,10 @@ watch(klinePeriod, () => {
   if (activeTab.value !== 'chart') return
   if (isIntraday.value) {
     loadIntraday()
+    startIntradayPoll()
     return
   }
+  stopIntradayPoll()
   if (bars.value.length) refreshChart()
   else disposeChart()
 })
@@ -1474,12 +1509,16 @@ watch(
 onMounted(async () => {
   loadChartPrefs()
   await load(false)
-  if (isIntraday.value) await loadIntraday()
+  if (isIntraday.value) {
+    await loadIntraday()
+    startIntradayPoll()
+  }
   window.addEventListener('resize', onResize)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  stopIntradayPoll()
   disposeChart()
 })
 
@@ -1526,6 +1565,9 @@ function sheetCell(row, idx) {
 function onTabChange(name) {
   if (name === 'chart' && bars.value.length) {
     nextTick(() => refreshChart())
+  }
+  if (name === 'chart' && klinePeriod.value === 'intraday') {
+    startIntradayPoll()
   }
   if (name === 'profile' && !profile.value) {
     loadProfile(false)
@@ -1637,6 +1679,7 @@ function dash(v) {
               重置视野
             </el-button>
             <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
+            <span v-if="isIntraday && intradayAsOf" class="intraday-asof">数据截至 {{ intradayAsOf }}</span>
           </div>
           <el-alert
             v-if="!isIntraday && klinePeriod !== 'day' && bars.length < 120"
@@ -2209,6 +2252,12 @@ function dash(v) {
   font-size: 12px;
   font-weight: 600;
   color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.intraday-asof {
+  font-size: 11px;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 

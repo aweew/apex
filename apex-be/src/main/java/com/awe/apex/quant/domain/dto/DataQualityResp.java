@@ -81,4 +81,14 @@ public class DataQualityResp {
      * SLA：GREEN / YELLOW / RED
      */
     private String slaLevel;
+
+    /**
+     * 市场数据源健康（指数/板块/涨停）
+     */
+    private List<DataSourceHealthItem> marketSources;
+
+    /**
+     * 市场数据综合等级
+     */
+    private String marketSlaLevel;
 }

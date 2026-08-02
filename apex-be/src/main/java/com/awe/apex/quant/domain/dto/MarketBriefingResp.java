@@ -64,9 +64,44 @@ public class MarketBriefingResp {
     private List<String> indexLines;
 
     /**
+     * 指数结构化快照（看板用）
+     */
+    private List<MarketIndexItem> indexes;
+
+    /**
+     * 量能：放量 / 缩量 / 平量
+     */
+    private String volumeTrend;
+
+    /**
+     * 较 5 日均量涨跌幅 %
+     */
+    private BigDecimal volumeVsMa5Pct;
+
+    /**
      * 热点板块/题材
      */
     private List<String> hotThemes;
+
+    /**
+     * 数据充分性 GREEN/YELLOW/RED
+     */
+    private String dataLevel;
+
+    /**
+     * 关键数据是否足够支撑进攻立场
+     */
+    private Boolean dataSufficient;
+
+    /**
+     * 上涨家数（行业板块汇总近似）
+     */
+    private Integer breadthUp;
+
+    /**
+     * 下跌家数
+     */
+    private Integer breadthDown;
 
     /**
      * 说明

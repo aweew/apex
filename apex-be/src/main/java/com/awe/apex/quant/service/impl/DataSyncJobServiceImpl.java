@@ -10,8 +10,10 @@ import com.awe.apex.quant.domain.dto.SyncTaskDefResp;
 import com.awe.apex.quant.domain.entity.SyncJob;
 import com.awe.apex.quant.mapper.SyncJobMapper;
 import com.awe.apex.quant.service.IDataSyncJobService;
+import com.awe.apex.quant.sync.SyncTaskHealth;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
 import com.awe.apex.quant.sync.SyncTaskSpec;
+import com.awe.apex.quant.util.ProcessIoUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,8 +23,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -112,6 +112,18 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             if (isRunning) {
                 running++;
             }
+            LocalDateTime lastSuccessAt = null;
+            SyncJob success = syncJobMapper.selectOne(Wrappers.<SyncJob>lambdaQuery()
+                    .eq(SyncJob::getTaskType, spec.getTaskType())
+                    .eq(SyncJob::getStatus, "SUCCESS")
+                    .orderByDesc(SyncJob::getFinishedAt)
+                    .last("LIMIT 1"));
+            if (Objects.nonNull(success)) {
+                lastSuccessAt = Objects.nonNull(success.getFinishedAt())
+                        ? success.getFinishedAt() : success.getStartedAt();
+            }
+            boolean latestFailed = Objects.nonNull(latest) && "FAILED".equals(latest.getStatus());
+            String health = SyncTaskHealth.resolve(isRunning, lastSuccessAt, latestFailed, LocalDateTime.now());
             tasks.add(SyncTaskDefResp.builder()
                     .taskType(spec.getTaskType())
                     .name(spec.getName())
@@ -120,6 +132,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     .defaultParamsHint(spec.getDefaultParamsHint())
                     .running(isRunning)
                     .latestJob(latest)
+                    .lastSuccessAt(lastSuccessAt)
+                    .healthLevel(health)
                     .build());
         }
         return SyncOverviewResp.builder()
@@ -307,33 +321,42 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             syncJobMapper.updateById(job);
 
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), detectCharset()))) {
-                String line;
-                long done = 0;
-                while ((line = reader.readLine()) != null) {
-                    if (cancelled.get()) {
-                        process.destroyForcibly();
-                        break;
-                    }
-                    done++;
-                    appendLine(logBuf, line);
-                    updateProgressFromLine(job, line, done);
-                    if (done % 5 == 0 || line.toLowerCase(Locale.ROOT).contains("done")) {
-                        enrichProgressFromFile(job);
-                        job.setLogTail(trimLog(logBuf.toString()));
-                        job.setMessage(clip(line, 200));
-                        syncJobMapper.updateById(job);
-                    }
+            // 并行读 stdout 至 EOF（避免 break 后管道堵死），主线程 waitOrKill
+            Charset charset = detectCharset();
+            Future<String> readFuture = executor.submit(() -> {
+                try {
+                    return ProcessIoUtils.readAndDrain(process.getInputStream(), charset, LOG_MAX);
+                } catch (Exception ex) {
+                    log.warn("读同步输出失败 jobId={} err={}", jobId, ex.getMessage());
+                    return "";
                 }
+            });
+            long timeoutSec = Math.max(spec.getTimeoutSec(), 60);
+            boolean finished = ProcessIoUtils.waitOrKill(process, timeoutSec);
+            String outputText;
+            try {
+                outputText = readFuture.get(Math.min(timeoutSec + 30, 600), TimeUnit.SECONDS);
+            } catch (Exception ex) {
+                outputText = "";
             }
-
-            boolean finished = process.waitFor(Math.max(spec.getTimeoutSec(), 60), TimeUnit.SECONDS);
             if (!finished) {
-                process.destroyForcibly();
                 throw new BusinessException("同步超时（>" + spec.getTimeoutSec() + "s）");
             }
             exit = process.exitValue();
+            if (StringUtils.isNotBlank(outputText)) {
+                String[] lines = outputText.split("\n", -1);
+                long done = 0;
+                for (String line : lines) {
+                    if (StringUtils.isBlank(line)) {
+                        continue;
+                    }
+                    done++;
+                    appendLine(logBuf, line);
+                    if (!cancelled.get()) {
+                        updateProgressFromLine(job, line, done);
+                    }
+                }
+            }
             job.setExitCode(exit);
             job.setLogTail(trimLog(logBuf.toString()));
             enrichProgressFromFile(job);

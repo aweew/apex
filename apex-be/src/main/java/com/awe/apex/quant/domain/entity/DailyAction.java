@@ -36,6 +36,10 @@ public class DailyAction implements Serializable {
     /** 共振策略数 */ private Integer confluenceCount;
     /** 基本面要点 */ private String fundNote;
     /** 关联策略信号ID */ private Long signalId;
+    /** 是否匹配当日主线 */ private Integer mainlineMatch;
+    /** 匹配主线名称 */ private String mainlineName;
+    /** 评分/仓位拆解 */ private String scoreExplain;
+    /** 共振策略ID列表 CSV */ private String strategiesCsv;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     @TableLogic private Integer deleted;

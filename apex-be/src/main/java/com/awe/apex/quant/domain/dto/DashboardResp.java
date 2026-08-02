@@ -53,4 +53,14 @@ public class DashboardResp {
      * 行业浮盈亏归因
      */
     private List<IndustryPnlResp> industryPnls;
+
+    /**
+     * 市场简报摘要
+     */
+    private MarketBriefingResp marketBriefing;
+
+    /**
+     * 当日涨停家数
+     */
+    private Integer limitUpCount;
 }

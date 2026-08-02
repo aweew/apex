@@ -8,6 +8,8 @@ import com.awe.apex.quant.domain.dto.SectorBoardResp;
 import com.awe.apex.quant.domain.dto.SectorConstituentItem;
 import com.awe.apex.quant.domain.dto.SectorConstituentResp;
 import com.awe.apex.quant.domain.dto.SectorRefreshResp;
+import com.awe.apex.quant.domain.dto.SectorRotationDay;
+import com.awe.apex.quant.domain.dto.SectorRotationResp;
 import com.awe.apex.quant.domain.entity.SectorBasic;
 import com.awe.apex.quant.domain.entity.SectorConstituent;
 import com.awe.apex.quant.domain.entity.SectorQuote;
@@ -15,6 +17,7 @@ import com.awe.apex.quant.mapper.SectorBasicMapper;
 import com.awe.apex.quant.mapper.SectorConstituentMapper;
 import com.awe.apex.quant.mapper.SectorQuoteMapper;
 import com.awe.apex.quant.service.ISectorBoardService;
+import com.awe.apex.quant.util.ProcessIoUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
@@ -35,11 +38,15 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
@@ -51,6 +58,9 @@ import java.util.function.Function;
 public class SectorBoardServiceImpl implements ISectorBoardService {
 
     private static final Set<String> VALID_TYPES = Set.of("INDUSTRY", "CONCEPT", "THEME");
+    private static final long MAINLINE_CACHE_TTL_MS = 2 * 60 * 1000L;
+
+    private final ConcurrentHashMap<String, MainlineCacheEntry> mainlineCache = new ConcurrentHashMap<>();
 
     @Resource
     private SectorQuoteMapper sectorQuoteMapper;
@@ -240,9 +250,16 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
                     .build());
         }
 
-        // 1. 按涨跌幅排序
-        Comparator<SectorConstituentItem> comparator = Comparator.comparing(
-                SectorConstituentItem::getPctChg, Comparator.nullsLast(Comparator.naturalOrder()));
+        // 1. 按请求字段排序（默认涨跌幅）
+        String sortKey = StringUtils.isNotBlank(sortBy) ? sortBy.trim() : "pctChg";
+        Comparator<SectorConstituentItem> comparator;
+        if ("latestPrice".equalsIgnoreCase(sortKey) || "price".equalsIgnoreCase(sortKey)) {
+            comparator = Comparator.comparing(
+                    SectorConstituentItem::getLatestPrice, Comparator.nullsLast(Comparator.naturalOrder()));
+        } else {
+            comparator = Comparator.comparing(
+                    SectorConstituentItem::getPctChg, Comparator.nullsLast(Comparator.naturalOrder()));
+        }
         if (!asc) {
             comparator = comparator.reversed();
         }
@@ -290,11 +307,28 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
     @Override
     public List<SectorBoardItem> mainline(String tradeDate, Integer limit) {
         int size = Objects.isNull(limit) || limit <= 0 ? 8 : Math.min(limit, 30);
+        String cacheKey = (StringUtils.isBlank(tradeDate) ? "_" : tradeDate.trim()) + ":" + size;
+        MainlineCacheEntry cached = mainlineCache.get(cacheKey);
+        if (Objects.nonNull(cached) && cached.expireAt > System.currentTimeMillis()) {
+            return cached.items;
+        }
+
         List<SectorBoardItem> pool = new ArrayList<>();
         for (String type : List.of("THEME", "CONCEPT", "INDUSTRY")) {
-            SectorBoardResp board = board(type, "pctChg", "desc", 40, tradeDate);
-            if (CollUtil.isNotEmpty(board.getItems())) {
-                pool.addAll(board.getItems());
+            LocalDate resolvedDate = resolveTradeDate(tradeDate, null, latestTradeDate(type));
+            if (Objects.isNull(resolvedDate)) {
+                continue;
+            }
+            List<SectorQuote> quotes = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
+                    .eq(SectorQuote::getBoardType, type)
+                    .eq(SectorQuote::getTradeDate, resolvedDate)
+                    .orderByDesc(SectorQuote::getPctChg)
+                    .last("LIMIT 40"));
+            if (CollUtil.isEmpty(quotes)) {
+                continue;
+            }
+            for (SectorQuote quote : quotes) {
+                pool.add(toBoardItem(quote));
             }
         }
         if (CollUtil.isEmpty(pool)) {
@@ -357,7 +391,120 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
                 break;
             }
         }
+        mainlineCache.put(cacheKey, new MainlineCacheEntry(top, System.currentTimeMillis() + MAINLINE_CACHE_TTL_MS));
         return top;
+    }
+
+    /**
+     * 板块轮动时间轴
+     *
+     * @param boardType 类型
+     * @param days      天数
+     * @param topN      每日 Top
+     * @return 时间轴
+     */
+    @Override
+    public SectorRotationResp rotation(String boardType, Integer days, Integer topN) {
+        String type = StringUtils.isNotBlank(boardType) ? boardType.trim().toUpperCase(Locale.ROOT) : "INDUSTRY";
+        if (!VALID_TYPES.contains(type)) {
+            type = "INDUSTRY";
+        }
+        int dayCount = Objects.isNull(days) || days <= 0 ? 10 : Math.min(days, 30);
+        int top = Objects.isNull(topN) || topN <= 0 ? 5 : Math.min(topN, 15);
+
+        List<SectorQuote> dateRows = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
+                .select(SectorQuote::getTradeDate)
+                .eq(SectorQuote::getBoardType, type)
+                .isNotNull(SectorQuote::getTradeDate)
+                .orderByDesc(SectorQuote::getTradeDate)
+                .last("LIMIT " + (dayCount * 120)));
+        LinkedHashMap<LocalDate, Boolean> seen = new LinkedHashMap<>();
+        for (SectorQuote row : dateRows) {
+            if (Objects.nonNull(row.getTradeDate())) {
+                seen.putIfAbsent(row.getTradeDate(), Boolean.TRUE);
+            }
+            if (seen.size() >= dayCount) {
+                break;
+            }
+        }
+        List<LocalDate> dates = new ArrayList<>(seen.keySet());
+        dates.sort(Comparator.reverseOrder());
+        if (CollUtil.isEmpty(dates)) {
+            return SectorRotationResp.builder().days(List.of()).message(type + " 暂无轮动数据").build();
+        }
+
+        // 一次拉取日期范围内行情，内存分组取 TopN
+        List<SectorQuote> allRows = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
+                .eq(SectorQuote::getBoardType, type)
+                .in(SectorQuote::getTradeDate, dates)
+                .orderByDesc(SectorQuote::getPctChg));
+        Map<LocalDate, List<SectorQuote>> byDay = new HashMap<>();
+        for (SectorQuote row : allRows) {
+            if (Objects.isNull(row.getTradeDate())) {
+                continue;
+            }
+            byDay.computeIfAbsent(row.getTradeDate(), k -> new ArrayList<>()).add(row);
+        }
+
+        List<SectorRotationDay> daysOut = new ArrayList<>();
+        for (LocalDate day : dates) {
+            List<SectorQuote> rows = byDay.getOrDefault(day, List.of());
+            List<String> tops = new ArrayList<>();
+            int n = 0;
+            for (SectorQuote row : rows) {
+                if (n >= top) {
+                    break;
+                }
+                String pct = Objects.nonNull(row.getPctChg())
+                        ? row.getPctChg().setScale(2, RoundingMode.HALF_UP) + "%"
+                        : "-";
+                String name = StringUtils.isNotBlank(row.getName()) ? row.getName() : row.getCode();
+                tops.add(name + " " + pct);
+                n++;
+            }
+            daysOut.add(SectorRotationDay.builder()
+                    .tradeDate(day)
+                    .tops(tops)
+                    .build());
+        }
+        return SectorRotationResp.builder()
+                .days(daysOut)
+                .message(type + " 轮动 · 近 " + daysOut.size() + " 日 Top" + top)
+                .build();
+    }
+
+    private SectorBoardItem toBoardItem(SectorQuote quote) {
+        return SectorBoardItem.builder()
+                .code(quote.getCode())
+                .name(quote.getName())
+                .boardType(quote.getBoardType())
+                .tradeDate(quote.getTradeDate())
+                .pctChg(quote.getPctChg())
+                .pctChg3d(quote.getPctChg3d())
+                .pctChg5d(quote.getPctChg5d())
+                .netInflow(quote.getNetInflow())
+                .mainNetInflow(quote.getMainNetInflow())
+                .amount(quote.getAmount())
+                .upCount(quote.getUpCount())
+                .downCount(quote.getDownCount())
+                .limitUpCount(quote.getLimitUpCount())
+                .maxLianban(quote.getMaxLianban())
+                .leadStockCode(quote.getLeadStockCode())
+                .leadStockName(quote.getLeadStockName())
+                .leadStockPct(quote.getLeadStockPct())
+                .moveReason(quote.getMoveReason())
+                .syncedAt(quote.getSyncedAt())
+                .build();
+    }
+
+    private static final class MainlineCacheEntry {
+        private final List<SectorBoardItem> items;
+        private final long expireAt;
+
+        private MainlineCacheEntry(List<SectorBoardItem> items, long expireAt) {
+            this.items = items;
+            this.expireAt = expireAt;
+        }
     }
 
     private BigDecimal absMax(List<SectorBoardItem> items, Function<SectorBoardItem, BigDecimal> getter) {
@@ -560,26 +707,16 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
             command.addAll(args);
         }
 
-        StringBuilder output = new StringBuilder();
         int exit = -1;
+        String outputText = "";
         try {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(script.getParent().toFile());
             pb.redirectErrorStream(true);
             Process process = pb.start();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), detectCharset()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append('\n');
-                    if (output.length() > 10000) {
-                        break;
-                    }
-                }
-            }
-            boolean finished = process.waitFor(timeoutSec, TimeUnit.SECONDS);
+            outputText = ProcessIoUtils.readAndDrain(process.getInputStream(), detectCharset(), 10000);
+            boolean finished = ProcessIoUtils.waitOrKill(process, timeoutSec);
             if (!finished) {
-                process.destroyForcibly();
                 throw new BusinessException("板块同步超时（>" + timeoutSec + "s），请命令行运行 sync_sector.py");
             }
             exit = process.exitValue();
@@ -590,9 +727,9 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
             throw new BusinessException("板块同步失败: " + ex.getMessage());
         }
         if (exit != 0) {
-            throw new BusinessException("板块同步脚本退出码 " + exit + "：" + trimOut(output.toString()));
+            throw new BusinessException("板块同步脚本退出码 " + exit + "：" + trimOut(outputText));
         }
-        return trimOut(output.toString());
+        return trimOut(outputText);
     }
 
     private Path resolveScript() {

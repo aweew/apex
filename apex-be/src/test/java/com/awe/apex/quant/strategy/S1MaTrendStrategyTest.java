@@ -2,7 +2,9 @@ package com.awe.apex.quant.strategy;
 
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.strategy.impl.S1MaTrendStrategy;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -18,6 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class S1MaTrendStrategyTest {
 
     private final S1MaTrendStrategy strategy = new S1MaTrendStrategy();
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(strategy, "strategyParams", new StrategyParams());
+    }
 
     @Test
     void shouldEnterOnMaCrossWithVolume() {

@@ -5,6 +5,7 @@ import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.dto.SectorBoardResp;
 import com.awe.apex.quant.domain.dto.SectorConstituentResp;
 import com.awe.apex.quant.domain.dto.SectorRefreshResp;
+import com.awe.apex.quant.domain.dto.SectorRotationResp;
 import com.awe.apex.quant.service.ISectorBoardService;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -90,6 +91,22 @@ public class SectorBoardController {
             @RequestParam(required = false) String tradeDate,
             @RequestParam(defaultValue = "8") Integer limit) {
         return Result.success(sectorBoardService.mainline(tradeDate, limit));
+    }
+
+    /**
+     * 板块轮动时间轴
+     *
+     * @param type 类型
+     * @param days 天数
+     * @param topN 每日 Top
+     * @return 时间轴
+     */
+    @GetMapping("/rotation")
+    public Result<SectorRotationResp> rotation(
+            @RequestParam(defaultValue = "INDUSTRY") String type,
+            @RequestParam(defaultValue = "10") Integer days,
+            @RequestParam(defaultValue = "5") Integer topN) {
+        return Result.success(sectorBoardService.rotation(type, days, topN));
     }
 
     /**

@@ -20,6 +20,13 @@ const quality = ref(null)
 const loginForm = ref({ username: 'admin', password: 'admin123' })
 const token = ref(localStorage.getItem('satoken') || '')
 
+function slaLevelLabel(level) {
+  if (level === 'GREEN') return '正常'
+  if (level === 'YELLOW') return '预警'
+  if (level === 'RED') return '异常'
+  return level || '-'
+}
+
 const autoSync = computed(() => rows.value.find((r) => r.configKey === 'auto_sync_enabled'))
 const autoGroup = computed(() => rows.value.find((r) => r.configKey === 'auto_sync_group'))
 
@@ -45,6 +52,16 @@ async function ensureAutoSyncKeys() {
   const keys = [
     { configKey: 'auto_sync_enabled', configValue: 'false' },
     { configKey: 'auto_sync_group', configValue: '我的自选' },
+    { configKey: 'strategy.s1.fast_ma', configValue: '20' },
+    { configKey: 'strategy.s1.slow_ma', configValue: '60' },
+    { configKey: 'strategy.s1.vol_ma', configValue: '20' },
+    { configKey: 'strategy.s2.ma', configValue: '60' },
+    { configKey: 'strategy.s2.rsi_period', configValue: '14' },
+    { configKey: 'strategy.s2.rsi_oversold', configValue: '30' },
+    { configKey: 'strategy.s2.rsi_rebound', configValue: '35' },
+    { configKey: 'strategy.s2.rsi_overbought', configValue: '70' },
+    { configKey: 'strategy.s3.lookback', configValue: '20' },
+    { configKey: 'strategy.s3.volume_ratio', configValue: '1.5' },
   ]
   for (const item of keys) {
     if (!rows.value.find((r) => r.configKey === item.configKey)) {
@@ -52,7 +69,7 @@ async function ensureAutoSyncKeys() {
     }
   }
   await load()
-  ElMessage.success('已确保定时同步配置项存在')
+  ElMessage.success('已确保定时同步与策略参数配置项存在')
 }
 
 async function save(row) {
@@ -106,7 +123,7 @@ onMounted(load)
         <p>成本假设 / 撮合模式 · 本地单用户登录 · 定时同步</p>
       </div>
       <div class="actions">
-        <el-button @click="ensureAutoSyncKeys">补齐定时同步配置</el-button>
+        <el-button @click="ensureAutoSyncKeys">补齐同步/策略参数</el-button>
         <el-button @click="router.push('/pipeline')">流水线</el-button>
         <el-button @click="router.push('/dashboard')">看板</el-button>
       </div>
@@ -117,8 +134,23 @@ onMounted(load)
       :title="`数据健康：行情 ${quality.quotedCount}/${quality.watchlistCount} · K线 ${quality.barsReadyCount} · 股票池 ${quality.universeCount} · ${quality.suggestion}`"
       type="success"
       :closable="false"
-      style="margin-bottom: 12px"
+      style="margin-bottom: 8px"
     />
+    <el-table
+      v-if="quality?.marketSources?.length"
+      :data="quality.marketSources"
+      size="small"
+      style="margin-bottom: 12px"
+    >
+      <el-table-column prop="name" label="数据源" min-width="100" />
+      <el-table-column label="等级" width="80">
+        <template #default="{ row }">
+          {{ slaLevelLabel(row.level) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="dataAsOf" label="数据日" width="110" />
+      <el-table-column prop="note" label="说明" min-width="160" show-overflow-tooltip />
+    </el-table>
     <el-alert
       :title="`定时同步：${autoSync?.configValue === 'true' ? '已开启' : '关闭'} · 分组 ${autoGroup?.configValue || '我的自选'} · 工作日 16:10 行情 / 18:30 过期日线`"
       type="info"

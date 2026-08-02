@@ -17,6 +17,42 @@ let healthTimer
 let searchSeq = 0
 let debounceTimer
 
+const navGroups = [
+  {
+    label: '市场',
+    items: [
+      { to: '/dashboard', label: '决策看板' },
+      { to: '/market', label: '大盘' },
+      { to: '/sector', label: '板块' },
+      { to: '/limit-up', label: '涨停' },
+      { to: '/hot', label: '热点' },
+      { to: '/news', label: '资讯' },
+    ],
+  },
+  {
+    label: '交易',
+    items: [
+      { to: '/decision', label: '决策' },
+      { to: '/holding', label: '持仓' },
+      { to: '/paper', label: '模拟盘' },
+      { to: '/signals', label: '信号' },
+      { to: '/backtest', label: '回测' },
+      { to: '/daily', label: '日终' },
+      { to: '/pipeline', label: '流水线' },
+      { to: '/screener', label: '选股' },
+    ],
+  },
+  {
+    label: '数据',
+    items: [
+      { to: '/sync', label: '同步中心' },
+      { to: '/watchlist', label: '自选' },
+      { to: '/stock', label: '个股' },
+      { to: '/config', label: '参数' },
+    ],
+  },
+]
+
 function openGlossary(termId) {
   glossaryRef.value?.openGlossary?.(termId)
 }
@@ -161,24 +197,10 @@ onBeforeUnmount(() => {
         {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
       </span>
       <div class="links">
-        <RouterLink to="/dashboard">看板</RouterLink>
-        <RouterLink to="/market">大盘</RouterLink>
-        <RouterLink to="/sector">板块</RouterLink>
-        <RouterLink to="/limit-up">涨停复盘</RouterLink>
-        <RouterLink to="/sync">数据同步</RouterLink>
-        <RouterLink to="/decision">智能决策</RouterLink>
-        <RouterLink to="/hot">热点</RouterLink>
-        <RouterLink to="/news">资讯</RouterLink>
-        <RouterLink to="/holding">我的持仓</RouterLink>
-        <RouterLink to="/pipeline">流水线</RouterLink>
-        <RouterLink to="/screener">选股</RouterLink>
-        <RouterLink to="/watchlist">自选</RouterLink>
-        <RouterLink to="/stock">个股</RouterLink>
-        <RouterLink to="/signals">信号</RouterLink>
-        <RouterLink to="/backtest">回测</RouterLink>
-        <RouterLink to="/paper">模拟盘</RouterLink>
-        <RouterLink to="/daily">日终</RouterLink>
-        <RouterLink to="/config">参数</RouterLink>
+        <div v-for="group in navGroups" :key="group.label" class="nav-group">
+          <span class="group-label">{{ group.label }}</span>
+          <RouterLink v-for="item in group.items" :key="item.to" :to="item.to">{{ item.label }}</RouterLink>
+        </div>
       </div>
       <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -324,8 +346,35 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-width: 0;
   align-items: center;
+  gap: 4px;
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+.nav-group {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding-right: 6px;
+  margin-right: 4px;
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.nav-group:last-child {
+  border-right: 0;
+  margin-right: 0;
+  padding-right: 0;
+}
+
+.group-label {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 6px 0 4px;
+  letter-spacing: 0.04em;
+  user-select: none;
 }
 
 .links::-webkit-scrollbar {

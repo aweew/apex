@@ -3,26 +3,27 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.domain.dto.LimitUpEffectResp;
 import com.awe.apex.quant.domain.dto.LimitUpLadderResp;
 import com.awe.apex.quant.domain.dto.LimitUpRefreshResp;
 import com.awe.apex.quant.domain.dto.LimitUpStockItem;
 import com.awe.apex.quant.domain.dto.LimitUpThemeStat;
 import com.awe.apex.quant.domain.dto.LimitUpTier;
 import com.awe.apex.quant.domain.entity.LimitUpPool;
+import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.mapper.LimitUpPoolMapper;
+import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.service.ILimitUpLadderService;
+import com.awe.apex.quant.util.ProcessIoUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -39,7 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -57,6 +57,9 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
 
     @Resource
     private LimitUpPoolMapper limitUpPoolMapper;
+
+    @Resource
+    private StockBasicMapper stockBasicMapper;
 
     @Value("${apex.hot.python-cmd:python}")
     private String pythonCmd;
@@ -131,6 +134,7 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
         }
 
         List<LimitUpThemeStat> themes = buildThemes(today);
+        LimitUpEffectResp effect = buildEffect(prevDate, prevLianban, today);
         return LimitUpLadderResp.builder()
                 .tradeDate(resolved)
                 .availableDates(available)
@@ -139,7 +143,10 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                 .themes(themes)
                 .tiers(tiers)
                 .syncedAt(syncedAt)
-                .message(resolved + " 涨停 " + today.size() + " 家 · 最高 " + maxLb + " 板")
+                .effect(effect)
+                .message(resolved + " 涨停 " + today.size() + " 家 · 最高 " + maxLb + " 板"
+                        + (Objects.nonNull(effect) && Objects.nonNull(effect.getPromoteRate())
+                        ? (" · 晋级率 " + effect.getPromoteRate() + "%") : ""))
                 .build();
     }
 
@@ -256,9 +263,85 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                 .pctChg(row.getPctChg())
                 .latestPrice(row.getLatestPrice())
                 .firstSealTime(formatSealTime(row.getFirstSealTime()))
+                .lastSealTime(formatSealTime(row.getLastSealTime()))
                 .breakCount(row.getBreakCount())
+                .sealAmount(row.getSealAmount())
+                .turnoverRate(row.getTurnoverRate())
                 .theme(theme)
                 .ztStats(row.getZtStats())
+                .build();
+    }
+
+    private LimitUpEffectResp buildEffect(LocalDate prevDate, Map<String, Integer> prevLianban,
+                                          List<LimitUpPool> today) {
+        if (Objects.isNull(prevDate) || prevLianban.isEmpty()) {
+            return LimitUpEffectResp.builder()
+                    .prevCount(0)
+                    .message("缺少前一日涨停池，无法统计赚钱效应")
+                    .build();
+        }
+        Map<String, LimitUpPool> todayMap = new HashMap<>();
+        for (LimitUpPool row : today) {
+            todayMap.put(row.getCode(), row);
+        }
+        int ok = 0;
+        int hold = 0;
+        int fail = 0;
+        List<String> failNames = new ArrayList<>();
+        List<String> prevCodes = new ArrayList<>(prevLianban.keySet());
+        BigDecimal pctSum = BigDecimal.ZERO;
+        int pctN = 0;
+        Map<String, StockBasic> basics = new HashMap<>();
+        if (CollUtil.isNotEmpty(prevCodes)) {
+            List<StockBasic> list = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                    .in(StockBasic::getCode, prevCodes));
+            for (StockBasic b : list) {
+                basics.put(b.getCode(), b);
+            }
+        }
+        for (Map.Entry<String, Integer> e : prevLianban.entrySet()) {
+            String code = e.getKey();
+            int prevLb = Objects.nonNull(e.getValue()) ? e.getValue() : 1;
+            LimitUpPool cur = todayMap.get(code);
+            if (Objects.nonNull(cur) && Objects.nonNull(cur.getLianban()) && cur.getLianban() > prevLb) {
+                ok++;
+            } else if (Objects.nonNull(cur) && Objects.nonNull(cur.getLianban()) && cur.getLianban() >= prevLb) {
+                hold++;
+            } else {
+                fail++;
+                StockBasic basic = basics.get(code);
+                String name = Objects.nonNull(cur) ? cur.getName()
+                        : (Objects.nonNull(basic) ? basic.getName() : code);
+                if (failNames.size() < 12) {
+                    failNames.add(name);
+                }
+            }
+            StockBasic basic = basics.get(code);
+            if (Objects.nonNull(basic) && Objects.nonNull(basic.getPctChg())) {
+                pctSum = pctSum.add(basic.getPctChg());
+                pctN++;
+            } else if (Objects.nonNull(cur) && Objects.nonNull(cur.getPctChg())) {
+                pctSum = pctSum.add(cur.getPctChg());
+                pctN++;
+            }
+        }
+        int prevCount = prevLianban.size();
+        BigDecimal rate = prevCount > 0
+                ? BigDecimal.valueOf(ok * 100.0 / prevCount).setScale(1, RoundingMode.HALF_UP)
+                : null;
+        BigDecimal avg = pctN > 0
+                ? pctSum.divide(BigDecimal.valueOf(pctN), 2, RoundingMode.HALF_UP)
+                : null;
+        return LimitUpEffectResp.builder()
+                .prevCount(prevCount)
+                .promoteOk(ok)
+                .promoteHold(hold)
+                .promoteFail(fail)
+                .promoteRate(rate)
+                .avgNextPct(avg)
+                .failNames(failNames)
+                .message("昨涨停 " + prevCount + " · 晋级 " + ok + " · 同板 " + hold + " · 断板 " + fail
+                        + (Objects.nonNull(avg) ? (" · 今日均涨跌 " + avg + "%") : ""))
                 .build();
     }
 
@@ -352,7 +435,9 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                 cwd.resolve("scripts/market_data/sync_limit_up.py"),
                 cwd.resolve("../scripts/market_data/sync_limit_up.py"),
                 cwd.resolve("../../scripts/market_data/sync_limit_up.py"),
-                Paths.get("D:/code/apex/scripts/market_data/sync_limit_up.py")
+                Paths.get(System.getProperty("user.dir", "."))
+                        .toAbsolutePath().normalize()
+                        .resolve("scripts/market_data/sync_limit_up.py")
         );
         for (Path p : candidates) {
             if (Files.isRegularFile(p)) {
@@ -370,39 +455,22 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
         if (Objects.nonNull(script.getParent())) {
             pb.directory(script.getParent().toFile());
         }
-        StringBuilder out = new StringBuilder();
         try {
             Process process = pb.start();
             Charset charset = Charset.forName("GBK");
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), charset))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    out.append(line).append('\n');
-                    if (out.length() > 20000) {
-                        break;
-                    }
-                }
-            }
-            boolean finished = process.waitFor(timeoutSec, TimeUnit.SECONDS);
+            String out = ProcessIoUtils.readAndDrain(process.getInputStream(), charset, 20000);
+            boolean finished = ProcessIoUtils.waitOrKill(process, timeoutSec);
             if (!finished) {
-                process.destroyForcibly();
                 throw new BusinessException("涨停同步超时");
             }
             if (process.exitValue() != 0) {
-                throw new BusinessException("涨停同步失败: " + out.toString().trim());
+                throw new BusinessException("涨停同步失败: " + out.trim());
             }
-            String text = out.toString().trim();
-            return StringUtils.isNotBlank(text) ? text : "ok";
+            return StringUtils.isNotBlank(out) ? out.trim() : "ok";
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
             throw new BusinessException("涨停同步异常: " + ex.getMessage(), ex);
-        } finally {
-            // 兜底：部分环境 UTF-8 日志
-            if (out.length() == 0) {
-                log.debug("涨停脚本无输出 charset={}", StandardCharsets.UTF_8);
-            }
         }
     }
 }

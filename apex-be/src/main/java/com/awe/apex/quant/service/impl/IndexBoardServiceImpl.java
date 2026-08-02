@@ -8,14 +8,13 @@ import com.awe.apex.quant.domain.dto.IndexRefreshResp;
 import com.awe.apex.quant.domain.entity.IndexBar;
 import com.awe.apex.quant.mapper.IndexBarMapper;
 import com.awe.apex.quant.service.IIndexBoardService;
+import com.awe.apex.quant.util.ProcessIoUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.Charset;
@@ -27,7 +26,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 大盘指数看板实现
@@ -117,26 +115,16 @@ public class IndexBoardServiceImpl implements IIndexBoardService {
         command.add("--start");
         command.add(begin);
 
-        StringBuilder output = new StringBuilder();
         int exit = -1;
+        String outputText = "";
         try {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(script.getParent().toFile());
             pb.redirectErrorStream(true);
             Process process = pb.start();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), detectCharset()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append('\n');
-                    if (output.length() > 10000) {
-                        break;
-                    }
-                }
-            }
-            boolean finished = process.waitFor(600, TimeUnit.SECONDS);
+            outputText = ProcessIoUtils.readAndDrain(process.getInputStream(), detectCharset(), 10000);
+            boolean finished = ProcessIoUtils.waitOrKill(process, 600);
             if (!finished) {
-                process.destroyForcibly();
                 throw new BusinessException("指数同步超时（>600s），请命令行运行 sync_index.py");
             }
             exit = process.exitValue();
@@ -147,12 +135,12 @@ public class IndexBoardServiceImpl implements IIndexBoardService {
             throw new BusinessException("指数同步失败: " + ex.getMessage());
         }
         if (exit != 0) {
-            throw new BusinessException("指数同步脚本退出码 " + exit + "：" + trimOut(output.toString()));
+            throw new BusinessException("指数同步脚本退出码 " + exit + "：" + trimOut(outputText));
         }
         IndexBoardResp board = board(30);
         return IndexRefreshResp.builder()
                 .success(true)
-                .log(trimOut(output.toString()))
+                .log(trimOut(outputText))
                 .board(board)
                 .message("刷新完成 · " + board.getMessage())
                 .build();

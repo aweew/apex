@@ -2,36 +2,48 @@ package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.decision.MainlineMatcher;
+import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
+import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
+import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
+import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceResp;
 import com.awe.apex.quant.domain.dto.SignalRunReq;
 import com.awe.apex.quant.domain.dto.UniverseRefreshReq;
 import com.awe.apex.quant.domain.dto.UniverseRefreshResp;
+import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.DailyAction;
+import com.awe.apex.quant.domain.entity.MarketBriefingSnapshot;
 import com.awe.apex.quant.domain.entity.MyHolding;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StockFinAbstract;
 import com.awe.apex.quant.domain.entity.StockFinIndicator;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
+import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.DailyActionMapper;
+import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockFinAbstractMapper;
 import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
+import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.ISignalService;
 import com.awe.apex.quant.service.IUniverseService;
+import com.awe.apex.quant.strategy.StrategyParams;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,6 +59,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -69,6 +82,8 @@ public class DecisionServiceImpl implements IDecisionService {
     private static final BigDecimal SCORE_BOOST_HOT = new BigDecimal("8");
     private static final BigDecimal SCORE_BOOST_HOT_TRIPLE = new BigDecimal("4");
     private static final BigDecimal SCORE_PENALTY_FUND = new BigDecimal("8");
+    private static final BigDecimal SCORE_BOOST_MAINLINE = new BigDecimal("10");
+    private static final BigDecimal SCORE_PENALTY_OFF_MAINLINE = new BigDecimal("5");
 
     @Resource
     private IUniverseService universeService;
@@ -103,6 +118,18 @@ public class DecisionServiceImpl implements IDecisionService {
     @Resource
     private IMarketBriefingService marketBriefingService;
 
+    @Resource
+    private ISectorBoardService sectorBoardService;
+
+    @Resource
+    private BarDailyMapper barDailyMapper;
+
+    @Resource
+    private MarketBriefingSnapshotMapper marketBriefingSnapshotMapper;
+
+    @Resource
+    private StrategyParams strategyParams;
+
     /**
      * 一键生成今日决策：刷新股票池 → 跑策略 → 共振/基本面/风控 → 落库
      *
@@ -120,6 +147,7 @@ public class DecisionServiceImpl implements IDecisionService {
         MarketBriefingResp briefing = marketBriefingService.briefing();
         BigDecimal buyFactor = Objects.nonNull(briefing.getBuyWeightFactor())
                 ? briefing.getBuyWeightFactor() : BigDecimal.ONE;
+        List<String> mainlineNames = resolveMainlineNames(briefing);
 
         // 1. 我的持仓（卖出/持有聚焦这里；买入不局限于此）
         List<MyHolding> holdings = myHoldingService.listHoldings();
@@ -223,6 +251,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 HotConfluenceItem hot = hotMap.get(code);
                 score = applyHotBoost(score, hot);
                 String reason = humanReason(signal, cf, null, "持仓卖出", hot);
+                String exitRule = exitRuleOf(signal.getStrategyId());
                 DecisionItemResp item = DecisionItemResp.builder()
                         .actionDate(actionDate)
                         .code(code)
@@ -232,12 +261,14 @@ public class DecisionServiceImpl implements IDecisionService {
                         .reason(reason)
                         .score(score)
                         .suggestedWeight(null)
-                        .exitRule("信号卖出")
+                        .exitRule(exitRule)
                         .confluenceCount(cfCount)
                         .confluence(cfCount >= 2)
                         .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
                         .fundNote(fundNoteOf(fundMap.get(code)))
                         .signalId(signal.getId())
+                        .scoreExplain("策略" + signal.getStrategyId() + " 卖出 · " + exitRule
+                                + (cfCount >= 2 ? " · 多策略共振卖出" : ""))
                         .build();
                 sells.add(item);
                 covered.add(code);
@@ -265,8 +296,20 @@ public class DecisionServiceImpl implements IDecisionService {
             if (gate.weak) {
                 score = score.subtract(SCORE_PENALTY_FUND);
             }
+            String industry = Objects.nonNull(basic) ? basic.getIndustry() : null;
+            MainlineMatcher.Hit mainHit = MainlineMatcher.match(industry, mainlineNames);
+            if (mainHit.match) {
+                score = score.add(SCORE_BOOST_MAINLINE);
+            } else if (CollUtil.isNotEmpty(mainlineNames) && StringUtils.isNotBlank(industry)) {
+                score = score.subtract(SCORE_PENALTY_OFF_MAINLINE);
+            }
             boolean hotOk = Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount()) && hot.getSourceCount() >= 2;
-            BigDecimal weight = suggestWeight(cfCount >= 2 || hotOk, !gate.weak, singleLimit);
+            BigDecimal weight = suggestWeight(cfCount >= 2 || hotOk || mainHit.match, !gate.weak, singleLimit);
+            if (mainHit.match) {
+                weight = weight.multiply(new BigDecimal("1.08"));
+            } else if (CollUtil.isNotEmpty(mainlineNames) && StringUtils.isNotBlank(industry)) {
+                weight = weight.multiply(new BigDecimal("0.85"));
+            }
             weight = weight.multiply(buyFactor).min(singleLimit).setScale(4, RoundingMode.HALF_UP);
             if ("防守".equals(briefing.getStance())) {
                 score = score.subtract(new BigDecimal("6"));
@@ -279,10 +322,19 @@ public class DecisionServiceImpl implements IDecisionService {
             if (alreadyHeld) {
                 reason = trimReason(reason + " · 已在我的持仓");
             }
+            if (mainHit.match) {
+                reason = trimReason(reason + " · 主线「" + mainHit.name + "」同向");
+            } else if (CollUtil.isNotEmpty(mainlineNames) && StringUtils.isNotBlank(industry)) {
+                reason = trimReason(reason + " · 逆主线降权");
+            }
             if (buyFactor.compareTo(BigDecimal.ONE) != 0) {
                 reason = trimReason(reason + " · 市场" + briefing.getStance()
                         + "仓位×" + buyFactor.setScale(2, RoundingMode.HALF_UP));
             }
+            boolean offMainline = !mainHit.match && CollUtil.isNotEmpty(mainlineNames)
+                    && StringUtils.isNotBlank(industry);
+            String scoreExplain = buildBuyScoreExplain(signal.getStrategyId(), signal.getScore(),
+                    cfCount, hot, gate, mainHit, offMainline, briefing.getStance(), buyFactor, weight);
             DecisionItemResp item = DecisionItemResp.builder()
                     .actionDate(actionDate)
                     .code(code)
@@ -298,6 +350,9 @@ public class DecisionServiceImpl implements IDecisionService {
                     .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
                     .fundNote(gate.note)
                     .signalId(signal.getId())
+                    .mainlineMatch(mainHit.match)
+                    .mainlineName(mainHit.name)
+                    .scoreExplain(scoreExplain)
                     .build();
             buys.add(item);
             // 已持仓出现买入信号时记入 covered，避免同时出现在「继续持有」
@@ -322,16 +377,17 @@ public class DecisionServiceImpl implements IDecisionService {
                         .name(StringUtils.isNotBlank(holding.getName()) ? holding.getName()
                                 : (Objects.nonNull(basic) ? basic.getName() : null))
                         .action("SELL")
-                        .strategyId(null)
+                        .strategyId("RISK")
                         .reason(stopSell)
                         .score(new BigDecimal("90"))
                         .suggestedWeight(null)
                         .exitRule(stopSell)
                         .confluenceCount(0)
                         .confluence(false)
-                        .strategies(List.of())
+                        .strategies(List.of("RISK"))
                         .fundNote(fundNoteOf(fundMap.get(code)))
                         .signalId(null)
+                        .scoreExplain("风控优先 · 评分90 · " + stopSell)
                         .build();
                 sells.add(item);
                 covered.add(code);
@@ -376,6 +432,21 @@ public class DecisionServiceImpl implements IDecisionService {
         all.addAll(sells);
         all.addAll(holds);
         for (DecisionItemResp item : all) {
+            String strategiesCsv = null;
+            if (CollUtil.isNotEmpty(item.getStrategies())) {
+                strategiesCsv = String.join(",", item.getStrategies());
+                if (strategiesCsv.length() > 64) {
+                    strategiesCsv = strategiesCsv.substring(0, 64);
+                }
+            }
+            Integer mainlineMatch = null;
+            if (Objects.nonNull(item.getMainlineMatch())) {
+                mainlineMatch = Boolean.TRUE.equals(item.getMainlineMatch()) ? 1 : 0;
+            }
+            String scoreExplain = item.getScoreExplain();
+            if (StringUtils.isNotBlank(scoreExplain) && scoreExplain.length() > 512) {
+                scoreExplain = scoreExplain.substring(0, 512);
+            }
             DailyAction row = DailyAction.builder()
                     .actionDate(actionDate)
                     .code(item.getCode())
@@ -389,6 +460,10 @@ public class DecisionServiceImpl implements IDecisionService {
                     .confluenceCount(item.getConfluenceCount())
                     .fundNote(item.getFundNote())
                     .signalId(item.getSignalId())
+                    .mainlineMatch(mainlineMatch)
+                    .mainlineName(item.getMainlineName())
+                    .scoreExplain(scoreExplain)
+                    .strategiesCsv(strategiesCsv)
                     .createTime(now)
                     .updateTime(now)
                     .deleted(0)
@@ -396,6 +471,7 @@ public class DecisionServiceImpl implements IDecisionService {
             dailyActionMapper.insert(row);
             item.setId(row.getId());
         }
+        saveBriefingSnapshot(actionDate, briefing);
 
         String riskNote = "单票上限 " + pctText(singleLimit)
                 + " · 总仓 " + pctText(risk.getPositionRatio())
@@ -443,11 +519,40 @@ public class DecisionServiceImpl implements IDecisionService {
                 .eq(DailyAction::getActionDate, actionDate)
                 .orderByAsc(DailyAction::getAction)
                 .orderByDesc(DailyAction::getScore));
+        MarketBriefingResp briefing = loadBriefingSnapshot(actionDate);
+        if (Objects.isNull(briefing)) {
+            briefing = marketBriefingService.briefing();
+        }
+        List<String> mainlineNames = resolveMainlineNames(briefing);
+        Set<String> codes = new HashSet<>();
+        for (DailyAction row : rows) {
+            if (StringUtils.isNotBlank(row.getCode())) {
+                codes.add(row.getCode());
+            }
+        }
+        Map<String, StockBasic> basicMap = loadBasics(codes);
+
         List<DecisionItemResp> buys = new ArrayList<>();
         List<DecisionItemResp> sells = new ArrayList<>();
         List<DecisionItemResp> holds = new ArrayList<>();
         List<DecisionItemResp> all = new ArrayList<>();
         for (DailyAction row : rows) {
+            StockBasic basic = basicMap.get(row.getCode());
+            MainlineMatcher.Hit hit = MainlineMatcher.match(
+                    Objects.nonNull(basic) ? basic.getIndustry() : null, mainlineNames);
+            Boolean mainlineMatch = null;
+            String mainlineName = null;
+            if (Objects.nonNull(row.getMainlineMatch())) {
+                mainlineMatch = row.getMainlineMatch() == 1;
+                mainlineName = row.getMainlineName();
+            } else if ("BUY".equalsIgnoreCase(row.getAction())) {
+                mainlineMatch = hit.match;
+                mainlineName = hit.name;
+            }
+            List<String> strategies = parseStrategiesCsv(row.getStrategiesCsv());
+            if (CollUtil.isEmpty(strategies) && StringUtils.isNotBlank(row.getStrategyId())) {
+                strategies = List.of(row.getStrategyId());
+            }
             DecisionItemResp item = DecisionItemResp.builder()
                     .id(row.getId())
                     .actionDate(row.getActionDate())
@@ -461,9 +566,12 @@ public class DecisionServiceImpl implements IDecisionService {
                     .exitRule(row.getExitRule())
                     .confluenceCount(row.getConfluenceCount())
                     .confluence(Objects.nonNull(row.getConfluenceCount()) && row.getConfluenceCount() >= 2)
-                    .strategies(StringUtils.isNotBlank(row.getStrategyId()) ? List.of(row.getStrategyId()) : List.of())
+                    .strategies(strategies)
                     .fundNote(row.getFundNote())
                     .signalId(row.getSignalId())
+                    .mainlineMatch(mainlineMatch)
+                    .mainlineName(mainlineName)
+                    .scoreExplain(row.getScoreExplain())
                     .build();
             all.add(item);
             if ("BUY".equalsIgnoreCase(row.getAction())) {
@@ -474,7 +582,6 @@ public class DecisionServiceImpl implements IDecisionService {
                 holds.add(item);
             }
         }
-        MarketBriefingResp briefing = marketBriefingService.briefing();
         String message = CollUtil.isEmpty(all)
                 ? "今日尚无决策，请点击「一键生成决策」；下方市场简报已可参考"
                 : "市场「" + briefing.getStance() + "」· 买 " + buys.size()
@@ -491,6 +598,305 @@ public class DecisionServiceImpl implements IDecisionService {
                 .marketBriefing(briefing)
                 .message(message)
                 .build();
+    }
+
+    /**
+     * 决策历史 + 买入建议事后次日收益
+     *
+     * @param limit 天数
+     * @return 历史
+     */
+    @Override
+    public List<DecisionHistoryItem> history(Integer limit) {
+        int size = Objects.isNull(limit) || limit <= 0 ? 15 : Math.min(limit, 60);
+        // 1. 先取近 N 个不重复 action_date，避免 LIMIT 500 全表扫
+        List<DailyAction> dateRows = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .select(DailyAction::getActionDate)
+                .isNotNull(DailyAction::getActionDate)
+                .groupBy(DailyAction::getActionDate)
+                .orderByDesc(DailyAction::getActionDate)
+                .last("LIMIT " + size));
+        if (CollUtil.isEmpty(dateRows)) {
+            return List.of();
+        }
+        List<LocalDate> dates = new ArrayList<>();
+        for (DailyAction row : dateRows) {
+            if (Objects.nonNull(row.getActionDate())) {
+                dates.add(row.getActionDate());
+            }
+        }
+        if (CollUtil.isEmpty(dates)) {
+            return List.of();
+        }
+        // 2. 按日期 in 查询明细
+        List<DailyAction> recent = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .in(DailyAction::getActionDate, dates)
+                .orderByDesc(DailyAction::getActionDate));
+        LinkedHashMap<LocalDate, List<DailyAction>> byDate = new LinkedHashMap<>();
+        for (LocalDate day : dates) {
+            byDate.put(day, new ArrayList<>());
+        }
+        for (DailyAction row : recent) {
+            if (Objects.isNull(row.getActionDate())) {
+                continue;
+            }
+            List<DailyAction> bucket = byDate.get(row.getActionDate());
+            if (Objects.nonNull(bucket)) {
+                bucket.add(row);
+            }
+        }
+        List<DecisionHistoryItem> out = new ArrayList<>();
+        int dayN = 0;
+        for (Map.Entry<LocalDate, List<DailyAction>> entry : byDate.entrySet()) {
+            if (dayN >= size) {
+                break;
+            }
+            dayN++;
+            LocalDate day = entry.getKey();
+            List<DailyAction> rows = entry.getValue();
+            int buy = 0;
+            int sell = 0;
+            int hold = 0;
+            List<String> buyCodes = new ArrayList<>();
+            for (DailyAction row : rows) {
+                if ("BUY".equalsIgnoreCase(row.getAction())) {
+                    buy++;
+                    if (StringUtils.isNotBlank(row.getCode())) {
+                        buyCodes.add(row.getCode());
+                    }
+                } else if ("SELL".equalsIgnoreCase(row.getAction())) {
+                    sell++;
+                } else {
+                    hold++;
+                }
+            }
+            BigDecimal avg = avgNextDayPct(buyCodes, day);
+            MarketBriefingSnapshot snap = null;
+            try {
+                snap = marketBriefingSnapshotMapper.selectOne(Wrappers.<MarketBriefingSnapshot>lambdaQuery()
+                        .eq(MarketBriefingSnapshot::getTradeDate, day)
+                        .last("LIMIT 1"));
+            } catch (Exception ignored) {
+                // 表未建时忽略
+            }
+            out.add(DecisionHistoryItem.builder()
+                    .actionDate(day)
+                    .buyCount(buy)
+                    .sellCount(sell)
+                    .holdCount(hold)
+                    .nextDayAvgPct(avg)
+                    .stance(Objects.nonNull(snap) ? snap.getStance() : null)
+                    .dataLevel(Objects.nonNull(snap) ? snap.getDataLevel() : null)
+                    .note(Objects.nonNull(avg)
+                            ? ("买入建议次日均涨跌 " + avg + "%")
+                            : "暂无次日收益（缺日线或未到下一交易日）")
+                    .build());
+        }
+        return out;
+    }
+
+    /**
+     * 决策复盘归因（按策略/共振/主线/立场）
+     *
+     * @param days 回溯天数
+     * @return 归因
+     */
+    @Override
+    public DecisionAttributionResp attribution(Integer days) {
+        int size = Objects.isNull(days) || days <= 0 ? 20 : Math.min(days, 60);
+        List<DailyAction> dateRows = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .select(DailyAction::getActionDate)
+                .isNotNull(DailyAction::getActionDate)
+                .groupBy(DailyAction::getActionDate)
+                .orderByDesc(DailyAction::getActionDate)
+                .last("LIMIT " + size));
+        if (CollUtil.isEmpty(dateRows)) {
+            return DecisionAttributionResp.builder()
+                    .days(size)
+                    .byStrategy(List.of())
+                    .byConfluence(List.of())
+                    .byMainline(List.of())
+                    .byStance(List.of())
+                    .bySellStrategy(List.of())
+                    .message("暂无决策记录，请先一键生成决策")
+                    .build();
+        }
+        List<LocalDate> dates = new ArrayList<>();
+        for (DailyAction row : dateRows) {
+            if (Objects.nonNull(row.getActionDate())) {
+                dates.add(row.getActionDate());
+            }
+        }
+        List<DailyAction> buys = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .in(DailyAction::getActionDate, dates)
+                .eq(DailyAction::getAction, "BUY"));
+        List<DailyAction> sells = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .in(DailyAction::getActionDate, dates)
+                .eq(DailyAction::getAction, "SELL"));
+
+        Map<String, List<BigDecimal>> byStrategy = new HashMap<>();
+        Map<String, List<BigDecimal>> byCf = new HashMap<>();
+        Map<String, List<BigDecimal>> byMl = new HashMap<>();
+        Map<String, List<BigDecimal>> byStance = new HashMap<>();
+        Map<String, List<BigDecimal>> bySellStrategy = new HashMap<>();
+        Map<LocalDate, String> stanceByDate = new HashMap<>();
+        for (LocalDate day : dates) {
+            try {
+                MarketBriefingSnapshot snap = marketBriefingSnapshotMapper.selectOne(
+                        Wrappers.<MarketBriefingSnapshot>lambdaQuery()
+                                .eq(MarketBriefingSnapshot::getTradeDate, day)
+                                .last("LIMIT 1"));
+                if (Objects.nonNull(snap) && StringUtils.isNotBlank(snap.getStance())) {
+                    stanceByDate.put(day, snap.getStance());
+                }
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+
+        for (DailyAction row : buys) {
+            BigDecimal nextPct = singleNextDayPct(row.getCode(), row.getActionDate());
+            String sid = StringUtils.isNotBlank(row.getStrategyId()) ? row.getStrategyId() : "未知";
+            putPct(byStrategy, sid, nextPct);
+            boolean cf = Objects.nonNull(row.getConfluenceCount()) && row.getConfluenceCount() >= 2;
+            putPct(byCf, cf ? "共振" : "非共振", nextPct);
+            boolean ml;
+            if (Objects.nonNull(row.getMainlineMatch())) {
+                ml = row.getMainlineMatch() == 1;
+            } else {
+                ml = StringUtils.isNotBlank(row.getReason())
+                        && (row.getReason().contains("主线「") || row.getReason().contains("主线同向"));
+            }
+            putPct(byMl, ml ? "主线同向" : "非主线", nextPct);
+            String stance = stanceByDate.getOrDefault(row.getActionDate(), "未知立场");
+            putPct(byStance, stance, nextPct);
+        }
+        for (DailyAction row : sells) {
+            BigDecimal nextPct = singleNextDayPct(row.getCode(), row.getActionDate());
+            String sid = StringUtils.isNotBlank(row.getStrategyId()) ? row.getStrategyId() : "风控/未知";
+            putPct(bySellStrategy, sid, nextPct);
+        }
+
+        return DecisionAttributionResp.builder()
+                .days(dates.size())
+                .byStrategy(toBuckets(byStrategy))
+                .byConfluence(toBuckets(byCf))
+                .byMainline(toBuckets(byMl))
+                .byStance(toBuckets(byStance))
+                .bySellStrategy(toBuckets(bySellStrategy))
+                .message("近 " + dates.size() + " 个决策日 · 买 " + buys.size()
+                        + " / 卖 " + sells.size() + " · 按次日涨跌归因（缺日线样本不计入均值）")
+                .build();
+    }
+
+    private List<String> parseStrategiesCsv(String csv) {
+        if (StringUtils.isBlank(csv)) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (String part : csv.split(",")) {
+            if (StringUtils.isNotBlank(part)) {
+                out.add(part.trim());
+            }
+        }
+        return out;
+    }
+
+    private void putPct(Map<String, List<BigDecimal>> map, String key, BigDecimal pct) {
+        map.computeIfAbsent(key, k -> new ArrayList<>()).add(pct);
+    }
+
+    private List<DecisionAttrBucket> toBuckets(Map<String, List<BigDecimal>> map) {
+        List<DecisionAttrBucket> list = new ArrayList<>();
+        for (Map.Entry<String, List<BigDecimal>> e : map.entrySet()) {
+            List<BigDecimal> all = e.getValue();
+            List<BigDecimal> measured = new ArrayList<>();
+            int wins = 0;
+            for (BigDecimal p : all) {
+                if (Objects.nonNull(p)) {
+                    measured.add(p);
+                    if (p.compareTo(BigDecimal.ZERO) > 0) {
+                        wins++;
+                    }
+                }
+            }
+            BigDecimal avg = null;
+            BigDecimal winRate = null;
+            if (!measured.isEmpty()) {
+                BigDecimal sum = BigDecimal.ZERO;
+                for (BigDecimal p : measured) {
+                    sum = sum.add(p);
+                }
+                avg = sum.divide(BigDecimal.valueOf(measured.size()), 2, RoundingMode.HALF_UP);
+                winRate = BigDecimal.valueOf(wins * 100.0 / measured.size())
+                        .setScale(1, RoundingMode.HALF_UP);
+            }
+            list.add(DecisionAttrBucket.builder()
+                    .key(e.getKey())
+                    .label(e.getKey())
+                    .sampleCount(all.size())
+                    .measuredCount(measured.size())
+                    .avgNextPct(avg)
+                    .winRate(winRate)
+                    .build());
+        }
+        list.sort(Comparator.comparing(DecisionAttrBucket::getSampleCount,
+                Comparator.nullsLast(Comparator.reverseOrder())));
+        return list;
+    }
+
+    private BigDecimal singleNextDayPct(String code, LocalDate actionDate) {
+        if (StringUtils.isBlank(code) || Objects.isNull(actionDate)) {
+            return null;
+        }
+        LocalDate nextTrade = TradingCalendar.nextTradingDay(actionDate);
+        BarDaily next = barDailyMapper.selectOne(Wrappers.<BarDaily>lambdaQuery()
+                .eq(BarDaily::getCode, code)
+                .eq(BarDaily::getTradeDate, nextTrade)
+                .last("LIMIT 1"));
+        if (Objects.isNull(next)) {
+            next = barDailyMapper.selectOne(Wrappers.<BarDaily>lambdaQuery()
+                    .eq(BarDaily::getCode, code)
+                    .gt(BarDaily::getTradeDate, actionDate)
+                    .orderByAsc(BarDaily::getTradeDate)
+                    .last("LIMIT 1"));
+        }
+        return Objects.nonNull(next) ? next.getPctChg() : null;
+    }
+
+    private BigDecimal avgNextDayPct(List<String> codes, LocalDate actionDate) {
+        if (CollUtil.isEmpty(codes) || Objects.isNull(actionDate)) {
+            return null;
+        }
+        LocalDate nextTrade = TradingCalendar.nextTradingDay(actionDate);
+        List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                .in(BarDaily::getCode, codes)
+                .eq(BarDaily::getTradeDate, nextTrade));
+        if (CollUtil.isEmpty(bars)) {
+            // 无精确下一交易日时，取 actionDate 之后最近一根
+            bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                    .in(BarDaily::getCode, codes)
+                    .gt(BarDaily::getTradeDate, actionDate)
+                    .orderByAsc(BarDaily::getTradeDate)
+                    .last("LIMIT " + Math.min(codes.size() * 3, 200)));
+            Map<String, BarDaily> first = new HashMap<>();
+            for (BarDaily bar : bars) {
+                first.putIfAbsent(bar.getCode(), bar);
+            }
+            bars = new ArrayList<>(first.values());
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        int n = 0;
+        for (BarDaily bar : bars) {
+            if (Objects.nonNull(bar.getPctChg())) {
+                sum = sum.add(bar.getPctChg());
+                n++;
+            }
+        }
+        if (n == 0) {
+            return null;
+        }
+        return sum.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_UP);
     }
 
     private Map<String, StockBasic> loadBasics(Set<String> codes) {
@@ -511,21 +917,44 @@ public class DecisionServiceImpl implements IDecisionService {
         if (CollUtil.isEmpty(codes)) {
             return map;
         }
-        for (String code : codes) {
-            StockFinAbstract abs = stockFinAbstractMapper.selectOne(Wrappers.<StockFinAbstract>lambdaQuery()
-                    .eq(StockFinAbstract::getCode, code)
-                    .orderByDesc(StockFinAbstract::getReportDate)
-                    .last("LIMIT 1"));
-            StockFinIndicator ind = null;
-            if (Objects.isNull(abs)) {
-                ind = stockFinIndicatorMapper.selectOne(Wrappers.<StockFinIndicator>lambdaQuery()
-                        .eq(StockFinIndicator::getCode, code)
-                        .orderByDesc(StockFinIndicator::getReportDate)
-                        .last("LIMIT 1"));
+        List<String> codeList = new ArrayList<>(codes);
+        // 1. 批量拉摘要，内存取每 code 最新报告期
+        List<StockFinAbstract> abstracts = stockFinAbstractMapper.selectList(Wrappers.<StockFinAbstract>lambdaQuery()
+                .in(StockFinAbstract::getCode, codeList)
+                .orderByDesc(StockFinAbstract::getReportDate));
+        Map<String, StockFinAbstract> latestAbs = new HashMap<>();
+        for (StockFinAbstract row : abstracts) {
+            if (StringUtils.isBlank(row.getCode())) {
+                continue;
             }
+            latestAbs.putIfAbsent(row.getCode(), row);
+        }
+        Set<String> missing = new HashSet<>();
+        for (String code : codeList) {
+            StockFinAbstract abs = latestAbs.get(code);
             if (Objects.nonNull(abs)) {
                 map.put(code, new FundSnapshot(abs.getReportDate(), abs.getRoe(), abs.getDebtRatio(), abs.getNetMargin()));
-            } else if (Objects.nonNull(ind)) {
+            } else {
+                missing.add(code);
+            }
+        }
+        if (CollUtil.isEmpty(missing)) {
+            return map;
+        }
+        // 2. 摘要缺失时用指标表兜底
+        List<StockFinIndicator> indicators = stockFinIndicatorMapper.selectList(Wrappers.<StockFinIndicator>lambdaQuery()
+                .in(StockFinIndicator::getCode, missing)
+                .orderByDesc(StockFinIndicator::getReportDate));
+        Map<String, StockFinIndicator> latestInd = new HashMap<>();
+        for (StockFinIndicator row : indicators) {
+            if (StringUtils.isBlank(row.getCode())) {
+                continue;
+            }
+            latestInd.putIfAbsent(row.getCode(), row);
+        }
+        for (String code : missing) {
+            StockFinIndicator ind = latestInd.get(code);
+            if (Objects.nonNull(ind)) {
                 map.put(code, new FundSnapshot(ind.getReportDate(), ind.getRoe(), ind.getDebtRatio(), ind.getNetMargin()));
             }
         }
@@ -671,13 +1100,17 @@ public class DecisionServiceImpl implements IDecisionService {
 
     private String exitRuleOf(String strategyId) {
         if ("S1".equals(strategyId)) {
-            return "跌破MA20离场";
+            return "跌破MA" + strategyParams.s1FastMa() + "离场";
         }
         if ("S2".equals(strategyId)) {
-            return "RSI>70或跌破MA60离场";
+            return "RSI>" + strategyParams.s2RsiOverbought().toPlainString()
+                    + "或跌破MA" + strategyParams.s2Ma() + "离场";
         }
         if ("S3".equals(strategyId)) {
             return "跌破突破日低点离场";
+        }
+        if ("RISK".equals(strategyId)) {
+            return "止损/止盈触价";
         }
         return "按策略离场";
     }
@@ -707,6 +1140,120 @@ public class DecisionServiceImpl implements IDecisionService {
             return "-";
         }
         return ratio.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP) + "%";
+    }
+
+    private void saveBriefingSnapshot(LocalDate actionDate, MarketBriefingResp briefing) {
+        if (Objects.isNull(actionDate) || Objects.isNull(briefing)) {
+            return;
+        }
+        try {
+            String json = OBJECT_MAPPER.writeValueAsString(briefing);
+            MarketBriefingSnapshot existing = marketBriefingSnapshotMapper.selectOne(
+                    Wrappers.<MarketBriefingSnapshot>lambdaQuery()
+                            .eq(MarketBriefingSnapshot::getTradeDate, actionDate)
+                            .last("LIMIT 1"));
+            LocalDateTime now = LocalDateTime.now();
+            if (Objects.nonNull(existing)) {
+                existing.setStance(briefing.getStance());
+                existing.setStanceScore(briefing.getStanceScore());
+                existing.setDataLevel(briefing.getDataLevel());
+                existing.setPayloadJson(json);
+                existing.setUpdateTime(now);
+                marketBriefingSnapshotMapper.updateById(existing);
+            } else {
+                marketBriefingSnapshotMapper.insert(MarketBriefingSnapshot.builder()
+                        .tradeDate(actionDate)
+                        .stance(briefing.getStance())
+                        .stanceScore(briefing.getStanceScore())
+                        .dataLevel(briefing.getDataLevel())
+                        .payloadJson(json)
+                        .createTime(now)
+                        .updateTime(now)
+                        .deleted(0)
+                        .build());
+            }
+        } catch (Exception ex) {
+            // 快照失败不影响决策主流程（表未建时也容错）
+        }
+    }
+
+    private MarketBriefingResp loadBriefingSnapshot(LocalDate actionDate) {
+        if (Objects.isNull(actionDate)) {
+            return null;
+        }
+        try {
+            MarketBriefingSnapshot row = marketBriefingSnapshotMapper.selectOne(
+                    Wrappers.<MarketBriefingSnapshot>lambdaQuery()
+                            .eq(MarketBriefingSnapshot::getTradeDate, actionDate)
+                            .last("LIMIT 1"));
+            if (Objects.isNull(row) || StringUtils.isBlank(row.getPayloadJson())) {
+                return null;
+            }
+            return OBJECT_MAPPER.readValue(row.getPayloadJson(), MarketBriefingResp.class);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private String buildBuyScoreExplain(String strategyId, BigDecimal signalScore, int cfCount,
+                                        HotConfluenceItem hot, FundGate gate, MainlineMatcher.Hit mainHit,
+                                        boolean offMainline, String stance, BigDecimal buyFactor,
+                                        BigDecimal weight) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("策略").append(strategyId)
+                .append(" 基分").append(baseScore(signalScore).setScale(0, RoundingMode.HALF_UP));
+        if (cfCount >= 2) {
+            sb.append(" · 共振+").append(SCORE_BOOST_CONFLUENCE.toPlainString());
+        }
+        if (Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount())) {
+            if (hot.getSourceCount() >= 3) {
+                sb.append(" · 热点+").append(SCORE_BOOST_HOT.add(SCORE_BOOST_HOT_TRIPLE).toPlainString());
+            } else if (hot.getSourceCount() >= 2) {
+                sb.append(" · 热点+").append(SCORE_BOOST_HOT.toPlainString());
+            }
+        }
+        if (Objects.nonNull(gate) && gate.weak) {
+            sb.append(" · 基本面-").append(SCORE_PENALTY_FUND.toPlainString());
+        }
+        if (Objects.nonNull(mainHit) && mainHit.match) {
+            sb.append(" · 主线+").append(SCORE_BOOST_MAINLINE.toPlainString());
+        } else if (offMainline) {
+            sb.append(" · 逆主线-").append(SCORE_PENALTY_OFF_MAINLINE.toPlainString());
+        }
+        if ("防守".equals(stance)) {
+            sb.append(" · 防守-6");
+        } else if ("进攻".equals(stance) && cfCount >= 2) {
+            sb.append(" · 进攻共振+3");
+        }
+        sb.append(" · 仓位").append(pctText(weight));
+        if (Objects.nonNull(buyFactor) && buyFactor.compareTo(BigDecimal.ONE) != 0) {
+            sb.append("（市场×").append(buyFactor.setScale(2, RoundingMode.HALF_UP)).append("）");
+        }
+        return sb.toString();
+    }
+
+    private List<String> resolveMainlineNames(MarketBriefingResp briefing) {
+        List<String> names = new ArrayList<>();
+        if (Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getHotThemes())) {
+            for (String theme : briefing.getHotThemes()) {
+                if (StringUtils.isNotBlank(theme) && names.size() < 8) {
+                    names.add(theme.trim());
+                }
+            }
+        }
+        if (CollUtil.isEmpty(names)) {
+            try {
+                List<SectorBoardItem> mainline = sectorBoardService.mainline(null, 8);
+                for (SectorBoardItem item : mainline) {
+                    if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getName()) && names.size() < 8) {
+                        names.add(item.getName().trim());
+                    }
+                }
+            } catch (Exception ignored) {
+                // 主线不可用时跳过加分
+            }
+        }
+        return names;
     }
 
     private static final class FundSnapshot {

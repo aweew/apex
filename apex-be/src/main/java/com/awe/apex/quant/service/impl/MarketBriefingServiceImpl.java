@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.MarketFactorItem;
+import com.awe.apex.quant.domain.dto.MarketIndexItem;
 import com.awe.apex.quant.domain.dto.MarketTipItem;
 import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.entity.IndexBar;
@@ -12,6 +13,7 @@ import com.awe.apex.quant.domain.entity.SectorQuote;
 import com.awe.apex.quant.mapper.IndexBarMapper;
 import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.SectorQuoteMapper;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -37,6 +39,11 @@ import java.util.Objects;
 public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
+    private static final long CACHE_TTL_MS = 180_000L;
+
+    private final Object cacheLock = new Object();
+    private MarketBriefingResp cachedBriefing;
+    private long cachedAtMs;
 
     @Resource
     private IndexBarMapper indexBarMapper;
@@ -57,6 +64,21 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
      */
     @Override
     public MarketBriefingResp briefing() {
+        long now = System.currentTimeMillis();
+        synchronized (cacheLock) {
+            if (Objects.nonNull(cachedBriefing) && now - cachedAtMs < CACHE_TTL_MS) {
+                return cachedBriefing;
+            }
+        }
+        MarketBriefingResp built = buildBriefing();
+        synchronized (cacheLock) {
+            cachedBriefing = built;
+            cachedAtMs = now;
+        }
+        return built;
+    }
+
+    private MarketBriefingResp buildBriefing() {
         List<IndexBar> sh = loadBars("CN_SH", 60);
         List<IndexBar> sz = loadBars("CN_SZ", 30);
         List<IndexBar> cyb = loadBars("CN_CYB", 30);
@@ -66,6 +88,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         List<MarketFactorItem> factors = new ArrayList<>();
         List<MarketTipItem> tips = new ArrayList<>();
         List<String> indexLines = new ArrayList<>();
+        List<MarketIndexItem> indexes = new ArrayList<>();
         int score = 50;
 
         // —— 大盘当日 ——
@@ -76,8 +99,12 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         indexLines.add(lineOf("上证", sh));
         indexLines.add(lineOf("深成指", sz));
         indexLines.add(lineOf("创业板", cyb));
+        indexes.add(indexItemOf("上证", sh));
+        indexes.add(indexItemOf("深成指", sz));
+        indexes.add(indexItemOf("创业板", cyb));
         if (CollUtil.isNotEmpty(kc)) {
             indexLines.add(lineOf("科创50", kc));
+            indexes.add(indexItemOf("科创50", kc));
         }
 
         BigDecimal dayAvg = avgNonNull(shPct, cybPct);
@@ -142,7 +169,11 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
         // —— 量能 ——
         VolumeStat vol = volumeStat(sh, 5);
+        String volumeTrend = null;
+        BigDecimal volumeVsMa5Pct = null;
         if (Objects.nonNull(vol)) {
+            volumeTrend = vol.trend;
+            volumeVsMa5Pct = vol.vsMa5Pct;
             String volSignal = "中性";
             if ("放量".equals(vol.trend) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) >= 0) {
                 volSignal = "偏多";
@@ -230,6 +261,28 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                     .build());
         }
 
+        // —— 市场广度（行业上涨/下跌家数汇总）——
+        int[] breadth = marketBreadth(asOf);
+        Integer breadthUp = breadth[0] > 0 || breadth[1] > 0 ? breadth[0] : null;
+        Integer breadthDown = breadth[0] > 0 || breadth[1] > 0 ? breadth[1] : null;
+        if (Objects.nonNull(breadthUp)) {
+            String bSignal = "中性";
+            if (breadthUp > breadthDown * 1.5) {
+                bSignal = "偏多";
+                score += 6;
+            } else if (breadthDown > breadthUp * 1.5) {
+                bSignal = "偏空";
+                score -= 8;
+                tips.add(tip("warn", "下跌家数明显多于上涨，市场广度偏弱。"));
+            }
+            factors.add(MarketFactorItem.builder()
+                    .name("市场广度")
+                    .value("涨" + breadthUp + " / 跌" + breadthDown)
+                    .signal(bSignal)
+                    .note("行业板块涨跌家数汇总")
+                    .build());
+        }
+
         // —— 主线题材 ——
         List<String> hotThemes = hotThemes();
         if (CollUtil.isNotEmpty(hotThemes)) {
@@ -243,14 +296,29 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                     + "；买卖优先与主线同向。"));
         }
 
+        // —— 数据新鲜度门禁 ——
+        String dataLevel = resolveDataLevel(sh, asOf, lu);
+        boolean dataSufficient = !"RED".equals(dataLevel);
+        if ("RED".equals(dataLevel)) {
+            score = Math.min(score, 35);
+            tips.add(0, tip("danger", "关键行情数据不足或过期，禁止进攻立场；请先同步指数/板块/涨停池。"));
+        } else if ("YELLOW".equals(dataLevel)) {
+            tips.add(tip("warn", "部分数据偏旧，简报仅供参考，建议先刷新大盘与涨停池。"));
+        }
+
         score = Math.max(0, Math.min(100, score));
         String stance;
         BigDecimal buyFactor;
         String positionAdvice;
-        if (score >= 65) {
+        if (!dataSufficient) {
+            stance = "防守";
+            buyFactor = new BigDecimal("0.40");
+            positionAdvice = "数据不足：建议空仓观望或极低仓，先补齐同步";
+            tips.add(0, tip("danger", "数据门禁生效：强制防守，买入仓位已大幅降权。"));
+        } else if (score >= 65) {
             stance = "进攻";
             buyFactor = new BigDecimal("1.10");
-            positionAdvice = "建议总仓 6–8 成，可对共振标的正常/略抬仓";
+            positionAdvice = "建议总仓 6–8 成，可对共振/主线标的正常/略抬仓";
             tips.add(0, tip("info", "综合评分偏进攻：可执行买入计划，但仍控制单票上限。"));
         } else if (score <= 40) {
             stance = "防守";
@@ -264,9 +332,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             tips.add(0, tip("info", "市场中性偏均衡：有信号再做，仓位中等、纪律优先。"));
         }
 
-        String stanceReason = "评分 " + score + "/100 · 综合大盘、均线趋势、量能、风格与涨停情绪";
-        if (tips.size() > 8) {
-            tips = new ArrayList<>(tips.subList(0, 8));
+        String stanceReason = "评分 " + score + "/100 · 数据" + dataLevel
+                + " · 综合大盘、趋势、量能、风格、广度与涨停情绪";
+        if (tips.size() > 10) {
+            tips = new ArrayList<>(tips.subList(0, 10));
         }
 
         return MarketBriefingResp.builder()
@@ -279,11 +348,77 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .factors(factors)
                 .tips(tips)
                 .indexLines(indexLines)
+                .indexes(indexes)
+                .volumeTrend(volumeTrend)
+                .volumeVsMa5Pct(volumeVsMa5Pct)
                 .hotThemes(hotThemes)
+                .dataLevel(dataLevel)
+                .dataSufficient(dataSufficient)
+                .breadthUp(breadthUp)
+                .breadthDown(breadthDown)
                 .message(Objects.nonNull(asOf)
-                        ? ("市场简报 · " + asOf + " · 立场「" + stance + "」")
-                        : "市场简报（指数数据不足）")
+                        ? ("市场简报 · " + asOf + " · 立场「" + stance + "」· 数据" + dataLevel)
+                        : "市场简报（指数数据不足）· 数据" + dataLevel)
                 .build();
+    }
+
+    private int[] marketBreadth(LocalDate asOf) {
+        int up = 0;
+        int down = 0;
+        LocalDate day = asOf;
+        if (Objects.isNull(day)) {
+            SectorQuote latest = sectorQuoteMapper.selectOne(Wrappers.<SectorQuote>lambdaQuery()
+                    .eq(SectorQuote::getBoardType, "INDUSTRY")
+                    .orderByDesc(SectorQuote::getTradeDate)
+                    .last("LIMIT 1"));
+            if (Objects.isNull(latest)) {
+                return new int[]{0, 0};
+            }
+            day = latest.getTradeDate();
+        }
+        List<SectorQuote> rows = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
+                .eq(SectorQuote::getBoardType, "INDUSTRY")
+                .eq(SectorQuote::getTradeDate, day));
+        for (SectorQuote row : rows) {
+            if (Objects.nonNull(row.getUpCount())) {
+                up += row.getUpCount();
+            }
+            if (Objects.nonNull(row.getDownCount())) {
+                down += row.getDownCount();
+            }
+        }
+        return new int[]{up, down};
+    }
+
+    private String resolveDataLevel(List<IndexBar> sh, LocalDate asOf, LimitUpStat lu) {
+        LocalDate latestTrade = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
+        // 允许落后最近 3 个交易日
+        List<LocalDate> recent3 = TradingCalendar.recentTradingDays(latestTrade, 3);
+        LocalDate oldestOk = recent3.get(0);
+
+        boolean hasIndex = CollUtil.isNotEmpty(sh) && Objects.nonNull(asOf);
+        boolean indexFresh = false;
+        if (hasIndex) {
+            LocalDate latest = sh.get(sh.size() - 1).getTradeDate();
+            indexFresh = Objects.nonNull(latest) && !latest.isBefore(oldestOk);
+        }
+        boolean hasLu = Objects.nonNull(lu)
+                && Objects.nonNull(lu.asOf)
+                && !lu.asOf.isBefore(oldestOk);
+        SectorQuote sectorLatest = sectorQuoteMapper.selectOne(Wrappers.<SectorQuote>lambdaQuery()
+                .eq(SectorQuote::getBoardType, "INDUSTRY")
+                .orderByDesc(SectorQuote::getTradeDate)
+                .last("LIMIT 1"));
+        boolean hasSector = Objects.nonNull(sectorLatest)
+                && Objects.nonNull(sectorLatest.getTradeDate())
+                && !sectorLatest.getTradeDate().isBefore(oldestOk);
+        if (!hasIndex || !indexFresh) {
+            return "RED";
+        }
+        if (!hasSector || !hasLu) {
+            return "YELLOW";
+        }
+        return "GREEN";
     }
 
     private List<IndexBar> loadBars(String code, int limit) {
@@ -495,6 +630,32 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 + (Objects.nonNull(last.getClosePrice())
                 ? (" · " + last.getClosePrice().setScale(2, RoundingMode.HALF_UP))
                 : "");
+    }
+
+    private MarketIndexItem indexItemOf(String label, List<IndexBar> bars) {
+        if (CollUtil.isEmpty(bars)) {
+            return MarketIndexItem.builder()
+                    .name(label)
+                    .direction("flat")
+                    .build();
+        }
+        IndexBar last = bars.get(bars.size() - 1);
+        BigDecimal pct = last.getPctChg();
+        String direction = "flat";
+        if (Objects.nonNull(pct)) {
+            if (pct.compareTo(ZERO) > 0) {
+                direction = "up";
+            } else if (pct.compareTo(ZERO) < 0) {
+                direction = "down";
+            }
+        }
+        return MarketIndexItem.builder()
+                .name(label)
+                .pctChg(Objects.nonNull(pct) ? pct.setScale(2, RoundingMode.HALF_UP) : null)
+                .close(Objects.nonNull(last.getClosePrice())
+                        ? last.getClosePrice().setScale(2, RoundingMode.HALF_UP) : null)
+                .direction(direction)
+                .build();
     }
 
     private BigDecimal avgNonNull(BigDecimal a, BigDecimal b) {
