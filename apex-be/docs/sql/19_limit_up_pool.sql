@@ -1,0 +1,30 @@
+USE apex;
+
+CREATE TABLE IF NOT EXISTS limit_up_pool (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    trade_date DATE NOT NULL,
+    code VARCHAR(16) NOT NULL,
+    name VARCHAR(64) NULL,
+    pct_chg DECIMAL(12, 4) NULL,
+    latest_price DECIMAL(16, 4) NULL,
+    amount DECIMAL(24, 4) NULL,
+    circ_mv DECIMAL(24, 4) NULL,
+    turnover_rate DECIMAL(12, 4) NULL,
+    lianban INT NOT NULL,
+    first_seal_time VARCHAR(16) NULL,
+    last_seal_time VARCHAR(16) NULL,
+    break_count INT NULL,
+    seal_amount DECIMAL(24, 4) NULL,
+    industry VARCHAR(64) NULL,
+    theme VARCHAR(64) NULL,
+    zt_stats VARCHAR(32) NULL,
+    source VARCHAR(32) NULL,
+    synced_at DATETIME NULL,
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_limit_up_pool_date_code (trade_date, code),
+    KEY idx_limit_up_pool_date_lianban (trade_date, lianban),
+    KEY idx_limit_up_pool_date_theme (trade_date, theme)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

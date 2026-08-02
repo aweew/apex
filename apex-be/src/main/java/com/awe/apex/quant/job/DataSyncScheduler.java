@@ -2,9 +2,11 @@ package com.awe.apex.quant.job;
 
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.HotRefreshResp;
+import com.awe.apex.quant.domain.dto.SectorRefreshResp;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IHotService;
+import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.IWatchlistService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,9 @@ public class DataSyncScheduler {
 
     @Resource
     private IHotService hotService;
+
+    @Resource
+    private ISectorBoardService sectorBoardService;
 
     /**
      * 工作日傍晚尝试同步过期日线
@@ -80,6 +85,22 @@ public class DataSyncScheduler {
             log.info("定时热点刷新完成 message={}", resp.getMessage());
         } catch (Exception ex) {
             log.warn("定时热点刷新失败: {}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 交易时段快刷板块榜单（需 auto_sync_enabled=true）
+     */
+    @Scheduled(cron = "0 25 9,10,11,13,14 * * MON-FRI")
+    public void refreshSectorIntraday() {
+        if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+            return;
+        }
+        try {
+            SectorRefreshResp resp = sectorBoardService.refresh("INDUSTRY,CONCEPT,THEME");
+            log.info("定时板块刷新完成 message={}", resp.getMessage());
+        } catch (Exception ex) {
+            log.warn("定时板块刷新失败: {}", ex.getMessage());
         }
     }
 }

@@ -241,6 +241,21 @@ ON DUPLICATE KEY UPDATE
 def upsert(conn, row: Dict[str, Any]) -> None:
     with conn.cursor() as cur:
         cur.execute(UPSERT_SQL, row)
+        # 个股默认行业回写为东财二级（board_path 第二段）
+        industry_l2 = None
+        board_path = row.get("board_path") or ""
+        parts = [p.strip() for p in board_path.split("-") if p and p.strip()]
+        if len(parts) >= 2:
+            industry_l2 = parts[1]
+        elif parts:
+            industry_l2 = parts[0]
+        elif row.get("industry_em"):
+            industry_l2 = row["industry_em"]
+        if industry_l2:
+            cur.execute(
+                "UPDATE stock_basic SET industry=%s, update_time=NOW() WHERE code=%s AND deleted=0",
+                (industry_l2, row["code"]),
+            )
     conn.commit()
 
 

@@ -3,7 +3,9 @@ package com.awe.apex.quant.service.impl;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.CompanyProfileResp;
+import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StockCompanyProfile;
+import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockCompanyProfileMapper;
 import com.awe.apex.quant.market.CompanyProfileClient;
 import com.awe.apex.quant.market.MarketCodeUtils;
@@ -30,6 +32,9 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
     private StockCompanyProfileMapper stockCompanyProfileMapper;
 
     @Resource
+    private StockBasicMapper stockBasicMapper;
+
+    @Resource
     private CompanyProfileClient companyProfileClient;
 
     /**
@@ -50,7 +55,9 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
                 .eq(StockCompanyProfile::getCode, pureCode)
                 .last("limit 1"));
         if (!forceRefresh && Objects.nonNull(existing) && StringUtils.isNotBlank(existing.getOrgName())) {
-            return toResp(existing, "本地公司概况");
+            CompanyProfileResp cached = toResp(existing, "本地公司概况");
+            syncBasicIndustry(pureCode, cached.getIndustryL2());
+            return cached;
         }
         StockCompanyProfile fetched = companyProfileClient.fetch(pureCode);
         LocalDateTime now = LocalDateTime.now();
@@ -58,16 +65,21 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
             fetched.setCreateTime(now);
             fetched.setUpdateTime(now);
             stockCompanyProfileMapper.insert(fetched);
-            return toResp(fetched, "已从东财 F10 拉取并落库");
+            CompanyProfileResp created = toResp(fetched, "已从东财 F10 拉取并落库");
+            syncBasicIndustry(pureCode, created.getIndustryL2());
+            return created;
         }
         fetched.setId(existing.getId());
         fetched.setCreateTime(existing.getCreateTime());
         fetched.setUpdateTime(now);
         stockCompanyProfileMapper.updateById(fetched);
-        return toResp(fetched, "已刷新东财 F10 公司概况");
+        CompanyProfileResp refreshed = toResp(fetched, "已刷新东财 F10 公司概况");
+        syncBasicIndustry(pureCode, refreshed.getIndustryL2());
+        return refreshed;
     }
 
     private CompanyProfileResp toResp(StockCompanyProfile profile, String note) {
+        String industryL2 = resolveIndustryL2(profile.getBoardPath(), profile.getIndustryEm());
         return CompanyProfileResp.builder()
                 .code(profile.getCode())
                 .orgName(profile.getOrgName())
@@ -78,6 +90,7 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
                 .region(profile.getRegion())
                 .areaBoard(profile.getAreaBoard())
                 .industryEm(profile.getIndustryEm())
+                .industryL2(industryL2)
                 .industryCsrc(profile.getIndustryCsrc())
                 .boardPath(profile.getBoardPath())
                 .conceptList(splitCsv(profile.getConcepts()))
@@ -114,6 +127,50 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
                 .updateTime(profile.getUpdateTime())
                 .note(note)
                 .build();
+    }
+
+    /**
+     * 从行业路径解析东财二级行业（一级-二级-三级）
+     *
+     * @param boardPath  行业路径
+     * @param industryEm 东财行业兜底
+     * @return 二级行业
+     */
+    private String resolveIndustryL2(String boardPath, String industryEm) {
+        if (StringUtils.isNotBlank(boardPath)) {
+            String[] parts = boardPath.split("-");
+            if (parts.length >= 2 && StringUtils.isNotBlank(parts[1])) {
+                return parts[1].trim();
+            }
+            if (parts.length == 1 && StringUtils.isNotBlank(parts[0])) {
+                return parts[0].trim();
+            }
+        }
+        return industryEm;
+    }
+
+    /**
+     * 回写个股基础信息行业为东财二级
+     *
+     * @param code       证券代码
+     * @param industryL2 二级行业
+     */
+    private void syncBasicIndustry(String code, String industryL2) {
+        if (StringUtils.isBlank(code) || StringUtils.isBlank(industryL2)) {
+            return;
+        }
+        StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
+                .eq(StockBasic::getCode, code)
+                .last("limit 1"));
+        if (Objects.isNull(basic)) {
+            return;
+        }
+        if (industryL2.equals(basic.getIndustry())) {
+            return;
+        }
+        basic.setIndustry(industryL2);
+        basic.setUpdateTime(LocalDateTime.now());
+        stockBasicMapper.updateById(basic);
     }
 
     private List<String> splitCsv(String text) {

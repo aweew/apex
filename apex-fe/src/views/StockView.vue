@@ -7,6 +7,7 @@ import {
   fetchCompanyProfile,
   fetchStockDetail,
   fetchStockFundamental,
+  fetchStockIntraday,
   refreshCompanyProfile,
   syncStockBasic,
 } from '../api/stock'
@@ -38,7 +39,9 @@ const fund = ref(null)
 const profile = ref(null)
 const macdTip = ref('')
 const tdTip = ref('')
-/** day | week | month */
+const intraday = ref(null)
+const intradayLoading = ref(false)
+/** day | week | month | intraday */
 const klinePeriod = ref('day')
 /** 默认仅显示 MA5 / MA20 */
 const selectedMas = ref(['MA5', 'MA20'])
@@ -61,15 +64,26 @@ let savedZoom = { start: 45, end: 100 }
 /** 当前图数据，供可视区高低点随缩放更新 */
 let chartPayload = null
 
-const chartBars = computed(() => aggregateBars(bars.value, klinePeriod.value))
-const periodLabel = computed(() =>
-  klinePeriod.value === 'week' ? '周K' : klinePeriod.value === 'month' ? '月K' : '日K',
+const isIntraday = computed(() => klinePeriod.value === 'intraday')
+const intradayPoints = computed(() => intraday.value?.points || [])
+const showChartShell = computed(() => bars.value.length > 0 || isIntraday.value)
+const chartBars = computed(() =>
+  isIntraday.value ? [] : aggregateBars(bars.value, klinePeriod.value),
 )
+const periodLabel = computed(() => {
+  if (klinePeriod.value === 'intraday') return '分时'
+  if (klinePeriod.value === 'week') return '周K'
+  if (klinePeriod.value === 'month') return '月K'
+  return '日K'
+})
 /** 随 K 线周期：天 / 周 / 月 */
 const periodUnit = computed(() =>
   klinePeriod.value === 'week' ? '周' : klinePeriod.value === 'month' ? '月' : '天',
 )
 const periodMeta = computed(() => {
+  if (isIntraday.value) {
+    return intraday.value?.note || (intradayLoading.value ? '分时加载中…' : '')
+  }
   const n = chartBars.value.length
   if (!n) return ''
   if (klinePeriod.value === 'day') return `${periodLabel.value} · ${n} 根`
@@ -85,7 +99,9 @@ function loadChartPrefs() {
     const raw = localStorage.getItem(CHART_PREF_KEY)
     if (!raw) return
     const prefs = JSON.parse(raw)
-    if (['day', 'week', 'month'].includes(prefs.klinePeriod)) klinePeriod.value = prefs.klinePeriod
+    if (['day', 'week', 'month', 'intraday'].includes(prefs.klinePeriod)) {
+      klinePeriod.value = prefs.klinePeriod
+    }
     if (Array.isArray(prefs.selectedMas)) {
       const next = prefs.selectedMas.filter((name) => MA_NAMES.includes(name))
       if (next.length) selectedMas.value = next
@@ -233,7 +249,204 @@ function updateVisibleWindow() {
   })
 }
 
+async function loadIntraday() {
+  if (!code.value) return
+  intradayLoading.value = true
+  try {
+    const res = await fetchStockIntraday(code.value.trim())
+    intraday.value = res.data || null
+    if (activeTab.value === 'chart' && isIntraday.value) {
+      await renderIntradayChart()
+    }
+  } catch (e) {
+    intraday.value = null
+    if (isIntraday.value) {
+      disposeChart()
+      ElMessage.error(e.message || '分时加载失败')
+    }
+  } finally {
+    intradayLoading.value = false
+  }
+}
+
+async function renderIntradayChart() {
+  const points = intradayPoints.value
+  macdTip.value = ''
+  tdTip.value = ''
+  chartPayload = null
+  if (!points.length) {
+    disposeChart()
+    return
+  }
+  await nextTick()
+  await new Promise((r) => requestAnimationFrame(() => r()))
+  if (!chartRef.value) return
+  if (!chart) {
+    chart = echarts.init(chartRef.value)
+  } else {
+    chart.off('datazoom')
+    chart.off('legendselectchanged')
+    chart.clear()
+    chart.resize()
+  }
+  const times = points.map((p) => p.time)
+  const prices = points.map((p) => Number(p.price))
+  const avgs = points.map((p) => Number(p.avgPrice))
+  const vols = points.map((p) => Number(p.volume) || 0)
+  const pre = Number(intraday.value?.preClose || prices[0] || 0)
+  let maxAbs = 0
+  for (const p of prices) {
+    if (!Number.isFinite(p)) continue
+    maxAbs = Math.max(maxAbs, Math.abs(p - pre))
+  }
+  maxAbs = Math.max(maxAbs, pre * 0.01 || 0.01)
+  const ymin = pre - maxAbs * 1.08
+  const ymax = pre + maxAbs * 1.08
+  const lineColor = prices[prices.length - 1] >= pre ? '#ef5350' : '#26a69a'
+  const volData = vols.map((v, i) => {
+    const up = i === 0 ? prices[0] >= pre : prices[i] >= prices[i - 1]
+    return {
+      value: v,
+      itemStyle: { color: up ? 'rgba(239,83,80,0.75)' : 'rgba(38,166,154,0.75)' },
+    }
+  })
+  chart.setOption(
+    {
+      backgroundColor: 'transparent',
+      animation: false,
+      legend: {
+        show: true,
+        top: 0,
+        left: 'center',
+        itemWidth: 14,
+        itemHeight: 8,
+        data: ['分时', '均价', '成交量'],
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' },
+        formatter(params) {
+          const rows = Array.isArray(params) ? params : [params]
+          const idx = rows[0]?.dataIndex ?? 0
+          const price = prices[idx]
+          const pct = pre ? (((price - pre) / pre) * 100).toFixed(2) : '-'
+          const lines = [`${times[idx] || ''}（昨收 ${pre.toFixed(2)}）`]
+          for (const row of rows) {
+            if (row.seriesName === '成交量') {
+              lines.push(`${row.marker}${row.seriesName} ${row.value}`)
+            } else {
+              const val = Number(row.value)
+              lines.push(`${row.marker}${row.seriesName} ${Number.isFinite(val) ? val.toFixed(2) : '-'}`)
+            }
+          }
+          lines.push(`涨跌幅 ${pct}%`)
+          return lines.join('<br/>')
+        },
+      },
+      axisPointer: { link: [{ xAxisIndex: 'all' }] },
+      grid: [
+        { left: 56, right: 56, top: 36, height: '58%' },
+        { left: 56, right: 56, top: '76%', height: '16%' },
+      ],
+      xAxis: [
+        {
+          type: 'category',
+          data: times,
+          boundaryGap: false,
+          axisLabel: { interval: 29 },
+          axisTick: { show: false },
+        },
+        {
+          type: 'category',
+          gridIndex: 1,
+          data: times,
+          boundaryGap: false,
+          axisLabel: { show: false },
+          axisTick: { show: false },
+        },
+      ],
+      yAxis: [
+        {
+          scale: true,
+          min: ymin,
+          max: ymax,
+          axisLabel: {
+            formatter: (v) => Number(v).toFixed(2),
+            color: (v) => (Number(v) >= pre ? '#ef5350' : '#26a69a'),
+          },
+          splitLine: { lineStyle: { type: 'dashed', opacity: 0.35 } },
+        },
+        {
+          scale: true,
+          min: ymin,
+          max: ymax,
+          position: 'right',
+          axisLabel: {
+            formatter: (v) => `${(((Number(v) - pre) / pre) * 100).toFixed(2)}%`,
+            color: (v) => (Number(v) >= pre ? '#ef5350' : '#26a69a'),
+          },
+          splitLine: { show: false },
+        },
+        {
+          scale: true,
+          gridIndex: 1,
+          splitNumber: 2,
+          axisLabel: { show: false },
+          splitLine: { show: false },
+        },
+      ],
+      series: [
+        {
+          name: '分时',
+          type: 'line',
+          data: prices,
+          showSymbol: false,
+          lineStyle: { width: 1.6, color: lineColor },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: lineColor === '#ef5350' ? 'rgba(239,83,80,0.18)' : 'rgba(38,166,154,0.18)' },
+              { offset: 1, color: 'rgba(255,255,255,0)' },
+            ]),
+          },
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            data: [
+              {
+                yAxis: pre,
+                label: { formatter: '昨收', position: 'insideEndTop', color: '#888', fontSize: 11 },
+                lineStyle: { color: '#999', type: 'dashed', width: 1 },
+              },
+            ],
+          },
+        },
+        {
+          name: '均价',
+          type: 'line',
+          data: avgs,
+          showSymbol: false,
+          lineStyle: { width: 1, color: '#f59e0b' },
+        },
+        {
+          name: '成交量',
+          type: 'bar',
+          xAxisIndex: 1,
+          yAxisIndex: 2,
+          data: volData,
+          barWidth: '55%',
+        },
+      ],
+    },
+    true,
+  )
+}
+
 function refreshChart() {
+  if (isIntraday.value) {
+    if (intradayPoints.value.length) renderIntradayChart()
+    else loadIntraday()
+    return
+  }
   if (!bars.value.length) {
     macdTip.value = ''
     tdTip.value = ''
@@ -244,6 +457,10 @@ function refreshChart() {
 }
 
 function resetChartView() {
+  if (isIntraday.value) {
+    if (activeTab.value === 'chart') refreshChart()
+    return
+  }
   resetZoomNext = true
   savedZoom = { start: chartBars.value.length <= 80 ? 0 : 45, end: 100 }
   if (bars.value.length && activeTab.value === 'chart') refreshChart()
@@ -437,7 +654,9 @@ async function renderChart(list) {
     bindChartEvents()
   } else {
     captureZoom()
+    chart.clear()
     chart.resize()
+    bindChartEvents()
   }
   const dates = list.map((b) => b.tradeDate)
   const ohlc = list.map((b) => [+b.openPrice, +b.closePrice, +b.lowPrice, +b.highPrice])
@@ -1083,6 +1302,12 @@ async function load(refreshQuote = false) {
     const res = await fetchStockDetail(code.value.trim(), BAR_LIMIT, false)
     applyDetail(res.data)
     await loadFundamental()
+    // 静默拉概况：回填东财二级行业到 meta，并同步 stock_basic.industry
+    loadProfile(false).then(() => {
+      if (profile.value?.industryL2 && basic.value) {
+        basic.value = { ...basic.value, industry: profile.value.industryL2 }
+      }
+    })
     if (refreshQuote) {
       await refreshQuoteOnly()
     }
@@ -1213,8 +1438,10 @@ watch(
       code.value = String(v)
       resetZoomNext = true
       profile.value = null
+      intraday.value = null
       load(false)
       if (activeTab.value === 'profile') loadProfile(false)
+      if (activeTab.value === 'chart' && isIntraday.value) loadIntraday()
     }
   },
 )
@@ -1222,7 +1449,13 @@ watch(
 watch(klinePeriod, () => {
   resetZoomNext = true
   saveChartPrefs()
-  if (bars.value.length && activeTab.value === 'chart') refreshChart()
+  if (activeTab.value !== 'chart') return
+  if (isIntraday.value) {
+    loadIntraday()
+    return
+  }
+  if (bars.value.length) refreshChart()
+  else disposeChart()
 })
 
 watch(
@@ -1233,14 +1466,15 @@ watch(
       return
     }
     saveChartPrefs()
-    if (bars.value.length && activeTab.value === 'chart') refreshChart()
+    if (!isIntraday.value && bars.value.length && activeTab.value === 'chart') refreshChart()
   },
   { deep: true },
 )
 
-onMounted(() => {
+onMounted(async () => {
   loadChartPrefs()
-  load(false)
+  await load(false)
+  if (isIntraday.value) await loadIntraday()
   window.addEventListener('resize', onResize)
 })
 
@@ -1328,7 +1562,7 @@ function dash(v) {
       <div><label>总市值</label><span>{{ fmtMv(basic.totalMv) }}</span></div>
       <div><label>流通市值</label><span>{{ fmtMv(basic.circMv) }}</span></div>
       <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
-      <div><label>行业</label><span>{{ basic.industry || '-' }}</span></div>
+      <div><label>行业</label><span>{{ profile?.industryL2 || basic.industry || '-' }}</span></div>
       <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>
       <div><label>来源</label><span>{{ basic.source || '-' }}</span></div>
       <div><label>本地日线</label><span>{{ barCount }}</span></div>
@@ -1349,49 +1583,63 @@ function dash(v) {
     <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">
       <el-tab-pane label="行情图表" name="chart">
         <el-empty
-          v-if="!loading && !bars.length"
+          v-if="!loading && !bars.length && !isIntraday"
           class="empty-bars"
-          description="本地暂无日线，请先同步日线落库"
+          description="本地暂无日线，请先同步日线落库；也可先看分时"
         >
           <el-button type="primary" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
+          <el-button @click="klinePeriod = 'intraday'">看分时</el-button>
         </el-empty>
-        <div v-if="bars.length" class="chart-toolbar">
+        <div v-if="showChartShell" class="chart-toolbar" v-loading="intradayLoading && isIntraday">
           <div class="chart-controls">
             <el-radio-group v-model="klinePeriod" size="small">
+              <el-radio-button value="intraday">分时</el-radio-button>
               <el-radio-button value="day">日K</el-radio-button>
               <el-radio-button value="week">周K</el-radio-button>
               <el-radio-button value="month">月K</el-radio-button>
             </el-radio-group>
-            <el-checkbox-group v-model="selectedMas" size="small" class="ma-checks">
-              <el-checkbox
-                v-for="item in MA_META"
-                :key="item.name"
-                :value="item.name"
-                :style="{ '--ma-color': item.color }"
+            <template v-if="!isIntraday">
+              <el-checkbox-group v-model="selectedMas" size="small" class="ma-checks">
+                <el-checkbox
+                  v-for="item in MA_META"
+                  :key="item.name"
+                  :value="item.name"
+                  :style="{ '--ma-color': item.color }"
+                >
+                  {{ maDisplayName(item.name) }}
+                </el-checkbox>
+              </el-checkbox-group>
+              <label class="ctrl-label">
+                <TermTip term="td9">神奇九转</TermTip>
+                <el-switch v-model="showTd9" size="small" />
+              </label>
+              <el-radio-group
+                v-if="showTd9"
+                v-model="tdShowMode"
+                size="small"
+                class="td-mode"
               >
-                {{ maDisplayName(item.name) }}
-              </el-checkbox>
-            </el-checkbox-group>
-            <label class="ctrl-label">
-              <TermTip term="td9">神奇九转</TermTip>
-              <el-switch v-model="showTd9" size="small" />
-            </label>
-            <el-radio-group
-              v-if="showTd9"
-              v-model="tdShowMode"
+                <el-radio-button value="key">仅8/9</el-radio-button>
+                <el-radio-button value="all">全部</el-radio-button>
+              </el-radio-group>
+            </template>
+            <el-button
+              v-if="isIntraday"
               size="small"
-              class="td-mode"
+              text
+              type="primary"
+              :loading="intradayLoading"
+              @click="loadIntraday"
             >
-              <el-radio-button value="key">仅8/9</el-radio-button>
-              <el-radio-button value="all">全部</el-radio-button>
-            </el-radio-group>
+              刷新分时
+            </el-button>
             <el-button size="small" text type="primary" class="reset-view" @click="resetChartView">
               重置视野
             </el-button>
             <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
           </div>
           <el-alert
-            v-if="klinePeriod !== 'day' && bars.length < 120"
+            v-if="!isIntraday && klinePeriod !== 'day' && bars.length < 120"
             class="chart-alert"
             type="info"
             :closable="false"
@@ -1399,15 +1647,30 @@ function dash(v) {
             :title="`日线仅 ${bars.length} 根，周/月K样本偏少，建议同步更多日线`"
           />
           <p class="chart-hint">
-            设置会记住 · 切换周期重置视野 · 改均线/九转保持缩放 · 副图：量 /
-            <TermTip term="macd">MACD</TermTip>
-            /
-            <TermTip term="kdj">KDJ</TermTip>
+            <template v-if="isIntraday">
+              东财分时 · 价格 / 均价 / 成交量 · 右侧为相对昨收涨跌幅
+            </template>
+            <template v-else>
+              设置会记住 · 切换周期重置视野 · 改均线/九转保持缩放 · 副图：量 /
+              <TermTip term="macd">MACD</TermTip>
+              /
+              <TermTip term="kdj">KDJ</TermTip>
+            </template>
           </p>
-          <p v-if="tdTip && showTd9" class="macd-tip">{{ tdTip }}</p>
-          <p v-if="macdTip" class="macd-tip macd-tip--sub">{{ macdTip }}</p>
+          <p v-if="!isIntraday && tdTip && showTd9" class="macd-tip">{{ tdTip }}</p>
+          <p v-if="!isIntraday && macdTip" class="macd-tip macd-tip--sub">{{ macdTip }}</p>
         </div>
-        <div v-if="bars.length" ref="chartRef" class="chart" />
+        <el-empty
+          v-if="isIntraday && !intradayLoading && !intradayPoints.length"
+          description="暂无分时数据"
+        >
+          <el-button type="primary" :loading="intradayLoading" @click="loadIntraday">重新拉取</el-button>
+        </el-empty>
+        <div
+          v-if="(bars.length && !isIntraday) || (isIntraday && intradayPoints.length)"
+          ref="chartRef"
+          class="chart"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="公司概况" name="profile" lazy>
@@ -1457,9 +1720,13 @@ function dash(v) {
                   <label>交易市场</label>
                   <span>{{ dash(profile.tradeMarket) }}</span>
                 </div>
+                <div class="kv">
+                  <label>东财二级行业</label>
+                  <span>{{ dash(profile.industryL2 || profile.industryEm) }}</span>
+                </div>
                 <div class="kv full">
-                  <label>所属行业</label>
-                  <span>{{ dash(profile.boardPath || profile.industryEm) }}</span>
+                  <label>行业路径</label>
+                  <span>{{ dash(profile.boardPath) }}</span>
                 </div>
                 <div class="kv full">
                   <label>证监会行业</label>

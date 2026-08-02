@@ -154,7 +154,51 @@ python sync_hot.py --sources eastmoney,baidu --limit 40
 - 后端配置：`apex.hot.script-path` / `apex.hot.python-cmd`（见 `application.yml` / `application-local.yml`）
 - 定时快刷：`system_config.auto_sync_enabled=true` 后，工作日 9/10/11/13/14 点 20 分自动刷东财+百度热点
 
-## 8. 说明
+## 8. 板块行情（行业 / 概念 / 题材）
+
+写入表：`sector_basic` / `sector_quote` / `sector_constituent`（先执行 `15_sector_board.sql`，扩展字段执行 `17_sector_quote_ext.sql`）
+
+| Tab | board_type | 数据源 |
+|-----|------------|--------|
+| 行业 | INDUSTRY | 东财二级行业板块行情 + 行业资金流 |
+| 概念 | CONCEPT | 东财概念板块行情 + 概念资金流 |
+| 题材 | THEME | 与概念同源双写，前端默认按净流入排序 |
+
+同步时额外计算：3日/5日涨幅、涨跌原因；接口另提供主线识别 `GET /api/sector/mainline`。  
+资金净流入单位：**元**（前端按亿元展示）。成交额单位：元。
+
+```bash
+# 同步三类榜单（行情+资金流）
+python sync_sector.py --mode quote --types INDUSTRY,CONCEPT,THEME --sleep 0.35
+
+# 只刷行业+概念
+python sync_sector.py --mode quote --types INDUSTRY,CONCEPT
+
+# 下钻成分股（按板块代码）
+python sync_sector.py --mode cons --types CONCEPT --codes BK0655 --sleep 0.3
+
+# 某类型前 5 个板块成分（试跑）
+python sync_sector.py --mode cons --types INDUSTRY --limit 5 --sleep 0.3
+```
+
+前端导航「板块」；接口：`GET /api/sector/board`、`GET /api/sector/{code}/constituents`、`GET /api/sector/mainline`、`POST /api/sector/refresh`  
+后端配置：`apex.sector.script-path` / `apex.sector.python-cmd`
+
+## 9. Web 统一同步（推荐）
+
+前端导航「数据同步」(`/sync`) 可启动/停止全部脚本任务并查看进度与日志。
+
+接口：
+- `GET /api/sync/overview`
+- `POST /api/sync/jobs`（body: `{ taskType, limit, start, ... }`）
+- `GET /api/sync/jobs/{id}`
+- `POST /api/sync/jobs/{id}/stop`
+
+先执行 `apex-be/docs/sql/16_sync_job.sql`。后端配置：`apex.sync.script-dir` / `apex.sync.python-cmd`。
+
+说明：一键启动对长任务默认带较小 `limit`（如日线/基本面 20）避免误点跑爆；全量请用高级启动改参数。
+
+## 10. 说明
 
 - 日线数据源：AKShare（优先新浪日线，失败再试东财；前复权）
 - 大盘指数：A股/港股/美股新浪日线（含量）；日韩新浪环球（量常缺）
@@ -162,5 +206,6 @@ python sync_hot.py --sources eastmoney,baidu --limit 40
 - 新闻资讯：东财 / 财联社 / 同花顺 / 新浪（可选央视）
 - 基本面数据源：分析指标 + 同花顺摘要 + 新浪三大报表（科目级 EAV，payload 保留全量字段）
 - 热点数据源：东财人气（新浪成交额兜底）/ 雪球关注 / 百度热搜
+- 板块数据源：东财板块行情 + `stock_sector_fund_flow_rank` 资金流 + 板块成分
 - 全 A 约 5000+ 只，首次导入往往需要数小时，请保持 `--sleep`
 - 导入完成后，Apex 详情/回测/基本面直接读本地库即可

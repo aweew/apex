@@ -84,3 +84,9 @@ apex:
   index:
     python-cmd: python
     script-path: ${user.dir}/../scripts/market_data/sync_index.py
+  sector:
+    python-cmd: python
+    script-path: ${user.dir}/../scripts/market_data/sync_sector.py
+  sync:
+    python-cmd: python
+    script-dir: ${user.dir}/../scripts/market_data

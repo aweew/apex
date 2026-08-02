@@ -4,6 +4,7 @@ import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.CompanyProfileResp;
 import com.awe.apex.quant.domain.dto.StockDetailResp;
 import com.awe.apex.quant.domain.dto.StockFundamentalResp;
+import com.awe.apex.quant.domain.dto.StockIntradayResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.service.ICompanyProfileService;
@@ -72,6 +73,17 @@ public class StockController {
                                           @RequestParam(defaultValue = "120") Integer barLimit,
                                           @RequestParam(defaultValue = "false") Boolean refresh) {
         return Result.success(stockService.detail(code, barLimit, refresh));
+    }
+
+    /**
+     * 个股分时（东财最近交易日）
+     *
+     * @param code 证券代码
+     * @return 分时
+     */
+    @GetMapping("/{code}/intraday")
+    public Result<StockIntradayResp> intraday(@PathVariable String code) {
+        return Result.success(stockService.intraday(code));
     }
 
     /**

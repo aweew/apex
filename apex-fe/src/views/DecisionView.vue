@@ -15,6 +15,29 @@ const activeTab = ref('buys')
 const buys = computed(() => data.value?.buys || [])
 const sells = computed(() => data.value?.sells || [])
 const holds = computed(() => data.value?.holds || [])
+const briefing = computed(() => data.value?.marketBriefing || null)
+const factors = computed(() => briefing.value?.factors || [])
+const tips = computed(() => briefing.value?.tips || [])
+const indexLines = computed(() => briefing.value?.indexLines || [])
+const hotThemes = computed(() => briefing.value?.hotThemes || [])
+
+function stanceClass(s) {
+  if (s === '进攻') return 'stance-attack'
+  if (s === '防守') return 'stance-defend'
+  return 'stance-balance'
+}
+
+function signalClass(s) {
+  if (s === '偏多') return 'up'
+  if (s === '偏空') return 'down'
+  return ''
+}
+
+function tipType(level) {
+  if (level === 'danger') return 'error'
+  if (level === 'warn') return 'warning'
+  return 'info'
+}
 
 async function load() {
   loading.value = true
@@ -118,7 +141,7 @@ onMounted(load)
       <div>
         <h1>智能决策</h1>
         <p>
-          {{ data?.message || '买入：自选股票池策略机会 · 卖出/持有：聚焦我的持仓 · 策略共振/热点共振/基本面辅助打分' }}
+          {{ data?.message || '每日先看市场简报（大盘/风格/量能/涨停），再给出买卖清单' }}
           <span v-if="data?.riskNote"> · {{ data.riskNote }}</span>
         </p>
       </div>
@@ -126,9 +149,55 @@ onMounted(load)
         <el-input v-model="groupName" style="width: 130px" placeholder="自选分组" />
         <el-button type="primary" :loading="loading" @click="onRun">一键生成决策</el-button>
         <el-button @click="load">刷新</el-button>
+        <el-button @click="router.push('/market')">大盘</el-button>
+        <el-button @click="router.push('/limit-up')">涨停复盘</el-button>
         <el-button @click="router.push('/signals')">信号明细</el-button>
       </div>
     </header>
+
+    <section v-if="briefing" class="briefing" :class="stanceClass(briefing.stance)">
+      <div class="brief-head">
+        <div>
+          <div class="brief-kicker">每日市场简报 · {{ briefing.asOf || '-' }}</div>
+          <h2>
+            立场
+            <span class="stance-pill">{{ briefing.stance || '均衡' }}</span>
+            <span class="score">{{ briefing.stanceScore ?? '-' }}/100</span>
+          </h2>
+          <p class="brief-reason">{{ briefing.stanceReason }}</p>
+          <p class="brief-pos">{{ briefing.positionAdvice }}</p>
+        </div>
+        <div class="brief-side">
+          <div v-if="indexLines.length" class="index-lines">
+            <div v-for="line in indexLines" :key="line">{{ line }}</div>
+          </div>
+          <div v-if="hotThemes.length" class="theme-row">
+            <span v-for="t in hotThemes.slice(0, 6)" :key="t" class="theme-chip">{{ t }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="factors.length" class="factor-grid">
+        <div v-for="f in factors" :key="f.name" class="factor">
+          <label>{{ f.name }}</label>
+          <b :class="signalClass(f.signal)">{{ f.value }}</b>
+          <span class="factor-signal" :class="signalClass(f.signal)">{{ f.signal }}</span>
+          <p>{{ f.note }}</p>
+        </div>
+      </div>
+
+      <div v-if="tips.length" class="tips">
+        <el-alert
+          v-for="(tip, idx) in tips"
+          :key="idx"
+          class="tip-item"
+          :type="tipType(tip.level)"
+          :closable="false"
+          show-icon
+          :title="tip.text"
+        />
+      </div>
+    </section>
 
     <div class="summary" v-if="data">
       <div><label>决策日</label><b>{{ data.actionDate || '-' }}</b></div>
@@ -242,6 +311,153 @@ onMounted(load)
 </template>
 
 <style scoped>
+.briefing {
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass);
+}
+
+.briefing.stance-attack {
+  border-color: rgba(239, 83, 80, 0.35);
+}
+
+.briefing.stance-defend {
+  border-color: rgba(64, 158, 255, 0.4);
+}
+
+.brief-head {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.brief-kicker {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.brief-head h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stance-pill {
+  display: inline-flex;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.stance-attack .stance-pill {
+  color: #c45656;
+  background: rgba(239, 83, 80, 0.12);
+}
+
+.stance-defend .stance-pill {
+  color: #3a7bd5;
+  background: rgba(64, 158, 255, 0.14);
+}
+
+.stance-balance .stance-pill {
+  color: #6b7280;
+}
+
+.score {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.brief-reason,
+.brief-pos {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.brief-pos {
+  color: inherit;
+  font-weight: 600;
+}
+
+.index-lines {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.theme-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.theme-chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.factor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.factor {
+  padding: 10px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.factor label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.factor b {
+  display: block;
+  font-size: 13px;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
+.factor-signal {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.factor p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tip-item {
+  margin: 0;
+}
+
 .summary {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -275,6 +491,8 @@ onMounted(load)
 }
 
 @media (max-width: 900px) {
+  .brief-head,
+  .factor-grid,
   .summary {
     grid-template-columns: 1fr 1fr;
   }

@@ -225,26 +225,34 @@ public class StockQuoteClient {
     }
 
     private void enrichIndustryFromEastMoney(StockBasic basic) {
-        String market = basic.getMarket();
-        if (StringUtils.isBlank(market)) {
-            market = MarketCodeUtils.resolveMarket(basic.getCode());
-        }
-        String codeParam = market + basic.getCode();
-        String url = "https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/CompanySurveyAjax?code="
-                + codeParam;
+        String pureCode = basic.getCode();
+        String url = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
+                + "?reportName=RPT_F10_ORG_BASICINFO"
+                + "&columns=BOARD_NAME_2LEVEL,BOARD_NAME_1LEVEL,EM2016"
+                + "&quoteColumns="
+                + "&filter=(SECURITY_CODE%3D%22" + pureCode + "%22)"
+                + "&pageNumber=1&pageSize=1&sortTypes=&sortColumns=&source=HSF10&client=PC";
         try (HttpResponse response = httpGet(url, "https://emweb.securities.eastmoney.com/")) {
             if (!response.isOk() || StringUtils.isBlank(response.body())) {
                 markEastMoneyFail("industry-empty", basic.getCode());
                 return;
             }
-            String industry = OBJECT_MAPPER.readTree(response.body())
-                    .path("jbzl")
-                    .path("sshy")
-                    .asText(null);
-            industry = blankToNull(industry);
+            JsonNode rows = OBJECT_MAPPER.readTree(response.body()).path("result").path("data");
+            if (!rows.isArray() || rows.isEmpty()) {
+                markEastMoneyFail("industry-empty", basic.getCode());
+                return;
+            }
+            JsonNode row = rows.get(0);
+            String industry = blankToNull(row.path("BOARD_NAME_2LEVEL").asText(null));
+            if (StringUtils.isBlank(industry)) {
+                industry = blankToNull(row.path("EM2016").asText(null));
+            }
+            if (StringUtils.isBlank(industry)) {
+                industry = blankToNull(row.path("BOARD_NAME_1LEVEL").asText(null));
+            }
             if (StringUtils.isNotBlank(industry)) {
                 basic.setIndustry(industry);
-                appendSource(basic, "em-f10");
+                appendSource(basic, "em-f10-l2");
                 markEastMoneySuccess();
             }
         } catch (Exception ex) {

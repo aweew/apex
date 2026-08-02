@@ -6,6 +6,7 @@ import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
+import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
 import com.awe.apex.quant.domain.dto.SignalConfluenceItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceResp;
@@ -25,6 +26,7 @@ import com.awe.apex.quant.mapper.StockFinAbstractMapper;
 import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IHotService;
+import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
@@ -98,6 +100,9 @@ public class DecisionServiceImpl implements IDecisionService {
     @Resource
     private StockFinIndicatorMapper stockFinIndicatorMapper;
 
+    @Resource
+    private IMarketBriefingService marketBriefingService;
+
     /**
      * 一键生成今日决策：刷新股票池 → 跑策略 → 共振/基本面/风控 → 落库
      *
@@ -110,6 +115,11 @@ public class DecisionServiceImpl implements IDecisionService {
         DecisionRunReq safe = Objects.nonNull(req) ? req : new DecisionRunReq();
         String groupName = StringUtils.isNotBlank(safe.getGroupName()) ? safe.getGroupName().trim() : "我的自选";
         LocalDate actionDate = Objects.nonNull(safe.getDate()) ? safe.getDate() : LocalDate.now();
+
+        // 0. 市场简报（大盘/风格/量能/涨停/主线）→ 调节买入仓位
+        MarketBriefingResp briefing = marketBriefingService.briefing();
+        BigDecimal buyFactor = Objects.nonNull(briefing.getBuyWeightFactor())
+                ? briefing.getBuyWeightFactor() : BigDecimal.ONE;
 
         // 1. 我的持仓（卖出/持有聚焦这里；买入不局限于此）
         List<MyHolding> holdings = myHoldingService.listHoldings();
@@ -257,11 +267,21 @@ public class DecisionServiceImpl implements IDecisionService {
             }
             boolean hotOk = Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount()) && hot.getSourceCount() >= 2;
             BigDecimal weight = suggestWeight(cfCount >= 2 || hotOk, !gate.weak, singleLimit);
+            weight = weight.multiply(buyFactor).min(singleLimit).setScale(4, RoundingMode.HALF_UP);
+            if ("防守".equals(briefing.getStance())) {
+                score = score.subtract(new BigDecimal("6"));
+            } else if ("进攻".equals(briefing.getStance()) && cfCount >= 2) {
+                score = score.add(new BigDecimal("3"));
+            }
             boolean alreadyHeld = Objects.nonNull(holdingInMap);
             String buyLabel = alreadyHeld ? "加仓" : "买入";
             String reason = humanReason(signal, cf, gate, buyLabel, hot);
             if (alreadyHeld) {
                 reason = trimReason(reason + " · 已在我的持仓");
+            }
+            if (buyFactor.compareTo(BigDecimal.ONE) != 0) {
+                reason = trimReason(reason + " · 市场" + briefing.getStance()
+                        + "仓位×" + buyFactor.setScale(2, RoundingMode.HALF_UP));
             }
             DecisionItemResp item = DecisionItemResp.builder()
                     .actionDate(actionDate)
@@ -383,6 +403,10 @@ public class DecisionServiceImpl implements IDecisionService {
         if (Objects.nonNull(risk.getCriticalCount()) && risk.getCriticalCount() > 0) {
             riskNote = riskNote + " · 风控CRITICAL " + risk.getCriticalCount();
         }
+        if (Objects.nonNull(briefing.getStance())) {
+            riskNote = riskNote + " · 市场立场「" + briefing.getStance() + "」"
+                    + (Objects.nonNull(briefing.getStanceScore()) ? (" " + briefing.getStanceScore()) : "");
+        }
 
         return DecisionTodayResp.builder()
                 .actionDate(actionDate)
@@ -393,8 +417,11 @@ public class DecisionServiceImpl implements IDecisionService {
                 .holds(holds)
                 .items(all)
                 .riskNote(riskNote)
-                .message("买入看股票池机会 " + buys.size() + " · 卖出看我的持仓 " + sells.size()
-                        + " · 继续持有 " + holds.size() + " · 股票池 " + universeCount
+                .marketBriefing(briefing)
+                .message("市场「" + briefing.getStance() + "」· 买入 " + buys.size()
+                        + " · 卖出 " + sells.size()
+                        + " · 持有 " + holds.size()
+                        + " · 股票池 " + universeCount
                         + " · 持仓 " + holdings.size()
                         + " · 热点扩扫 " + hotScanCount
                         + " · 扫描 " + signalCodes.size())
@@ -447,9 +474,11 @@ public class DecisionServiceImpl implements IDecisionService {
                 holds.add(item);
             }
         }
+        MarketBriefingResp briefing = marketBriefingService.briefing();
         String message = CollUtil.isEmpty(all)
-                ? "今日尚无决策，请点击「一键生成决策」"
-                : "买 " + buys.size() + " / 卖 " + sells.size() + " / 持有 " + holds.size();
+                ? "今日尚无决策，请点击「一键生成决策」；下方市场简报已可参考"
+                : "市场「" + briefing.getStance() + "」· 买 " + buys.size()
+                + " / 卖 " + sells.size() + " / 持有 " + holds.size();
         return DecisionTodayResp.builder()
                 .actionDate(actionDate)
                 .groupName(group)
@@ -458,7 +487,8 @@ public class DecisionServiceImpl implements IDecisionService {
                 .sells(sells)
                 .holds(holds)
                 .items(all)
-                .riskNote(null)
+                .riskNote(Objects.nonNull(briefing.getPositionAdvice()) ? briefing.getPositionAdvice() : null)
+                .marketBriefing(briefing)
                 .message(message)
                 .build();
     }

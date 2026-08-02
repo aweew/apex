@@ -65,6 +65,11 @@ public class CompanyProfileResp {
     private String industryEm;
 
     /**
+     * 东财二级行业（BOARD_NAME_2LEVEL）
+     */
+    private String industryL2;
+
+    /**
      * 证监会行业
      */
     private String industryCsrc;

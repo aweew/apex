@@ -1,0 +1,300 @@
+package com.awe.apex.quant.sync;
+
+import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.domain.dto.SyncStartReq;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * 同步任务注册表
+ */
+@Component
+public class SyncTaskRegistry {
+
+    private final Map<String, SyncTaskSpec> specs = new LinkedHashMap<>();
+
+    public SyncTaskRegistry() {
+        register(SyncTaskSpec.builder()
+                .taskType("A_SHARE_LIST")
+                .name("全A股票列表")
+                .groupName("行情基础")
+                .description("同步 stock_basic 全市场代码与名称")
+                .scriptFile("sync_a_share.py")
+                .defaultParamsHint("mode=list")
+                .timeoutSec(600)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("A_SHARE_BARS")
+                .name("全A日线")
+                .groupName("行情基础")
+                .description("同步 bar_daily，支持断点续传（耗时长）")
+                .scriptFile("sync_a_share.py")
+                .defaultParamsHint("mode=bars start=20240101 limit=可选")
+                .timeoutSec(86400)
+                .progressFile(".progress/bars_progress.json")
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("A_SHARE_MISSING")
+                .name("日线缺口补齐")
+                .groupName("行情基础")
+                .description("扫描缺口并分批补日线")
+                .scriptFile("sync_missing_bars.py")
+                .defaultParamsHint("batch=80 rounds=3 start=20240101")
+                .timeoutSec(86400)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("TURNOVER")
+                .name("换手率回补")
+                .groupName("行情基础")
+                .description("回补 bar_daily.turnover_rate")
+                .scriptFile("backfill_turnover.py")
+                .defaultParamsHint("limit=50 或 all")
+                .timeoutSec(86400)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("COMPANY_PROFILE")
+                .name("公司概况 F10")
+                .groupName("基本面")
+                .description("同步 stock_company_profile（行业/概念等）")
+                .scriptFile("sync_company_profile.py")
+                .defaultParamsHint("limit=50 或 all")
+                .timeoutSec(86400)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("FUNDAMENTALS")
+                .name("财务基本面")
+                .groupName("基本面")
+                .description("财报摘要/指标/三大报表")
+                .scriptFile("sync_fundamentals.py")
+                .defaultParamsHint("mode=all limit=20")
+                .timeoutSec(86400)
+                .progressFile(".progress/fund_progress.json")
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("INDEX")
+                .name("大盘指数")
+                .groupName("市场看板")
+                .description("同步主流市场指数日线 index_bar")
+                .scriptFile("sync_index.py")
+                .defaultParamsHint("start=20180101")
+                .timeoutSec(1800)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("HOT")
+                .name("热点榜")
+                .groupName("市场看板")
+                .description("东财/雪球/百度热度快照")
+                .scriptFile("sync_hot.py")
+                .defaultParamsHint("sources=eastmoney,baidu limit=50")
+                .timeoutSec(600)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("NEWS")
+                .name("资讯")
+                .groupName("市场看板")
+                .description("多源财经资讯")
+                .scriptFile("sync_news.py")
+                .defaultParamsHint("sources=eastmoney,cls,ths,sina limit=80")
+                .timeoutSec(600)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("SECTOR_QUOTE")
+                .name("板块行情+资金")
+                .groupName("板块")
+                .description("行业/概念/题材涨跌幅与净流入（含3日/5日/涨跌原因）")
+                .scriptFile("sync_sector.py")
+                .defaultParamsHint("mode=quote types=INDUSTRY,CONCEPT,THEME")
+                .timeoutSec(900)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("SECTOR_CONS")
+                .name("板块成分股")
+                .groupName("板块")
+                .description("按类型批量同步成分（可用 limit 限流）")
+                .scriptFile("sync_sector.py")
+                .defaultParamsHint("mode=cons types=INDUSTRY limit=10")
+                .timeoutSec(86400)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("LIMIT_UP")
+                .name("涨停池/连板天梯")
+                .groupName("市场看板")
+                .description("东财涨停池落库，供涨停复盘连板天梯")
+                .scriptFile("sync_limit_up.py")
+                .defaultParamsHint("with-prev=true")
+                .timeoutSec(300)
+                .build());
+    }
+
+    /**
+     * 全部任务规格
+     *
+     * @return 列表
+     */
+    public List<SyncTaskSpec> all() {
+        return new ArrayList<>(specs.values());
+    }
+
+    /**
+     * 按类型获取
+     *
+     * @param taskType 类型
+     * @return 规格
+     */
+    public SyncTaskSpec require(String taskType) {
+        if (StringUtils.isBlank(taskType)) {
+            throw new BusinessException("任务类型不能为空");
+        }
+        SyncTaskSpec spec = specs.get(taskType.trim().toUpperCase(Locale.ROOT));
+        if (Objects.isNull(spec)) {
+            throw new BusinessException("未知同步任务类型: " + taskType);
+        }
+        return spec;
+    }
+
+    /**
+     * 构建脚本命令参数（不含 python / -u / script）
+     *
+     * @param spec 规格
+     * @param req  请求
+     * @return 参数列表
+     */
+    public List<String> buildArgs(SyncTaskSpec spec, SyncStartReq req) {
+        SyncStartReq safe = Objects.isNull(req) ? new SyncStartReq() : req;
+        String type = spec.getTaskType();
+        List<String> args = new ArrayList<>();
+        switch (type) {
+            case "A_SHARE_LIST" -> {
+                args.add("--mode");
+                args.add("list");
+            }
+            case "A_SHARE_BARS" -> {
+                args.add("--mode");
+                args.add("bars");
+                args.add("--start");
+                args.add(StringUtils.isNotBlank(safe.getStart()) ? safe.getStart().trim() : "20240101");
+                if (Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0) {
+                    args.add("--limit");
+                    args.add(String.valueOf(safe.getLimit()));
+                }
+                if (StringUtils.isNotBlank(safe.getCodes())) {
+                    args.add("--codes");
+                    args.add(safe.getCodes().trim());
+                }
+                args.add("--sleep");
+                args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.35));
+            }
+            case "A_SHARE_MISSING" -> {
+                args.add("--batch");
+                args.add(String.valueOf(Objects.nonNull(safe.getBatch()) && safe.getBatch() > 0 ? safe.getBatch() : 80));
+                args.add("--rounds");
+                args.add(String.valueOf(Objects.nonNull(safe.getRounds()) ? safe.getRounds() : 3));
+                args.add("--start");
+                args.add(StringUtils.isNotBlank(safe.getStart()) ? safe.getStart().trim() : "20240101");
+                args.add("--sleep");
+                args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.18));
+            }
+            case "TURNOVER" -> {
+                if (StringUtils.isNotBlank(safe.getCodes())) {
+                    args.add("--codes");
+                    args.add(safe.getCodes().trim());
+                } else if (Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0) {
+                    args.add("--limit");
+                    args.add(String.valueOf(safe.getLimit()));
+                } else {
+                    args.add("--limit");
+                    args.add("50");
+                }
+                args.add("--sleep");
+                args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.2));
+            }
+            case "COMPANY_PROFILE" -> {
+                if (StringUtils.isNotBlank(safe.getCodes())) {
+                    args.add("--codes");
+                    args.add(safe.getCodes().trim());
+                } else if (Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0) {
+                    args.add("--limit");
+                    args.add(String.valueOf(safe.getLimit()));
+                } else {
+                    args.add("--all");
+                }
+                args.add("--sleep");
+                args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.25));
+            }
+            case "FUNDAMENTALS" -> {
+                args.add("--mode");
+                args.add(StringUtils.isNotBlank(safe.getMode()) ? safe.getMode().trim() : "all");
+                if (StringUtils.isNotBlank(safe.getCodes())) {
+                    args.add("--codes");
+                    args.add(safe.getCodes().trim());
+                } else {
+                    args.add("--limit");
+                    args.add(String.valueOf(Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0 ? safe.getLimit() : 20));
+                }
+                args.add("--sleep");
+                args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.8));
+            }
+            case "INDEX" -> {
+                args.add("--start");
+                args.add(StringUtils.isNotBlank(safe.getStart()) ? safe.getStart().trim() : "20180101");
+                args.add("--sleep");
+                args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.25));
+            }
+            case "HOT" -> {
+                args.add("--sources");
+                args.add(StringUtils.isNotBlank(safe.getSources()) ? safe.getSources().trim() : "eastmoney,baidu");
+                args.add("--limit");
+                args.add(String.valueOf(Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0 ? safe.getLimit() : 50));
+            }
+            case "NEWS" -> {
+                args.add("--sources");
+                args.add(StringUtils.isNotBlank(safe.getSources()) ? safe.getSources().trim() : "eastmoney,cls,ths,sina");
+                args.add("--limit");
+                args.add(String.valueOf(Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0 ? safe.getLimit() : 80));
+            }
+            case "SECTOR_QUOTE" -> {
+                args.add("--mode");
+                args.add("quote");
+                args.add("--types");
+                args.add(StringUtils.isNotBlank(safe.getTypes()) ? safe.getTypes().trim() : "INDUSTRY,CONCEPT,THEME");
+                args.add("--sleep");
+                args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.35));
+            }
+            case "SECTOR_CONS" -> {
+                args.add("--mode");
+                args.add("cons");
+                args.add("--types");
+                args.add(StringUtils.isNotBlank(safe.getTypes()) ? safe.getTypes().trim() : "INDUSTRY");
+                if (StringUtils.isNotBlank(safe.getCodes())) {
+                    args.add("--codes");
+                    args.add(safe.getCodes().trim());
+                } else {
+                    args.add("--limit");
+                    args.add(String.valueOf(Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0 ? safe.getLimit() : 10));
+                }
+                args.add("--sleep");
+                args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.3));
+            }
+            case "LIMIT_UP" -> {
+                if (StringUtils.isNotBlank(safe.getStart())) {
+                    args.add("--date");
+                    args.add(safe.getStart().trim().replace("-", ""));
+                }
+                args.add("--with-prev");
+            }
+            default -> throw new BusinessException("未实现参数构建: " + type);
+        }
+        return args;
+    }
+
+    private void register(SyncTaskSpec spec) {
+        specs.put(spec.getTaskType(), spec);
+    }
+}

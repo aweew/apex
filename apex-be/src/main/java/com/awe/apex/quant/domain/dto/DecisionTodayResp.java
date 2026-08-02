@@ -58,6 +58,11 @@ public class DecisionTodayResp {
     private String riskNote;
 
     /**
+     * 每日市场简报（大盘/风格/量能/情绪提示）
+     */
+    private MarketBriefingResp marketBriefing;
+
+    /**
      * 说明
      */
     private String message;

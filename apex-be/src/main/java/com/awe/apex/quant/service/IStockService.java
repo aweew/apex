@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service;
 
 import com.awe.apex.quant.domain.dto.StockDetailResp;
+import com.awe.apex.quant.domain.dto.StockIntradayResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.StockBasic;
 
@@ -28,6 +29,14 @@ public interface IStockService {
      * @return 详情
      */
     StockDetailResp detail(String code, Integer barLimit, Boolean refresh);
+
+    /**
+     * 查询分时（东财实时/最近交易日）
+     *
+     * @param code 证券代码
+     * @return 分时
+     */
+    StockIntradayResp intraday(String code);
 
     /**
      * 按代码/名称搜索

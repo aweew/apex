@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.StockDetailResp;
+import com.awe.apex.quant.domain.dto.StockIntradayResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.StockBasic;
@@ -10,6 +11,7 @@ import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
+import com.awe.apex.quant.market.IntradayQuoteClient;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
 import com.awe.apex.quant.service.IStockService;
@@ -38,6 +40,9 @@ public class StockServiceImpl implements IStockService {
 
     @Resource
     private StockQuoteClient stockQuoteClient;
+
+    @Resource
+    private IntradayQuoteClient intradayQuoteClient;
 
     @Resource
     private StockBasicMapper stockBasicMapper;
@@ -168,6 +173,17 @@ public class StockServiceImpl implements IStockService {
                 .barCount(bars.size())
                 .note(note)
                 .build();
+    }
+
+    /**
+     * 查询分时（东财最近交易日）
+     *
+     * @param code 证券代码
+     * @return 分时
+     */
+    @Override
+    public StockIntradayResp intraday(String code) {
+        return intradayQuoteClient.fetch(code);
     }
 
     private BigDecimal calcVolumeRatio(List<BarDaily> bars, int lookback) {

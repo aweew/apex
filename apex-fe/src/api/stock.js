@@ -4,6 +4,10 @@ export function fetchStockDetail(code, barLimit = 120, refresh = false) {
   return http.get(`/api/stock/${code}`, { params: { barLimit, refresh } })
 }
 
+export function fetchStockIntraday(code) {
+  return http.get(`/api/stock/${encodeURIComponent(code)}/intraday`, { timeout: 20000 })
+}
+
 export function syncStockBasic(code) {
   return http.post(`/api/stock/${code}/sync`)
 }

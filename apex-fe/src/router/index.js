@@ -14,6 +14,9 @@ import HoldingView from '../views/HoldingView.vue'
 import HotView from '../views/HotView.vue'
 import NewsView from '../views/NewsView.vue'
 import IndexBoardView from '../views/IndexBoardView.vue'
+import SectorBoardView from '../views/SectorBoardView.vue'
+import LimitUpLadderView from '../views/LimitUpLadderView.vue'
+import SyncView from '../views/SyncView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -22,6 +25,9 @@ const router = createRouter({
     { path: '/dashboard', name: 'dashboard', component: DashboardView },
     { path: '/decision', name: 'decision', component: DecisionView },
     { path: '/market', name: 'market', component: IndexBoardView },
+    { path: '/sector', name: 'sector', component: SectorBoardView },
+    { path: '/limit-up', name: 'limitUp', component: LimitUpLadderView },
+    { path: '/sync', name: 'sync', component: SyncView },
     { path: '/hot', name: 'hot', component: HotView },
     { path: '/news', name: 'news', component: NewsView },
     { path: '/holding', name: 'holding', component: HoldingView },
