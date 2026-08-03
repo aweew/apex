@@ -109,6 +109,13 @@ function dataLevelType(level) {
   return 'info'
 }
 
+function dataLevelLabel(level) {
+  if (level === 'GREEN') return '正常'
+  if (level === 'YELLOW') return '预警'
+  if (level === 'RED') return '异常'
+  return level || '-'
+}
+
 async function loadHistory() {
   try {
     const res = await fetchDecisionHistory(12)
@@ -315,7 +322,7 @@ onMounted(load)
             :type="dataLevelType(briefing.dataLevel)"
             round
           >
-            数据{{ briefing.dataLevel }}
+            数据{{ dataLevelLabel(briefing.dataLevel) }}
           </el-tag>
         </div>
         <div class="stance-title-row">

@@ -8,6 +8,7 @@ import com.awe.apex.quant.domain.dto.IndexRefreshResp;
 import com.awe.apex.quant.domain.entity.IndexBar;
 import com.awe.apex.quant.mapper.IndexBarMapper;
 import com.awe.apex.quant.service.IIndexBoardService;
+import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.util.ProcessIoUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
@@ -41,6 +42,9 @@ public class IndexBoardServiceImpl implements IIndexBoardService {
 
     @Resource
     private IndexBarMapper indexBarMapper;
+
+    @Resource
+    private IMarketBriefingService marketBriefingService;
 
     @Value("${apex.index.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
@@ -137,6 +141,8 @@ public class IndexBoardServiceImpl implements IIndexBoardService {
         if (exit != 0) {
             throw new BusinessException("指数同步脚本退出码 " + exit + "：" + trimOut(outputText));
         }
+        // 指数入库后清掉看板简报缓存，避免仍展示冻住的快照点位
+        marketBriefingService.invalidateCache();
         IndexBoardResp board = board(30);
         return IndexRefreshResp.builder()
                 .success(true)

@@ -364,7 +364,8 @@ def sync_bars(
             from datetime import timedelta
 
             end_dt = datetime.strptime(end, "%Y%m%d").date()
-            if (end_dt - local_max).days <= 10:
+            # 仅当本地已覆盖到 end（含当日）才跳过；周末空隙不再误判「新鲜」
+            if local_max >= end_dt:
                 progress[code] = {
                     "status": "done",
                     "end": end,

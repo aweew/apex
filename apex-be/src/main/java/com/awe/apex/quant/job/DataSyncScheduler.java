@@ -4,6 +4,7 @@ import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.HotRefreshResp;
 import com.awe.apex.quant.domain.dto.IndexRefreshResp;
 import com.awe.apex.quant.domain.dto.LimitUpRefreshResp;
+import com.awe.apex.quant.domain.dto.NewsRefreshResp;
 import com.awe.apex.quant.domain.dto.SectorRefreshResp;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IBarDailyService;
@@ -11,10 +12,13 @@ import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.IIndexBoardService;
 import com.awe.apex.quant.service.ILimitUpLadderService;
+import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.INewsService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.IWatchlistService;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -50,6 +54,12 @@ public class DataSyncScheduler {
     @Resource
     private ILimitUpLadderService limitUpLadderService;
 
+    @Resource
+    private INewsService newsService;
+
+    @Resource
+    private IMarketBriefingService marketBriefingService;
+
     /**
      * 工作日傍晚尝试同步过期日线
      */
@@ -78,7 +88,7 @@ public class DataSyncScheduler {
         }
         String group = configService.getString("auto_sync_group", "我的自选");
         try {
-            Map<String, Object> resp = watchlistService.refreshQuotes(group, 40, true);
+            Map<String, Object> resp = watchlistService.refreshQuotes(group, 80, false);
             log.info("定时刷新行情完成 group={}, success={}", group, resp.get("successCount"));
         } catch (Exception ex) {
             log.warn("定时刷新行情失败: {}", ex.getMessage());
@@ -86,7 +96,7 @@ public class DataSyncScheduler {
     }
 
     /**
-     * 收盘同步包：INDEX → SECTOR → LIMIT_UP（16:35）
+     * 收盘同步包：INDEX → SECTOR → LIMIT_UP → HOT → NEWS（16:35）
      */
     @Scheduled(cron = "0 35 16 * * MON-FRI")
     public void closeBundleAfternoon() {
@@ -97,10 +107,12 @@ public class DataSyncScheduler {
             log.info("收盘包跳过：今日非交易日");
             return;
         }
+        String group = configService.getString("auto_sync_group", "我的自选");
         int ok = 0;
         int fail = 0;
         try {
-            IndexRefreshResp indexResp = indexBoardService.refresh(null);
+            IndexRefreshResp indexResp = indexBoardService.refresh(
+                    LocalDate.now().minusDays(60).format(DateTimeFormatter.BASIC_ISO_DATE));
             ok++;
             log.info("收盘包·指数完成 message={}", indexResp.getMessage());
         } catch (Exception ex) {
@@ -122,6 +134,45 @@ public class DataSyncScheduler {
         } catch (Exception ex) {
             fail++;
             log.warn("收盘包·涨停失败: {}", ex.getMessage());
+        }
+        try {
+            HotRefreshResp hotResp = hotService.refresh("eastmoney,baidu", 50);
+            ok++;
+            log.info("收盘包·热点完成 message={}", hotResp.getMessage());
+        } catch (Exception ex) {
+            fail++;
+            log.warn("收盘包·热点失败: {}", ex.getMessage());
+        }
+        try {
+            NewsRefreshResp newsResp = newsService.refresh("eastmoney,cls,ths,sina", 80);
+            ok++;
+            log.info("收盘包·资讯完成 message={}", newsResp.getMessage());
+        } catch (Exception ex) {
+            fail++;
+            log.warn("收盘包·资讯失败: {}", ex.getMessage());
+        }
+        try {
+            marketBriefingService.invalidateCache();
+        } catch (Exception ex) {
+            log.debug("收盘包·清简报缓存失败: {}", ex.getMessage());
+        }
+        // 自选快照 + 缺当日日线（一键收盘必须带个股）
+        try {
+            Map<String, Object> quoteResp = watchlistService.refreshQuotes(group, 80, false);
+            ok++;
+            log.info("收盘包·自选行情完成 success={}", quoteResp.get("successCount"));
+        } catch (Exception ex) {
+            fail++;
+            log.warn("收盘包·自选行情失败: {}", ex.getMessage());
+        }
+        try {
+            BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);
+            ok++;
+            log.info("收盘包·自选日线完成 success={}, fail={}",
+                    barResp.getSuccessCount(), barResp.getFailCount());
+        } catch (Exception ex) {
+            fail++;
+            log.warn("收盘包·自选日线失败: {}", ex.getMessage());
         }
         log.info("收盘包汇总 success={}, fail={}", ok, fail);
     }

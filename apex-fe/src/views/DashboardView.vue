@@ -5,8 +5,9 @@ import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { dashboardHome, dashboardOverview } from '../api/dashboard'
 import { runDecision } from '../api/decision'
+import { startSyncJob } from '../api/sync'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v3'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v7'
 const loading = ref(false)
 const refreshing = ref(false)
 const running = ref(false)
@@ -113,8 +114,27 @@ const breadth = computed(() => {
     upPct,
     flatPct,
     downPct: Math.max(0, 100 - upPct - flatPct),
+    upShare: total > 0 ? Math.round((up / total) * 100) : null,
     ratio: down > 0 ? (up / down).toFixed(2) : up > 0 ? '∞' : '-',
   }
+})
+
+/** 指数方向与涨跌家数分化时的说明（权重拖累等，不是数据坏了） */
+const breadthHint = computed(() => {
+  const b = breadth.value
+  const rows = indexCards.value || []
+  if (!b || !rows.length) return ''
+  const pcts = rows.map((r) => Number(r.pctChg)).filter((n) => !Number.isNaN(n))
+  if (!pcts.length) return ''
+  const avg = pcts.reduce((a, c) => a + c, 0) / pcts.length
+  if (avg < -0.2 && b.up > b.down * 1.2) {
+    return `上涨占比 ${b.upShare}% · 指数跌、个股涨（权重拖累）`
+  }
+  if (avg > 0.2 && b.down > b.up * 1.2) {
+    return `上涨占比 ${b.upShare}% · 指数涨、个股跌（赚钱效应弱）`
+  }
+  if (b.upShare != null) return `上涨占比 ${b.upShare}%`
+  return ''
 })
 const scorePct = computed(() => {
   const s = Number(market.value?.stanceScore)
@@ -253,14 +273,31 @@ function scheduleEquityLazy() {
 
 async function load(opts = {}) {
   const silent = !!opts.silent
+  const forceRefresh = opts.forceRefresh !== false
   const hasCache = !!home.value
   if (!silent && !hasCache) loading.value = true
   refreshing.value = true
   loadError.value = ''
   try {
-    const res = await dashboardHome()
+    if (forceRefresh) {
+      try {
+        sessionStorage.removeItem(HOME_CACHE_KEY)
+      } catch {
+        // ignore
+      }
+    }
+    const res = await dashboardHome(undefined, '我的自选', forceRefresh)
     home.value = res.data
     writeHomeCache(res.data)
+    if (forceRefresh && !silent) {
+      const vol = res.data?.market?.indexVolumeText
+      const stance = res.data?.market?.stance
+      ElMessage.success(
+        vol
+          ? `行情已刷新 · ${stance || ''} · 沪深京 ${vol}`
+          : `行情已刷新 · ${stance || '简报已重建'}`,
+      )
+    }
     await nextTick()
     renderEquity(home.value?.equityCurve)
     scheduleEquityLazy()
@@ -272,10 +309,31 @@ async function load(opts = {}) {
         ? '看板接口未就绪：请重启后端后再刷新（/api/dashboard/home）'
         : msg
       ElMessage.error(loadError.value)
+    } else {
+      ElMessage.warning('刷新失败，仍展示本地缓存（可能过期）')
     }
   } finally {
     loading.value = false
     refreshing.value = false
+  }
+}
+
+const syncingClose = ref(false)
+
+/** 收盘一键：跳转同步中心看进度 */
+async function onCloseBundleSync() {
+  syncingClose.value = true
+  try {
+    const res = await startSyncJob({
+      taskType: 'CLOSE_BUNDLE',
+      types: 'INDUSTRY,CONCEPT,THEME',
+    })
+    ElMessage.success(`已启动一键收盘同步 #${res.data?.id || ''}`)
+    router.push('/sync')
+  } catch (e) {
+    ElMessage.error(e.message || '启动失败')
+  } finally {
+    syncingClose.value = false
   }
 }
 
@@ -306,10 +364,9 @@ onMounted(() => {
   if (cached) {
     home.value = cached
     nextTick(() => renderEquity(cached.equityCurve))
-    // 有缓存先秒开，再静默刷新
-    load({ silent: true })
+    load({ silent: true, forceRefresh: true })
   } else {
-    load()
+    load({ forceRefresh: true })
   }
   window.addEventListener('resize', onResize)
 })
@@ -338,9 +395,12 @@ onBeforeUnmount(() => {
         <el-button type="primary" class="cta" :loading="running" @click="onRunDecision">
           一键生成决策
         </el-button>
+        <el-button type="success" plain :loading="syncingClose" @click="onCloseBundleSync">
+          一键收盘同步
+        </el-button>
         <el-button @click="router.push('/decision')">智能决策</el-button>
-        <el-button plain @click="router.push('/sync')">同步健康</el-button>
-        <el-button text :loading="refreshing" @click="load()">刷新</el-button>
+        <el-button plain @click="router.push('/sync')">同步中心</el-button>
+        <el-button plain :loading="refreshing" @click="load({ forceRefresh: true })">刷新行情</el-button>
       </div>
     </header>
 
@@ -448,7 +508,6 @@ onBeforeUnmount(() => {
             <span class="market-title">大盘</span>
             <div class="market-links">
               <button type="button" class="text-link" @click="router.push('/market')">详情</button>
-              <button type="button" class="text-link" @click="router.push('/sync')">同步</button>
             </div>
           </div>
 
@@ -465,7 +524,7 @@ onBeforeUnmount(() => {
               </div>
             </template>
             <template v-else>
-              <div v-for="name in ['上证指数', '深圳成指', '创业板指', '科创50']" :key="name" class="index-line muted">
+              <div v-for="name in ['上证指数', '深证成指', '创业板指', '科创50']" :key="name" class="index-line muted">
                 <span class="n">{{ name }}</span>
                 <span class="c">--</span>
                 <span class="p">--</span>
@@ -476,17 +535,15 @@ onBeforeUnmount(() => {
           <div class="stat-line">
             <span
               class="stat"
-              :title="market?.volumeVsMa5Pct != null ? `较5日均额 ${fmtIndexPct(market.volumeVsMa5Pct)}` : '沪深京成交额合计'"
+              :title="market?.volumeVsMa5Pct != null ? `较前日 ${fmtIndexPct(market.volumeVsMa5Pct)}` : '三市成交额（上证+深成+北证）'"
             >
               <em>三市</em>
               <b :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)">{{ market?.indexVolumeText || '--' }}</b>
               <i
-                v-if="market?.volumeTrend || market?.volumeVsMa5Pct != null"
+                v-if="market?.volumeLabel"
                 :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)"
-              >
-                <template v-if="market?.volumeTrend">{{ market.volumeTrend }}</template>
-                <template v-if="market?.volumeVsMa5Pct != null">{{ fmtIndexPct(market.volumeVsMa5Pct) }}</template>
-              </i>
+              >{{ market.volumeLabel }}</i>
+              <i v-else class="miss-hint">暂无今日额</i>
             </span>
             <span class="dot" aria-hidden="true" />
             <span
@@ -520,6 +577,7 @@ onBeforeUnmount(() => {
             <i class="flat-seg" :style="{ width: breadth.flatPct + '%' }" />
             <i class="down-seg" :style="{ width: breadth.downPct + '%' }" />
           </div>
+          <p v-if="breadthHint" class="breadth-hint">{{ breadthHint }}</p>
         </div>
       </div>
     </section>
@@ -1416,6 +1474,21 @@ onBeforeUnmount(() => {
   display: block;
   height: 100%;
   background: rgba(52, 199, 89, 0.55);
+}
+
+.breadth-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted, #8a8f98);
+  letter-spacing: -0.01em;
+}
+
+.miss-hint {
+  margin-left: 4px;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted, #8a8f98);
 }
 
 /* —— panels —— */

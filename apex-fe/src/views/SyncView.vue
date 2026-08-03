@@ -13,6 +13,8 @@ const router = useRouter()
 const loading = ref(false)
 const overview = ref(null)
 const activeJob = ref(null)
+/** 用户当前盯着的任务，避免轮询用列表摘要冲掉详情日志 */
+const pinnedJobId = ref(null)
 const pollTimer = ref(null)
 
 const startForm = ref({
@@ -28,9 +30,11 @@ const startForm = ref({
 
 const tasks = computed(() => overview.value?.tasks || [])
 const recentJobs = computed(() => overview.value?.recentJobs || [])
+const closeBundleTask = computed(() => tasks.value.find((t) => t.taskType === 'CLOSE_BUNDLE') || null)
 const groups = computed(() => {
   const map = new Map()
   for (const t of tasks.value) {
+    // 顶部已有一键入口，列表里仍保留卡片便于看健康与日志
     const g = t.groupName || '其它'
     if (!map.has(g)) map.set(g, [])
     map.get(g).push(t)
@@ -41,6 +45,19 @@ const groups = computed(() => {
 const runningJobs = computed(() =>
   recentJobs.value.filter((j) => j.status === 'RUNNING' || j.status === 'PENDING'),
 )
+
+/** 详情日志；库内为空时用 message/exit/params 兜底，避免「闪一下暂无」 */
+const activeLogText = computed(() => {
+  const job = activeJob.value
+  if (!job) return ''
+  if (job.logTail) return job.logTail
+  const lines = []
+  if (job.message) lines.push(`[message] ${job.message}`)
+  if (job.exitCode != null && job.exitCode !== '') lines.push(`[exit] ${job.exitCode}`)
+  if (job.paramsJson) lines.push(`[params] ${job.paramsJson}`)
+  if (job.status) lines.push(`[status] ${job.status}`)
+  return lines.join('\n')
+})
 
 function statusType(s) {
   if (s === 'SUCCESS') return 'success'
@@ -97,15 +114,33 @@ async function load() {
     overview.value = res.data
     const running = (res.data?.recentJobs || []).find((j) => j.status === 'RUNNING')
     if (running) {
-      activeJob.value = running
+      // 有运行中任务：拉详情（含完整日志），不要用列表摘要覆盖
+      if (!pinnedJobId.value || pinnedJobId.value === running.id) {
+        pinnedJobId.value = running.id
+        await refreshPinnedJob()
+      }
       ensurePoll()
     } else if (!runningJobs.value.length) {
       stopPoll()
+      if (pinnedJobId.value) {
+        await refreshPinnedJob()
+      }
     }
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+/** 按钉住的 jobId 拉完整详情（含 logTail） */
+async function refreshPinnedJob() {
+  if (!pinnedJobId.value) return
+  try {
+    const detail = await fetchSyncJob(pinnedJobId.value)
+    activeJob.value = detail.data
+  } catch {
+    // 详情失败时保留现有面板
   }
 }
 
@@ -119,10 +154,19 @@ function ensurePoll() {
         (j) => j.status === 'RUNNING' || j.status === 'PENDING',
       )
       if (running) {
-        const detail = await fetchSyncJob(running.id)
+        // 运行中默认钉住当前任务；用户若点了别的任务则尊重 pinnedJobId
+        if (!pinnedJobId.value) pinnedJobId.value = running.id
+        const watchId = pinnedJobId.value
+        const detail = await fetchSyncJob(watchId)
         activeJob.value = detail.data
       } else {
-        activeJob.value = res.data?.recentJobs?.[0] || null
+        // 任务结束：再拉一次钉住任务的完整日志，绝不用 overview 摘要覆盖
+        if (pinnedJobId.value) {
+          await refreshPinnedJob()
+        } else if (res.data?.recentJobs?.[0]?.id) {
+          pinnedJobId.value = res.data.recentJobs[0].id
+          await refreshPinnedJob()
+        }
         stopPoll()
       }
     } catch {
@@ -154,9 +198,47 @@ async function onStart(task) {
     if (task.taskType === 'HOT') body.sources = 'eastmoney,baidu'
     if (task.taskType === 'SECTOR_QUOTE') body.types = 'INDUSTRY,CONCEPT,THEME'
     if (task.taskType === 'A_SHARE_BARS') body.start = '20240101'
+    if (task.taskType === 'CLOSE_BUNDLE') body.types = 'INDUSTRY,CONCEPT,THEME'
     const res = await startSyncJob(body)
+    pinnedJobId.value = res.data.id
     activeJob.value = res.data
     ElMessage.success(`已启动 #${res.data.id}`)
+    ensurePoll()
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message || '启动失败')
+  }
+}
+
+/** 收盘后一键：指数→板块→涨停→热点→资讯 */
+async function onCloseBundle() {
+  const task = closeBundleTask.value
+  if (!task) {
+    ElMessage.warning('未注册一键收盘同步任务，请重启后端')
+    return
+  }
+  if (task.running) {
+    ElMessage.info('收盘同步正在运行，请稍候')
+    if (task.latestJob) selectJob(task.latestJob)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '将顺序同步：大盘指数、板块行情、涨停池、热点、资讯。\n适合收盘后一次跑完（不含全A日线，过重请单独启动）。',
+      '一键收盘同步',
+      { type: 'info', confirmButtonText: '开始同步' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await startSyncJob({
+      taskType: 'CLOSE_BUNDLE',
+      types: 'INDUSTRY,CONCEPT,THEME',
+    })
+    pinnedJobId.value = res.data.id
+    activeJob.value = res.data
+    ElMessage.success(`已启动一键收盘同步 #${res.data.id}`)
     ensurePoll()
     await load()
   } catch (e) {
@@ -179,6 +261,7 @@ async function onStartCustom() {
   if (startForm.value.mode) body.mode = startForm.value.mode
   try {
     const res = await startSyncJob(body)
+    pinnedJobId.value = res.data.id
     activeJob.value = res.data
     ElMessage.success(`已启动 #${res.data.id}`)
     ensurePoll()
@@ -199,6 +282,7 @@ async function onStop(job) {
   }
   try {
     const res = await stopSyncJob(job.id)
+    pinnedJobId.value = res.data.id
     activeJob.value = res.data
     ElMessage.success('已发送停止')
     await load()
@@ -208,6 +292,8 @@ async function onStop(job) {
 }
 
 async function selectJob(job) {
+  if (!job?.id) return
+  pinnedJobId.value = job.id
   try {
     const res = await fetchSyncJob(job.id)
     activeJob.value = res.data
@@ -233,10 +319,48 @@ onUnmounted(stopPoll)
       </div>
       <div class="actions">
         <el-tag v-if="runningJobs.length" type="warning">运行中 {{ runningJobs.length }}</el-tag>
+        <el-button
+          type="primary"
+          :disabled="!!closeBundleTask?.running"
+          :loading="!!closeBundleTask?.running"
+          @click="onCloseBundle"
+        >
+          一键收盘同步
+        </el-button>
         <el-button plain @click="router.push('/pipeline')">流水线</el-button>
         <el-button text @click="load">刷新状态</el-button>
       </div>
     </header>
+
+    <section class="close-hero" v-if="closeBundleTask">
+      <div class="close-copy">
+        <h2>收盘后点一次就够</h2>
+        <p>
+          自动串行：大盘指数 → 板块行情 → 涨停池 → 热点 → 资讯。
+          最近成功 {{ fmtTime(closeBundleTask.lastSuccessAt) }} ·
+          <span :class="healthClass(closeBundleTask.healthLevel)">{{ healthLabel(closeBundleTask.healthLevel) }}</span>
+        </p>
+      </div>
+      <div class="close-actions">
+        <el-button
+          type="primary"
+          size="large"
+          :disabled="!!closeBundleTask.running"
+          :loading="!!closeBundleTask.running"
+          @click="onCloseBundle"
+        >
+          {{ closeBundleTask.running ? '同步中…' : '一键收盘同步' }}
+        </el-button>
+        <el-button
+          v-if="closeBundleTask.latestJob"
+          size="large"
+          plain
+          @click="selectJob(closeBundleTask.latestJob)"
+        >
+          看进度/日志
+        </el-button>
+      </div>
+    </section>
 
     <div class="layout">
       <section class="tasks-panel">
@@ -354,7 +478,7 @@ onUnmounted(stopPoll)
               <div><label>说明</label>{{ activeJob.message || '-' }}</div>
             </div>
             <el-progress :percentage="Number(activeJob.progressPct || 0)" :stroke-width="10" />
-            <pre class="log">{{ activeJob.logTail || '暂无日志' }}</pre>
+            <pre class="log">{{ activeLogText || '暂无日志' }}</pre>
           </template>
           <el-empty v-else description="选择任务或启动同步后在此查看进度" :image-size="64" />
         </div>
@@ -386,6 +510,38 @@ onUnmounted(stopPoll)
   grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
   gap: 16px;
   align-items: start;
+}
+
+.close-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(10, 132, 255, 0.28);
+  background: linear-gradient(120deg, rgba(10, 132, 255, 0.12), rgba(52, 199, 89, 0.08));
+  box-shadow: var(--shadow-soft);
+}
+
+.close-copy h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.close-copy p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.close-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .group {

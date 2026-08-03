@@ -38,11 +38,13 @@ import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.DailyActionMapper;
 import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
+import com.awe.apex.quant.mapper.MyHoldingMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockFinAbstractMapper;
 import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.TradingCalendar;
+import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.ILimitUpLadderService;
@@ -152,6 +154,15 @@ public class DecisionServiceImpl implements IDecisionService {
     @Resource
     private DecisionScorer decisionScorer;
 
+    @Resource
+    private MyHoldingMapper myHoldingMapper;
+
+    @Resource
+    private IConfigService configService;
+
+    private static final BigDecimal FALLBACK_STOP_PCT = new BigDecimal("0.08");
+    private static final BigDecimal FALLBACK_TAKE_PCT = new BigDecimal("0.20");
+
     /**
      * 一键生成今日决策：刷新股票池 → 跑策略 → 共振/基本面/风控 → 落库 → 同步观察池
      *
@@ -251,6 +262,17 @@ public class DecisionServiceImpl implements IDecisionService {
         Map<String, StockBasic> basicMap = loadBasics(codesNeeded);
         Map<String, FundSnapshot> fundMap = loadFunds(codesNeeded);
 
+        // 持仓缺止损/止盈时先补全（供卖出/持有/加仓离场规则使用）
+        for (MyHolding holding : holdings) {
+            String code = holding.getCode();
+            StockBasic basic = basicMap.get(code);
+            if (Objects.isNull(basic) && StringUtils.isNotBlank(code)) {
+                basic = basicMap.get(MarketCodeUtils.normalizeHoldingCode(code));
+            }
+            BigDecimal price = Objects.nonNull(basic) ? basic.getLatestPrice() : holding.getMarketPrice();
+            ensureHoldingStopTake(holding, price);
+        }
+
         // 5b. 买入信号批量估值（决策加减分 / 观察池理由）
         Set<String> buyValCodes = new HashSet<>();
         for (StrategySignalEntity signal : signals) {
@@ -291,7 +313,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 int hotCnt = Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount()) ? hot.getSourceCount() : 0;
                 BigDecimal score = decisionScorer.scoreSell(baseScore(signal.getScore()), cfCount, hotCnt);
                 String reason = humanReason(signal, cf, null, "持仓卖出", hot);
-                String exitRule = exitRuleOf(signal.getStrategyId());
+                String exitRule = mergeExitRule(exitRuleOf(signal.getStrategyId()), holdingInMap);
                 int minCf = strategyParams.decisionConfluenceMinStrategies();
                 DecisionItemResp item = DecisionItemResp.builder()
                         .actionDate(actionDate)
@@ -376,6 +398,9 @@ public class DecisionServiceImpl implements IDecisionService {
             }
 
             // 基本面硬剔除：不进「今日买入」，但仍可进观察池盯信号
+            BigDecimal buyPrice = Objects.nonNull(basic) ? basic.getLatestPrice() : null;
+            String buyExitRule = buyExitRule(signal.getStrategyId(), code, buyPrice, holdingInMap);
+
             if (gate.exclude) {
                 if (!alreadyHeld && observeCodes.add(code)) {
                     observeCandidates.add(DecisionItemResp.builder()
@@ -387,7 +412,7 @@ public class DecisionServiceImpl implements IDecisionService {
                             .reason(trimReason("观察：" + reason + " · 基本面警示仅观察不急买"))
                             .score(scored.getFinalScore())
                             .suggestedWeight(BigDecimal.ZERO)
-                            .exitRule(exitRuleOf(signal.getStrategyId()))
+                            .exitRule(buyExitRule)
                             .confluenceCount(cfCount)
                             .confluence(cfCount >= minCf)
                             .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
@@ -417,7 +442,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .reason(reason)
                     .score(scored.getFinalScore())
                     .suggestedWeight(scored.getSuggestedWeight())
-                    .exitRule(exitRuleOf(signal.getStrategyId()))
+                    .exitRule(buyExitRule)
                     .confluenceCount(cfCount)
                     .confluence(cfCount >= minCf)
                     .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
@@ -609,7 +634,7 @@ public class DecisionServiceImpl implements IDecisionService {
                         .reason(stopSell)
                         .score(new BigDecimal("90"))
                         .suggestedWeight(null)
-                        .exitRule(stopSell)
+                        .exitRule(holdingExitRule(holding) + " · " + stopSell)
                         .confluenceCount(0)
                         .confluence(false)
                         .strategies(List.of("RISK"))
@@ -622,7 +647,7 @@ public class DecisionServiceImpl implements IDecisionService {
             }
         }
 
-        // 其余「我的持仓」→ HOLD
+        // 其余「我的持仓」→ HOLD（离场规则必含止损+止盈）
         for (MyHolding holding : holdings) {
             String code = holding.getCode();
             if (covered.contains(code)) {
@@ -636,15 +661,16 @@ public class DecisionServiceImpl implements IDecisionService {
                             : (Objects.nonNull(basic) ? basic.getName() : null))
                     .action("HOLD")
                     .strategyId(null)
-                    .reason("无新卖出信号，继续持有")
+                    .reason("无新卖出信号，继续持有 · " + holdingExitRule(holding))
                     .score(null)
                     .suggestedWeight(null)
-                    .exitRule("止损 " + holding.getStopLoss() + " / 止盈 " + holding.getTakeProfit())
+                    .exitRule(holdingExitRule(holding))
                     .confluenceCount(0)
                     .confluence(false)
                     .strategies(List.of())
                     .fundNote(fundNoteOf(fundMap.get(code)))
                     .signalId(null)
+                    .scoreExplain(holdingExitRule(holding))
                     .build();
             holds.add(item);
             covered.add(code);
@@ -1483,26 +1509,74 @@ public class DecisionServiceImpl implements IDecisionService {
      */
     private List<String> loadMarketBuyCandidateCodes(int limit, List<String> mainlineNames) {
         int cap = Math.max(200, Math.min(limit, 4000));
-        List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
-                .isNotNull(StockBasic::getLatestPrice)
-                .gt(StockBasic::getLatestPrice, BigDecimal.ZERO)
-                .and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0))
-                .orderByDesc(StockBasic::getCircMv)
-                .last("LIMIT " + cap));
-        if (CollUtil.isEmpty(basics)) {
-            basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
-                    .isNotNull(StockBasic::getLatestPrice)
-                    .gt(StockBasic::getLatestPrice, BigDecimal.ZERO)
-                    .last("LIMIT " + cap));
+        // 有足够日线的标的优先（本地现价覆盖率低时，不能再靠 latest_price 筛全A）
+        List<Map<String, Object>> barStats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
+                .select("code", "COUNT(1) AS cnt")
+                .groupBy("code")
+                .having("COUNT(1) >= {0}", 60));
+        Set<String> barOk = new HashSet<>();
+        if (CollUtil.isNotEmpty(barStats)) {
+            for (Map<String, Object> row : barStats) {
+                if (Objects.nonNull(row) && Objects.nonNull(row.get("code"))) {
+                    barOk.add(String.valueOf(row.get("code")));
+                }
+            }
         }
         List<String> codes = new ArrayList<>();
         Set<String> seen = new HashSet<>();
-        for (StockBasic basic : basics) {
-            appendCandidateCode(basic, codes, seen);
+        if (CollUtil.isNotEmpty(barOk)) {
+            List<String> barCodes = new ArrayList<>(barOk);
+            // 分批取 basic，按流通市值排序补齐
+            List<StockBasic> allBasics = new ArrayList<>();
+            int batch = 500;
+            for (int i = 0; i < barCodes.size(); i += batch) {
+                List<String> part = barCodes.subList(i, Math.min(i + batch, barCodes.size()));
+                List<StockBasic> partBasics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                        .in(StockBasic::getCode, part)
+                        .and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0)));
+                if (CollUtil.isNotEmpty(partBasics)) {
+                    allBasics.addAll(partBasics);
+                }
+            }
+            allBasics.sort((a, b) -> {
+                BigDecimal ma = Objects.nonNull(a.getCircMv()) ? a.getCircMv() : BigDecimal.ZERO;
+                BigDecimal mb = Objects.nonNull(b.getCircMv()) ? b.getCircMv() : BigDecimal.ZERO;
+                return mb.compareTo(ma);
+            });
+            for (StockBasic basic : allBasics) {
+                if (codes.size() >= cap) {
+                    break;
+                }
+                appendCandidateCode(basic, codes, seen);
+            }
+            // basic 缺失时，仍保留有日线的代码
+            if (codes.size() < Math.min(cap, barOk.size())) {
+                for (String code : barCodes) {
+                    if (codes.size() >= cap) {
+                        break;
+                    }
+                    if (seen.add(code)) {
+                        codes.add(code);
+                    }
+                }
+            }
         }
         int mvCount = codes.size();
+        // 兜底：仍无日线池时，退回有现价的大市值
+        if (codes.isEmpty()) {
+            List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                    .isNotNull(StockBasic::getLatestPrice)
+                    .gt(StockBasic::getLatestPrice, BigDecimal.ZERO)
+                    .and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0))
+                    .orderByDesc(StockBasic::getCircMv)
+                    .last("LIMIT " + cap));
+            for (StockBasic basic : basics) {
+                appendCandidateCode(basic, codes, seen);
+            }
+            mvCount = codes.size();
+        }
         int mainlineAdded = appendMainlineIndustryCandidates(codes, seen, mainlineNames);
-        log.info("全A买入候选加载 mvCount={} mainlineAdded={} total={}", mvCount, mainlineAdded, codes.size());
+        log.info("全A买入候选加载 barBased={} mainlineAdded={} total={}", mvCount, mainlineAdded, codes.size());
         return codes;
     }
 
@@ -1762,15 +1836,175 @@ public class DecisionServiceImpl implements IDecisionService {
         return "按策略离场";
     }
 
+    /**
+     * 买入离场规则：策略离场 + 止损/止盈价（持仓已有则用持仓，否则按现价生成建议）
+     */
+    private String buyExitRule(String strategyId, String code, BigDecimal price, MyHolding holding) {
+        String base = exitRuleOf(strategyId);
+        if (Objects.nonNull(holding)
+                && Objects.nonNull(holding.getStopLoss()) && holding.getStopLoss().signum() > 0
+                && Objects.nonNull(holding.getTakeProfit()) && holding.getTakeProfit().signum() > 0) {
+            return mergeExitRule(base, holding);
+        }
+        BigDecimal[] levels = suggestStopTake(code, price);
+        if (Objects.isNull(levels[0]) || Objects.isNull(levels[1])) {
+            return base;
+        }
+        return base + "；建议止损 " + moneyText(levels[0]) + " / 止盈 " + moneyText(levels[1]);
+    }
+
+    private String mergeExitRule(String strategyExit, MyHolding holding) {
+        if (Objects.isNull(holding)) {
+            return strategyExit;
+        }
+        String holdingRule = holdingExitRule(holding);
+        if (StringUtils.isBlank(holdingRule) || "止损 - / 止盈 -".equals(holdingRule)) {
+            return strategyExit;
+        }
+        if (StringUtils.isBlank(strategyExit)) {
+            return holdingRule;
+        }
+        return strategyExit + "；" + holdingRule;
+    }
+
+    private String holdingExitRule(MyHolding holding) {
+        if (Objects.isNull(holding)) {
+            return "止损 - / 止盈 -";
+        }
+        String stop = Objects.nonNull(holding.getStopLoss()) && holding.getStopLoss().signum() > 0
+                ? moneyText(holding.getStopLoss()) : "-";
+        String take = Objects.nonNull(holding.getTakeProfit()) && holding.getTakeProfit().signum() > 0
+                ? moneyText(holding.getTakeProfit()) : "-";
+        return "止损 " + stop + " / 止盈 " + take;
+    }
+
+    /**
+     * 持仓缺止损或止盈时自动生成并回写（已有值不覆盖）
+     */
+    private void ensureHoldingStopTake(MyHolding holding, BigDecimal price) {
+        if (Objects.isNull(holding) || Objects.isNull(holding.getId())) {
+            return;
+        }
+        boolean needStop = Objects.isNull(holding.getStopLoss()) || holding.getStopLoss().signum() <= 0;
+        boolean needTake = Objects.isNull(holding.getTakeProfit()) || holding.getTakeProfit().signum() <= 0;
+        if (!needStop && !needTake) {
+            return;
+        }
+        BigDecimal base = null;
+        if (Objects.nonNull(holding.getCostPrice()) && holding.getCostPrice().signum() > 0) {
+            base = holding.getCostPrice();
+        } else if (Objects.nonNull(price) && price.signum() > 0) {
+            base = price;
+        } else if (Objects.nonNull(holding.getMarketPrice()) && holding.getMarketPrice().signum() > 0) {
+            base = holding.getMarketPrice();
+        }
+        BigDecimal[] levels = suggestStopTake(holding.getCode(), base);
+        if (needStop && Objects.nonNull(levels[0])) {
+            holding.setStopLoss(levels[0]);
+        }
+        if (needTake && Objects.nonNull(levels[1])) {
+            holding.setTakeProfit(levels[1]);
+        }
+        if ((needStop && Objects.nonNull(holding.getStopLoss()))
+                || (needTake && Objects.nonNull(holding.getTakeProfit()))) {
+            MyHolding patch = new MyHolding();
+            patch.setId(holding.getId());
+            patch.setStopLoss(holding.getStopLoss());
+            patch.setTakeProfit(holding.getTakeProfit());
+            patch.setUpdateTime(LocalDateTime.now());
+            myHoldingMapper.updateById(patch);
+            log.info("持仓止损止盈已自动补全 code={} stop={} take={}",
+                    holding.getCode(), holding.getStopLoss(), holding.getTakeProfit());
+        }
+    }
+
+    /**
+     * 建议止损/止盈：优先 ATR14×倍数，否则固定比例（默认 -8% / +20%）
+     *
+     * @return [stop, take]，算不出则为 null
+     */
+    private BigDecimal[] suggestStopTake(String code, BigDecimal basePrice) {
+        BigDecimal[] result = new BigDecimal[]{null, null};
+        if (Objects.isNull(basePrice) || basePrice.signum() <= 0) {
+            return result;
+        }
+        BigDecimal stopMult = configService.getDecimal("atr_stop_mult", new BigDecimal("2.0"));
+        BigDecimal takeMult = configService.getDecimal("atr_take_mult", new BigDecimal("3.0"));
+        BigDecimal atr = calcAtr14(code);
+        BigDecimal stop;
+        BigDecimal take;
+        if (Objects.nonNull(atr) && atr.signum() > 0) {
+            stop = basePrice.subtract(atr.multiply(stopMult)).setScale(2, RoundingMode.HALF_UP);
+            take = basePrice.add(atr.multiply(takeMult)).setScale(2, RoundingMode.HALF_UP);
+            if (stop.signum() <= 0) {
+                stop = basePrice.multiply(BigDecimal.ONE.subtract(FALLBACK_STOP_PCT))
+                        .setScale(2, RoundingMode.HALF_UP);
+            }
+        } else {
+            stop = basePrice.multiply(BigDecimal.ONE.subtract(FALLBACK_STOP_PCT))
+                    .setScale(2, RoundingMode.HALF_UP);
+            take = basePrice.multiply(BigDecimal.ONE.add(FALLBACK_TAKE_PCT))
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
+        result[0] = stop;
+        result[1] = take;
+        return result;
+    }
+
+    private BigDecimal calcAtr14(String code) {
+        if (StringUtils.isBlank(code)) {
+            return BigDecimal.ZERO;
+        }
+        String normalized = MarketCodeUtils.normalizeHoldingCode(code);
+        List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                .eq(BarDaily::getCode, normalized)
+                .orderByDesc(BarDaily::getTradeDate)
+                .last("limit 20"));
+        if (CollUtil.isEmpty(bars) || bars.size() < 15) {
+            return BigDecimal.ZERO;
+        }
+        List<BarDaily> asc = new ArrayList<>(bars);
+        asc.sort(Comparator.comparing(BarDaily::getTradeDate));
+        BigDecimal sum = BigDecimal.ZERO;
+        int n = 0;
+        for (int i = 1; i < asc.size() && n < 14; i++) {
+            BarDaily cur = asc.get(i);
+            BarDaily prev = asc.get(i - 1);
+            if (Objects.isNull(cur.getHighPrice()) || Objects.isNull(cur.getLowPrice())
+                    || Objects.isNull(prev.getClosePrice())) {
+                continue;
+            }
+            BigDecimal tr1 = cur.getHighPrice().subtract(cur.getLowPrice());
+            BigDecimal tr2 = cur.getHighPrice().subtract(prev.getClosePrice()).abs();
+            BigDecimal tr3 = cur.getLowPrice().subtract(prev.getClosePrice()).abs();
+            BigDecimal tr = tr1.max(tr2).max(tr3);
+            sum = sum.add(tr);
+            n++;
+        }
+        if (n == 0) {
+            return BigDecimal.ZERO;
+        }
+        return sum.divide(BigDecimal.valueOf(n), 4, RoundingMode.HALF_UP);
+    }
+
+    private String moneyText(BigDecimal price) {
+        if (Objects.isNull(price)) {
+            return "-";
+        }
+        return price.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
     private String stopTakeReason(MyHolding holding, BigDecimal price) {
         if (Objects.isNull(price)) {
             return null;
         }
-        if (Objects.nonNull(holding.getStopLoss()) && price.compareTo(holding.getStopLoss()) <= 0) {
-            return "现价触及止损 " + holding.getStopLoss();
+        if (Objects.nonNull(holding.getStopLoss()) && holding.getStopLoss().signum() > 0
+                && price.compareTo(holding.getStopLoss()) <= 0) {
+            return "现价触及止损 " + moneyText(holding.getStopLoss());
         }
-        if (Objects.nonNull(holding.getTakeProfit()) && price.compareTo(holding.getTakeProfit()) >= 0) {
-            return "现价触及止盈 " + holding.getTakeProfit();
+        if (Objects.nonNull(holding.getTakeProfit()) && holding.getTakeProfit().signum() > 0
+                && price.compareTo(holding.getTakeProfit()) >= 0) {
+            return "现价触及止盈 " + moneyText(holding.getTakeProfit());
         }
         return null;
     }

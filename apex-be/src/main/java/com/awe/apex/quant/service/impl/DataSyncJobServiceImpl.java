@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.SyncJobResp;
 import com.awe.apex.quant.domain.dto.SyncOverviewResp;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
@@ -10,6 +11,11 @@ import com.awe.apex.quant.domain.dto.SyncTaskDefResp;
 import com.awe.apex.quant.domain.entity.SyncJob;
 import com.awe.apex.quant.mapper.SyncJobMapper;
 import com.awe.apex.quant.service.IDataSyncJobService;
+import com.awe.apex.quant.service.IBarDailyService;
+import com.awe.apex.quant.service.IConfigService;
+import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IMyHoldingService;
+import com.awe.apex.quant.service.IWatchlistService;
 import com.awe.apex.quant.sync.SyncTaskHealth;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
 import com.awe.apex.quant.sync.SyncTaskSpec;
@@ -17,6 +23,7 @@ import com.awe.apex.quant.util.ProcessIoUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +59,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     private static final Pattern PCT_PATTERN = Pattern.compile("(\\d{1,3})\\s*%");
     private static final Pattern STEP_PATTERN = Pattern.compile("\\[(\\d+)\\s*/\\s*(\\d+)]");
+    /** CLOSE_BUNDLE: step 1/5: index */
+    private static final Pattern CLOSE_STEP_PATTERN = Pattern.compile("step\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
     private static final int LOG_MAX = 12000;
 
     @Resource
@@ -59,6 +68,21 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Resource
     private SyncTaskRegistry syncTaskRegistry;
+
+    @Resource
+    private IMarketBriefingService marketBriefingService;
+
+    @Resource
+    private IWatchlistService watchlistService;
+
+    @Resource
+    private IBarDailyService barDailyService;
+
+    @Resource
+    private IMyHoldingService myHoldingService;
+
+    @Resource
+    private IConfigService configService;
 
     @Resource
     private ObjectMapper objectMapper;
@@ -80,6 +104,28 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private final Map<Long, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
 
     /**
+     * 进程重启后，内存里的运行句柄已丢，库中 RUNNING/PENDING 视为僵尸任务
+     */
+    @PostConstruct
+    public void reconcileOrphanJobs() {
+        List<SyncJob> orphans = syncJobMapper.selectList(Wrappers.<SyncJob>lambdaQuery()
+                .in(SyncJob::getStatus, List.of("RUNNING", "PENDING")));
+        if (CollUtil.isEmpty(orphans)) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (SyncJob job : orphans) {
+            job.setStatus("FAILED");
+            job.setMessage("服务重启，任务中断（僵尸任务已清理）");
+            job.setFinishedAt(now);
+            appendLog(job, "\n[orphan] jvm restarted, mark FAILED\n");
+            syncJobMapper.updateById(job);
+            log.warn("清理僵尸同步任务 jobId={} type={} statusWas=RUNNING/PENDING",
+                    job.getId(), job.getTaskType());
+        }
+    }
+
+    /**
      * 总览
      *
      * @return 总览
@@ -99,7 +145,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                         .orderByDesc(SyncJob::getId)
                         .last("LIMIT 1"));
                 if (Objects.nonNull(one)) {
-                    latestByType.put(spec.getTaskType(), toResp(one));
+                    latestByType.put(spec.getTaskType(), toResp(one, false));
                 }
             }
         }
@@ -274,7 +320,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             return list;
         }
         for (SyncJob row : rows) {
-            list.add(toResp(row));
+            // 列表不带完整日志，避免 overview 体积过大；看日志走 getJob
+            list.add(toResp(row, false));
         }
         return list;
     }
@@ -358,7 +405,13 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 }
             }
             job.setExitCode(exit);
-            job.setLogTail(trimLog(logBuf.toString()));
+            String logText = trimLog(logBuf.toString());
+            if (StringUtils.isBlank(logText)) {
+                logText = buildFallbackLog(command, exit, null);
+            } else if (exit != 0) {
+                logText = trimLog(logText + "\n[exit=" + exit + "]\n");
+            }
+            job.setLogTail(logText);
             enrichProgressFromFile(job);
             if (cancelled.get()) {
                 job.setStatus("CANCELLED");
@@ -367,9 +420,12 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 job.setStatus("SUCCESS");
                 job.setProgressPct(100);
                 job.setMessage("完成");
+                onMarketDataSynced(spec.getTaskType());
             } else {
                 job.setStatus("FAILED");
                 job.setMessage("脚本退出码 " + exit);
+                // 部分成功（如指数已更新）也清简报，避免看板继续冻旧立场
+                onMarketDataSynced(spec.getTaskType());
             }
             job.setFinishedAt(LocalDateTime.now());
             syncJobMapper.updateById(job);
@@ -380,7 +436,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 job.setStatus(cancelled.get() ? "CANCELLED" : "FAILED");
                 job.setMessage(clip(ex.getMessage(), 400));
                 job.setExitCode(exit);
-                job.setLogTail(trimLog(logBuf + "\n" + ex.getMessage()));
+                String fallback = buildFallbackLog(command, exit, ex.getMessage());
+                String merged = logBuf.length() > 0 ? (logBuf + "\n" + fallback) : fallback;
+                job.setLogTail(trimLog(merged));
                 job.setFinishedAt(LocalDateTime.now());
                 syncJobMapper.updateById(job);
             }
@@ -389,18 +447,88 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
     }
 
+    /**
+     * 无脚本输出时仍写入可诊断日志，避免前端「暂无日志」
+     */
+    private String buildFallbackLog(List<String> command, int exit, String error) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[cmd] ").append(String.join(" ", command)).append('\n');
+        sb.append("[exit] ").append(exit).append('\n');
+        if (StringUtils.isNotBlank(error)) {
+            sb.append("[error] ").append(error).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 市场相关同步结束后清看板简报缓存（成功/失败都清，避免冻住旧立场）
+     */
+    private void onMarketDataSynced(String taskType) {
+        if (StringUtils.isBlank(taskType)) {
+            return;
+        }
+        String type = taskType.trim().toUpperCase(Locale.ROOT);
+        if ("CLOSE_BUNDLE".equals(type) || "INDEX".equals(type) || "SECTOR_QUOTE".equals(type)
+                || "LIMIT_UP".equals(type)) {
+            try {
+                marketBriefingService.invalidateCache();
+            } catch (Exception ex) {
+                log.debug("清简报缓存失败 type={} err={}", type, ex.getMessage());
+            }
+        }
+        // Web「一键收盘」脚本不含个股：成功后补刷自选/持仓快照与缺日 K
+        if ("CLOSE_BUNDLE".equals(type)) {
+            String group = "我的自选";
+            try {
+                if (Objects.nonNull(configService)) {
+                    group = configService.getString("auto_sync_group", group);
+                }
+            } catch (Exception ignored) {
+                // keep default
+            }
+            try {
+                Map<String, Object> quoteResp = watchlistService.refreshQuotes(group, 80, false);
+                log.info("CLOSE_BUNDLE 后刷自选行情 success={}", quoteResp.get("successCount"));
+            } catch (Exception ex) {
+                log.warn("CLOSE_BUNDLE 后刷自选行情失败: {}", ex.getMessage());
+            }
+            try {
+                myHoldingService.refreshQuotes(false);
+                log.info("CLOSE_BUNDLE 后刷持仓行情完成");
+            } catch (Exception ex) {
+                log.warn("CLOSE_BUNDLE 后刷持仓行情失败: {}", ex.getMessage());
+            }
+            try {
+                BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);
+                log.info("CLOSE_BUNDLE 后刷自选日线 success={}, fail={}",
+                        barResp.getSuccessCount(), barResp.getFailCount());
+            } catch (Exception ex) {
+                log.warn("CLOSE_BUNDLE 后刷自选日线失败: {}", ex.getMessage());
+            }
+        }
+    }
+
     private void updateProgressFromLine(SyncJob job, String line, long lineNo) {
         if (StringUtils.isBlank(line)) {
             return;
         }
         Matcher step = STEP_PATTERN.matcher(line);
-        if (step.find()) {
+        if (!step.find()) {
+            step = CLOSE_STEP_PATTERN.matcher(line);
+            if (!step.find()) {
+                step = null;
+            }
+        }
+        if (Objects.nonNull(step)) {
             int done = Integer.parseInt(step.group(1));
             int total = Integer.parseInt(step.group(2));
             job.setDoneItems(done);
             job.setTotalItems(total);
             if (total > 0) {
                 job.setProgressPct(Math.min(99, done * 100 / total));
+            }
+            if (line.contains("CLOSE_BUNDLE") || line.toLowerCase(Locale.ROOT).contains("step")) {
+                job.setMessage(trimMessage(line));
             }
             return;
         }
@@ -414,6 +542,14 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             // 无明确进度时缓慢爬升，避免一直 0
             job.setProgressPct((int) Math.min(90, 5 + lineNo / 20));
         }
+    }
+
+    private String trimMessage(String line) {
+        String text = line.trim();
+        if (text.length() > 180) {
+            return text.substring(0, 180);
+        }
+        return text;
     }
 
     private void enrichProgressFromFile(SyncJob job) {
@@ -511,6 +647,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     }
 
     private SyncJobResp toResp(SyncJob job) {
+        return toResp(job, true);
+    }
+
+    private SyncJobResp toResp(SyncJob job, boolean includeLog) {
         return SyncJobResp.builder()
                 .id(job.getId())
                 .taskType(job.getTaskType())
@@ -521,7 +661,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 .doneItems(job.getDoneItems())
                 .totalItems(job.getTotalItems())
                 .message(job.getMessage())
-                .logTail(job.getLogTail())
+                .logTail(includeLog ? job.getLogTail() : null)
                 .exitCode(job.getExitCode())
                 .pid(job.getPid())
                 .startedAt(job.getStartedAt())

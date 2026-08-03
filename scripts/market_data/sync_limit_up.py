@@ -109,15 +109,42 @@ def fmt_seal_time(raw: Any) -> Optional[str]:
     return digits
 
 
-def fetch_zt_pool(trade_date: date) -> List[Dict[str, Any]]:
+# 东财涨停池主机：push2ex 常超时，备选同路径
+ZT_POOL_HOSTS = (
+    "https://push2ex.eastmoney.com/getTopicZTPool",
+    "https://push2delay.eastmoney.com/getTopicZTPool",
+    "https://82.push2.eastmoney.com/getTopicZTPool",
+)
+
+
+def _http_get_json(session, url: str, params: Dict[str, Any], timeout: float, retries: int) -> Dict[str, Any]:
+    """带退避重试的 GET JSON；换主机由上层循环。"""
+    import requests
+
+    last_err: Optional[Exception] = None
+    for attempt in range(1, max(retries, 1) + 1):
+        try:
+            r = session.get(url, params=params, timeout=timeout)
+            r.raise_for_status()
+            return r.json() or {}
+        except (requests.RequestException, ValueError) as ex:
+            last_err = ex
+            wait = min(2 ** attempt, 12)
+            print(f"  retry {attempt}/{retries} host={url.split('/')[2]} wait={wait}s err={ex}", flush=True)
+            time.sleep(wait)
+    assert last_err is not None
+    raise last_err
+
+
+def fetch_zt_pool(trade_date: date, timeout: float = 45, retries: int = 4) -> List[Dict[str, Any]]:
     import requests
 
     day = trade_date.strftime("%Y%m%d")
-    url = "https://push2ex.eastmoney.com/getTopicZTPool"
     rows: List[Dict[str, Any]] = []
     page = 0
     session = requests.Session()
     session.headers.update(EM_HEADERS)
+    host_idx = 0
     while True:
         params = {
             "ut": "7eea3edcaed734bea9cbfc24409ed989",
@@ -127,9 +154,23 @@ def fetch_zt_pool(trade_date: date) -> List[Dict[str, Any]]:
             "sort": "fbt:asc",
             "date": day,
         }
-        r = session.get(url, params=params, timeout=20)
-        r.raise_for_status()
-        data = (r.json() or {}).get("data") or {}
+        data: Dict[str, Any] = {}
+        last_err: Optional[Exception] = None
+        # 同一页可轮换主机，避免单点超时拖死整包
+        for offset in range(len(ZT_POOL_HOSTS)):
+            url = ZT_POOL_HOSTS[(host_idx + offset) % len(ZT_POOL_HOSTS)]
+            try:
+                payload = _http_get_json(session, url, params, timeout=timeout, retries=retries)
+                data = payload.get("data") or {}
+                host_idx = (host_idx + offset) % len(ZT_POOL_HOSTS)
+                print(f"  page={page} ok host={url.split('/')[2]}", flush=True)
+                last_err = None
+                break
+            except Exception as ex:  # noqa: BLE001
+                last_err = ex
+                continue
+        if last_err is not None:
+            raise last_err
         pool = data.get("pool") or []
         if not pool:
             break
@@ -170,7 +211,7 @@ def fetch_zt_pool(trade_date: date) -> List[Dict[str, Any]]:
         if (page + 1) * 200 >= total or len(pool) < 200:
             break
         page += 1
-        time.sleep(0.2)
+        time.sleep(0.35)
     return rows
 
 
@@ -231,12 +272,12 @@ def upsert_day(conn, trade_date: date, rows: List[Dict[str, Any]]) -> int:
     return len(rows)
 
 
-def sync_one(conn, trade_date: date) -> int:
-    print(f"拉取涨停池 {trade_date} ...")
-    rows = fetch_zt_pool(trade_date)
+def sync_one(conn, trade_date: date, timeout: float = 45, retries: int = 4) -> int:
+    print(f"拉取涨停池 {trade_date} ...", flush=True)
+    rows = fetch_zt_pool(trade_date, timeout=timeout, retries=retries)
     n = upsert_day(conn, trade_date, rows)
     conn.commit()
-    print(f"{trade_date} upsert={n}")
+    print(f"{trade_date} upsert={n}", flush=True)
     return n
 
 
@@ -245,27 +286,30 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="同步涨停池（连板天梯）")
     parser.add_argument("--date", default="", help="交易日 YYYYMMDD / YYYY-MM-DD，默认今天")
     parser.add_argument("--with-prev", action="store_true", help="同时同步前一自然日（用于晋级率）")
+    parser.add_argument("--timeout", type=float, default=45, help="单次请求读超时秒，默认 45")
+    parser.add_argument("--retries", type=int, default=4, help="单主机重试次数，默认 4")
     args = parser.parse_args()
 
     trade_date = parse_day(args.date or None)
     conn = db_conn()
     try:
-        total = sync_one(conn, trade_date)
+        total = sync_one(conn, trade_date, timeout=args.timeout, retries=args.retries)
         if args.with_prev:
             # 向前最多回看 10 个自然日找有数据的前一日；先落库昨天方便晋级率
             prev = trade_date - timedelta(days=1)
             for _ in range(10):
                 try:
-                    total += sync_one(conn, prev)
+                    total += sync_one(conn, prev, timeout=args.timeout, retries=args.retries)
                     break
                 except Exception as ex:  # noqa: BLE001
-                    print(f"前一日 {prev} 失败: {ex}", file=sys.stderr)
+                    print(f"前一日 {prev} 失败: {ex}", file=sys.stderr, flush=True)
                     prev -= timedelta(days=1)
-        print(f"done total={total}")
+                    time.sleep(1.5)
+        print(f"done total={total}", flush=True)
         return 0
     except Exception as ex:  # noqa: BLE001
         conn.rollback()
-        print(f"FAIL {ex}", file=sys.stderr)
+        print(f"FAIL {ex}", file=sys.stderr, flush=True)
         return 1
     finally:
         conn.close()

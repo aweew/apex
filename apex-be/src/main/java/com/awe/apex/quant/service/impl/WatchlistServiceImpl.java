@@ -1,5 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
+import com.awe.apex.quant.market.TradingCalendar;
+
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.text.csv.CsvData;
@@ -159,7 +161,7 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
         }
         BigDecimal hs300Ret20 = periodReturnPct(hs300Closes, 20);
 
-        LocalDate staleBefore = LocalDate.now().minusDays(10);
+        LocalDate staleBefore = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
         List<WatchlistResp> result = new ArrayList<>();
         for (Watchlist item : list) {
             StockBasic basic = basicMap.get(item.getCode());
@@ -392,27 +394,35 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
         for (StockBasic basic : basics) {
             basicMap.put(basic.getCode(), basic);
         }
-        List<Watchlist> ordered = new ArrayList<>();
-        if (prefer) {
-            Set<String> picked = new HashSet<>();
-            for (Watchlist item : list) {
-                StockBasic basic = basicMap.get(item.getCode());
-                boolean missing = Objects.isNull(basic)
-                        || Objects.isNull(basic.getPeTtm())
-                        || Objects.isNull(basic.getLatestPrice());
-                if (missing) {
-                    ordered.add(item);
-                    picked.add(item.getCode());
-                }
+        // 按 quote_time 最旧优先，多轮刷新才能覆盖整组自选（勿每轮都刷同一批）
+        LocalDateTime sessionStart = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now()).atTime(9, 15);
+        List<Watchlist> ordered = new ArrayList<>(list);
+        ordered.sort((a, b) -> {
+            StockBasic ba = basicMap.get(a.getCode());
+            StockBasic bb = basicMap.get(b.getCode());
+            boolean missA = Objects.isNull(ba) || Objects.isNull(ba.getLatestPrice());
+            boolean missB = Objects.isNull(bb) || Objects.isNull(bb.getLatestPrice());
+            if (prefer && missA != missB) {
+                return missA ? -1 : 1;
             }
-            for (Watchlist item : list) {
-                if (!picked.contains(item.getCode())) {
-                    ordered.add(item);
-                }
+            LocalDateTime ta = Objects.nonNull(ba) ? ba.getQuoteTime() : null;
+            LocalDateTime tb = Objects.nonNull(bb) ? bb.getQuoteTime() : null;
+            boolean staleA = Objects.isNull(ta) || ta.isBefore(sessionStart);
+            boolean staleB = Objects.isNull(tb) || tb.isBefore(sessionStart);
+            if (staleA != staleB) {
+                return staleA ? -1 : 1;
             }
-        } else {
-            ordered.addAll(list);
-        }
+            if (Objects.isNull(ta) && Objects.isNull(tb)) {
+                return 0;
+            }
+            if (Objects.isNull(ta)) {
+                return -1;
+            }
+            if (Objects.isNull(tb)) {
+                return 1;
+            }
+            return ta.compareTo(tb);
+        });
         if (ordered.size() > max) {
             ordered = ordered.subList(0, max);
         }
@@ -464,7 +474,7 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
         int totalFail = 0;
         int ran = 0;
         for (int i = 0; i < maxRounds; i++) {
-            Map<String, Object> round = refreshQuotes(groupName, perRound, true);
+            Map<String, Object> round = refreshQuotes(groupName, perRound, false);
             ran++;
             totalSuccess += ((Number) round.getOrDefault("successCount", 0)).intValue();
             totalFail += ((Number) round.getOrDefault("failCount", 0)).intValue();

@@ -1,5 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
+import com.awe.apex.quant.market.TradingCalendar;
+
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.DashboardHomeResp;
@@ -36,6 +38,7 @@ import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -56,6 +59,7 @@ import java.util.concurrent.Executors;
 /**
  * 仪表盘实现
  */
+@Slf4j
 @Service
 public class DashboardServiceImpl implements IDashboardService {
 
@@ -106,14 +110,19 @@ public class DashboardServiceImpl implements IDashboardService {
      * @return 首页
      */
     @Override
-    public DashboardHomeResp home(Long accountId, String groupName) {
+    public DashboardHomeResp home(Long accountId, String groupName, boolean forceRefresh) {
         String group = StringUtils.isNotBlank(groupName) ? groupName.trim() : "我的自选";
+        if (forceRefresh) {
+            marketBriefingService.invalidateCache();
+        }
 
         // 1. 并行拉取互不依赖的块：简报、决策、观察告警、账户摘要
+        final boolean rebuildBriefing = forceRefresh;
         CompletableFuture<MarketBriefingResp> briefingFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return marketBriefingService.briefing();
+                return marketBriefingService.briefing(rebuildBriefing);
             } catch (Exception ex) {
+                log.warn("看板简报加载失败: {}", ex.getMessage());
                 return null;
             }
         }, HOME_POOL);
@@ -151,10 +160,12 @@ public class DashboardServiceImpl implements IDashboardService {
         }
         DashboardHomeResp.MarketBlock market = DashboardHomeResp.MarketBlock.builder()
                 .asOf(Objects.nonNull(briefing) ? briefing.getAsOf() : null)
-                .stance(Objects.nonNull(briefing) ? briefing.getStance() : "均衡")
+                .stance(Objects.nonNull(briefing) ? briefing.getStance() : "防守")
                 .stanceScore(Objects.nonNull(briefing) ? briefing.getStanceScore() : null)
-                .stanceReason(Objects.nonNull(briefing) ? briefing.getStanceReason() : null)
-                .positionAdvice(Objects.nonNull(briefing) ? briefing.getPositionAdvice() : null)
+                .stanceReason(Objects.nonNull(briefing) ? briefing.getStanceReason()
+                        : "市场简报加载失败，请点「刷新行情」重试")
+                .positionAdvice(Objects.nonNull(briefing) ? briefing.getPositionAdvice()
+                        : "简报不可用：暂缓开仓，先刷新行情")
                 .dataLevel(Objects.nonNull(briefing) ? briefing.getDataLevel() : "RED")
                 .hotThemes(Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getHotThemes())
                         ? briefing.getHotThemes().subList(0, Math.min(6, briefing.getHotThemes().size()))
@@ -169,6 +180,7 @@ public class DashboardServiceImpl implements IDashboardService {
                         ? briefing.getIndexes() : List.of())
                 .volumeTrend(Objects.nonNull(briefing) ? briefing.getVolumeTrend() : null)
                 .volumeVsMa5Pct(Objects.nonNull(briefing) ? briefing.getVolumeVsMa5Pct() : null)
+                .volumeLabel(Objects.nonNull(briefing) ? briefing.getVolumeLabel() : null)
                 .indexVolume(Objects.nonNull(briefing) ? briefing.getIndexVolume() : null)
                 .indexVolumeText(Objects.nonNull(briefing) ? briefing.getIndexVolumeText() : null)
                 .tips(tips)
@@ -265,6 +277,9 @@ public class DashboardServiceImpl implements IDashboardService {
             }
         }
 
+        String homeMessage = Objects.isNull(briefing)
+                ? "市场简报加载失败 · " + decisionSummary
+                : market.getStance() + " · " + decisionSummary;
         return DashboardHomeResp.builder()
                 .market(market)
                 .decision(decision)
@@ -273,7 +288,7 @@ public class DashboardServiceImpl implements IDashboardService {
                 .dataHealth(dataHealth)
                 // 权益曲线改由前端延后拉取 overview，避免首屏卡死
                 .equityCurve(List.of())
-                .message(market.getStance() + " · " + decisionSummary)
+                .message(homeMessage)
                 .build();
     }
 
@@ -323,6 +338,9 @@ public class DashboardServiceImpl implements IDashboardService {
      * 涨停家数（单次 count，失败返回 null）
      */
     private Integer resolveLimitUpCount(MarketBriefingResp briefing) {
+        if (Objects.nonNull(briefing) && Objects.nonNull(briefing.getLimitUpCount())) {
+            return briefing.getLimitUpCount();
+        }
         try {
             LocalDate luDate = Objects.nonNull(briefing) && Objects.nonNull(briefing.getAsOf())
                     ? briefing.getAsOf() : LocalDate.now();
@@ -332,7 +350,9 @@ public class DashboardServiceImpl implements IDashboardService {
                 LimitUpPool latest = limitUpPoolMapper.selectOne(Wrappers.<LimitUpPool>lambdaQuery()
                         .orderByDesc(LimitUpPool::getTradeDate)
                         .last("LIMIT 1"));
-                if (Objects.nonNull(latest)) {
+                if (Objects.nonNull(latest)
+                        && Objects.nonNull(latest.getTradeDate())
+                        && !latest.getTradeDate().isBefore(LocalDate.now().minusDays(1))) {
                     cnt = limitUpPoolMapper.selectCount(Wrappers.<LimitUpPool>lambdaQuery()
                             .eq(LimitUpPool::getTradeDate, latest.getTradeDate()));
                 }
@@ -376,7 +396,7 @@ public class DashboardServiceImpl implements IDashboardService {
                         }
                     }
                 }
-                LocalDate staleBefore = LocalDate.now().minusDays(10);
+                LocalDate staleBefore = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
                 for (String code : codes) {
                     LocalDate lastBar = lastBarMap.get(code);
                     if (Objects.isNull(lastBar)) {
@@ -386,8 +406,15 @@ public class DashboardServiceImpl implements IDashboardService {
                     }
                 }
             }
-        } catch (Exception ignored) {
-            // ignore
+        } catch (Exception ex) {
+            log.warn("轻量数据健康统计失败: {}", ex.getMessage());
+            return DashboardHomeResp.DataHealthBlock.builder()
+                    .level("YELLOW")
+                    .suggestion("健康检查异常，请稍后刷新或同步数据")
+                    .barsStaleCount(0)
+                    .barsEmptyCount(0)
+                    .watchlistCount(0)
+                    .build();
         }
         String level = "GREEN";
         if (total > 0 && empty > total / 2) {

@@ -21,6 +21,16 @@ public class SyncTaskRegistry {
     private final Map<String, SyncTaskSpec> specs = new LinkedHashMap<>();
 
     public SyncTaskRegistry() {
+        // 置顶：收盘后日常一键同步（不含全A日线，那类任务太重）
+        register(SyncTaskSpec.builder()
+                .taskType("CLOSE_BUNDLE")
+                .name("一键收盘同步")
+                .groupName("每日收盘")
+                .description("顺序执行：大盘指数 → 板块行情 → 涨停池 → 热点 → 资讯")
+                .scriptFile("sync_close_bundle.py")
+                .defaultParamsHint("日常增量；指数默认近60日")
+                .timeoutSec(3600)
+                .build());
         register(SyncTaskSpec.builder()
                 .taskType("A_SHARE_LIST")
                 .name("全A股票列表")
@@ -130,15 +140,6 @@ public class SyncTaskRegistry {
                 .scriptFile("sync_limit_up.py")
                 .defaultParamsHint("with-prev=true")
                 .timeoutSec(300)
-                .build());
-        register(SyncTaskSpec.builder()
-                .taskType("CLOSE_BUNDLE")
-                .name("收盘同步包")
-                .groupName("市场看板")
-                .description("顺序执行：指数 → 板块行情 → 涨停池")
-                .scriptFile("sync_close_bundle.py")
-                .defaultParamsHint("start=20180101 types=INDUSTRY,CONCEPT,THEME")
-                .timeoutSec(3600)
                 .build());
     }
 
@@ -299,14 +300,23 @@ public class SyncTaskRegistry {
                 args.add("--with-prev");
             }
             case "CLOSE_BUNDLE" -> {
-                args.add("--start");
-                args.add(StringUtils.isNotBlank(safe.getStart()) ? safe.getStart().trim() : "20180101");
+                // 不传 start 时脚本默认近 60 日增量，避免日常一键全量扫指数
+                if (StringUtils.isNotBlank(safe.getStart())) {
+                    args.add("--start");
+                    args.add(safe.getStart().trim());
+                }
                 args.add("--types");
                 args.add(StringUtils.isNotBlank(safe.getTypes()) ? safe.getTypes().trim() : "INDUSTRY,CONCEPT,THEME");
                 if (StringUtils.isNotBlank(safe.getMode())) {
                     // mode 可复用为涨停日期 yyyyMMdd
                     args.add("--date");
                     args.add(safe.getMode().trim().replace("-", ""));
+                }
+                if (Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0) {
+                    args.add("--hot-limit");
+                    args.add(String.valueOf(safe.getLimit()));
+                    args.add("--news-limit");
+                    args.add(String.valueOf(Math.max(safe.getLimit(), 80)));
                 }
             }
             default -> throw new BusinessException("未实现参数构建: " + type);

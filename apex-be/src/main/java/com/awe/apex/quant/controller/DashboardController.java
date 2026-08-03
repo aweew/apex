@@ -26,8 +26,9 @@ public class DashboardController {
     @GetMapping("/home")
     public Result<DashboardHomeResp> home(
             @RequestParam(required = false) Long accountId,
-            @RequestParam(required = false) String groupName) {
-        return Result.success(dashboardService.home(accountId, groupName));
+            @RequestParam(required = false) String groupName,
+            @RequestParam(required = false, defaultValue = "false") boolean forceRefresh) {
+        return Result.success(dashboardService.home(accountId, groupName, forceRefresh));
     }
 
     /**

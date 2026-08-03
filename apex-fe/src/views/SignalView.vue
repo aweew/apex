@@ -65,7 +65,7 @@ async function load() {
 async function onRefreshUniverse() {
   loading.value = true
   try {
-    const res = await refreshUniverse({ groupName: '我的自选' })
+    const res = await refreshUniverse({ scope: 'MARKET', looseFilter: true })
     ElMessage.success(`股票池批次 ${res.data.batchNo}，入选 ${res.data.count}`)
     await load()
   } catch (e) {
@@ -190,7 +190,7 @@ onMounted(load)
         <p class="sub">S1/S2/S3 · 股票池 {{ universeCount }} 只 · 可一键模拟下单</p>
       </div>
       <div class="actions">
-        <el-button @click="onRefreshUniverse" :loading="loading">刷新股票池</el-button>
+        <el-button @click="onRefreshUniverse" :loading="loading">刷新全市场股票池</el-button>
         <el-button type="primary" @click="onRun" :loading="loading">运行信号</el-button>
         <el-button text @click="load">刷新</el-button>
         <el-button text @click="exportCsv" :disabled="!filtered.length">导出本地</el-button>

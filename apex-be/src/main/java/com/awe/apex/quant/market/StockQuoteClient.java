@@ -49,9 +49,11 @@ public class StockQuoteClient {
         String pure = MarketCodeUtils.normalizeHoldingCode(code);
         String market = MarketCodeUtils.resolveMarket(pure);
         StockBasic basic = fetchFromSina(pure, market);
+        // 腾讯覆盖现价/涨跌幅：新浪盘后偶发 0 价或空字段，导致持仓现价/涨跌错乱
+        overwriteRealtimeFromTencent(basic);
         // 港股估值/行业补充易踩空，有现价即可；A 股继续补估值
         if (!"HK".equals(market) && needValuationFallback(basic)) {
-            enrichFromTencent(basic);
+            enrichFromTencentValuation(basic);
         }
         if (!"HK".equals(market) && needValuationFallback(basic) && !isEastMoneyCoolingDown()) {
             enrichFromEastMoney(basic);
@@ -105,6 +107,10 @@ public class StockQuoteClient {
                 price = toDecimal(parts[3]);
                 BigDecimal prevClose = toDecimal(parts[2]);
                 pct = null;
+                // 新浪盘后/停牌偶发现价为 0，视为无效
+                if (Objects.nonNull(price) && price.signum() <= 0) {
+                    price = null;
+                }
                 if (Objects.nonNull(price) && Objects.nonNull(prevClose) && prevClose.signum() > 0) {
                     pct = price.subtract(prevClose)
                             .multiply(BigDecimal.valueOf(100))
@@ -176,7 +182,71 @@ public class StockQuoteClient {
         }
     }
 
-    private void enrichFromTencent(StockBasic basic) {
+    /**
+     * 腾讯实时价/涨跌幅覆盖（优先于新浪空价/0价）
+     */
+    private void overwriteRealtimeFromTencent(StockBasic basic) {
+        String[] parts = fetchTencentParts(basic);
+        if (Objects.isNull(parts) || parts.length < 33) {
+            return;
+        }
+        if (StringUtils.isBlank(basic.getName()) && StringUtils.isNotBlank(parts[1])) {
+            basic.setName(parts[1]);
+        }
+        BigDecimal tPrice = toDecimal(parts[3]);
+        BigDecimal tPct = toDecimal(parts[32]);
+        // 腾讯有有效现价则覆盖（新浪盘后偶发错价/0价）
+        if (Objects.nonNull(tPrice) && tPrice.signum() > 0) {
+            basic.setLatestPrice(tPrice);
+            if (Objects.nonNull(tPct)) {
+                basic.setPctChg(tPct);
+            }
+            appendSource(basic, "tencent-rt");
+        } else if (Objects.isNull(basic.getPctChg()) && Objects.nonNull(tPct)) {
+            basic.setPctChg(tPct);
+            appendSource(basic, "tencent-rt");
+        }
+    }
+
+    /**
+     * 腾讯估值字段补充（不覆盖已有有效现价）
+     */
+    private void enrichFromTencentValuation(StockBasic basic) {
+        String[] parts = fetchTencentParts(basic);
+        if (Objects.isNull(parts) || parts.length < 47) {
+            return;
+        }
+        if (StringUtils.isBlank(basic.getName()) && StringUtils.isNotBlank(parts[1])) {
+            basic.setName(parts[1]);
+        }
+        if (Objects.isNull(basic.getLatestPrice())) {
+            BigDecimal tPrice = toDecimal(parts[3]);
+            if (Objects.nonNull(tPrice) && tPrice.signum() > 0) {
+                basic.setLatestPrice(tPrice);
+            }
+        }
+        if (Objects.isNull(basic.getPctChg())) {
+            basic.setPctChg(toDecimal(parts[32]));
+        }
+        if (Objects.isNull(basic.getPeTtm())) {
+            basic.setPeTtm(toDecimal(parts[39]));
+        }
+        if (Objects.isNull(basic.getPb())) {
+            basic.setPb(toDecimal(parts[46]));
+        }
+        if (Objects.isNull(basic.getCircMv())) {
+            basic.setCircMv(yiToYuan(parts[44]));
+        }
+        if (Objects.isNull(basic.getTotalMv())) {
+            basic.setTotalMv(yiToYuan(parts[45]));
+        }
+        appendSource(basic, "tencent");
+    }
+
+    private String[] fetchTencentParts(StockBasic basic) {
+        if (Objects.isNull(basic) || StringUtils.isBlank(basic.getCode())) {
+            return null;
+        }
         String symbol = toSinaSymbol(basic.getCode(), basic.getMarket());
         String url = "https://qt.gtimg.cn/q=" + symbol;
         try (HttpResponse response = HttpRequest.get(url)
@@ -185,42 +255,18 @@ public class StockQuoteClient {
                 .header("Referer", "https://gu.qq.com/")
                 .execute()) {
             if (!response.isOk() || response.bodyBytes() == null) {
-                return;
+                return null;
             }
             String body = new String(response.bodyBytes(), Charset.forName("GBK"));
             int start = body.indexOf('"');
             int end = body.lastIndexOf('"');
             if (start < 0 || end <= start) {
-                return;
+                return null;
             }
-            String[] parts = body.substring(start + 1, end).split("~");
-            if (parts.length < 47) {
-                return;
-            }
-            if (StringUtils.isBlank(basic.getName()) && StringUtils.isNotBlank(parts[1])) {
-                basic.setName(parts[1]);
-            }
-            if (Objects.isNull(basic.getLatestPrice())) {
-                basic.setLatestPrice(toDecimal(parts[3]));
-            }
-            if (Objects.isNull(basic.getPctChg())) {
-                basic.setPctChg(toDecimal(parts[32]));
-            }
-            if (Objects.isNull(basic.getPeTtm())) {
-                basic.setPeTtm(toDecimal(parts[39]));
-            }
-            if (Objects.isNull(basic.getPb())) {
-                basic.setPb(toDecimal(parts[46]));
-            }
-            if (Objects.isNull(basic.getCircMv())) {
-                basic.setCircMv(yiToYuan(parts[44]));
-            }
-            if (Objects.isNull(basic.getTotalMv())) {
-                basic.setTotalMv(yiToYuan(parts[45]));
-            }
-            appendSource(basic, "tencent");
+            return body.substring(start + 1, end).split("~");
         } catch (Exception ex) {
-            log.debug("腾讯估值补充失败，code={}, err={}", basic.getCode(), ex.getMessage());
+            log.debug("腾讯行情失败，code={}, err={}", basic.getCode(), ex.getMessage());
+            return null;
         }
     }
 

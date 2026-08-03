@@ -305,6 +305,32 @@ function stopIntradayPoll() {
   }
 }
 
+/**
+ * 确保 ECharts 挂在当前 chartRef 上。
+ * 分时/K 线用 v-if 切换时 DOM 会重建，旧实例仍指向已销毁节点会导致白屏。
+ */
+async function ensureChartInstance() {
+  await nextTick()
+  await new Promise((r) => requestAnimationFrame(() => r()))
+  if (!chartRef.value) return false
+  if (chartRef.value.clientWidth < 80 || chartRef.value.clientHeight < 80) {
+    await new Promise((r) => setTimeout(r, 50))
+    await new Promise((r) => requestAnimationFrame(() => r()))
+  }
+  if (!chartRef.value) return false
+  if (chart && chart.getDom() !== chartRef.value) {
+    disposeChart()
+  }
+  if (!chart) {
+    chart = echarts.init(chartRef.value)
+  } else {
+    chart.off('datazoom')
+    chart.off('legendselectchanged')
+    chart.clear()
+  }
+  return true
+}
+
 async function renderIntradayChart() {
   const points = intradayPoints.value
   macdTip.value = ''
@@ -314,17 +340,7 @@ async function renderIntradayChart() {
     disposeChart()
     return
   }
-  await nextTick()
-  await new Promise((r) => requestAnimationFrame(() => r()))
-  if (!chartRef.value) return
-  if (!chart) {
-    chart = echarts.init(chartRef.value)
-  } else {
-    chart.off('datazoom')
-    chart.off('legendselectchanged')
-    chart.clear()
-    chart.resize()
-  }
+  if (!(await ensureChartInstance())) return
   const times = points.map((p) => p.time)
   const prices = points.map((p) => Number(p.price))
   const avgs = points.map((p) => Number(p.avgPrice))
@@ -475,6 +491,7 @@ async function renderIntradayChart() {
     },
     true,
   )
+  chart.resize()
 }
 
 function refreshChart() {
@@ -676,24 +693,10 @@ async function renderChart(list) {
     disposeChart()
     return
   }
-  // 等容器从空态切出并完成布局，避免 width=0 把图压成一条线
-  await nextTick()
-  await new Promise((r) => requestAnimationFrame(() => r()))
-  if (!chartRef.value) return
-  const width = chartRef.value.clientWidth
-  if (width < 80) {
-    await new Promise((r) => setTimeout(r, 50))
-  }
-  if (!chartRef.value) return
-  if (!chart) {
-    chart = echarts.init(chartRef.value)
-    bindChartEvents()
-  } else {
-    captureZoom()
-    chart.clear()
-    chart.resize()
-    bindChartEvents()
-  }
+  // 等容器从空态切出并完成布局，避免 width=0 / 旧实例挂死 DOM
+  if (chart) captureZoom()
+  if (!(await ensureChartInstance())) return
+  bindChartEvents()
   const dates = list.map((b) => b.tradeDate)
   const ohlc = list.map((b) => [+b.openPrice, +b.closePrice, +b.lowPrice, +b.highPrice])
   const volumes = list.map((b) => +b.volume)
@@ -1514,6 +1517,8 @@ watch(klinePeriod, () => {
   resetZoomNext = true
   saveChartPrefs()
   if (activeTab.value !== 'chart') return
+  // 周期切换会触发图表容器 v-if 重建，先释放旧实例避免白屏
+  disposeChart()
   if (isIntraday.value) {
     loadIntraday()
     startIntradayPoll()
@@ -1521,7 +1526,6 @@ watch(klinePeriod, () => {
   }
   stopIntradayPoll()
   if (bars.value.length) refreshChart()
-  else disposeChart()
 })
 
 watch(
@@ -1609,11 +1613,14 @@ function sheetCell(row, idx) {
 }
 
 function onTabChange(name) {
-  if (name === 'chart' && bars.value.length) {
-    nextTick(() => refreshChart())
-  }
-  if (name === 'chart' && klinePeriod.value === 'intraday') {
-    startIntradayPoll()
+  if (name === 'chart') {
+    nextTick(() => {
+      refreshChart()
+      if (isIntraday.value) startIntradayPoll()
+      else stopIntradayPoll()
+    })
+  } else {
+    stopIntradayPoll()
   }
   if (name === 'profile' && !profile.value) {
     loadProfile(false)

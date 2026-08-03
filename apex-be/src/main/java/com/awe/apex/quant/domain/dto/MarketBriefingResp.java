@@ -69,17 +69,22 @@ public class MarketBriefingResp {
     private List<MarketIndexItem> indexes;
 
     /**
-     * 量能：放量 / 缩量 / 平量
+     * 量能：放量 / 缩量（附带较上一交易日%）；今日额未就绪时为空
      */
     private String volumeTrend;
 
     /**
-     * 较 5 日均量涨跌幅 %
+     * 较上一交易日成交额涨跌幅 %（字段名历史遗留；与 volumeTrend 成对出现）
      */
     private BigDecimal volumeVsMa5Pct;
 
     /**
-     * 三市成交总额（元，上证+深成+北证50）
+     * 量能完整文案，如「缩量 -4.50%」；今日未同步时为空
+     */
+    private String volumeLabel;
+
+    /**
+     * 三市成交总额（元，上证+深成+北证50）；仅当日就绪时有值
      */
     private BigDecimal indexVolume;
 
@@ -92,6 +97,11 @@ public class MarketBriefingResp {
      * 跌停家数
      */
     private Integer limitDownCount;
+
+    /**
+     * 涨停家数（实时优先）
+     */
+    private Integer limitUpCount;
 
     /**
      * 热点板块/题材

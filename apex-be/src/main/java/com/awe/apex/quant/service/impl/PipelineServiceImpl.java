@@ -102,6 +102,8 @@ public class PipelineServiceImpl implements IPipelineService {
         }
         if (refreshUniverse) {
             UniverseRefreshReq universeReq = new UniverseRefreshReq();
+            universeReq.setScope("MARKET");
+            universeReq.setLooseFilter(true);
             universeReq.setGroupName(groupName);
             UniverseRefreshResp universe = universeService.refresh(universeReq);
             universeCount = universe.getCount();

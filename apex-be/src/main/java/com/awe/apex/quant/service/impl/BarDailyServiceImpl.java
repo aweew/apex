@@ -1,5 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
+import com.awe.apex.quant.market.TradingCalendar;
+
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.BarSyncReq;
@@ -150,12 +152,13 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 }
             }
         }
-        LocalDate staleBefore = LocalDate.now().minusDays(7);
+        // 缺「最近交易日」K 即过期（勿用 today-7，周一会漏掉上周五之后的当日）
+        LocalDate sessionDay = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
         List<String> staleCodes = new ArrayList<>();
         for (String code : allCodes) {
             int count = barCountMap.getOrDefault(code, 0);
             LocalDate last = lastBarMap.get(code);
-            boolean stale = count < 60 || Objects.isNull(last) || last.isBefore(staleBefore);
+            boolean stale = count < 60 || Objects.isNull(last) || last.isBefore(sessionDay);
             if (stale) {
                 staleCodes.add(code);
             }

@@ -99,7 +99,14 @@ def _date(v) -> Optional[date]:
 def fetch_zh(symbol: str, start: date):
     import akshare as ak
 
-    df = ak.stock_zh_index_daily(symbol=symbol)
+    # 优先东财日线（通常含成交额），供看板三市量能 MA；失败再回退新浪
+    df = None
+    try:
+        df = ak.stock_zh_index_daily_em(symbol=symbol)
+    except Exception as ex:
+        print(f"eastmoney index daily miss {symbol}: {ex}", file=sys.stderr)
+    if df is None or getattr(df, "empty", True):
+        df = ak.stock_zh_index_daily(symbol=symbol)
     return normalize_df(df, start)
 
 

@@ -6,6 +6,7 @@ import com.awe.apex.quant.service.IMarketBriefingService;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -24,7 +25,8 @@ public class MarketBriefingController {
      * @return 简报
      */
     @GetMapping("/briefing")
-    public Result<MarketBriefingResp> briefing() {
-        return Result.success(marketBriefingService.briefing());
+    public Result<MarketBriefingResp> briefing(
+            @RequestParam(required = false, defaultValue = "false") boolean forceRefresh) {
+        return Result.success(marketBriefingService.briefing(forceRefresh));
     }
 }

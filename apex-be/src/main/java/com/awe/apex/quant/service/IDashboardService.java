@@ -19,9 +19,10 @@ public interface IDashboardService {
     /**
      * 决策看板首页聚合
      *
-     * @param accountId 账户，可空
-     * @param groupName 自选分组，可空
+     * @param accountId    账户，可空
+     * @param groupName    自选分组，可空
+     * @param forceRefresh 为 true 时先清简报缓存再重建
      * @return 首页
      */
-    DashboardHomeResp home(Long accountId, String groupName);
+    DashboardHomeResp home(Long accountId, String groupName, boolean forceRefresh);
 }

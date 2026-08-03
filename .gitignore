@@ -29,3 +29,15 @@ logs/
 **/.env.*.local
 scripts/market_data/.env
 scripts/market_data/.progress/
+
+# Local debug dumps (API抓包 / 临时探测，勿入库)
+/tmp_*
+scripts/_*
+scripts/market_data/_*
+**/__pycache__/
+
+scripts/fix_*
+scripts/insert_*
+scripts/patch_*
+scripts/upgrade_*
+

@@ -22,6 +22,24 @@ const sections = computed(() => [
   { key: 'us', title: '美国', items: data.value?.us || [] },
 ])
 
+/** A股最新交易日相对今日的滞后提示 */
+const cnStaleHint = computed(() => {
+  const rows = data.value?.cn || []
+  const dates = rows.map((r) => r.tradeDate).filter(Boolean).sort()
+  if (!dates.length) return ''
+  const latest = dates[dates.length - 1]
+  const today = new Date()
+  const y = today.getFullYear()
+  const m = String(today.getMonth() + 1).padStart(2, '0')
+  const d = String(today.getDate()).padStart(2, '0')
+  const todayStr = `${y}-${m}-${d}`
+  if (latest >= todayStr) return ''
+  // 周末不提示「过期」
+  const wd = today.getDay()
+  if (wd === 0 || wd === 6) return `数据截至 ${latest}（周末休市）`
+  return `数据截至 ${latest}，可能未同步今日指数 · 可点「快刷」`
+})
+
 function fmtNum(v, digits = 2) {
   if (v == null || v === '') return '-'
   const n = Number(v)
@@ -217,6 +235,15 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
+    <el-alert
+      v-if="cnStaleHint"
+      class="stale-alert"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="cnStaleHint"
+    />
+
     <div v-if="!loading && sections.every((s) => !s.items.length)" class="page-empty">
       <h3>暂无指数数据</h3>
       <p>同步历史后看 A股/港股/美股等主流指数与量能对比</p>
@@ -278,6 +305,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.stale-alert {
+  margin-bottom: 14px;
+}
+
 .market-sec {
   margin-bottom: 18px;
 }

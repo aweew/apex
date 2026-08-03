@@ -227,9 +227,58 @@ public class UniverseServiceImpl implements IUniverseService {
             }
             return list;
         }
+        String scope = Objects.nonNull(req) ? req.getScope() : null;
+        if (StringUtils.isNotBlank(scope) && "MARKET".equalsIgnoreCase(scope.trim())) {
+            return loadMarketCandidatesFromBars();
+        }
         String groupName = Objects.nonNull(req) ? req.getGroupName() : null;
         return watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
                 .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName));
+    }
+
+    /**
+     * 全市场候选：本地已有足够日线的标的（不依赖现价是否已刷）
+     */
+    private List<Watchlist> loadMarketCandidatesFromBars() {
+        List<Map<String, Object>> stats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
+                .select("code", "COUNT(1) AS cnt")
+                .groupBy("code")
+                .having("COUNT(1) >= {0}", MIN_BARS));
+        if (CollUtil.isEmpty(stats)) {
+            return List.of();
+        }
+        List<String> codes = new ArrayList<>();
+        for (Map<String, Object> row : stats) {
+            if (Objects.isNull(row) || Objects.isNull(row.get("code"))) {
+                continue;
+            }
+            codes.add(MarketCodeUtils.normalizeCode(String.valueOf(row.get("code"))));
+        }
+        Map<String, String> nameMap = new HashMap<>();
+        if (CollUtil.isNotEmpty(codes)) {
+            // 分批查名称，避免 IN 过长
+            int batch = 500;
+            for (int i = 0; i < codes.size(); i += batch) {
+                List<String> part = codes.subList(i, Math.min(i + batch, codes.size()));
+                List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                        .in(StockBasic::getCode, part)
+                        .select(StockBasic::getCode, StockBasic::getName, StockBasic::getStFlag));
+                if (CollUtil.isEmpty(basics)) {
+                    continue;
+                }
+                for (StockBasic basic : basics) {
+                    nameMap.put(basic.getCode(), basic.getName());
+                }
+            }
+        }
+        List<Watchlist> list = new ArrayList<>();
+        for (String code : codes) {
+            list.add(Watchlist.builder()
+                    .code(code)
+                    .name(nameMap.get(code))
+                    .build());
+        }
+        return list;
     }
 
     private static final class Scored {

@@ -413,7 +413,7 @@ export const GLOSSARY_TERMS = [
     title: '股票池',
     aliases: ['Universe', '候选池'],
     category: '策略',
-    short: '策略运行时扫描的候选股票集合。',
+    short: '策略扫描的候选集合：优先本地有足够日线的全市场标的（非仅自选）。',
     detail: '通常来自自选或筛选结果。池子质量直接影响信号质量。',
   },
   {
