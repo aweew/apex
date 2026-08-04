@@ -142,6 +142,7 @@ watch(
 .card-stage {
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   max-height: min(62vh, 680px);
   overflow: auto;
   padding: 10px;
@@ -150,6 +151,7 @@ watch(
 }
 
 .card-stage :deep(.share-card) {
+  flex-shrink: 0;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
   border-radius: 4px;
 }

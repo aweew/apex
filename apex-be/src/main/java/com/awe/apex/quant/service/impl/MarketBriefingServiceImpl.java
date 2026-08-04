@@ -48,6 +48,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 每日市场简报：大盘趋势 + 风格 + 量能 + 涨停情绪 + 主线题材
@@ -224,10 +226,347 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
 
     /**
-     * 实时覆盖链：指数 → 量能 → 涨跌家数 → 涨跌停 → 赚钱效应
+     * 实时覆盖链：指数 → 量能 → 涨跌家数 → 涨跌停 → 赚钱效应 → 因子/立场对齐
      */
     private MarketBriefingResp refreshLiveMarketQuotes(MarketBriefingResp resp) {
-        return overlayLiveEffect(overlayLiveLimits(overlayLiveBreadth(overlayLiveVolume(overlayLiveIndexes(resp)))));
+        return reconcileFactorsWithLive(
+                overlayLiveEffect(overlayLiveLimits(overlayLiveBreadth(overlayLiveVolume(overlayLiveIndexes(resp))))));
+    }
+
+    /**
+     * 实时指数/广度/量能覆盖后，同步改写因子条与立场分，避免「右侧指数绿、下方大盘当日红」撕裂
+     */
+    private MarketBriefingResp reconcileFactorsWithLive(MarketBriefingResp resp) {
+        if (Objects.isNull(resp) || CollUtil.isEmpty(resp.getIndexes())) {
+            return resp;
+        }
+        // 无实时指数时不改写因子，避免把库内昨日数据标成「今日实时」
+        Map<String, LiveIndexQuote> live = fetchLiveIndexQuotes();
+        if (CollUtil.isEmpty(live)) {
+            return resp;
+        }
+        BigDecimal shPct = findIndexPct(resp.getIndexes(), "上证");
+        BigDecimal cybPct = findIndexPct(resp.getIndexes(), "创业");
+        BigDecimal shClose = findIndexClose(resp.getIndexes(), "上证");
+        if (Objects.isNull(shPct) && Objects.isNull(cybPct)) {
+            return resp;
+        }
+
+        List<MarketFactorItem> factors = Objects.nonNull(resp.getFactors())
+                ? new ArrayList<>(resp.getFactors())
+                : new ArrayList<>();
+        resp.setFactors(factors);
+        resp.setAsOf(resolveSessionDay());
+
+        BigDecimal dayAvg = avgNonNull(shPct, cybPct);
+        if (Objects.nonNull(dayAvg)) {
+            upsertFactor(factors, "大盘当日",
+                    fmtPct(dayAvg) + "（上证" + fmtPct(shPct) + "/创业" + fmtPct(cybPct) + "）",
+                    daySignalOf(dayAvg),
+                    "综合上证与创业板涨跌（实时）");
+        }
+
+        List<IndexBar> shBars = loadBars("CN_SH", 60);
+        Boolean aboveMa20 = aboveMaWithLive(shBars, 20, shClose);
+        BigDecimal ret5 = cumReturnWithLive(shBars, 5, shClose);
+        BigDecimal ret20 = cumReturnWithLive(shBars, 20, shClose);
+        if (Objects.nonNull(aboveMa20)) {
+            if (Boolean.TRUE.equals(aboveMa20)) {
+                upsertFactor(factors, "趋势位置", "上证站上MA20", "偏多",
+                        "近5日" + fmtPct(ret5) + " · 近20日" + fmtPct(ret20));
+            } else {
+                upsertFactor(factors, "趋势位置", "上证低于MA20", "偏空",
+                        "近5日" + fmtPct(ret5) + " · 近20日" + fmtPct(ret20));
+            }
+        }
+
+        if (StringUtils.isNotBlank(resp.getVolumeTrend()) || StringUtils.isNotBlank(resp.getIndexVolumeText())) {
+            String volSignal = volumeSignalOf(resp.getVolumeTrend(), shPct);
+            String factorValue;
+            if (StringUtils.isNotBlank(resp.getIndexVolumeText())) {
+                factorValue = resp.getIndexVolumeText()
+                        + (StringUtils.isNotBlank(resp.getVolumeTrend()) ? (" · " + resp.getVolumeTrend()) : "")
+                        + (Objects.nonNull(resp.getVolumeVsMa5Pct())
+                        ? (" · 较前日" + fmtPct(resp.getVolumeVsMa5Pct())) : "");
+            } else {
+                factorValue = resp.getVolumeTrend()
+                        + (Objects.nonNull(resp.getVolumeVsMa5Pct())
+                        ? (" · 较前日" + fmtPct(resp.getVolumeVsMa5Pct())) : "");
+            }
+            upsertFactor(factors, "三市成交", factorValue, volSignal, "上证+深成+北证50 三市成交额合计（实时）");
+        }
+
+        if (Objects.nonNull(resp.getBreadthUp()) && Objects.nonNull(resp.getBreadthDown())) {
+            int up = resp.getBreadthUp();
+            int down = resp.getBreadthDown();
+            int flat = Objects.nonNull(resp.getBreadthFlat()) ? resp.getBreadthFlat() : 0;
+            String bSignal = "中性";
+            if (up > down * 1.5) {
+                bSignal = "偏多";
+            } else if (down > up * 1.5) {
+                bSignal = "偏空";
+            }
+            upsertFactor(factors, "市场广度",
+                    "涨" + up + " / 平" + flat + " / 跌" + down,
+                    bSignal,
+                    "全市场涨跌家数（平盘单列·实时）");
+        }
+
+        if (Objects.nonNull(resp.getLimitUpCount())) {
+            int maxBoard = parseMaxLianban(factors);
+            String luSignal = limitUpSignalOf(resp.getLimitUpCount(), maxBoard);
+            upsertFactor(factors, "涨停情绪",
+                    "涨停" + resp.getLimitUpCount() + "家 · 最高" + Math.max(maxBoard, 1) + "板",
+                    luSignal,
+                    "池日期 " + resp.getAsOf());
+        }
+
+        applyStanceFromLiveFactors(resp, dayAvg, aboveMa20, shPct);
+        return resp;
+    }
+
+    private void applyStanceFromLiveFactors(MarketBriefingResp resp, BigDecimal dayAvg,
+                                            Boolean aboveMa20, BigDecimal shPct) {
+        int score = 50;
+        if (Objects.nonNull(dayAvg)) {
+            if (dayAvg.compareTo(new BigDecimal("0.8")) >= 0) {
+                score += 12;
+            } else if (dayAvg.compareTo(new BigDecimal("-0.8")) <= 0) {
+                score -= 14;
+            } else if (dayAvg.compareTo(ZERO) > 0) {
+                score += 4;
+            } else if (dayAvg.compareTo(ZERO) < 0) {
+                score -= 5;
+            }
+        }
+        if (Objects.nonNull(aboveMa20)) {
+            score += Boolean.TRUE.equals(aboveMa20) ? 10 : -12;
+        }
+        if ("放量".equals(resp.getVolumeTrend()) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) >= 0) {
+            score += 8;
+        } else if ("放量".equals(resp.getVolumeTrend()) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) < 0) {
+            score -= 10;
+        } else if ("缩量".equals(resp.getVolumeTrend()) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) > 0) {
+            score -= 2;
+        }
+        for (MarketFactorItem factor : resp.getFactors()) {
+            if (Objects.isNull(factor) || !"最近风格".equals(factor.getName())) {
+                continue;
+            }
+            if ("偏多".equals(factor.getSignal())) {
+                score += 5;
+            } else if ("提示".equals(factor.getSignal())) {
+                score -= 3;
+            }
+        }
+        if (Objects.nonNull(resp.getLimitUpCount())) {
+            int maxBoard = parseMaxLianban(resp.getFactors());
+            if (resp.getLimitUpCount() >= 80 && maxBoard >= 5) {
+                score += 3;
+            } else if (resp.getLimitUpCount() <= 30) {
+                score -= 6;
+            } else {
+                score += 2;
+            }
+        }
+        if (Objects.nonNull(resp.getBreadthUp()) && Objects.nonNull(resp.getBreadthDown())) {
+            if (resp.getBreadthUp() > resp.getBreadthDown() * 1.5) {
+                score += 6;
+            } else if (resp.getBreadthDown() > resp.getBreadthUp() * 1.5) {
+                score -= 8;
+            }
+        }
+        String dataLevel = StringUtils.isNotBlank(resp.getDataLevel()) ? resp.getDataLevel() : "YELLOW";
+        boolean dataSufficient = !"RED".equals(dataLevel);
+        if ("RED".equals(dataLevel)) {
+            score = Math.min(score, 35);
+        }
+        score = Math.max(0, Math.min(100, score));
+
+        String stance;
+        BigDecimal buyFactor;
+        String positionAdvice;
+        if (!dataSufficient) {
+            stance = "防守";
+            buyFactor = new BigDecimal("0.40");
+            positionAdvice = "数据不足：建议空仓观望或极低仓，先补齐同步";
+        } else if (score >= 65) {
+            stance = "进攻";
+            buyFactor = new BigDecimal("1.10");
+            positionAdvice = "建议总仓 6–8 成，可对共振/主线标的正常/略抬仓";
+        } else if (score <= 40) {
+            stance = "防守";
+            buyFactor = new BigDecimal("0.55");
+            positionAdvice = "建议总仓 2–4 成，新建仓降权，优先处理卖出/止损";
+        } else {
+            stance = "均衡";
+            buyFactor = BigDecimal.ONE;
+            positionAdvice = "建议总仓 4–6 成，精选共振/主线，避免无脑铺开";
+        }
+        resp.setStance(stance);
+        resp.setStanceScore(score);
+        resp.setBuyWeightFactor(buyFactor);
+        resp.setPositionAdvice(positionAdvice);
+        resp.setDataSufficient(dataSufficient);
+        resp.setStanceReason("评分 " + score + "/100 · 数据" + dataLevel
+                + " · 综合大盘、趋势、量能、风格、广度与涨停情绪（已对齐实时）");
+        if (Objects.nonNull(resp.getAsOf())) {
+            resp.setMessage("市场简报 · " + resp.getAsOf() + " · 立场「" + stance + "」· 数据" + dataLevel);
+        }
+        // 去掉与实时大盘矛盾的旧提示，并重写立场首条
+        List<MarketTipItem> tips = Objects.nonNull(resp.getTips()) ? new ArrayList<>(resp.getTips()) : new ArrayList<>();
+        tips.removeIf(t -> Objects.isNull(t) || StringUtils.isBlank(t.getText())
+                || t.getText().contains("综合评分")
+                || t.getText().contains("数据门禁")
+                || (Objects.nonNull(dayAvg) && dayAvg.compareTo(ZERO) > 0
+                && (t.getText().contains("明显调整") || t.getText().contains("放量下跌")))
+                || (Objects.nonNull(dayAvg) && dayAvg.compareTo(ZERO) < 0
+                && t.getText().contains("强势上涨")));
+        if (!dataSufficient) {
+            tips.add(0, tip("danger", "数据门禁生效：强制防守，买入仓位已大幅降权。"));
+        } else if (score >= 65) {
+            tips.add(0, tip("info", "综合评分偏进攻：可执行买入计划，但仍控制单票上限。"));
+        } else if (score <= 40) {
+            tips.add(0, tip("danger", "综合评分偏防守：今日买入建议已自动降权，优先风控与持仓体检。"));
+        } else {
+            tips.add(0, tip("info", "市场中性偏均衡：有信号再做，仓位中等、纪律优先。"));
+        }
+        if (tips.size() > 10) {
+            tips = new ArrayList<>(tips.subList(0, 10));
+        }
+        resp.setTips(tips);
+    }
+
+    private String daySignalOf(BigDecimal dayAvg) {
+        if (dayAvg.compareTo(new BigDecimal("0.8")) >= 0) {
+            return "偏多";
+        }
+        if (dayAvg.compareTo(new BigDecimal("-0.8")) <= 0) {
+            return "偏空";
+        }
+        return "中性";
+    }
+
+    private String volumeSignalOf(String trend, BigDecimal shPct) {
+        if ("放量".equals(trend) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) >= 0) {
+            return "偏多";
+        }
+        if ("放量".equals(trend) && Objects.nonNull(shPct) && shPct.compareTo(ZERO) < 0) {
+            return "偏空";
+        }
+        if ("缩量".equals(trend)) {
+            return "提示";
+        }
+        return "中性";
+    }
+
+    private String limitUpSignalOf(int count, int maxBoard) {
+        if (count >= 80 && maxBoard >= 5) {
+            return "提示";
+        }
+        if (count <= 30) {
+            return "偏空";
+        }
+        return "中性";
+    }
+
+    private int parseMaxLianban(List<MarketFactorItem> factors) {
+        if (CollUtil.isEmpty(factors)) {
+            return 1;
+        }
+        Pattern p = Pattern.compile("最高(\\d+)板");
+        for (MarketFactorItem factor : factors) {
+            if (Objects.isNull(factor) || !"涨停情绪".equals(factor.getName()) || StringUtils.isBlank(factor.getValue())) {
+                continue;
+            }
+            Matcher m = p.matcher(factor.getValue());
+            if (m.find()) {
+                return Integer.parseInt(m.group(1));
+            }
+        }
+        return 1;
+    }
+
+    private void upsertFactor(List<MarketFactorItem> factors, String name, String value, String signal, String note) {
+        MarketFactorItem item = MarketFactorItem.builder()
+                .name(name)
+                .value(value)
+                .signal(signal)
+                .note(note)
+                .build();
+        for (int i = 0; i < factors.size(); i++) {
+            MarketFactorItem old = factors.get(i);
+            if (Objects.nonNull(old) && name.equals(old.getName())) {
+                factors.set(i, item);
+                return;
+            }
+        }
+        factors.add(item);
+    }
+
+    private BigDecimal findIndexPct(List<MarketIndexItem> indexes, String namePart) {
+        if (CollUtil.isEmpty(indexes)) {
+            return null;
+        }
+        for (MarketIndexItem item : indexes) {
+            if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getName())
+                    && item.getName().contains(namePart)) {
+                return item.getPctChg();
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal findIndexClose(List<MarketIndexItem> indexes, String namePart) {
+        if (CollUtil.isEmpty(indexes)) {
+            return null;
+        }
+        for (MarketIndexItem item : indexes) {
+            if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getName())
+                    && item.getName().contains(namePart)) {
+                return item.getClose();
+            }
+        }
+        return null;
+    }
+
+    private Boolean aboveMaWithLive(List<IndexBar> bars, int n, BigDecimal liveClose) {
+        if (Objects.isNull(liveClose)) {
+            return aboveMa(bars, n);
+        }
+        if (CollUtil.isEmpty(bars) || bars.size() < n) {
+            return null;
+        }
+        BigDecimal sum = ZERO;
+        int cnt = 0;
+        for (int i = bars.size() - n; i < bars.size(); i++) {
+            BigDecimal c = bars.get(i).getClosePrice();
+            if (Objects.isNull(c)) {
+                continue;
+            }
+            sum = sum.add(c);
+            cnt++;
+        }
+        if (cnt < n) {
+            return null;
+        }
+        BigDecimal ma = sum.divide(BigDecimal.valueOf(n), 6, RoundingMode.HALF_UP);
+        return liveClose.compareTo(ma) >= 0;
+    }
+
+    private BigDecimal cumReturnWithLive(List<IndexBar> bars, int days, BigDecimal liveClose) {
+        if (Objects.isNull(liveClose)) {
+            return cumReturn(bars, days);
+        }
+        if (CollUtil.isEmpty(bars) || bars.size() < days) {
+            return null;
+        }
+        BigDecimal start = bars.get(bars.size() - days).getClosePrice();
+        if (Objects.isNull(start) || start.signum() == 0) {
+            return null;
+        }
+        return liveClose.subtract(start).divide(start, 6, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
     }
 
     private MarketBriefingResp overlayLiveIndexes(MarketBriefingResp resp) {
@@ -331,7 +670,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     }
 
     /**
-     * 覆盖赚钱效应：平均股价 / 涨幅中位数 / 中证2000 / 大小盘差
+     * 覆盖赚钱效应：平均股价800005 / 中位数880009口径 / 等权800010 / 微盘800007 / 沪深300
      */
     private MarketBriefingResp overlayLiveEffect(MarketBriefingResp resp) {
         if (Objects.isNull(resp)) {
@@ -345,7 +684,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     }
 
     /**
-     * 实时赚钱效应（60s 缓存）
+     * 实时赚钱效应（短缓存）
      */
     private MarketEffectResp fetchLiveMarketEffect() {
         long now = System.currentTimeMillis();
@@ -355,63 +694,76 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 return cachedMarketEffect;
             }
         }
-        BigDecimal avgPrice = null;
+        // 1. 四指数：平均股价 / 全A等权 / 微盘 / 沪深300
+        Map<String, LiveIndexQuote> indexMap = fetchLiveIndexBatch(
+                "47.800005,47.800010,47.800007,1.000300");
+        LiveIndexQuote avgPriceIdx = indexMap.get("800005");
+        LiveIndexQuote equalWeightIdx = indexMap.get("800010");
+        LiveIndexQuote microIdx = indexMap.get("800007");
+        LiveIndexQuote hs300Idx = indexMap.get("000300");
+
+        BigDecimal avgPrice = Objects.nonNull(avgPriceIdx) ? avgPriceIdx.close : null;
+        BigDecimal avgPct = Objects.nonNull(avgPriceIdx) ? avgPriceIdx.pctChg : null;
+        BigDecimal equalWeightPct = Objects.nonNull(equalWeightIdx) ? equalWeightIdx.pctChg : null;
+        BigDecimal microPct = Objects.nonNull(microIdx) ? microIdx.pctChg : null;
+        BigDecimal hsPct = Objects.nonNull(hs300Idx) ? hs300Idx.pctChg : null;
+
+        // 2. 中位数：全A截面（880009 口径）
         BigDecimal medianPct = null;
         Integer sampleSize = null;
         Integer strongUp = null;
         Integer strongDown = null;
-        String source = null;
+        String source = "eastmoney-ulist";
         try {
             MarketCrossSectionClient.CrossSectionStats stats = marketCrossSectionClient.fetchHsjAStats();
             if (Objects.nonNull(stats)) {
-                avgPrice = stats.avgPrice;
                 medianPct = stats.medianPct;
                 sampleSize = stats.sampleSize;
                 strongUp = stats.strongUpCount;
                 strongDown = stats.strongDownCount;
-                source = "eastmoney-clist";
+                if (Objects.isNull(avgPct)) {
+                    avgPct = stats.avgPct;
+                }
+                if (Objects.isNull(avgPrice)) {
+                    avgPrice = stats.avgPrice;
+                }
+                source = "eastmoney-ulist+clist";
             }
         } catch (Exception ex) {
-            log.debug("东财截面赚钱效应失败: {}", ex.getMessage());
+            log.debug("东财截面中位数失败: {}", ex.getMessage());
         }
-        if (Objects.isNull(avgPrice) || Objects.isNull(medianPct)) {
+        if (Objects.isNull(medianPct)) {
             MarketEffectResp local = effectFromStockBasic();
             if (Objects.nonNull(local)) {
+                medianPct = local.getMedianPctChg();
+                sampleSize = local.getSampleSize();
+                strongUp = local.getStrongUpCount();
+                strongDown = local.getStrongDownCount();
+                if (Objects.isNull(avgPct)) {
+                    avgPct = local.getAvgPctChg();
+                }
                 if (Objects.isNull(avgPrice)) {
                     avgPrice = local.getAvgStockPrice();
                 }
-                if (Objects.isNull(medianPct)) {
-                    medianPct = local.getMedianPctChg();
-                }
-                if (Objects.isNull(sampleSize)) {
-                    sampleSize = local.getSampleSize();
-                }
-                if (Objects.isNull(strongUp)) {
-                    strongUp = local.getStrongUpCount();
-                }
-                if (Objects.isNull(strongDown)) {
-                    strongDown = local.getStrongDownCount();
-                }
-                if (StringUtils.isBlank(source)) {
-                    source = local.getSource();
-                }
+                source = source + "+stock_basic";
             }
         }
-        LiveIndexQuote csi2000 = fetchLiveSingleIndex("2.932000", "中证2000");
-        LiveIndexQuote hs300 = fetchLiveSingleIndex("1.000300", "沪深300");
-        BigDecimal csiPct = Objects.nonNull(csi2000) ? csi2000.pctChg : null;
-        BigDecimal hsPct = Objects.nonNull(hs300) ? hs300.pctChg : null;
-        BigDecimal microVsLarge = MarketBriefingMath.microVsLarge(csiPct, hsPct);
-        String hint = MarketBriefingMath.effectHint(medianPct, microVsLarge, csiPct);
-        if (Objects.isNull(avgPrice) && Objects.isNull(medianPct) && Objects.isNull(csiPct)) {
+
+        BigDecimal microVsLarge = MarketBriefingMath.microVsLarge(microPct, hsPct);
+        String hint = MarketBriefingMath.effectHint(medianPct, microVsLarge, microPct);
+        if (Objects.isNull(avgPct) && Objects.isNull(medianPct) && Objects.isNull(equalWeightPct)
+                && Objects.isNull(microPct) && Objects.isNull(hsPct)) {
             return null;
         }
         MarketEffectResp effect = MarketEffectResp.builder()
                 .avgStockPrice(avgPrice)
+                .avgPctChg(avgPct)
                 .medianPctChg(medianPct)
+                .equalWeightPctChg(equalWeightPct)
+                .microPctChg(microPct)
                 .sampleSize(sampleSize)
-                .csi2000PctChg(csiPct)
-                .csi2000Close(Objects.nonNull(csi2000) ? csi2000.close : null)
+                .csi2000PctChg(microPct)
+                .csi2000Close(Objects.nonNull(microIdx) ? microIdx.close : null)
                 .hs300PctChg(hsPct)
                 .microVsLargePct(microVsLarge)
                 .strongUpCount(strongUp)
@@ -460,6 +812,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             }
             return MarketEffectResp.builder()
                     .avgStockPrice(MarketBriefingMath.average(prices, 2))
+                    .avgPctChg(MarketBriefingMath.average(pcts, 2))
                     .medianPctChg(MarketBriefingMath.median(pcts, 2))
                     .sampleSize(Math.max(prices.size(), pcts.size()))
                     .strongUpCount(strongUp)
@@ -470,6 +823,53 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             log.debug("stock_basic 赚钱效应兜底失败: {}", ex.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 批量指数实时行情，key=代码（如 800005 / 000300）
+     */
+    private Map<String, LiveIndexQuote> fetchLiveIndexBatch(String secIds) {
+        Map<String, LiveIndexQuote> result = new HashMap<>();
+        if (StringUtils.isBlank(secIds)) {
+            return result;
+        }
+        String url = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
+                + "?fltt=2&secids=" + secIds + "&fields=f2,f3,f12,f14";
+        try (HttpResponse response = HttpRequest.get(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Referer", "https://quote.eastmoney.com/")
+                .header("Accept", "application/json,text/plain,*/*")
+                .timeout(5000)
+                .execute()) {
+            if (!response.isOk()) {
+                return result;
+            }
+            JSONObject data = JSONUtil.parseObj(response.body()).getJSONObject("data");
+            JSONArray diff = Objects.nonNull(data) ? data.getJSONArray("diff") : null;
+            if (Objects.isNull(diff) || diff.isEmpty()) {
+                return result;
+            }
+            for (int i = 0; i < diff.size(); i++) {
+                JSONObject row = diff.getJSONObject(i);
+                if (Objects.isNull(row)) {
+                    continue;
+                }
+                String code = row.getStr("f12");
+                BigDecimal close = row.getBigDecimal("f2");
+                BigDecimal pct = row.getBigDecimal("f3");
+                if (StringUtils.isBlank(code) || Objects.isNull(close)) {
+                    continue;
+                }
+                LiveIndexQuote quote = new LiveIndexQuote();
+                quote.name = row.getStr("f14");
+                quote.close = close.setScale(2, RoundingMode.HALF_UP);
+                quote.pctChg = Objects.nonNull(pct) ? pct.setScale(2, RoundingMode.HALF_UP) : null;
+                result.put(code, quote);
+            }
+        } catch (Exception ex) {
+            log.debug("批量指数实时拉取失败: {}", ex.getMessage());
+        }
+        return result;
     }
 
     /**
@@ -741,18 +1141,46 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         List<MarketIndexItem> indexes = new ArrayList<>();
         int score = 50;
 
+        // 有实时报价时，当日涨跌/收盘优先用实时，避免因子条落后于右侧大盘
+        Map<String, LiveIndexQuote> liveQuotes = fetchLiveIndexQuotes();
+        LiveIndexQuote liveSh = liveQuotes.get("000001");
+        LiveIndexQuote liveSz = liveQuotes.get("399001");
+        LiveIndexQuote liveCyb = liveQuotes.get("399006");
+        LiveIndexQuote liveKc = liveQuotes.get("000688");
+        if (CollUtil.isNotEmpty(liveQuotes)) {
+            asOf = resolveSessionDay();
+        }
+
         // —— 大盘当日 ——
-        BigDecimal shPct = lastPct(sh);
-        BigDecimal szPct = lastPct(sz);
-        BigDecimal cybPct = lastPct(cyb);
-        BigDecimal kcPct = lastPct(kc);
-        indexLines.add(lineOf("上证指数", sh));
-        indexLines.add(lineOf("深证成指", sz));
-        indexLines.add(lineOf("创业板指", cyb));
-        indexes.add(indexItemOf("上证指数", sh));
-        indexes.add(indexItemOf("深证成指", sz));
-        indexes.add(indexItemOf("创业板指", cyb));
-        if (CollUtil.isNotEmpty(kc)) {
+        BigDecimal shPct = Objects.nonNull(liveSh) && Objects.nonNull(liveSh.pctChg) ? liveSh.pctChg : lastPct(sh);
+        BigDecimal szPct = Objects.nonNull(liveSz) && Objects.nonNull(liveSz.pctChg) ? liveSz.pctChg : lastPct(sz);
+        BigDecimal cybPct = Objects.nonNull(liveCyb) && Objects.nonNull(liveCyb.pctChg) ? liveCyb.pctChg : lastPct(cyb);
+        BigDecimal kcPct = Objects.nonNull(liveKc) && Objects.nonNull(liveKc.pctChg) ? liveKc.pctChg : lastPct(kc);
+        if (Objects.nonNull(liveSh)) {
+            indexLines.add(lineOf("上证指数", liveSh.pctChg, liveSh.close));
+            indexes.add(indexItemOf("上证指数", liveSh.pctChg, liveSh.close));
+        } else {
+            indexLines.add(lineOf("上证指数", sh));
+            indexes.add(indexItemOf("上证指数", sh));
+        }
+        if (Objects.nonNull(liveSz)) {
+            indexLines.add(lineOf("深证成指", liveSz.pctChg, liveSz.close));
+            indexes.add(indexItemOf("深证成指", liveSz.pctChg, liveSz.close));
+        } else {
+            indexLines.add(lineOf("深证成指", sz));
+            indexes.add(indexItemOf("深证成指", sz));
+        }
+        if (Objects.nonNull(liveCyb)) {
+            indexLines.add(lineOf("创业板指", liveCyb.pctChg, liveCyb.close));
+            indexes.add(indexItemOf("创业板指", liveCyb.pctChg, liveCyb.close));
+        } else {
+            indexLines.add(lineOf("创业板指", cyb));
+            indexes.add(indexItemOf("创业板指", cyb));
+        }
+        if (Objects.nonNull(liveKc)) {
+            indexLines.add(lineOf("科创50", liveKc.pctChg, liveKc.close));
+            indexes.add(indexItemOf("科创50", liveKc.pctChg, liveKc.close));
+        } else if (CollUtil.isNotEmpty(kc)) {
             indexLines.add(lineOf("科创50", kc));
             indexes.add(indexItemOf("科创50", kc));
         }
@@ -793,9 +1221,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
 
         // —— 趋势（相对 MA20）——
-        Boolean aboveMa20 = aboveMa(sh, 20);
-        BigDecimal ret5 = cumReturn(sh, 5);
-        BigDecimal ret20 = cumReturn(sh, 20);
+        BigDecimal shCloseLive = Objects.nonNull(liveSh) ? liveSh.close : null;
+        Boolean aboveMa20 = aboveMaWithLive(sh, 20, shCloseLive);
+        BigDecimal ret5 = cumReturnWithLive(sh, 5, shCloseLive);
+        BigDecimal ret20 = cumReturnWithLive(sh, 20, shCloseLive);
         if (Objects.nonNull(aboveMa20)) {
             if (Boolean.TRUE.equals(aboveMa20)) {
                 score += 10;

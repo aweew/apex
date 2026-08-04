@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 全A截面实时统计：平均股价、涨幅中位数、强弱家数
+ * 全A截面实时统计：平均股价、平均涨幅、涨幅中位数、强弱家数
  */
 @Slf4j
 @Component
@@ -93,6 +93,7 @@ public class MarketCrossSectionClient {
         }
         CrossSectionStats stats = new CrossSectionStats();
         stats.avgPrice = MarketBriefingMath.average(prices, 2);
+        stats.avgPct = MarketBriefingMath.average(pcts, 2);
         stats.medianPct = MarketBriefingMath.median(pcts, 2);
         stats.sampleSize = Math.max(prices.size(), pcts.size());
         stats.strongUpCount = strongUp;
@@ -179,6 +180,8 @@ public class MarketCrossSectionClient {
     public static final class CrossSectionStats {
         /** 平均股价 */
         public BigDecimal avgPrice;
+        /** 平均涨幅% */
+        public BigDecimal avgPct;
         /** 涨幅中位数% */
         public BigDecimal medianPct;
         /** 样本数 */

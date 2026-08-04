@@ -383,11 +383,36 @@ textarea {
   border-radius: 2px;
 }
 
-.page .el-button--primary {
+.page .el-button--primary:not(.is-plain):not(.is-link) {
   --el-button-bg-color: var(--accent);
   --el-button-border-color: var(--accent);
   --el-button-hover-bg-color: var(--accent-hover);
   --el-button-hover-border-color: var(--accent-hover);
+  --el-button-text-color: #fff;
+  --el-button-hover-text-color: #fff;
+}
+
+.page .el-button.is-link.el-button--primary {
+  --el-button-text-color: var(--accent);
+  --el-button-hover-text-color: var(--accent-hover);
+  color: var(--accent);
+  background: transparent;
+  border-color: transparent;
+}
+
+.page .el-button--primary.is-plain {
+  --el-button-bg-color: rgba(0, 113, 227, 0.1);
+  --el-button-border-color: rgba(0, 113, 227, 0.28);
+  --el-button-text-color: var(--accent);
+  --el-button-hover-bg-color: rgba(0, 113, 227, 0.16);
+  --el-button-hover-border-color: rgba(0, 113, 227, 0.4);
+  --el-button-hover-text-color: var(--accent-hover);
+  --el-button-active-bg-color: rgba(0, 113, 227, 0.2);
+  --el-button-active-border-color: rgba(0, 113, 227, 0.45);
+  --el-button-active-text-color: var(--accent-hover);
+  color: var(--accent);
+  background-color: rgba(0, 113, 227, 0.1);
+  border-color: rgba(0, 113, 227, 0.28);
 }
 
 .page .el-button {

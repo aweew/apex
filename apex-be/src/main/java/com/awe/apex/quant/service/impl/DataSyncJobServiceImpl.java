@@ -45,7 +45,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -350,6 +349,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
         StringBuilder logBuf = new StringBuilder();
         int exit = -1;
+        Process process = null;
         try {
             job.setStatus("RUNNING");
             job.setMessage("运行中");
@@ -359,7 +359,11 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(script.getParent().toFile());
             pb.redirectErrorStream(true);
-            Process process = pb.start();
+            Map<String, String> env = pb.environment();
+            env.put("PYTHONUNBUFFERED", "1");
+            env.put("PYTHONIOENCODING", "utf-8");
+            env.put("PYTHONUTF8", "1");
+            process = pb.start();
             runningProcesses.put(jobId, process);
             try {
                 job.setPid(process.pid());
@@ -368,44 +372,60 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             syncJobMapper.updateById(job);
 
-            // 并行读 stdout 至 EOF（避免 break 后管道堵死），主线程 waitOrKill
+            // 独立线程 drain，避免与任务线程池互相占坑导致管道堵死
             Charset charset = detectCharset();
-            Future<String> readFuture = executor.submit(() -> {
+            Process drainProcess = process;
+            Thread drainThread = new Thread(() -> {
                 try {
-                    return ProcessIoUtils.readAndDrain(process.getInputStream(), charset, LOG_MAX);
+                    String text = ProcessIoUtils.readAndDrain(drainProcess.getInputStream(), charset, LOG_MAX);
+                    if (StringUtils.isNotBlank(text)) {
+                        synchronized (logBuf) {
+                            logBuf.append(text);
+                        }
+                    }
                 } catch (Exception ex) {
                     log.warn("读同步输出失败 jobId={} err={}", jobId, ex.getMessage());
-                    return "";
                 }
-            });
+            }, "apex-sync-drain-" + jobId);
+            drainThread.setDaemon(true);
+            drainThread.start();
+
             long timeoutSec = Math.max(spec.getTimeoutSec(), 60);
             boolean finished = ProcessIoUtils.waitOrKill(process, timeoutSec);
-            String outputText;
             try {
-                outputText = readFuture.get(Math.min(timeoutSec + 30, 600), TimeUnit.SECONDS);
-            } catch (Exception ex) {
-                outputText = "";
+                drainThread.join(Math.min(Math.max(timeoutSec, 60), 600) * 1000L);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
             }
             if (!finished) {
                 throw new BusinessException("同步超时（>" + spec.getTimeoutSec() + "s）");
             }
-            exit = process.exitValue();
-            if (StringUtils.isNotBlank(outputText)) {
-                String[] lines = outputText.split("\n", -1);
+            try {
+                exit = process.exitValue();
+            } catch (IllegalThreadStateException ex) {
+                process.destroyForcibly();
+                exit = process.waitFor();
+            }
+            // 按行刷进度（日志已在 drain 线程写入）
+            String snapshot;
+            synchronized (logBuf) {
+                snapshot = logBuf.toString();
+            }
+            if (StringUtils.isNotBlank(snapshot)) {
+                String[] lines = snapshot.split("\n", -1);
                 long done = 0;
                 for (String line : lines) {
                     if (StringUtils.isBlank(line)) {
                         continue;
                     }
                     done++;
-                    appendLine(logBuf, line);
                     if (!cancelled.get()) {
                         updateProgressFromLine(job, line, done);
                     }
                 }
             }
             job.setExitCode(exit);
-            String logText = trimLog(logBuf.toString());
+            String logText = trimLog(snapshot);
             if (StringUtils.isBlank(logText)) {
                 logText = buildFallbackLog(command, exit, null);
             } else if (exit != 0) {
@@ -424,20 +444,40 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             } else {
                 job.setStatus("FAILED");
                 job.setMessage("脚本退出码 " + exit);
-                // 部分成功（如指数已更新）也清简报，避免看板继续冻旧立场
                 onMarketDataSynced(spec.getTaskType());
             }
             job.setFinishedAt(LocalDateTime.now());
             syncJobMapper.updateById(job);
         } catch (Exception ex) {
-            log.warn("同步任务失败 jobId={} type={} err={}", jobId, spec.getTaskType(), ex.getMessage());
+            log.warn("同步任务失败 jobId={} type={} err={}", jobId, spec.getTaskType(), ex.toString());
+            if (Objects.nonNull(process)) {
+                try {
+                    if (process.isAlive()) {
+                        process.destroyForcibly();
+                    }
+                    exit = process.exitValue();
+                } catch (Exception ignored) {
+                    // keep exit
+                }
+            }
             job = syncJobMapper.selectById(jobId);
             if (Objects.nonNull(job) && !"CANCELLED".equals(job.getStatus())) {
+                String errMsg = StringUtils.isNotBlank(ex.getMessage())
+                        ? ex.getMessage()
+                        : ex.getClass().getSimpleName();
+                if (ex instanceof InterruptedException) {
+                    errMsg = "任务线程被中断（常见于服务热重启/停止），请重试";
+                    Thread.currentThread().interrupt();
+                }
                 job.setStatus(cancelled.get() ? "CANCELLED" : "FAILED");
-                job.setMessage(clip(ex.getMessage(), 400));
+                job.setMessage(clip(errMsg, 400));
                 job.setExitCode(exit);
-                String fallback = buildFallbackLog(command, exit, ex.getMessage());
-                String merged = logBuf.length() > 0 ? (logBuf + "\n" + fallback) : fallback;
+                String mergedLog;
+                synchronized (logBuf) {
+                    mergedLog = logBuf.toString();
+                }
+                String fallback = buildFallbackLog(command, exit, errMsg);
+                String merged = StringUtils.isNotBlank(mergedLog) ? (mergedLog + "\n" + fallback) : fallback;
                 job.setLogTail(trimLog(merged));
                 job.setFinishedAt(LocalDateTime.now());
                 syncJobMapper.updateById(job);

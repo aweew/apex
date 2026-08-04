@@ -216,9 +216,7 @@ public class DashboardServiceImpl implements IDashboardService {
             valuationRichCount = Objects.nonNull(today.getValuationRichCount()) ? today.getValuationRichCount() : 0;
             mainlineMatchCount = Objects.nonNull(today.getMainlineMatchCount()) ? today.getMainlineMatchCount() : 0;
             riskNote = today.getRiskNote();
-            if (Objects.nonNull(today.getMarketBriefing()) && Objects.nonNull(today.getMarketBriefing().getStance())) {
-                stance = today.getMarketBriefing().getStance();
-            }
+            // 立场以看板实时简报为准，不覆盖为决策落库时的旧快照
             hasToday = buyCount + sellCount + holdCount > 0;
             for (DecisionItemResp item : buys) {
                 if (topBuys.size() >= 3) {

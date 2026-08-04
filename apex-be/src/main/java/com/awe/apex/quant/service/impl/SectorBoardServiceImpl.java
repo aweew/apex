@@ -16,6 +16,7 @@ import com.awe.apex.quant.domain.entity.SectorQuote;
 import com.awe.apex.quant.mapper.SectorBasicMapper;
 import com.awe.apex.quant.mapper.SectorConstituentMapper;
 import com.awe.apex.quant.mapper.SectorQuoteMapper;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.util.ProcessIoUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -420,9 +421,12 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
                 .last("LIMIT " + (dayCount * 120)));
         LinkedHashMap<LocalDate, Boolean> seen = new LinkedHashMap<>();
         for (SectorQuote row : dateRows) {
-            if (Objects.nonNull(row.getTradeDate())) {
-                seen.putIfAbsent(row.getTradeDate(), Boolean.TRUE);
+            LocalDate tradeDate = row.getTradeDate();
+            // 跳过周末/节假日误写入的「伪交易日」
+            if (Objects.isNull(tradeDate) || !TradingCalendar.isTradingDay(tradeDate)) {
+                continue;
             }
+            seen.putIfAbsent(tradeDate, Boolean.TRUE);
             if (seen.size() >= dayCount) {
                 break;
             }
@@ -582,11 +586,20 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
     }
 
     private LocalDate latestTradeDate(String boardType) {
-        SectorQuote latest = sectorQuoteMapper.selectOne(Wrappers.<SectorQuote>lambdaQuery()
+        List<SectorQuote> rows = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
+                .select(SectorQuote::getTradeDate)
                 .eq(SectorQuote::getBoardType, boardType)
                 .orderByDesc(SectorQuote::getTradeDate)
-                .last("LIMIT 1"));
-        return Objects.isNull(latest) ? null : latest.getTradeDate();
+                .last("LIMIT 30"));
+        if (CollUtil.isEmpty(rows)) {
+            return null;
+        }
+        for (SectorQuote row : rows) {
+            if (Objects.nonNull(row.getTradeDate()) && TradingCalendar.isTradingDay(row.getTradeDate())) {
+                return row.getTradeDate();
+            }
+        }
+        return null;
     }
 
     private List<LocalDate> listAvailableTradeDates(String boardType, int limit) {
@@ -601,10 +614,13 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
             return dates;
         }
         for (SectorQuote row : rows) {
-            if (Objects.isNull(row.getTradeDate()) || dates.contains(row.getTradeDate())) {
+            LocalDate tradeDate = row.getTradeDate();
+            if (Objects.isNull(tradeDate)
+                    || !TradingCalendar.isTradingDay(tradeDate)
+                    || dates.contains(tradeDate)) {
                 continue;
             }
-            dates.add(row.getTradeDate());
+            dates.add(tradeDate);
             if (dates.size() >= size) {
                 break;
             }

@@ -7,7 +7,7 @@ import { dashboardHome, dashboardOverview } from '../api/dashboard'
 import { runDecision } from '../api/decision'
 import { startSyncJob } from '../api/sync'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v8'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v11'
 const loading = ref(false)
 const refreshing = ref(false)
 const running = ref(false)
@@ -570,12 +570,15 @@ onBeforeUnmount(() => {
               <b v-else class="miss">--</b>
             </span>
             <span class="dot" aria-hidden="true" />
-            <span class="stat">
-              <em>涨停</em>
+            <span
+              class="stat"
+              :title="market?.limitUpCount != null || market?.limitDownCount != null
+                ? `涨停 ${market?.limitUpCount ?? '--'} / 跌停 ${market?.limitDownCount ?? '--'}`
+                : '暂无涨跌停家数'"
+            >
+              <em>涨跌停</em>
               <b class="up">{{ market?.limitUpCount ?? '--' }}</b>
-            </span>
-            <span class="stat">
-              <em>跌停</em>
+              <span class="slash">/</span>
               <b class="down">{{ market?.limitDownCount ?? '--' }}</b>
             </span>
           </div>
@@ -593,20 +596,28 @@ onBeforeUnmount(() => {
       <div class="effect-head">
         <span class="effect-title">赚钱效应</span>
         <span v-if="effect.hint" class="effect-hint">{{ effect.hint }}</span>
-        <span v-else class="effect-hint muted">涨幅中位数 · 中证2000 · 相对沪深300</span>
+        <span v-else class="effect-hint muted">平均股价 · 中位数 · 全A等权 · 微盘股 · 沪深300</span>
       </div>
       <div class="effect-grid">
-        <div class="effect-cell">
-          <em>涨幅中位数</em>
-          <b :class="pctDir(effect.medianPctChg)">{{ fmtIndexPct(effect.medianPctChg) }}</b>
+        <div class="effect-cell" :class="pctDir(effect.avgPctChg)" title="800005 平均股价指数涨跌幅">
+          <em>平均股价</em>
+          <b>{{ fmtIndexPct(effect.avgPctChg) }}</b>
         </div>
-        <div class="effect-cell">
-          <em>中证2000</em>
-          <b :class="pctDir(effect.csi2000PctChg)">{{ fmtIndexPct(effect.csi2000PctChg) }}</b>
+        <div class="effect-cell" :class="pctDir(effect.medianPctChg)" title="880009 口径：全A涨幅中位数">
+          <em>中位数</em>
+          <b>{{ fmtIndexPct(effect.medianPctChg) }}</b>
         </div>
-        <div class="effect-cell">
-          <em>相对沪深300</em>
-          <b :class="pctDir(effect.microVsLargePct)">{{ fmtIndexPct(effect.microVsLargePct) }}</b>
+        <div class="effect-cell" :class="pctDir(effect.equalWeightPctChg)" title="800010 全A(沪深京)等权，对齐 880008">
+          <em>全A等权</em>
+          <b>{{ fmtIndexPct(effect.equalWeightPctChg) }}</b>
+        </div>
+        <div class="effect-cell" :class="pctDir(effect.microPctChg ?? effect.csi2000PctChg)" title="800007 Choice微盘，对齐 880823">
+          <em>微盘股</em>
+          <b>{{ fmtIndexPct(effect.microPctChg ?? effect.csi2000PctChg) }}</b>
+        </div>
+        <div class="effect-cell" :class="pctDir(effect.hs300PctChg)" title="000300 沪深300">
+          <em>沪深300</em>
+          <b>{{ fmtIndexPct(effect.hs300PctChg) }}</b>
         </div>
       </div>
     </section>
@@ -699,11 +710,11 @@ onBeforeUnmount(() => {
             empty-text="暂无买入建议"
             stripe
           >
-            <el-table-column prop="code" label="代码" width="88">
+            <el-table-column prop="code" label="代码" width="100" class-name="code-col">
               <template #default="{ row }">
-                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
+                <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
                   {{ row.code }}
-                </el-button>
+                </button>
               </template>
             </el-table-column>
             <el-table-column prop="name" label="名称" width="90" />
@@ -783,11 +794,11 @@ onBeforeUnmount(() => {
             :image-size="56"
           />
           <el-table v-else :data="topSells" size="small" class="dash-table" stripe>
-            <el-table-column prop="code" label="代码" width="88">
+            <el-table-column prop="code" label="代码" width="100" class-name="code-col">
               <template #default="{ row }">
-                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
+                <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
                   {{ row.code }}
-                </el-button>
+                </button>
               </template>
             </el-table-column>
             <el-table-column prop="name" label="名称" width="90" />
@@ -1550,7 +1561,7 @@ onBeforeUnmount(() => {
 
 .effect-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1559,39 +1570,45 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 10px 10px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.03);
+  border: 1px solid transparent;
 }
 
 .effect-cell em {
   font-style: normal;
   font-size: 11px;
+  font-weight: 600;
   color: var(--muted, #8a8f98);
 }
 
 .effect-cell b {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 750;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
-.effect-cell i {
-  font-style: normal;
-  font-size: 11px;
-  color: var(--slate, #64748b);
-  font-variant-numeric: tabular-nums;
+.effect-cell.up {
+  background: rgba(255, 59, 48, 0.06);
+  border-color: rgba(255, 59, 48, 0.1);
 }
 
-.effect-cell b.up { color: var(--up); }
-.effect-cell b.down { color: var(--down); }
-.effect-cell b.flat { color: var(--slate, #64748b); }
+.effect-cell.down {
+  background: rgba(52, 199, 89, 0.06);
+  border-color: rgba(52, 199, 89, 0.1);
+}
+
+.effect-cell.up b { color: var(--up); }
+.effect-cell.down b { color: var(--down); }
+.effect-cell.flat b { color: var(--slate, #64748b); }
 
 @media (max-width: 560px) {
   .effect-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 }
 
@@ -1677,6 +1694,32 @@ onBeforeUnmount(() => {
   --el-table-border-color: rgba(0, 0, 0, 0.05);
   border-radius: var(--radius-sm);
   overflow: hidden;
+}
+
+.dash-table :deep(.code-col .cell) {
+  overflow: visible;
+  padding-left: 8px;
+  padding-right: 4px;
+}
+
+.code-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.code-link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
 }
 
 .dash-empty {

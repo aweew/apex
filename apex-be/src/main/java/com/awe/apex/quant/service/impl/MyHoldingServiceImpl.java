@@ -4,6 +4,8 @@ import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.MyHoldingSaveReq;
+import com.awe.apex.quant.domain.dto.BarSyncReq;
+import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.ObserveTechSignal;
 import com.awe.apex.quant.domain.dto.ValuationBriefResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
@@ -22,11 +24,15 @@ import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockCompanyProfileMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
+import com.awe.apex.quant.service.IBarDailyService;
+import com.awe.apex.quant.service.ICompanyProfileService;
 import com.awe.apex.quant.service.IMyHoldingService;
+import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IValuationService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,6 +85,16 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     @Resource
     private TechSignalEvaluator techSignalEvaluator;
 
+    @Resource
+    private ICompanyProfileService companyProfileService;
+
+    @Resource
+    private IBarDailyService barDailyService;
+
+    @Lazy
+    @Resource
+    private IPortfolioService portfolioService;
+
     /**
      * 持仓列表（现价/盈亏/题材 + 技术指标/估值/评价建议）
      *
@@ -89,11 +105,23 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         List<MyHolding> list = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
                 .orderByDesc(MyHolding::getUpdateTime)
                 .orderByAsc(MyHolding::getCode));
+        return enrichHoldings(list);
+    }
+
+    /**
+     * 对给定持仓行做行情/题材/技术/估值 enrich（不读写库）
+     *
+     * @param list 持仓行
+     * @return 同一列表
+     */
+    @Override
+    public List<MyHolding> enrichHoldings(List<MyHolding> list) {
         if (CollUtil.isEmpty(list)) {
             return list;
         }
         Map<String, StockBasic> basicMap = loadBasics(list);
         Map<String, StockCompanyProfile> profileMap = loadProfiles(list);
+        ensureMissingProfiles(list, profileMap);
         Map<String, List<String>> sectorNamesByCode = loadConceptSectorNames(list);
         Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(list);
         List<String> valCodes = new ArrayList<>();
@@ -123,23 +151,31 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 }
             }
             if (StringUtils.isBlank(holding.getIndustry())) {
-                holding.setIndustry("未分类");
+                holding.setIndustry(MarketCodeUtils.isFundOrEtf(code) ? "ETF" : "未分类");
             }
             StockCompanyProfile profile = profileMap.get(code);
-            List<String> matchTexts = new ArrayList<>();
+            // 强证据：行业/主营/名称；弱证据：东财概念串、本地概念板块名（易误挂「存储芯片」等）
+            List<String> strongTexts = new ArrayList<>();
+            List<String> weakTexts = new ArrayList<>();
             if (Objects.nonNull(profile) && StringUtils.isNotBlank(profile.getConcepts())) {
                 holding.setConcepts(profile.getConcepts());
-                matchTexts.addAll(ThemeBucketMatcher.splitConcepts(profile.getConcepts()));
+                weakTexts.addAll(ThemeBucketMatcher.splitConcepts(profile.getConcepts()));
             }
-            List<String> sectorNames = sectorNamesByCode.getOrDefault(code, List.of());
-            matchTexts.addAll(sectorNames);
+            if (Objects.nonNull(profile) && StringUtils.isNotBlank(profile.getMainBusiness())) {
+                strongTexts.add(profile.getMainBusiness());
+            }
+            if (Objects.nonNull(profile) && StringUtils.isNotBlank(profile.getBoardPath())) {
+                strongTexts.add(profile.getBoardPath());
+            }
+            weakTexts.addAll(sectorNamesByCode.getOrDefault(code, List.of()));
             if (StringUtils.isNotBlank(holding.getIndustry())) {
-                matchTexts.add(holding.getIndustry());
+                strongTexts.add(holding.getIndustry());
             }
             if (StringUtils.isNotBlank(holding.getName())) {
-                matchTexts.add(holding.getName());
+                strongTexts.add(holding.getName());
             }
-            holding.setThemeTags(ThemeBucketMatcher.match(matchTexts));
+            appendHkNameHints(holding.getName(), strongTexts);
+            holding.setThemeTags(ThemeBucketMatcher.match(strongTexts, weakTexts));
             fillPnl(holding);
             fillInsight(holding, barsByCode.get(code), valuationMap.get(code));
         }
@@ -197,6 +233,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             exist.setUpdateTime(now);
             myHoldingMapper.updateById(exist);
             fillPnlFromBasic(exist, basic);
+            portfolioService.mirrorMyHoldingSave(exist);
             return exist;
         }
 
@@ -214,6 +251,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 .build();
         myHoldingMapper.insert(created);
         fillPnlFromBasic(created, basic);
+        portfolioService.mirrorMyHoldingSave(created);
         return created;
     }
 
@@ -228,7 +266,11 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         if (Objects.isNull(id)) {
             throw new BusinessException("持仓ID不能为空");
         }
+        MyHolding exist = myHoldingMapper.selectById(id);
         myHoldingMapper.deleteById(id);
+        if (Objects.nonNull(exist)) {
+            portfolioService.mirrorMyHoldingRemove(exist.getCode());
+        }
     }
 
     /**
@@ -242,8 +284,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         boolean missingOnly = !Boolean.FALSE.equals(onlyMissing);
         List<MyHolding> list = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
                 .orderByAsc(MyHolding::getCode));
-        int success = 0;
-        int fail = 0;
+        List<String> codes = new ArrayList<>();
         for (MyHolding holding : list) {
             String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
             if (StringUtils.isBlank(code)) {
@@ -252,6 +293,75 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             if (!code.equals(holding.getCode())) {
                 holding.setCode(code);
                 myHoldingMapper.updateById(holding);
+            }
+            codes.add(code);
+        }
+        Map<String, Object> quoteResult = refreshQuotesForCodes(codes, missingOnly);
+        // 回填空白名称
+        for (MyHolding holding : list) {
+            if (StringUtils.isNotBlank(holding.getName()) || StringUtils.isBlank(holding.getCode())) {
+                continue;
+            }
+            StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
+                    .eq(StockBasic::getCode, holding.getCode())
+                    .last("LIMIT 1"));
+            if (Objects.nonNull(basic) && StringUtils.isNotBlank(basic.getName())) {
+                holding.setName(basic.getName());
+                myHoldingMapper.updateById(holding);
+            }
+        }
+        int barOk = 0;
+        int barFail = 0;
+        int barCount = 0;
+        if (CollUtil.isNotEmpty(codes)) {
+            try {
+                BarSyncReq syncReq = new BarSyncReq();
+                syncReq.setCodes(codes);
+                BarSyncResp barResp = barDailyService.syncBars(syncReq);
+                barOk = Objects.nonNull(barResp.getSuccessCount()) ? barResp.getSuccessCount() : 0;
+                barFail = Objects.nonNull(barResp.getFailCount()) ? barResp.getFailCount() : 0;
+                barCount = Objects.nonNull(barResp.getBarCount()) ? barResp.getBarCount() : 0;
+            } catch (Exception ex) {
+                log.warn("持仓日线同步失败 err={}", ex.getMessage());
+                barFail = codes.size();
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("success", quoteResult.get("success"));
+        result.put("fail", quoteResult.get("fail"));
+        result.put("barSuccess", barOk);
+        result.put("barFail", barFail);
+        result.put("barCount", barCount);
+        result.put("holdings", listHoldings());
+        result.put("message", quoteResult.get("message")
+                + "；日线成功 " + barOk + " / 失败 " + barFail
+                + "（写入 " + barCount + " 根）");
+        return result;
+    }
+
+    /**
+     * 按代码列表刷新行情到 stock_basic
+     *
+     * @param codes       代码
+     * @param onlyMissing 是否只刷本地无现价的
+     * @return 结果
+     */
+    @Override
+    public Map<String, Object> refreshQuotesForCodes(List<String> codes, Boolean onlyMissing) {
+        boolean missingOnly = !Boolean.FALSE.equals(onlyMissing);
+        int success = 0;
+        int fail = 0;
+        if (CollUtil.isEmpty(codes)) {
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("success", 0);
+            empty.put("fail", 0);
+            empty.put("message", "无待刷新代码");
+            return empty;
+        }
+        for (String raw : codes) {
+            String code = MarketCodeUtils.normalizeHoldingCode(raw);
+            if (StringUtils.isBlank(code)) {
+                continue;
             }
             StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                     .eq(StockBasic::getCode, code)
@@ -263,16 +373,12 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 StockBasic synced = upsertQuote(code);
                 if (Objects.nonNull(synced) && Objects.nonNull(synced.getLatestPrice())) {
                     success++;
-                    if (StringUtils.isBlank(holding.getName()) && StringUtils.isNotBlank(synced.getName())) {
-                        holding.setName(synced.getName());
-                        myHoldingMapper.updateById(holding);
-                    }
                 } else {
                     fail++;
                 }
             } catch (Exception ex) {
                 fail++;
-                log.warn("持仓刷新行情失败 code={}, err={}", code, ex.getMessage());
+                log.warn("刷新行情失败 code={}, err={}", code, ex.getMessage());
             }
             try {
                 Thread.sleep(120L);
@@ -283,7 +389,6 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", success);
         result.put("fail", fail);
-        result.put("holdings", listHoldings());
         result.put("message", "行情刷新完成：成功 " + success + " / 失败 " + fail);
         return result;
     }
@@ -301,6 +406,9 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         if (Objects.isNull(existing)) {
             if (Objects.isNull(fetched.getLatestPrice()) || fetched.getLatestPrice().signum() <= 0) {
                 throw new BusinessException("未拿到有效现价: " + code);
+            }
+            if (MarketCodeUtils.isFundOrEtf(code) && StringUtils.isBlank(fetched.getIndustry())) {
+                fetched.setIndustry("ETF");
             }
             fetched.setCreateTime(now);
             fetched.setUpdateTime(now);
@@ -335,6 +443,8 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         }
         if (StringUtils.isNotBlank(fetched.getIndustry())) {
             existing.setIndustry(fetched.getIndustry());
+        } else if (MarketCodeUtils.isFundOrEtf(code) && StringUtils.isBlank(existing.getIndustry())) {
+            existing.setIndustry("ETF");
         }
         if (StringUtils.isNotBlank(fetched.getSource())) {
             existing.setSource(fetched.getSource());
@@ -421,6 +531,58 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             }
         }
         return map;
+    }
+
+    /**
+     * A 股持仓若缺少概念串，自动拉东财 F10 补齐（失败不阻断列表）
+     *
+     * @param list       持仓
+     * @param profileMap 已加载概况（会就地回写）
+     */
+    private void ensureMissingProfiles(List<MyHolding> list, Map<String, StockCompanyProfile> profileMap) {
+        for (MyHolding holding : list) {
+            String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+            if (StringUtils.isBlank(code) || MarketCodeUtils.isHkCode(code)) {
+                continue;
+            }
+            // ETF/场内基金无上市公司 F10，跳过概况补齐
+            if (MarketCodeUtils.isFundOrEtf(code)) {
+                continue;
+            }
+            StockCompanyProfile profile = profileMap.get(code);
+            if (Objects.nonNull(profile) && StringUtils.isNotBlank(profile.getConcepts())) {
+                continue;
+            }
+            try {
+                companyProfileService.query(code, true);
+                StockCompanyProfile refreshed = stockCompanyProfileMapper.selectOne(
+                        Wrappers.<StockCompanyProfile>lambdaQuery()
+                                .eq(StockCompanyProfile::getCode, code)
+                                .last("LIMIT 1"));
+                if (Objects.nonNull(refreshed)) {
+                    profileMap.put(code, refreshed);
+                }
+            } catch (Exception e) {
+                log.warn("持仓补齐公司概况失败 code={} err={}", code, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 港股名称启发：无 F10 概念时补充可匹配文本
+     *
+     * @param name       证券名称
+     * @param matchTexts 匹配文本列表
+     */
+    private void appendHkNameHints(String name, List<String> matchTexts) {
+        if (StringUtils.isBlank(name)) {
+            return;
+        }
+        if (name.contains("小米")) {
+            matchTexts.add("人工智能");
+            matchTexts.add("AI手机");
+            matchTexts.add("消费电子概念");
+        }
     }
 
     /**

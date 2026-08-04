@@ -20,7 +20,6 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const syncingBars = ref(false)
-const refreshing = ref(false)
 const fundLoading = ref(false)
 const profileLoading = ref(false)
 const profileRefreshing = ref(false)
@@ -1348,7 +1347,9 @@ async function load(refreshQuote = false) {
       }
     })
     if (refreshQuote) {
-      await refreshQuoteOnly()
+      await syncStockBasic(code.value.trim())
+      const again = await fetchStockDetail(code.value.trim(), BAR_LIMIT, false)
+      applyDetail(again.data)
     }
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
@@ -1424,46 +1425,26 @@ function applyDetail(data) {
   refreshChart()
 }
 
-async function refreshQuoteOnly() {
-  refreshing.value = true
-  try {
-    await syncStockBasic(code.value.trim())
-    const res = await fetchStockDetail(code.value.trim(), BAR_LIMIT, false)
-    applyDetail(res.data)
-    ElMessage.success('行情已刷新并落库')
-  } catch (e) {
-    ElMessage.error(e.message || '刷新行情失败')
-  } finally {
-    refreshing.value = false
-  }
-}
-
-async function syncDailyBars() {
+async function syncStockData() {
   if (!code.value) return
   syncingBars.value = true
   try {
     const pure = code.value.trim()
     const res = await syncBars({ codes: [pure] })
     const data = res.data || {}
-    // 日线同步只落 K 线，顺带刷一次行情快照，避免现价/估值仍是空
     try {
       await syncStockBasic(pure)
     } catch (quoteErr) {
       console.warn('同步日后刷新行情失败', quoteErr)
     }
-    ElMessage.success(`日线同步完成：K线 ${data.barCount ?? 0} 根`)
+    ElMessage.success(`已同步：日线 ${data.barCount ?? 0} 根，现价已更新`)
     const detail = await fetchStockDetail(pure, BAR_LIMIT, false)
     applyDetail(detail.data)
   } catch (e) {
-    ElMessage.error(e.message || '同步日线失败')
+    ElMessage.error(e.message || '同步失败')
   } finally {
     syncingBars.value = false
   }
-}
-
-function go() {
-  router.replace(`/stock/${code.value.trim()}`)
-  load(false)
 }
 
 const observeSaving = ref(false)
@@ -1642,10 +1623,7 @@ function dash(v) {
         <p>{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>
       <div class="actions">
-        <el-input v-model="code" style="width: 120px" placeholder="代码" @keyup.enter="go" />
-        <el-button type="primary" @click="go">查询</el-button>
-        <el-button :loading="refreshing" @click="refreshQuoteOnly">刷新行情</el-button>
-        <el-button type="success" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
+        <el-button type="primary" :loading="syncingBars" @click="syncStockData">同步数据</el-button>
         <el-button type="warning" plain @click="activeTab = 'analysis'">综合研判</el-button>
         <el-button plain @click="router.push('/decision')">决策</el-button>
         <el-button plain @click="router.push({ path: '/valuation', query: { code: code.trim() } })">估值</el-button>
@@ -1714,9 +1692,9 @@ function dash(v) {
         <el-empty
           v-if="!loading && !bars.length && !isIntraday"
           class="empty-bars"
-          description="本地暂无日线，请先同步日线落库；也可先看分时"
+          description="本地暂无日线，请先同步数据落库；也可先看分时"
         >
-          <el-button type="primary" :loading="syncingBars" @click="syncDailyBars">同步日线</el-button>
+          <el-button type="primary" :loading="syncingBars" @click="syncStockData">同步数据</el-button>
           <el-button @click="klinePeriod = 'intraday'">看分时</el-button>
         </el-empty>
         <div v-if="showChartShell" class="chart-toolbar" v-loading="intradayLoading && isIntraday">

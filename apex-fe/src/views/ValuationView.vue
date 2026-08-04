@@ -128,6 +128,16 @@ function levelClass(level) {
   return 'chip'
 }
 
+/** 维度分进度条颜色：高分偏绿、中位蓝、低分琥珀/红 */
+function dimBarColor(score) {
+  const n = Number(score)
+  if (Number.isNaN(n)) return 'var(--accent)'
+  if (n >= 70) return 'var(--down)'
+  if (n >= 55) return 'var(--accent)'
+  if (n >= 40) return 'var(--warn)'
+  return 'var(--up)'
+}
+
 watch(
   () => route.query.code,
   (v) => {
@@ -224,7 +234,7 @@ onMounted(() => {
               :percentage="Math.min(100, Math.max(0, Number(d.score) || 0))"
               :stroke-width="8"
               :show-text="false"
-              color="#1d1d1f"
+              :color="dimBarColor(d.score)"
             />
             <div class="dim-verdict">{{ d.verdict }}</div>
             <div class="dim-detail">{{ d.detail }}</div>

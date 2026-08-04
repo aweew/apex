@@ -48,22 +48,30 @@ def main():
     effect = m.get("effect") or {}
     print(
         "effect",
-        "avg", effect.get("avgStockPrice"),
+        "avg800005", effect.get("avgPctChg"),
         "median", effect.get("medianPctChg"),
-        "csi2000", effect.get("csi2000PctChg"),
-        "vs300", effect.get("microVsLargePct"),
+        "eq800010", effect.get("equalWeightPctChg"),
+        "micro800007", effect.get("microPctChg") or effect.get("csi2000PctChg"),
+        "hs300", effect.get("hs300PctChg"),
         "sample", effect.get("sampleSize"),
         "src", effect.get("source"),
     )
     if not effect:
         errors.append("赚钱效应 effect 为空")
     else:
-        if effect.get("avgStockPrice") is None:
-            errors.append("平均股价为空")
+        if effect.get("avgPctChg") is None:
+            errors.append("平均股价涨幅为空")
         if effect.get("medianPctChg") is None:
-            errors.append("涨幅中位数为空")
-        if effect.get("csi2000PctChg") is None:
-            errors.append("中证2000涨跌为空")
+            errors.append("中位数为空")
+        if effect.get("equalWeightPctChg") is None:
+            errors.append("全A等权为空")
+        micro = effect.get("microPctChg")
+        if micro is None:
+            micro = effect.get("csi2000PctChg")
+        if micro is None:
+            errors.append("微盘股涨跌为空")
+        if effect.get("hs300PctChg") is None:
+            errors.append("沪深300涨跌为空")
         sample = effect.get("sampleSize") or 0
         if sample < 1000:
             errors.append(f"截面样本过少 sample={sample}")

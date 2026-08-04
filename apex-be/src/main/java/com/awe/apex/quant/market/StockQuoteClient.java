@@ -58,7 +58,11 @@ public class StockQuoteClient {
         if (!"HK".equals(market) && needValuationFallback(basic) && !isEastMoneyCoolingDown()) {
             enrichFromEastMoney(basic);
         }
-        if (!"HK".equals(market) && StringUtils.isBlank(basic.getIndustry()) && !isEastMoneyCoolingDown()) {
+        // ETF/基金无上市公司 F10，跳过以免空结果触发东财熔断，拖累同批刷新
+        if (!"HK".equals(market)
+                && !MarketCodeUtils.isFundOrEtf(pure)
+                && StringUtils.isBlank(basic.getIndustry())
+                && !isEastMoneyCoolingDown()) {
             enrichIndustryFromEastMoney(basic);
         }
         return basic;

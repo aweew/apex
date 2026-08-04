@@ -20,7 +20,7 @@ import os
 import re
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -86,6 +86,48 @@ def db_conn():
         autocommit=False,
         cursorclass=DictCursor,
     )
+
+
+def _daterange(begin: date, end: date) -> Set[date]:
+    out: Set[date] = set()
+    cur = begin
+    while cur <= end:
+        out.add(cur)
+        cur += timedelta(days=1)
+    return out
+
+
+# 与后端 TradingCalendar 对齐的节假日（周末另判）
+_A_SHARE_HOLIDAYS: Set[date] = set()
+_A_SHARE_HOLIDAYS |= _daterange(date(2025, 1, 1), date(2025, 1, 1))
+_A_SHARE_HOLIDAYS |= _daterange(date(2025, 1, 28), date(2025, 2, 4))
+_A_SHARE_HOLIDAYS |= _daterange(date(2025, 4, 4), date(2025, 4, 6))
+_A_SHARE_HOLIDAYS |= _daterange(date(2025, 5, 1), date(2025, 5, 5))
+_A_SHARE_HOLIDAYS |= _daterange(date(2025, 5, 31), date(2025, 6, 2))
+_A_SHARE_HOLIDAYS |= _daterange(date(2025, 10, 1), date(2025, 10, 8))
+_A_SHARE_HOLIDAYS |= _daterange(date(2026, 1, 1), date(2026, 1, 3))
+_A_SHARE_HOLIDAYS |= _daterange(date(2026, 2, 15), date(2026, 2, 23))
+_A_SHARE_HOLIDAYS |= _daterange(date(2026, 4, 4), date(2026, 4, 6))
+_A_SHARE_HOLIDAYS |= _daterange(date(2026, 5, 1), date(2026, 5, 5))
+_A_SHARE_HOLIDAYS |= _daterange(date(2026, 6, 19), date(2026, 6, 21))
+_A_SHARE_HOLIDAYS |= _daterange(date(2026, 9, 25), date(2026, 9, 27))
+_A_SHARE_HOLIDAYS |= _daterange(date(2026, 10, 1), date(2026, 10, 7))
+
+
+def is_trading_day(d: date) -> bool:
+    if d.weekday() >= 5:
+        return False
+    return d not in _A_SHARE_HOLIDAYS
+
+
+def resolve_trade_date(as_of: Optional[date] = None) -> date:
+    """同步落库用交易日：非交易日回退到最近上一交易日，避免周末写成伪行情日。"""
+    cur = as_of or date.today()
+    for _ in range(20):
+        if is_trading_day(cur):
+            return cur
+        cur -= timedelta(days=1)
+    return as_of or date.today()
 
 
 def parse_number(val: Any) -> Optional[Decimal]:
@@ -771,12 +813,13 @@ def sync_quote_types(
     name_map: Dict[str, str],
     sleep_s: float,
 ) -> Dict[str, int]:
-    trade_date = date.today()
+    trade_date = resolve_trade_date()
     synced_at = datetime.now()
     result: Dict[str, int] = {}
     # CONCEPT/THEME 同源，只拉一次
     pulled: Dict[str, List[Dict[str, Any]]] = {}
     errors: List[str] = []
+    print(f"板块行情落库交易日={trade_date}")
     try:
         zt_ctx = load_zt_context(trade_date)
     except Exception as ex:
@@ -855,9 +898,10 @@ def sync_cons_types(
     sleep_s: float,
     limit: Optional[int],
 ) -> Dict[str, int]:
-    trade_date = date.today()
+    trade_date = resolve_trade_date()
     synced_at = datetime.now()
     result: Dict[str, int] = {}
+    print(f"板块成分落库交易日={trade_date}")
     for board_type in types:
         metas = resolve_sector_meta(conn, board_type, codes)
         if limit and limit > 0:

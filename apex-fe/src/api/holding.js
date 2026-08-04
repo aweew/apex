@@ -15,5 +15,6 @@ export function removeHolding(id) {
 export function refreshHoldingQuotes(onlyMissing = true) {
   return http.post('/api/holding/refresh-quotes', null, {
     params: { onlyMissing },
+    timeout: 180000,
   })
 }

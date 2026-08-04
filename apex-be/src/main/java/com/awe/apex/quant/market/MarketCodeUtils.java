@@ -67,12 +67,11 @@ public final class MarketCodeUtils {
                 || digits.startsWith("87") || digits.startsWith("4"))) {
             return "BJ";
         }
-        if (digits != null && (digits.startsWith("6") || digits.startsWith("9"))) {
+        // 沪市：6 主板、5 基金/ETF（含 588 科创板 ETF）、9 沪 B
+        if (digits != null && (digits.startsWith("5") || digits.startsWith("6") || digits.startsWith("9"))) {
             return "SH";
         }
-        if (digits != null && digits.startsWith("8")) {
-            return "BJ";
-        }
+        // 其余默认深市（0/1/2/3 等）；勿再把 8 开头一律当北交所（会误伤 588xxx）
         return "SZ";
     }
 
@@ -114,6 +113,25 @@ public final class MarketCodeUtils {
             return digits.substring(digits.length() - 6);
         }
         return digits;
+    }
+
+    /**
+     * 是否场内基金/ETF（无上市公司 F10，勿走公司概况）
+     *
+     * @param code 证券代码
+     * @return true=基金/ETF
+     */
+    public static boolean isFundOrEtf(String code) {
+        String digits = normalizeCode(code);
+        if (StringUtils.isBlank(digits) || digits.length() < 6) {
+            return false;
+        }
+        // 沪市基金/ETF：5xxxxx（含 51/56/58 等）
+        if (digits.startsWith("5")) {
+            return true;
+        }
+        // 深市基金/ETF：15/16/18 开头为主
+        return digits.startsWith("15") || digits.startsWith("16") || digits.startsWith("18");
     }
 
     /**

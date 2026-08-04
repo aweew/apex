@@ -10,6 +10,16 @@ import { ElMessage } from 'element-plus'
 import { fetchIndexBars, fetchIndexBoard, refreshIndexBoard } from '../api/indexBoard'
 import { fetchMarketBriefing, getMarketBoard } from '../api/market'
 import { fetchSectorBoard } from '../api/sector'
+import {
+  buildMarketShareSheet,
+  mountMarketShareSheet,
+} from '../utils/marketShareSheet.js'
+import {
+  captureElementBlob,
+  copyImageBlob,
+  downloadBlob,
+  shareFilename,
+} from '../utils/shareCapture.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -25,6 +35,13 @@ const activeCode = ref('')
 const detailBars = ref([])
 const chartRef = ref(null)
 let chart
+
+const sharing = ref(false)
+const shareOpen = ref(false)
+const sharePreviewUrl = ref('')
+const copying = ref(false)
+const downloading = ref(false)
+let sharePreviewObjectUrl = ''
 
 const cnIndexes = computed(() => indexData.value?.cn || [])
 const globalSections = computed(() => [
@@ -55,6 +72,19 @@ const heroIndexes = computed(() => {
 
 const effect = computed(() => briefing.value?.effect || null)
 
+/** 赚钱效应五指标（展示用） */
+const effectMetrics = computed(() => {
+  const e = effect.value
+  if (!e) return []
+  return [
+    { key: 'avg', label: '平均股价', tip: '800005', value: e.avgPctChg },
+    { key: 'median', label: '中位数', tip: '880009口径', value: e.medianPctChg },
+    { key: 'eq', label: '全A等权', tip: '800010≈880008', value: e.equalWeightPctChg },
+    { key: 'micro', label: '微盘股', tip: '800007≈880823', value: e.microPctChg ?? e.csi2000PctChg },
+    { key: 'hs300', label: '沪深300', tip: '000300', value: e.hs300PctChg },
+  ]
+})
+
 const breadth = computed(() => {
   const up = Number(briefing.value?.breadthUp)
   const down = Number(briefing.value?.breadthDown)
@@ -70,6 +100,22 @@ const breadth = computed(() => {
     upPct: total ? (up / total) * 100 : 0,
     flatPct: total ? (flat / total) * 100 : 0,
     downPct: total ? (down / total) * 100 : 0,
+  }
+})
+
+/** 涨停/跌停配对 + 比例条 */
+const limitPair = computed(() => {
+  const upRaw = briefing.value?.limitUpCount
+  const downRaw = briefing.value?.limitDownCount
+  if (upRaw == null && downRaw == null) return null
+  const up = upRaw == null || Number.isNaN(Number(upRaw)) ? 0 : Number(upRaw)
+  const down = downRaw == null || Number.isNaN(Number(downRaw)) ? 0 : Number(downRaw)
+  const total = up + down
+  return {
+    up: upRaw == null ? null : up,
+    down: downRaw == null ? null : down,
+    upPct: total ? (up / total) * 100 : 50,
+    downPct: total ? (down / total) * 100 : 50,
   }
 })
 
@@ -309,6 +355,121 @@ watch(marketTab, async () => {
   }
 })
 
+function revokeSharePreview() {
+  if (sharePreviewObjectUrl) {
+    URL.revokeObjectURL(sharePreviewObjectUrl)
+    sharePreviewObjectUrl = ''
+  }
+  sharePreviewUrl.value = ''
+}
+
+async function captureMarketShare() {
+  const titleDate = briefing.value?.asOf || new Date().toISOString().slice(0, 10)
+  const sheet = buildMarketShareSheet({
+    titleDate,
+    message: briefing.value?.message || '沪深市场总览 · 赚钱效应 · 板块热力',
+    stance: briefing.value?.stance || '',
+    volumeText: briefing.value?.indexVolumeText || '--',
+    volumeLabel: briefing.value?.volumeLabel || '',
+    breadth: breadth.value
+      ? {
+          up: breadth.value.up,
+          flat: breadth.value.hasFlat ? breadth.value.flat : '--',
+          down: breadth.value.down,
+        }
+      : null,
+    limitPair: limitPair.value,
+    indexes: heroIndexes.value,
+    effectMetrics: effectMetrics.value,
+    hint: effect.value?.hint || '',
+    industries: industryRows.value.map((row) => ({
+      name: row.name,
+      pctChg: row.pctChg ?? row.avgPctChg,
+    })),
+    concepts: conceptRows.value.map((row) => ({
+      name: row.name,
+      pctChg: row.pctChg ?? row.avgPctChg,
+    })),
+  })
+  const mounted = mountMarketShareSheet(sheet)
+  try {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const width = 960
+    const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
+    sheet.style.width = `${width}px`
+    sheet.style.height = `${height}px`
+    const dpr = Math.max(window.devicePixelRatio || 1, 2)
+    return await captureElementBlob(sheet, {
+      scale: Math.min(dpr, 2.5),
+      width,
+      height,
+      backgroundColor: '#0f1419',
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        overflow: 'visible',
+        transform: 'none',
+        margin: '0',
+        opacity: '1',
+      },
+    })
+  } finally {
+    mounted.dispose()
+  }
+}
+
+async function openShare() {
+  sharing.value = true
+  try {
+    const blob = await captureMarketShare()
+    revokeSharePreview()
+    sharePreviewObjectUrl = URL.createObjectURL(blob)
+    sharePreviewUrl.value = sharePreviewObjectUrl
+    shareOpen.value = true
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '截图失败')
+  } finally {
+    sharing.value = false
+  }
+}
+
+async function onCopyShare() {
+  copying.value = true
+  try {
+    const blob = await captureMarketShare()
+    await copyImageBlob(blob)
+    ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '复制失败，请改用下载')
+  } finally {
+    copying.value = false
+  }
+}
+
+async function onDownloadShare() {
+  downloading.value = true
+  try {
+    const blob = await captureMarketShare()
+    const date = briefing.value?.asOf || new Date().toISOString().slice(0, 10)
+    downloadBlob(blob, shareFilename('apex_market', date))
+    ElMessage.success('已下载分享图')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '下载失败')
+  } finally {
+    downloading.value = false
+  }
+}
+
+function closeShare() {
+  shareOpen.value = false
+  revokeSharePreview()
+  copying.value = false
+  downloading.value = false
+}
+
 onMounted(() => {
   load(true)
   window.addEventListener('resize', onResize)
@@ -316,6 +477,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  revokeSharePreview()
   chart?.dispose()
   chart = null
 })
@@ -344,6 +506,9 @@ onBeforeUnmount(() => {
             @click="marketTab = 'global'"
           >全球指数</button>
         </div>
+        <el-button type="primary" plain :loading="sharing" @click="openShare">
+          {{ sharing ? '生成中…' : '分享截图' }}
+        </el-button>
         <el-button type="primary" :loading="refreshing" @click="onRefreshQuotes">刷新行情</el-button>
         <el-button :loading="refreshing" @click="onSyncIndex('20240101')">同步指数</el-button>
         <el-button plain @click="router.push('/sector')">板块</el-button>
@@ -398,61 +563,68 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <!-- 市场脉搏 -->
+      <!-- 市场脉搏：宽度 + 赚钱效应 -->
       <section class="pulse" aria-label="市场脉搏">
-        <div class="pulse-item">
-          <em>三市成交</em>
-          <div class="pulse-row">
-            <b>{{ briefing?.indexVolumeText || '--' }}</b>
-            <i v-if="briefing?.volumeLabel">{{ briefing.volumeLabel }}</i>
+        <div class="pulse-width">
+          <div class="pulse-tile vol">
+            <span class="k">三市成交</span>
+            <strong class="v">{{ briefing?.indexVolumeText || '--' }}</strong>
+            <span v-if="briefing?.volumeLabel" class="sub">{{ briefing.volumeLabel }}</span>
+          </div>
+          <div class="pulse-tile breadth">
+            <span class="k">涨跌家数</span>
+            <template v-if="breadth">
+              <div class="pair">
+                <strong class="up">{{ breadth.up }}</strong>
+                <span class="sep">/</span>
+                <strong class="flat">{{ breadth.hasFlat ? breadth.flat : '--' }}</strong>
+                <span class="sep">/</span>
+                <strong class="down">{{ breadth.down }}</strong>
+              </div>
+              <div class="bar" aria-hidden="true">
+                <i class="up-seg" :style="{ width: breadth.upPct + '%' }" />
+                <i class="flat-seg" :style="{ width: breadth.flatPct + '%' }" />
+                <i class="down-seg" :style="{ width: breadth.downPct + '%' }" />
+              </div>
+            </template>
+            <strong v-else class="v miss">--</strong>
+          </div>
+          <div class="pulse-tile limit">
+            <span class="k">涨跌停</span>
+            <template v-if="limitPair">
+              <div class="pair">
+                <strong class="up">{{ limitPair.up ?? '--' }}</strong>
+                <span class="sep">/</span>
+                <strong class="down">{{ limitPair.down ?? '--' }}</strong>
+              </div>
+              <div class="bar thin" aria-hidden="true">
+                <i class="up-seg" :style="{ width: limitPair.upPct + '%' }" />
+                <i class="down-seg" :style="{ width: limitPair.downPct + '%' }" />
+              </div>
+            </template>
+            <strong v-else class="v miss">--</strong>
           </div>
         </div>
-        <div class="pulse-item grow">
-          <em>涨跌家数</em>
-          <template v-if="breadth">
-            <div class="pulse-row breadth-nums">
-              <b class="up">{{ breadth.up }}</b>
-              <span class="slash">/</span>
-              <b class="flat">{{ breadth.hasFlat ? breadth.flat : '--' }}</b>
-              <span class="slash">/</span>
-              <b class="down">{{ breadth.down }}</b>
+
+        <div v-if="effectMetrics.length" class="pulse-effect">
+          <div class="pulse-effect-head">
+            <span class="pulse-effect-title">赚钱效应</span>
+            <span v-if="effect?.hint" class="pulse-effect-hint">{{ effect.hint }}</span>
+          </div>
+          <div class="pulse-effect-grid">
+            <div
+              v-for="m in effectMetrics"
+              :key="m.key"
+              class="metric"
+              :class="pctClass(m.value)"
+              :title="m.tip"
+            >
+              <span class="k">{{ m.label }}</span>
+              <strong class="v">{{ fmtPct(m.value) }}</strong>
             </div>
-            <div class="breadth-track" aria-hidden="true">
-              <i class="up-seg" :style="{ width: breadth.upPct + '%' }" />
-              <i class="flat-seg" :style="{ width: breadth.flatPct + '%' }" />
-              <i class="down-seg" :style="{ width: breadth.downPct + '%' }" />
-            </div>
-          </template>
-          <div v-else class="pulse-row"><b class="miss">--</b></div>
-        </div>
-        <div class="pulse-item">
-          <em>涨停</em>
-          <div class="pulse-row"><b class="up">{{ briefing?.limitUpCount ?? '--' }}</b></div>
-        </div>
-        <div class="pulse-item">
-          <em>跌停</em>
-          <div class="pulse-row"><b class="down">{{ briefing?.limitDownCount ?? '--' }}</b></div>
-        </div>
-        <div v-if="effect" class="pulse-item">
-          <em>涨幅中位数</em>
-          <div class="pulse-row">
-            <b :class="pctClass(effect.medianPctChg)">{{ fmtPct(effect.medianPctChg) }}</b>
-          </div>
-        </div>
-        <div v-if="effect" class="pulse-item">
-          <em>中证2000</em>
-          <div class="pulse-row">
-            <b :class="pctClass(effect.csi2000PctChg)">{{ fmtPct(effect.csi2000PctChg) }}</b>
-          </div>
-        </div>
-        <div v-if="effect" class="pulse-item">
-          <em>相对沪深300</em>
-          <div class="pulse-row">
-            <b :class="pctClass(effect.microVsLargePct)">{{ fmtPct(effect.microVsLargePct) }}</b>
           </div>
         </div>
       </section>
-      <p v-if="effect?.hint" class="effect-hint">{{ effect.hint }}</p>
 
       <!-- 主区：走势 + 板块 -->
       <div class="main-grid">
@@ -614,6 +786,27 @@ onBeforeUnmount(() => {
         <pre class="log">{{ lastLog }}</pre>
       </el-collapse-item>
     </el-collapse>
+
+    <el-dialog
+      v-model="shareOpen"
+      title="分享行情截图"
+      width="960px"
+      append-to-body
+      destroy-on-close
+      align-center
+      class="market-share-dialog"
+      @closed="revokeSharePreview"
+    >
+      <p class="share-tip">含 Apex 品牌与赚钱效应；可复制或下载 PNG 后发微信/社群。</p>
+      <div class="share-stage">
+        <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="行情分享预览" />
+      </div>
+      <template #footer>
+        <el-button @click="closeShare">关闭</el-button>
+        <el-button type="primary" plain :loading="copying" @click="onCopyShare">复制图片</el-button>
+        <el-button type="primary" :loading="downloading" @click="onDownloadShare">下载 PNG</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -740,103 +933,202 @@ onBeforeUnmount(() => {
 
 .pulse {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 12px 16px;
-  margin-bottom: 8px;
-  padding: 14px 16px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.4fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.pulse-width,
+.pulse-effect {
   border: 1px solid var(--mc-line);
   border-radius: 14px;
   background: #fff;
+  min-width: 0;
 }
 
-.pulse-item {
+.pulse-width {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 0.9fr;
+  gap: 0;
+  padding: 4px;
+}
+
+.pulse-tile {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 6px;
   min-width: 0;
-  padding: 0;
-  border-right: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
 }
 
-.pulse-item.grow {
-  grid-column: span 2;
-  min-width: 0;
+.pulse-tile + .pulse-tile {
+  position: relative;
 }
 
-.pulse-item em {
-  font-style: normal;
+.pulse-tile + .pulse-tile::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--mc-line);
+}
+
+.pulse-tile .k {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--mc-muted);
+}
+
+.pulse-tile .v {
+  font-size: 18px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--mc-ink);
+  line-height: 1.15;
+}
+
+.pulse-tile .sub {
   font-size: 11px;
   color: var(--mc-muted);
-  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.pulse-row {
+.pulse-tile .pair {
   display: flex;
   align-items: baseline;
-  flex-wrap: nowrap;
   gap: 4px;
   min-width: 0;
 }
 
-.pulse-row .slash {
-  color: var(--mc-muted);
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.pulse-item b {
-  font-size: 16px;
-  font-weight: 700;
+.pulse-tile .pair strong {
+  font-size: 17px;
+  font-weight: 750;
   font-variant-numeric: tabular-nums;
-  color: var(--mc-ink);
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
-.breadth-nums b {
-  font-size: 18px;
+.pulse-tile .sep {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.pulse-item i {
-  font-style: normal;
-  font-size: 11px;
-  color: var(--mc-muted);
-  white-space: nowrap;
-}
+.pulse-tile .up { color: var(--mc-up); }
+.pulse-tile .down { color: var(--mc-down); }
+.pulse-tile .flat { color: var(--mc-muted); }
+.pulse-tile .miss { color: var(--mc-muted); }
 
-.pulse-item b.up,
-.rank-list b.up { color: var(--mc-up); }
-.pulse-item b.down,
-.rank-list b.down { color: var(--mc-down); }
-.pulse-item b.flat { color: var(--mc-muted); }
-.pulse-item .miss { color: var(--mc-muted); }
-
-.breadth-track {
+.pulse-tile .bar {
   display: flex;
   width: 100%;
-  height: 8px;
-  margin-top: 2px;
+  height: 5px;
   border-radius: 999px;
   overflow: hidden;
   background: #f1f5f9;
 }
 
-.breadth-track .up-seg,
-.breadth-track .flat-seg,
-.breadth-track .down-seg {
+.pulse-tile .bar.thin { height: 4px; }
+
+.pulse-tile .bar .up-seg,
+.pulse-tile .bar .flat-seg,
+.pulse-tile .bar .down-seg {
   display: block;
   height: 100%;
   min-width: 0;
 }
 
-.breadth-track .up-seg { background: rgba(225, 29, 72, 0.75); }
-.breadth-track .flat-seg { background: #cbd5e1; }
-.breadth-track .down-seg { background: rgba(5, 150, 105, 0.75); }
+.pulse-tile .bar .up-seg { background: #e11d48; }
+.pulse-tile .bar .flat-seg { background: #cbd5e1; }
+.pulse-tile .bar .down-seg { background: #059669; }
 
-.effect-hint {
-  margin: 0 0 14px;
-  font-size: 12px;
-  color: var(--mc-muted);
+.pulse-effect {
+  padding: 10px 12px 12px;
 }
+
+.pulse-effect-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
+.pulse-effect-title {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mc-ink);
+  letter-spacing: 0.02em;
+}
+
+.pulse-effect-hint {
+  min-width: 0;
+  font-size: 11px;
+  color: var(--mc-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-effect-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 8px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid transparent;
+}
+
+.metric .k {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mc-muted);
+  line-height: 1.2;
+}
+
+.metric .v {
+  font-size: 16px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--mc-ink);
+  line-height: 1.15;
+}
+
+.metric.up {
+  background: rgba(225, 29, 72, 0.06);
+  border-color: rgba(225, 29, 72, 0.1);
+}
+
+.metric.up .v { color: var(--mc-up); }
+
+.metric.down {
+  background: rgba(5, 150, 105, 0.06);
+  border-color: rgba(5, 150, 105, 0.1);
+}
+
+.metric.down .v { color: var(--mc-down); }
+
+.metric.flat .v { color: var(--mc-muted); }
+
+.rank-list b.up { color: var(--mc-up); }
+.rank-list b.down { color: var(--mc-down); }
 
 .main-grid {
   display: grid;
@@ -1131,15 +1423,54 @@ onBeforeUnmount(() => {
   }
 }
 
+@media (max-width: 980px) {
+  .pulse {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 720px) {
   .cards {
     grid-template-columns: 1fr 1fr;
   }
-  .pulse {
+  .pulse-width {
+    grid-template-columns: 1fr;
+  }
+  .pulse-tile + .pulse-tile::before {
+    display: none;
+  }
+  .pulse-effect-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .pulse-item.grow {
-    grid-column: 1 / -1;
-  }
+}
+
+.share-tip {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #86868b;
+}
+
+.share-stage {
+  /* 勿用 flex + 默认 stretch，会把预览图纵向压扁 */
+  display: block;
+  width: 100%;
+  max-height: min(68vh, 760px);
+  overflow: auto;
+  padding: 10px;
+  background: #ececec;
+  border-radius: 12px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.share-stage img {
+  width: min(100%, 960px);
+  max-width: none;
+  height: auto;
+  display: inline-block;
+  vertical-align: top;
+  object-fit: contain;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
 }
 </style>

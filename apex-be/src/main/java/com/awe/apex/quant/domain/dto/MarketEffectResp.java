@@ -8,7 +8,9 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 
 /**
- * 赚钱效应观测（平均股价 / 涨幅中位数 / 微盘等）
+ * 赚钱效应观测（通达信风格五指数口径）
+ * <p>
+ * 展示：平均股价(800005) / 中位数(880009口径) / 全A等权(800010) / 微盘(800007) / 沪深300(000300)
  */
 @Data
 @Builder
@@ -17,37 +19,52 @@ import java.math.BigDecimal;
 public class MarketEffectResp {
 
     /**
-     * 全A平均股价（元）
+     * 平均股价指数点位（东财 800005）
      */
     private BigDecimal avgStockPrice;
 
     /**
-     * 全A涨幅中位数（%）
+     * 平均股价涨跌幅%（800005，散户账户体感）
+     */
+    private BigDecimal avgPctChg;
+
+    /**
+     * 全A涨幅中位数%（880009 口径：截面中位数）
      */
     private BigDecimal medianPctChg;
 
     /**
-     * 截面样本数
+     * 全A等权涨跌幅%（东财 800010，对齐 880008）
+     */
+    private BigDecimal equalWeightPctChg;
+
+    /**
+     * 微盘股涨跌幅%（东财 800007 Choice微盘，对齐 880823）
+     */
+    private BigDecimal microPctChg;
+
+    /**
+     * 截面样本数（中位数口径）
      */
     private Integer sampleSize;
 
     /**
-     * 中证2000涨跌幅%
+     * 兼容旧字段：等同 microPctChg
      */
     private BigDecimal csi2000PctChg;
 
     /**
-     * 中证2000点位
+     * 微盘指数点位
      */
     private BigDecimal csi2000Close;
 
     /**
-     * 沪深300涨跌幅%
+     * 沪深300涨跌幅%（000300）
      */
     private BigDecimal hs300PctChg;
 
     /**
-     * 微盘相对大盘：中证2000 − 沪深300（百分点）
+     * 微盘相对大盘：micro − 沪深300（百分点）
      */
     private BigDecimal microVsLargePct;
 
@@ -67,7 +84,7 @@ public class MarketEffectResp {
     private String hint;
 
     /**
-     * 数据来源：eastmoney-clist / stock_basic
+     * 数据来源说明
      */
     private String source;
 }

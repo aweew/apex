@@ -232,7 +232,21 @@ function parseIndexLine(line) {
   }
 }
 
-const indexCards = computed(() => (indexLines.value || []).map(parseIndexLine).filter((x) => x.name))
+const indexCards = computed(() => {
+  const rows = briefing.value?.indexes
+  if (rows?.length) {
+    return rows.map((x) => {
+      const pct = x?.pctChg != null ? Number(x.pctChg) : null
+      return {
+        name: x?.name || '',
+        pct,
+        close: x?.close != null ? Number(x.close).toFixed(2) : '-',
+        dir: x?.direction || (pct > 0 ? 'up' : pct < 0 ? 'down' : ''),
+      }
+    }).filter((x) => x.name)
+  }
+  return (indexLines.value || []).map(parseIndexLine).filter((x) => x.name)
+})
 
 async function onPaperOrder(row) {
   if (!row || row.action === 'HOLD') return

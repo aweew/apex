@@ -1,0 +1,2431 @@
+<script setup>
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import * as echarts from 'echarts'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { saveObserve } from '../api/observe'
+import { searchStock } from '../api/stock'
+import {
+  importPortfolioHoldings,
+  listPortfolioDaily,
+  listPortfolios,
+  portfolioDetail,
+  refreshPortfolioQuotes,
+  removePortfolio,
+  removePortfolioHolding,
+  savePortfolio,
+  savePortfolioHolding,
+  snapshotAllPortfolios,
+  snapshotPortfolio,
+} from '../api/portfolio'
+import {
+  HOLDING_SHARE_WIDTH,
+  buildHoldingShareSheet,
+  mountHoldingShareSheet,
+} from '../utils/holdingShareSheet.js'
+import {
+  captureElementBlob,
+  copyImageBlob,
+  downloadBlob,
+  freezeCanvasesForCapture,
+  prepareLongCapture,
+  resetScrollForCapture,
+  shareFilename,
+} from '../utils/shareCapture.js'
+
+const router = useRouter()
+const loading = ref(false)
+const refreshing = ref(false)
+const list = ref([])
+const includeArchived = ref(false)
+const activeId = ref(null)
+const detail = ref(null)
+const rows = ref([])
+const dailyRows = ref([])
+const chartRef = ref(null)
+const industryPieRef = ref(null)
+const themePieRef = ref(null)
+let chart = null
+let industryChart = null
+let themeChart = null
+
+const showIndustry = ref(false)
+const pfDialog = ref(false)
+const dialogVisible = ref(false)
+const importDialog = ref(false)
+const searchLoading = ref(false)
+const searchOptions = ref([])
+const saving = ref(false)
+const snapshotting = ref(false)
+
+const sharing = ref(false)
+const shareOpen = ref(false)
+const sharePreviewUrl = ref('')
+/** 长图预览按截取逻辑宽度显示，避免 width:100% 把图拉大发糊 */
+const sharePreviewLogicalWidth = ref(0)
+const shareMode = ref('card')
+const copying = ref(false)
+const downloading = ref(false)
+let sharePreviewObjectUrl = ''
+
+const SIDE_COLLAPSE_KEY = 'apex.portfolio.sideCollapsed'
+const sideCollapsed = ref(localStorage.getItem(SIDE_COLLAPSE_KEY) === '1')
+const detailCaptureRef = ref(null)
+const holdingTableRef = ref(null)
+/** 长图截取中：用真实列宽重排表格，避免 CSS 硬改 colgroup 导致标签被挤爆 */
+const sharingCapture = ref(false)
+
+/** 分享长图列宽合计约 1520，保证题材/技术/估值/建议可读 */
+const SHARE_TABLE_MIN_WIDTH = 1520
+
+const shareCol = computed(() =>
+  sharingCapture.value
+    ? {
+        code: 78,
+        name: 92,
+        today: 108,
+        price: 76,
+        stop: 76,
+        mv: 88,
+        pnl: 108,
+        theme: 112,
+        tech: 320,
+        val: 112,
+        verdict: 92,
+        advice: 260,
+      }
+    : {
+        code: 96,
+        name: 100,
+        today: 118,
+        price: 84,
+        stop: 84,
+        take: 84,
+        mv: 96,
+        pnl: 118,
+        theme: 108,
+        tech: 220,
+        val: 100,
+        verdict: 96,
+        advice: 150,
+        qty: 72,
+        cost: 84,
+        note: 100,
+        ops: 168,
+      },
+)
+
+function toggleSide() {
+  sideCollapsed.value = !sideCollapsed.value
+  localStorage.setItem(SIDE_COLLAPSE_KEY, sideCollapsed.value ? '1' : '0')
+  nextTick(() => onResize())
+}
+
+function displayTechHits(row) {
+  const hits = hitTech(row)
+  if (!sharingCapture.value) return hits
+  // 长图只留前 3 个命中，避免多标签把行撑乱
+  return hits.slice(0, 3)
+}
+
+const CORE_THEME_META = {
+  '光模块(CPO)': {
+    short: '光模块',
+    color: '#c43d4a',
+    bg: 'rgba(255, 59, 48, 0.10)',
+    border: 'rgba(255, 59, 48, 0.22)',
+    chart: '#ff6b6b',
+  },
+  存储芯片: {
+    short: '存储',
+    color: '#1f8a4c',
+    bg: 'rgba(52, 199, 89, 0.12)',
+    border: 'rgba(52, 199, 89, 0.24)',
+    chart: '#34c759',
+  },
+  '数据中心(IDC)': {
+    short: 'IDC',
+    color: '#0a66c2',
+    bg: 'rgba(0, 113, 227, 0.10)',
+    border: 'rgba(0, 113, 227, 0.22)',
+    chart: '#0071e3',
+  },
+  算力: {
+    short: '算力',
+    color: '#b36b00',
+    bg: 'rgba(255, 159, 10, 0.14)',
+    border: 'rgba(255, 159, 10, 0.28)',
+    chart: '#ff9f0a',
+  },
+  锂电: {
+    short: '锂电',
+    color: '#6b4fbb',
+    bg: 'rgba(94, 92, 230, 0.12)',
+    border: 'rgba(94, 92, 230, 0.24)',
+    chart: '#5e5ce6',
+  },
+}
+
+const pfForm = reactive({
+  id: null,
+  name: '',
+  ownerLabel: '',
+  note: '',
+  status: 'ACTIVE',
+})
+
+const form = reactive({
+  id: null,
+  code: '',
+  name: '',
+  quantity: 100,
+  costPrice: '',
+  stopLoss: '',
+  takeProfit: '',
+  note: '',
+})
+
+const importText = ref('')
+
+const activeSummary = computed(() => {
+  if (!activeId.value) return null
+  return list.value.find((x) => x.id === activeId.value) || detail.value
+})
+
+function themeMeta(name) {
+  return (
+    CORE_THEME_META[name] || {
+      short: name,
+      color: '#515154',
+      bg: 'rgba(0, 0, 0, 0.04)',
+      border: 'rgba(0, 0, 0, 0.08)',
+      chart: '#8e8e93',
+    }
+  )
+}
+
+function isCoreTheme(name) {
+  return Object.prototype.hasOwnProperty.call(CORE_THEME_META, name)
+}
+
+/** 非核心题材时优先用二级行业，避免概念里弱 AI 标签抢展示 */
+const SOFT_THEME_SKIP =
+  /融资融券|深股通|沪股通|HS300|中证|创业|基金重仓|股权激励|证金|富时|MSCI|中盘|预增|AH股|深成|上证|机构重仓|央视|专精特新|深圳特区|西部大开发|海南|股权转让|人工智能|AI应用|DeepSeek|ChatGPT|融资|回购/
+
+function softTheme(row) {
+  const industry = String(row?.industry || '').trim()
+  // ETF 本身就是题材口径，勿跳过导致分享里变「未分类 / —」
+  if (industry === 'ETF') return 'ETF'
+  if (industry && industry !== '未分类') {
+    return industry.replace(/[ⅡI]+$/u, '')
+  }
+  const concepts = String(row?.concepts || '').split(/[,，、;；|/]/)
+  for (const raw of concepts) {
+    const text = String(raw || '').trim()
+    if (!text || SOFT_THEME_SKIP.test(text)) continue
+    return text
+  }
+  const code = String(row?.code || '')
+  if (/^(15|16|51|56|58)\d{4}$/.test(code) || /ETF|基金|LOF/i.test(String(row?.name || ''))) {
+    return 'ETF'
+  }
+  return ''
+}
+
+function primaryTheme(row) {
+  const tags = Array.isArray(row?.themeTags) ? row.themeTags.filter(isCoreTheme) : []
+  return tags[0] || ''
+}
+
+function displayTheme(row) {
+  // 有可信核心题材（如润泽→IDC）优先展示；否则用二级行业，避免概念板误挂
+  return primaryTheme(row) || softTheme(row)
+}
+
+function isSoftOnlyTheme(row) {
+  return !primaryTheme(row) && !!softTheme(row)
+}
+
+function hitTech(row) {
+  return (Array.isArray(row?.techSignals) ? row.techSignals : []).filter((s) => s && s.hit)
+}
+
+function todayPnlTone(row) {
+  const n = row.todayPnl != null ? Number(row.todayPnl) : Number(row.pctChg)
+  if (!Number.isFinite(n)) return ''
+  return n >= 0 ? 'up' : 'down'
+}
+
+function shortTechLabel(label) {
+  const raw = String(label || '')
+  return raw
+    .replace(/^站上/, '')
+    .replace(/^站稳/, '稳')
+    .replace(/^跌破/, '')
+    .replace(/金叉\/多/, '金叉')
+    .replace(/死叉\/空/, '死叉')
+    .replace(/红柱放大/, '红柱')
+    .replace(/绿柱扩大/, '绿柱')
+    .replace(/放量确认/, '放量')
+    .replace(/RSI健康/, 'RSI')
+    .replace(/RSI转弱/, 'RSI弱')
+    .replace(/近20日高/, '新高')
+    .replace(/破20日低/, '破低')
+    .replace(/多头排列/, '多头')
+    .replace(/空头排列/, '空头')
+}
+
+function valClass(level) {
+  if (level === 'UNDERVALUED' || level === 'SLIGHTLY_CHEAP') return 'cheap'
+  if (level === 'OVERVALUED' || level === 'SLIGHTLY_EXPENSIVE') return 'rich'
+  return 'fair'
+}
+
+function verdictClass(verdict) {
+  const v = String(verdict || '')
+  if (v.includes('卖出') || v.includes('减仓')) return 'warn'
+  if (v.includes('偏多') || v.includes('继续')) return 'ok'
+  if (v.includes('谨慎') || v.includes('不足')) return 'soft'
+  return ''
+}
+
+function fmtSignedPct(pct) {
+  if (pct == null || !Number.isFinite(Number(pct))) return ''
+  const n = Number(pct)
+  return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`
+}
+
+function fmtPct(v) {
+  if (v == null || v === '') return '-'
+  const n = Number(v)
+  if (Number.isNaN(n)) return String(v)
+  if (Math.abs(n) <= 1) return `${(n * 100).toFixed(1)}%`
+  return `${n.toFixed(1)}%`
+}
+
+function fmtMoney(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '-'
+  return Math.round(Number(v)).toLocaleString('zh-CN')
+}
+
+function fmtSignedMoney(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '-'
+  const n = Math.round(Number(v))
+  const abs = Math.abs(n).toLocaleString('zh-CN')
+  if (n > 0) return `+${abs}`
+  if (n < 0) return `-${abs}`
+  return '0'
+}
+
+function rowWeight(row) {
+  const mv = Number(row.marketValue)
+  const costMv = Number(row.costPrice) * Number(row.quantity || 0)
+  if (Number.isFinite(mv) && mv > 0) return mv
+  if (Number.isFinite(costMv) && costMv > 0) return costMv
+  return 0
+}
+
+function toDist(map) {
+  const list = [...map.entries()]
+    .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }))
+    .sort((a, b) => b.value - a.value)
+  const sum = list.reduce((s, x) => s + x.value, 0)
+  return list.map((x) => ({
+    ...x,
+    pct: sum > 0 ? x.value / sum : 0,
+  }))
+}
+
+const totalPnl = computed(() => rows.value.reduce((sum, r) => sum + (Number(r.pnl) || 0), 0))
+const totalTodayPnl = computed(() => rows.value.reduce((sum, r) => sum + (Number(r.todayPnl) || 0), 0))
+const hasTodayPnl = computed(() =>
+  rows.value.some((r) => r.todayPnl != null && Number.isFinite(Number(r.todayPnl))),
+)
+const totalMv = computed(() => rows.value.reduce((sum, r) => sum + (Number(r.marketValue) || 0), 0))
+const totalTodayPct = computed(() => {
+  if (!hasTodayPnl.value) return null
+  const preMv = totalMv.value - totalTodayPnl.value
+  if (!Number.isFinite(preMv) || Math.abs(preMv) < 1e-6) return null
+  return (totalTodayPnl.value / preMv) * 100
+})
+
+const industryDist = computed(() => {
+  const map = new Map()
+  for (const row of rows.value) {
+    const name = String(row.industry || '').trim() || '未分类'
+    const value = rowWeight(row)
+    if (value <= 0) continue
+    map.set(name, (map.get(name) || 0) + value)
+  }
+  return toDist(map)
+})
+
+/** 题材分布：与表格「题材」列同一口径（行业优先），不再用被概念污染的 themeTags 饼图 */
+const themeDist = computed(() => {
+  const map = new Map()
+  for (const row of rows.value) {
+    const value = rowWeight(row)
+    if (value <= 0) continue
+    const name = displayTheme(row) || '未分类'
+    map.set(name, (map.get(name) || 0) + value)
+  }
+  return toDist(map)
+})
+
+const themeTagBar = computed(() => [...themeDist.value].slice(0, 12))
+const themeHitCount = computed(() => rows.value.filter((r) => !!displayTheme(r)).length)
+
+const DIST_PALETTE = [
+  '#0071e3',
+  '#1f8a4c',
+  '#c43d4a',
+  '#b36b00',
+  '#6b4fbb',
+  '#0a66c2',
+  '#d4537e',
+  '#2a9d8f',
+  '#e76f51',
+  '#457b9d',
+  '#8e8e93',
+  '#5ac8fa',
+]
+
+function distColor(name, index) {
+  const meta = CORE_THEME_META[name]
+  if (meta?.chart) return meta.chart
+  return DIST_PALETTE[index % DIST_PALETTE.length]
+}
+
+/** 饼图过多扇区时合并尾部，避免标签叠字 */
+function compactDist(dist, maxSlices = 7) {
+  if (!dist?.length || dist.length <= maxSlices) return dist || []
+  const head = dist.slice(0, maxSlices - 1)
+  const tail = dist.slice(maxSlices - 1)
+  const otherValue = tail.reduce((s, x) => s + (Number(x.value) || 0), 0)
+  const sum = dist.reduce((s, x) => s + (Number(x.value) || 0), 0)
+  return [
+    ...head,
+    {
+      name: '其他',
+      value: Math.round(otherValue * 100) / 100,
+      pct: sum > 0 ? otherValue / sum : 0,
+    },
+  ]
+}
+
+const brief = computed(() => detail.value?.brief || null)
+
+function tipLevelClass(level) {
+  const v = String(level || '')
+  if (v === 'critical') return 'is-critical'
+  if (v === 'warn') return 'is-warn'
+  return 'is-info'
+}
+
+function tipLevelLabel(level) {
+  const v = String(level || '')
+  if (v === 'critical') return '紧急'
+  if (v === 'warn') return '注意'
+  return '提示'
+}
+
+async function loadList(silent = false) {
+  loading.value = true
+  try {
+    const res = await listPortfolios(includeArchived.value)
+    list.value = res?.data || []
+    if (!activeId.value && list.value.length) {
+      const def = list.value.find((x) => x.isDefault) || list.value[0]
+      activeId.value = def.id
+    }
+    if (activeId.value && !list.value.some((x) => x.id === activeId.value)) {
+      activeId.value = list.value[0]?.id || null
+    }
+    if (activeId.value) await loadDetail(activeId.value, silent)
+  } catch (e) {
+    ElMessage.error(e.message || '加载组合失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadDetail(id, silent = false) {
+  if (!id) {
+    detail.value = null
+    rows.value = []
+    dailyRows.value = []
+    renderPies()
+    renderDailyChart()
+    return
+  }
+  try {
+    const [dRes, dayRes] = await Promise.all([
+      portfolioDetail(id),
+      listPortfolioDaily(id, 60),
+    ])
+    detail.value = dRes?.data || null
+    rows.value = detail.value?.holdings || []
+    dailyRows.value = (dayRes?.data || []).slice().reverse()
+    if (!silent) {
+      // keep quiet on switch
+    }
+    await nextTick()
+    renderPies()
+    renderDailyChart()
+  } catch (e) {
+    ElMessage.error(e.message || '加载详情失败')
+  }
+}
+
+function selectPortfolio(row) {
+  activeId.value = row.id
+}
+
+watch(activeId, (id) => {
+  if (id) loadDetail(id)
+})
+
+watch(includeArchived, () => loadList(true))
+
+watch(showIndustry, async () => {
+  await nextTick()
+  renderPies()
+})
+
+watch([industryDist, themeDist], async () => {
+  await nextTick()
+  renderPies()
+})
+
+function renderPies() {
+  const pieOpt = (dist, colors) => ({
+    tooltip: {
+      trigger: 'item',
+      formatter: (p) => `${p.name}<br/>${fmtMoney(p.value)} · ${(p.percent || 0).toFixed(1)}%`,
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['46%', '72%'],
+        center: ['50%', '50%'],
+        itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
+        // 右侧已有题材条，饼图只作色块占比，去掉外标避免左上角叠字
+        label: { show: false },
+        labelLine: { show: false },
+        data: dist.map((x, i) => ({
+          name: isCoreTheme(x.name) ? themeMeta(x.name).short : x.name,
+          value: x.value,
+          itemStyle: { color: colors[i % colors.length] },
+        })),
+      },
+    ],
+  })
+
+  if (showIndustry.value && industryPieRef.value && industryDist.value.length) {
+    if (!industryChart) industryChart = echarts.init(industryPieRef.value)
+    industryChart.setOption(
+      pieOpt(
+        industryDist.value,
+        ['#5ac8fa', '#0071e3', '#34c759', '#ff9f0a', '#af52de', '#ff6b6b', '#8e8e93'],
+      ),
+      true,
+    )
+  } else {
+    industryChart?.clear()
+  }
+
+  if (themePieRef.value && themeDist.value.length) {
+    if (!themeChart) themeChart = echarts.init(themePieRef.value)
+    const pieData = compactDist(themeDist.value)
+    const colors = pieData.map((x, i) => distColor(x.name, i))
+    themeChart.setOption(pieOpt(pieData, colors), true)
+  } else {
+    themeChart?.clear()
+  }
+}
+
+function renderDailyChart() {
+  if (!chartRef.value) return
+  if (!chart) chart = echarts.init(chartRef.value)
+  if (!dailyRows.value.length) {
+    chart.clear()
+    return
+  }
+  const dates = dailyRows.value.map((x) => x.tradeDate)
+  const pcts = dailyRows.value.map((x) => (x.todayPct != null ? Number(x.todayPct) : null))
+  const mvs = dailyRows.value.map((x) => (x.marketValue != null ? Number(x.marketValue) : null))
+  chart.setOption(
+    {
+      color: ['#c23a3a', '#0071e3'],
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['当日涨跌%', '市值'], top: 0 },
+      grid: { left: 48, right: 56, top: 36, bottom: 28 },
+      xAxis: { type: 'category', data: dates, axisLabel: { color: '#86868b' } },
+      yAxis: [
+        {
+          type: 'value',
+          name: '%',
+          axisLabel: { color: '#86868b' },
+          splitLine: { lineStyle: { color: '#eee' } },
+        },
+        { type: 'value', name: '市值', axisLabel: { color: '#86868b' }, splitLine: { show: false } },
+      ],
+      series: [
+        { name: '当日涨跌%', type: 'bar', data: pcts, barMaxWidth: 18 },
+        { name: '市值', type: 'line', yAxisIndex: 1, smooth: true, data: mvs, showSymbol: false },
+      ],
+    },
+    true,
+  )
+}
+
+function openCreatePf() {
+  Object.assign(pfForm, { id: null, name: '', ownerLabel: '', note: '', status: 'ACTIVE' })
+  pfDialog.value = true
+}
+
+function openEditPf(row) {
+  Object.assign(pfForm, {
+    id: row.id,
+    name: row.name || '',
+    ownerLabel: row.ownerLabel || '',
+    note: row.note || '',
+    status: row.status || 'ACTIVE',
+  })
+  pfDialog.value = true
+}
+
+async function submitPf() {
+  if (!pfForm.name?.trim()) {
+    ElMessage.warning('请填写组合名称')
+    return
+  }
+  saving.value = true
+  try {
+    const res = await savePortfolio({ ...pfForm })
+    ElMessage.success(pfForm.id ? '已更新' : '已创建')
+    pfDialog.value = false
+    await loadList(true)
+    if (res?.data?.id) activeId.value = res.data.id
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onRemovePf(row) {
+  if (row.isDefault) {
+    ElMessage.warning('默认组合不可删除')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确认删除组合「${row.name}」？持仓与快照一并清除。`, '删除组合', {
+      type: 'warning',
+    })
+    await removePortfolio(row.id)
+    ElMessage.success('已删除')
+    if (activeId.value === row.id) activeId.value = null
+    await loadList(true)
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.message || '删除失败')
+  }
+}
+
+function openCreate() {
+  if (!activeId.value) return
+  Object.assign(form, {
+    id: null,
+    code: '',
+    name: '',
+    quantity: 100,
+    costPrice: '',
+    stopLoss: '',
+    takeProfit: '',
+    note: '',
+  })
+  searchOptions.value = []
+  dialogVisible.value = true
+}
+
+function openEdit(row) {
+  Object.assign(form, {
+    id: row.id,
+    code: row.code,
+    name: row.name || '',
+    quantity: row.quantity,
+    costPrice: row.costPrice ?? '',
+    stopLoss: row.stopLoss ?? '',
+    takeProfit: row.takeProfit ?? '',
+    note: row.note || '',
+  })
+  searchOptions.value = row.code ? [{ code: row.code, name: row.name || row.code }] : []
+  dialogVisible.value = true
+}
+
+async function onSearchStock(q) {
+  const keyword = String(q || '').trim()
+  if (!keyword) {
+    searchOptions.value = []
+    return
+  }
+  searchLoading.value = true
+  try {
+    const res = await searchStock(keyword)
+    searchOptions.value = res?.data || []
+  } catch {
+    searchOptions.value = []
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function onPickStock(code) {
+  const hit = searchOptions.value.find((x) => x.code === code)
+  if (hit) form.name = hit.name || form.name
+}
+
+async function onSave() {
+  if (!activeId.value || !form.code) {
+    ElMessage.warning('请填写代码')
+    return
+  }
+  saving.value = true
+  try {
+    await savePortfolioHolding(activeId.value, {
+      id: form.id,
+      code: form.code,
+      name: form.name,
+      quantity: form.quantity,
+      costPrice: form.costPrice === '' ? null : Number(form.costPrice),
+      stopLoss: form.stopLoss === '' ? null : Number(form.stopLoss),
+      takeProfit: form.takeProfit === '' ? null : Number(form.takeProfit),
+      note: form.note,
+    })
+    ElMessage.success('持仓已保存')
+    dialogVisible.value = false
+    await loadList(true)
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onRemove(row) {
+  try {
+    await ElMessageBox.confirm(`删除 ${row.code} ${row.name || ''}？`, '删除持仓', { type: 'warning' })
+    await removePortfolioHolding(activeId.value, row.id)
+    ElMessage.success('已删除')
+    await loadList(true)
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.message || '删除失败')
+  }
+}
+
+async function addObserve(row) {
+  try {
+    await saveObserve({
+      code: row.code,
+      name: row.name,
+      side: 'SELL',
+      reason: '组合持仓观察',
+      triggerType: 'MANUAL',
+      priority: 3,
+      tags: '组合,持仓',
+    })
+    ElMessage.success('已加入观察池')
+  } catch (e) {
+    ElMessage.error(e.message || '加入观察池失败')
+  }
+}
+
+function openImport() {
+  importText.value = ''
+  importDialog.value = true
+}
+
+async function submitImport() {
+  if (!activeId.value || !importText.value.trim()) {
+    ElMessage.warning('请粘贴导入内容')
+    return
+  }
+  saving.value = true
+  try {
+    const res = await importPortfolioHoldings(activeId.value, importText.value)
+    const data = res?.data || {}
+    ElMessage.success(`导入完成：成功 ${data.success || 0}，失败 ${data.fail || 0}`)
+    if (data.errors?.length) ElMessage.warning(data.errors.slice(0, 3).join('；'))
+    importDialog.value = false
+    await loadList(true)
+  } catch (e) {
+    ElMessage.error(e.message || '导入失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onRefreshQuotes() {
+  if (!activeId.value || !rows.value.length) return
+  refreshing.value = true
+  try {
+    const res = await refreshPortfolioQuotes(activeId.value, false)
+    const next = res?.data?.detail
+    if (next) {
+      detail.value = next
+      rows.value = next.holdings || []
+      const dayRes = await listPortfolioDaily(activeId.value, 60)
+      dailyRows.value = (dayRes?.data || []).slice().reverse()
+      await nextTick()
+      renderPies()
+      renderDailyChart()
+    } else {
+      await loadDetail(activeId.value, true)
+    }
+    ElMessage.success(res?.data?.message || '行情已刷新')
+  } catch (e) {
+    ElMessage.error(e.message || '刷新失败')
+  } finally {
+    refreshing.value = false
+  }
+}
+
+async function onSnapshot() {
+  if (!activeId.value) return
+  snapshotting.value = true
+  try {
+    await snapshotPortfolio(activeId.value)
+    ElMessage.success('已写入今日快照')
+    await loadDetail(activeId.value, true)
+  } catch (e) {
+    ElMessage.error(e.message || '快照失败')
+  } finally {
+    snapshotting.value = false
+  }
+}
+
+async function onSnapshotAll() {
+  snapshotting.value = true
+  try {
+    const res = await snapshotAllPortfolios()
+    ElMessage.success(res?.data?.message || '已全部快照')
+    if (activeId.value) await loadDetail(activeId.value, true)
+  } catch (e) {
+    ElMessage.error(e.message || '快照失败')
+  } finally {
+    snapshotting.value = false
+  }
+}
+
+function revokeSharePreview() {
+  if (sharePreviewObjectUrl) {
+    URL.revokeObjectURL(sharePreviewObjectUrl)
+    sharePreviewObjectUrl = ''
+  }
+  sharePreviewUrl.value = ''
+  sharePreviewLogicalWidth.value = 0
+}
+
+function shareRowsPayload() {
+  const total = rows.value.reduce((sum, row) => sum + rowWeight(row), 0)
+  const listRows = rows.value.map((row) => {
+    const w = rowWeight(row)
+    const weightPct = total > 0 ? (w / total) * 100 : 0
+    const theme = displayTheme(row)
+    const meta = theme && isCoreTheme(theme) ? themeMeta(theme) : null
+    const techHits = hitTech(row).map((s) => shortTechLabel(s.label)).filter(Boolean)
+    const tech = row.techSummary || techHits.slice(0, 3).join(' ') || ''
+    return {
+      code: row.code,
+      name: row.name,
+      quantity: row.quantity,
+      weightPct,
+      pctChg: row.pctChg,
+      theme: meta?.short || theme || '',
+      themeColor: meta?.color || '#515154',
+      themeBg: meta?.bg || 'rgba(0,0,0,.04)',
+      themeBorder: meta?.border || 'rgba(0,0,0,.08)',
+      tech,
+      techHits: techHits.slice(0, 4),
+      valuation: row.valuationLabel || '',
+      valuationLevel: row.valuationLevel || '',
+      verdict: row.verdict || '',
+      advice: row.advice || '',
+    }
+  })
+  listRows.sort((a, b) => (b.weightPct || 0) - (a.weightPct || 0))
+  return listRows
+}
+
+async function captureCardShareBlob() {
+  const titleDate = new Date().toISOString().slice(0, 10)
+  const sheet = buildHoldingShareSheet({
+    titleDate,
+    count: rows.value.length,
+    todayPct: totalTodayPct.value,
+    themeHitCount: themeHitCount.value,
+    themes: themeDist.value.map((t, i) => {
+      const meta = themeMeta(t.name)
+      return {
+        name: t.name,
+        short: meta.short || t.name,
+        pct: t.pct,
+        color: distColor(t.name, i),
+        bg: meta.bg,
+      }
+    }),
+    otherPct: 0,
+    rows: shareRowsPayload(),
+  })
+  const mounted = mountHoldingShareSheet(sheet)
+  try {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const width = HOLDING_SHARE_WIDTH
+    const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
+    sheet.style.width = `${width}px`
+    sheet.style.height = `${height}px`
+    const dpr = Math.max(window.devicePixelRatio || 1, 2)
+    return await captureElementBlob(sheet, {
+      scale: Math.min(dpr, 2),
+      width,
+      height,
+      backgroundColor: '#f7f4ee',
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        overflow: 'visible',
+        transform: 'none',
+        margin: '0',
+        opacity: '1',
+        fontFamily: '"Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif',
+        letterSpacing: '0',
+      },
+    })
+  } finally {
+    mounted.dispose()
+  }
+}
+
+/**
+ * 原样截右侧组合详情（研判+题材+持仓表+曲线），清晰长图
+ */
+async function capturePageShareBlob() {
+  const el = detailCaptureRef.value
+  if (!el) throw new Error('组合详情未就绪')
+  const restoreScroll = resetScrollForCapture(el)
+  sharingCapture.value = true
+  el.classList.add('is-sharing-capture')
+  let restoreLayout = () => {}
+  let restoreCanvas = () => {}
+  try {
+    el.scrollIntoView({ block: 'start', behavior: 'auto' })
+    // 先按分享列宽重排，再展开滚动裁剪，避免 colgroup 与 CSS 抢宽度
+    await nextTick()
+    await nextTick()
+    holdingTableRef.value?.doLayout?.()
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await new Promise((r) => setTimeout(r, 120))
+    holdingTableRef.value?.doLayout?.()
+    restoreLayout = prepareLongCapture(el, { minTableWidth: SHARE_TABLE_MIN_WIDTH })
+    onResize()
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await new Promise((r) => setTimeout(r, 160))
+    holdingTableRef.value?.doLayout?.()
+    await new Promise((r) => requestAnimationFrame(r))
+    restoreCanvas = freezeCanvasesForCapture(el)
+    await new Promise((r) => requestAnimationFrame(r))
+    const width = Math.ceil(Math.max(el.scrollWidth, el.offsetWidth, SHARE_TABLE_MIN_WIDTH))
+    const height = Math.ceil(Math.max(el.scrollHeight, el.offsetHeight, 1))
+    sharePreviewLogicalWidth.value = width
+    return await captureElementBlob(el, {
+      scale: 2,
+      width,
+      height,
+      backgroundColor: '#f5f5f7',
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        overflow: 'visible',
+        transform: 'none',
+        margin: '0',
+        opacity: '1',
+      },
+    })
+  } finally {
+    restoreCanvas()
+    restoreLayout()
+    el.classList.remove('is-sharing-capture')
+    sharingCapture.value = false
+    restoreScroll()
+    await nextTick()
+    holdingTableRef.value?.doLayout?.()
+    onResize()
+  }
+}
+
+async function openShare(mode = 'card') {
+  if (!rows.value.length) return
+  const nextMode = mode === 'page' ? 'page' : 'card'
+  shareMode.value = nextMode
+  sharing.value = true
+  try {
+    const blob = nextMode === 'page' ? await capturePageShareBlob() : await captureCardShareBlob()
+    revokeSharePreview()
+    sharePreviewObjectUrl = URL.createObjectURL(blob)
+    sharePreviewUrl.value = sharePreviewObjectUrl
+    shareOpen.value = true
+    await nextTick()
+    // 预览滚回顶部，避免只看到题材条末尾+表格
+    const stage = document.querySelector('.holding-share-dialog .share-stage')
+    if (stage) stage.scrollTop = 0
+  } catch (e) {
+    ElMessage.error(e.message || '生成分享图失败')
+  } finally {
+    sharing.value = false
+  }
+}
+
+function closeShare() {
+  shareOpen.value = false
+  revokeSharePreview()
+}
+
+async function onCopyShare() {
+  if (!sharePreviewObjectUrl) return
+  copying.value = true
+  try {
+    const blob = await fetch(sharePreviewObjectUrl).then((r) => r.blob())
+    await copyImageBlob(blob)
+    ElMessage.success('已复制到剪贴板')
+  } catch (e) {
+    ElMessage.error(e.message || '复制失败')
+  } finally {
+    copying.value = false
+  }
+}
+
+async function onDownloadShare() {
+  if (!sharePreviewObjectUrl) return
+  downloading.value = true
+  try {
+    const blob = await fetch(sharePreviewObjectUrl).then((r) => r.blob())
+    const name = detail.value?.name || '组合'
+    const prefix = shareMode.value === 'page' ? `apex-portfolio-page-${name}` : `apex-portfolio-${name}`
+    downloadBlob(blob, shareFilename(prefix))
+  } catch (e) {
+    ElMessage.error(e.message || '下载失败')
+  } finally {
+    downloading.value = false
+  }
+}
+
+function onResize() {
+  chart?.resize()
+  industryChart?.resize()
+  themeChart?.resize()
+}
+
+onMounted(async () => {
+  await loadList(true)
+  window.addEventListener('resize', onResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
+  revokeSharePreview()
+  chart?.dispose()
+  industryChart?.dispose()
+  themeChart?.dispose()
+  chart = null
+  industryChart = null
+  themeChart = null
+})
+</script>
+
+<template>
+  <div class="page" v-loading="loading || refreshing">
+    <header class="header">
+      <div>
+        <p class="eyebrow">Apex · Portfolio</p>
+        <h1>组合</h1>
+        <p>跟踪自己的或别人的实盘；详情区与「真实持仓」同风格，可导入与每日浮盈快照。</p>
+      </div>
+      <div class="actions">
+        <el-button type="primary" @click="openCreatePf">新建组合</el-button>
+        <el-button plain :loading="snapshotting" @click="onSnapshotAll">全部打快照</el-button>
+        <el-button plain @click="router.push('/holding')">真实持仓</el-button>
+        <el-button text :loading="loading" @click="loadList(true)">刷新</el-button>
+      </div>
+    </header>
+
+    <div class="layout" :class="{ 'is-side-collapsed': sideCollapsed }">
+      <aside class="side" :class="{ collapsed: sideCollapsed }">
+        <div class="side-head">
+          <button type="button" class="side-toggle" :title="sideCollapsed ? '展开列表' : '折叠列表'" @click="toggleSide">
+            {{ sideCollapsed ? '»' : '«' }}
+          </button>
+          <template v-if="!sideCollapsed">
+            <span class="side-title">组合列表</span>
+            <el-checkbox v-model="includeArchived" size="small">含归档</el-checkbox>
+          </template>
+        </div>
+        <template v-if="!sideCollapsed">
+          <div v-if="!list.length" class="side-empty">暂无组合</div>
+          <button
+            v-for="row in list"
+            :key="row.id"
+            type="button"
+            class="pf-card"
+            :class="{ active: row.id === activeId, archived: row.status === 'ARCHIVED' }"
+            @click="selectPortfolio(row)"
+          >
+            <div class="pf-top">
+              <strong>{{ row.name }}</strong>
+              <span v-if="row.isDefault" class="tag">默认</span>
+            </div>
+            <div class="pf-meta">
+              <span>{{ row.positionCount || 0 }} 只</span>
+            </div>
+            <div class="pf-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
+              今日 {{ fmtSignedMoney(row.todayPnl) }}
+              <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
+            </div>
+            <div class="pf-ops" @click.stop>
+              <el-button link type="primary" @click="openEditPf(row)">编辑</el-button>
+              <el-button link type="danger" :disabled="row.isDefault" @click="onRemovePf(row)">删除</el-button>
+            </div>
+          </button>
+        </template>
+        <div v-else class="side-rail">
+          <button
+            v-for="row in list"
+            :key="'rail-' + row.id"
+            type="button"
+            class="rail-item"
+            :class="{ active: row.id === activeId }"
+            :title="row.name"
+            @click="selectPortfolio(row)"
+          >
+            {{ (row.name || '?').slice(0, 1) }}
+          </button>
+        </div>
+      </aside>
+
+      <main ref="detailCaptureRef" class="main" v-if="detail">
+        <header class="detail-header">
+          <div class="detail-title">
+            <p class="eyebrow share-hide-meta">{{ detail.isDefault ? 'Apex · Holding' : 'Apex · Track' }}</p>
+            <h2>{{ detail.name }}</h2>
+            <p v-if="detail.ownerLabel || detail.note" class="detail-sub share-hide-meta">
+              <template v-if="detail.ownerLabel">{{ detail.ownerLabel }}</template>
+              <template v-if="detail.ownerLabel && detail.note"> · </template>
+              <template v-if="detail.note">{{ detail.note }}</template>
+            </p>
+          </div>
+          <div class="actions">
+            <el-dropdown trigger="click" :disabled="!rows.length || sharing" @command="openShare">
+              <el-button type="primary" plain :loading="sharing" :disabled="!rows.length">
+                {{ sharing ? '生成中…' : '分享截图' }}
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="card">卡片海报</el-dropdown-item>
+                  <el-dropdown-item command="page">右侧原样长图</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button type="primary" @click="openCreate">添加持仓</el-button>
+            <el-button plain :loading="refreshing" :disabled="!rows.length" @click="onRefreshQuotes">
+              刷新行情+日线
+            </el-button>
+            <el-button plain @click="openImport">导入</el-button>
+            <el-button plain :loading="snapshotting" @click="onSnapshot">打今日快照</el-button>
+            <el-button v-if="detail.isDefault" plain @click="router.push('/holding')">打开持仓页</el-button>
+          </div>
+        </header>
+
+        <div v-if="rows.length" class="stat-cards">
+          <div class="stat-card">
+            <label>持仓只数</label>
+            <b>{{ rows.length }}</b>
+          </div>
+          <div class="stat-card">
+            <label>总市值</label>
+            <b>{{ fmtMoney(totalMv) }}</b>
+          </div>
+          <div class="stat-card">
+            <label>今日盈亏</label>
+            <b :class="totalTodayPnl >= 0 ? 'up' : 'down'">
+              <template v-if="hasTodayPnl">
+                {{ fmtSignedMoney(totalTodayPnl) }}
+                <span v-if="totalTodayPct != null" class="pct-aside">{{ fmtSignedPct(totalTodayPct) }}</span>
+              </template>
+              <template v-else>-</template>
+            </b>
+          </div>
+          <div class="stat-card">
+            <label>持仓盈亏</label>
+            <b :class="totalPnl >= 0 ? 'up' : 'down'">{{ fmtSignedMoney(totalPnl) }}</b>
+          </div>
+        </div>
+
+        <section v-if="rows.length && brief" class="brief-panel">
+          <div class="brief-head">
+            <div class="brief-title-row">
+              <h3>组合研判</h3>
+              <span class="stance-pill" :class="'stance-' + (brief.stance || '')">{{ brief.stance || '均衡' }}</span>
+            </div>
+            <p class="brief-summary">{{ brief.summary }}</p>
+          </div>
+          <div class="brief-thesis">
+            <div class="brief-label">思路</div>
+            <p>{{ brief.thesis }}</p>
+          </div>
+          <div class="brief-grid">
+            <div class="brief-block">
+              <div class="brief-label">操作建议</div>
+              <ul class="brief-list">
+                <li v-for="(item, idx) in brief.actions || []" :key="'a-' + idx" :class="tipLevelClass(item.level)">
+                  <span class="tip-tag">{{ tipLevelLabel(item.level) }}</span>
+                  <span class="tip-text">{{ item.text }}</span>
+                </li>
+              </ul>
+            </div>
+            <div class="brief-block">
+              <div class="brief-label">风险预警</div>
+              <ul class="brief-list">
+                <li v-for="(item, idx) in brief.risks || []" :key="'r-' + idx" :class="tipLevelClass(item.level)">
+                  <span class="tip-tag">{{ tipLevelLabel(item.level) }}</span>
+                  <span class="tip-text">{{ item.text }}</span>
+                </li>
+                <li v-if="!(brief.risks || []).length" class="is-info">
+                  <span class="tip-tag">提示</span>
+                  <span class="tip-text">暂无显著结构性风险，仍需执行止损纪律。</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="brief-watch">
+            <div class="brief-label">关注点</div>
+            <ul class="watch-list">
+              <li v-for="(point, idx) in brief.watchPoints || []" :key="'w-' + idx">{{ point }}</li>
+            </ul>
+          </div>
+          <p class="brief-foot">基于本地仓位、止损止盈、技术命中与估值标签聚合，不构成投资建议。</p>
+        </section>
+
+        <div v-if="!loading && !refreshing && !rows.length" class="page-empty">
+          <h3>该组合还没有持仓</h3>
+          <p>可手动添加，或粘贴导入代码/数量/成本</p>
+          <el-button type="primary" @click="openCreate">添加持仓</el-button>
+          <el-button plain @click="openImport">导入</el-button>
+        </div>
+
+        <section v-if="rows.length" class="theme-panel">
+          <div class="theme-panel-head">
+            <div class="theme-panel-title">
+              <h3>题材分布</h3>
+              <span class="muted">覆盖 {{ themeHitCount }} 只 · 与表格题材列一致</span>
+            </div>
+            <label class="industry-toggle">
+              <span>二级行业</span>
+              <el-switch v-model="showIndustry" size="small" />
+            </label>
+          </div>
+          <div class="theme-panel-body" :class="{ 'with-industry': showIndustry }">
+            <div v-if="showIndustry" class="pie-wrap">
+              <div class="pie-caption">二级行业</div>
+              <div v-if="industryDist.length" ref="industryPieRef" class="pie-chart" />
+              <div v-else class="pie-empty">暂无市值</div>
+            </div>
+            <div class="pie-wrap">
+              <div class="pie-caption">题材分布</div>
+              <div v-if="themeDist.length" ref="themePieRef" class="pie-chart" />
+              <div v-else class="pie-empty">暂无题材数据</div>
+            </div>
+            <div v-if="themeTagBar.length" class="theme-bars">
+              <div v-for="(item, idx) in themeTagBar" :key="item.name" class="theme-bar-row">
+                <span
+                  class="theme-chip"
+                  :style="{
+                    color: isCoreTheme(item.name) ? themeMeta(item.name).color : '#515154',
+                    background: isCoreTheme(item.name) ? themeMeta(item.name).bg : 'rgba(0,0,0,.04)',
+                    borderColor: isCoreTheme(item.name) ? themeMeta(item.name).border : 'rgba(0,0,0,.08)',
+                  }"
+                >
+                  {{ themeMeta(item.name).short }}
+                </span>
+                <div class="theme-bar-track">
+                  <i
+                    class="theme-bar-fill"
+                    :style="{
+                      width: `${Math.max(item.pct * 100, 2)}%`,
+                      background: distColor(item.name, idx),
+                    }"
+                  />
+                </div>
+                <span class="theme-bar-pct">{{ (item.pct * 100).toFixed(1) }}%</span>
+                <span class="theme-bar-mv muted">{{ fmtMoney(item.value) }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="rows.length" class="holding-layout">
+          <el-table ref="holdingTableRef" class="holding-table" :data="rows" size="small" stripe>
+            <el-table-column
+              prop="code"
+              label="代码"
+              :width="shareCol.code"
+              :fixed="sharingCapture ? false : 'left'"
+              :sortable="!sharingCapture"
+            >
+              <template #default="{ row }">
+                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+              </template>
+            </el-table-column>
+            <el-table-column prop="name" label="名称" :width="shareCol.name" :sortable="!sharingCapture" />
+            <el-table-column prop="todayPnl" label="今日盈亏" :width="shareCol.today" :sortable="!sharingCapture">
+              <template #default="{ row }">
+                <div
+                  v-if="row.todayPnl != null || row.pctChg != null"
+                  class="today-pnl"
+                  :class="todayPnlTone(row)"
+                >
+                  <b>{{ row.todayPnl != null ? fmtSignedMoney(row.todayPnl) : '-' }}</b>
+                  <small v-if="row.pctChg != null">{{ fmtSignedPct(row.pctChg) }}</small>
+                </div>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="marketPrice" label="现价" :width="shareCol.price" :sortable="!sharingCapture" />
+            <el-table-column prop="stopLoss" label="止损" :width="shareCol.stop" :sortable="!sharingCapture">
+              <template #default="{ row }">
+                {{ row.stopLoss != null ? Number(row.stopLoss).toFixed(2) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="!sharingCapture"
+              prop="takeProfit"
+              label="止盈"
+              :width="shareCol.take"
+              sortable
+            >
+              <template #default="{ row }">
+                {{ row.takeProfit != null ? Number(row.takeProfit).toFixed(2) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="marketValue" label="市值" :width="shareCol.mv" :sortable="!sharingCapture">
+              <template #default="{ row }">
+                {{ row.marketValue != null ? fmtMoney(row.marketValue) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="pnl" label="持仓盈亏" :width="shareCol.pnl" :sortable="!sharingCapture">
+              <template #default="{ row }">
+                <div
+                  v-if="row.pnl != null"
+                  class="hold-pnl"
+                  :class="Number(row.pnl) >= 0 ? 'up' : 'down'"
+                >
+                  <b>{{ fmtSignedMoney(row.pnl) }}</b>
+                  <small v-if="row.pnlPct != null">{{ fmtPct(row.pnlPct) }}</small>
+                </div>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="showIndustry && !sharingCapture"
+              prop="industry"
+              label="二级行业"
+              width="100"
+              show-overflow-tooltip
+              sortable
+            />
+            <el-table-column label="题材" :width="shareCol.theme">
+              <template #default="{ row }">
+                <span
+                  v-if="displayTheme(row)"
+                  class="theme-chip theme-chip--sm"
+                  :class="{ 'theme-chip--soft': isSoftOnlyTheme(row) }"
+                  :style="{
+                    color: themeMeta(displayTheme(row)).color,
+                    background: themeMeta(displayTheme(row)).bg,
+                    borderColor: themeMeta(displayTheme(row)).border,
+                  }"
+                >
+                  {{ isCoreTheme(displayTheme(row)) ? themeMeta(displayTheme(row)).short : displayTheme(row) }}
+                </span>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="技术" :width="sharingCapture ? shareCol.tech : undefined" :min-width="shareCol.tech">
+              <template #default="{ row }">
+                <div class="tech-cell">
+                  <div class="tech-sum">{{ row.techSummary || '-' }}</div>
+                  <div v-if="displayTechHits(row).length" class="tech-chips">
+                    <span
+                      v-for="sig in displayTechHits(row)"
+                      :key="sig.key"
+                      class="tech-chip on"
+                      :title="sig.detail || sig.label"
+                    >{{ shortTechLabel(sig.label) }}</span>
+                  </div>
+                  <span v-else-if="row.techSignals?.length" class="muted">暂无命中</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="估值" :width="shareCol.val">
+              <template #default="{ row }">
+                <span
+                  v-if="row.valuationLabel"
+                  class="val-chip"
+                  :class="valClass(row.valuationLevel)"
+                  :title="row.valuationSummary || ''"
+                >{{ row.valuationLabel }}</span>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="verdict" label="评价" :width="shareCol.verdict">
+              <template #default="{ row }">
+                <span v-if="row.verdict" class="verdict" :class="verdictClass(row.verdict)">{{ row.verdict }}</span>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="advice"
+              label="建议"
+              :width="sharingCapture ? shareCol.advice : undefined"
+              :min-width="shareCol.advice"
+              :show-overflow-tooltip="!sharingCapture"
+            >
+              <template #default="{ row }">
+                <span class="advice">{{ row.advice || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="!sharingCapture"
+              prop="quantity"
+              label="数量"
+              :width="shareCol.qty"
+              sortable
+            />
+            <el-table-column
+              v-if="!sharingCapture"
+              prop="costPrice"
+              label="成本"
+              :width="shareCol.cost"
+              sortable
+            />
+            <el-table-column
+              v-if="!sharingCapture"
+              prop="note"
+              label="备注"
+              :min-width="shareCol.note"
+              show-overflow-tooltip
+              sortable
+            />
+            <el-table-column
+              v-if="!sharingCapture"
+              label="操作"
+              :width="shareCol.ops"
+              fixed="right"
+            >
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+                <el-button link type="warning" @click="addObserve(row)">观察</el-button>
+                <el-button link type="danger" @click="onRemove(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+
+        <section class="daily-panel">
+          <div class="theme-panel-head">
+            <div class="theme-panel-title">
+              <h3>每日浮盈</h3>
+              <span class="muted">需「打今日快照」沉淀曲线</span>
+            </div>
+          </div>
+          <div v-if="!dailyRows.length" class="chart-empty">暂无快照，点击上方按钮写入今日数据</div>
+          <div v-show="dailyRows.length" ref="chartRef" class="daily-chart" />
+        </section>
+      </main>
+
+      <main v-else class="main empty-main">
+        <h3>选择或新建一个组合</h3>
+        <p class="muted">默认「我的持仓」会从现有真实持仓自动迁移</p>
+      </main>
+    </div>
+
+    <el-dialog
+      v-model="pfDialog"
+      :title="pfForm.id ? '编辑组合' : '新建组合'"
+      width="480px"
+      destroy-on-close
+      append-to-body
+      align-center
+    >
+      <el-form label-width="88px">
+        <el-form-item label="名称" required>
+          <el-input v-model="pfForm.name" maxlength="32" placeholder="如：某某实盘" />
+        </el-form-item>
+        <el-form-item label="归属人">
+          <el-input v-model="pfForm.ownerLabel" maxlength="32" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="pfForm.note" type="textarea" :rows="2" maxlength="200" />
+        </el-form-item>
+        <el-form-item v-if="pfForm.id && activeSummary && !activeSummary.isDefault" label="状态">
+          <el-select v-model="pfForm.status" style="width: 100%">
+            <el-option label="活跃" value="ACTIVE" />
+            <el-option label="归档" value="ARCHIVED" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pfDialog = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submitPf">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="dialogVisible"
+      :title="form.id ? '编辑持仓' : '添加持仓'"
+      width="480px"
+      append-to-body
+      align-center
+    >
+      <el-form label-width="80px">
+        <el-form-item label="代码" required>
+          <el-select
+            v-if="!form.id"
+            v-model="form.code"
+            filterable
+            remote
+            clearable
+            :remote-method="onSearchStock"
+            :loading="searchLoading"
+            placeholder="代码或名称"
+            style="width: 100%"
+            @change="onPickStock"
+          >
+            <el-option
+              v-for="opt in searchOptions"
+              :key="opt.code"
+              :label="`${opt.code} ${opt.name || ''}`"
+              :value="opt.code"
+            />
+          </el-select>
+          <el-input v-else v-model="form.code" disabled />
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="form.name" placeholder="可空，自动补全" />
+        </el-form-item>
+        <el-form-item label="数量">
+          <el-input-number v-model="form.quantity" :min="0" :step="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="成本价">
+          <el-input v-model="form.costPrice" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="止损">
+          <el-input v-model="form.stopLoss" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="止盈">
+          <el-input v-model="form.takeProfit" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="form.note" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="importDialog"
+      title="导入持仓"
+      width="560px"
+      destroy-on-close
+      append-to-body
+      align-center
+    >
+      <p class="muted import-tip">每行一条：代码,数量,成本 —— 也可用空格/Tab；名称可代替代码</p>
+      <el-input
+        v-model="importText"
+        type="textarea"
+        :rows="10"
+        placeholder="000001,1000,12.5&#10;600519 100 1800"
+      />
+      <template #footer>
+        <el-button @click="importDialog = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submitImport">导入</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="shareOpen"
+      :title="shareMode === 'page' ? '分享组合长图' : '分享组合截图'"
+      :width="shareMode === 'page' ? '92vw' : '1580px'"
+      append-to-body
+      destroy-on-close
+      align-center
+      class="holding-share-dialog"
+      @closed="revokeSharePreview"
+    >
+      <div class="share-mode-row">
+        <el-radio-group v-model="shareMode" size="small" @change="(v) => openShare(v)">
+          <el-radio-button value="card">卡片海报</el-radio-button>
+          <el-radio-button value="page">右侧原样长图</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="share-stage" :class="{ 'is-long': shareMode === 'page' }">
+        <img
+          v-if="sharePreviewUrl"
+          :src="sharePreviewUrl"
+          alt="组合分享预览"
+          :style="
+            shareMode === 'page' && sharePreviewLogicalWidth
+              ? { width: `${sharePreviewLogicalWidth}px`, maxWidth: '100%' }
+              : undefined
+          "
+        />
+      </div>
+      <template #footer>
+        <el-button @click="closeShare">关闭</el-button>
+        <el-button type="primary" plain :loading="copying" @click="onCopyShare">复制图片</el-button>
+        <el-button type="primary" :loading="downloading" @click="onDownloadShare">下载 PNG</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+.header p {
+  max-width: 46em;
+  margin: 0;
+  color: var(--muted, #6e6e73);
+  font-size: 13px;
+}
+.detail-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.detail-title .eyebrow {
+  margin: 0;
+  position: relative;
+  z-index: 1;
+}
+.detail-title h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  position: relative;
+  z-index: 0;
+}
+.detail-sub {
+  margin: 0;
+  color: var(--muted, #6e6e73);
+  font-size: 13px;
+  line-height: 1.4;
+  max-width: 46em;
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.header h1 {
+  margin: 4px 0 6px;
+  font-size: 26px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  transition: grid-template-columns 0.2s ease;
+}
+.layout.is-side-collapsed {
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+.side {
+  background: var(--glass, #faf8f4);
+  border: 1px solid var(--glass-border, rgba(0, 0, 0, 0.06));
+  border-radius: var(--radius, 12px);
+  padding: 12px;
+  min-height: 420px;
+  position: sticky;
+  top: 12px;
+  transition: padding 0.2s ease;
+}
+.side.collapsed {
+  padding: 10px 6px;
+  min-height: 240px;
+}
+.side-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.side.collapsed .side-head {
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.side-title {
+  flex: 1;
+  min-width: 0;
+}
+.side-toggle {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  color: #515154;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.side-toggle:hover {
+  border-color: rgba(0, 113, 227, 0.35);
+  color: #0071e3;
+}
+.side-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.rail-item {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: #fff;
+  color: #1d1d1f;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+.rail-item:hover {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+.rail-item.active {
+  border-color: rgba(0, 113, 227, 0.4);
+  background: rgba(0, 113, 227, 0.08);
+  color: #0071e3;
+}
+.side-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 24px 8px;
+}
+.pf-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  position: relative;
+}
+.pf-card:hover {
+  border-color: rgba(0, 0, 0, 0.08);
+}
+.pf-card.active {
+  border-color: rgba(0, 113, 227, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 113, 227, 0.12);
+}
+.pf-card.archived {
+  opacity: 0.65;
+}
+.pf-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 72px;
+}
+.pf-top strong {
+  font-size: 14px;
+}
+.tag {
+  font-size: 11px;
+  color: #0071e3;
+  background: rgba(0, 113, 227, 0.1);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.pf-meta {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #86868b;
+}
+.pf-pnl {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pf-pnl small {
+  margin-left: 6px;
+  font-weight: 500;
+}
+.pf-ops {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.pf-card:hover .pf-ops,
+.pf-card:focus-within .pf-ops {
+  opacity: 1;
+  pointer-events: auto;
+}
+.main {
+  min-width: 0;
+  background: transparent;
+  padding: 0;
+}
+/* 长图分享：藏操作区/副标题；放开单元格换行，避免标签叠压截断 */
+.main.is-sharing-capture {
+  min-width: 1520px;
+  box-sizing: border-box;
+}
+.main.is-sharing-capture :deep(.detail-header .actions),
+.main.is-sharing-capture :deep(.share-hide-meta),
+.main.is-sharing-capture :deep(.brief-foot),
+.main.is-sharing-capture :deep(.industry-toggle),
+.main.is-sharing-capture :deep(.caret-wrapper),
+.main.is-sharing-capture :deep(.el-table__column-filter-trigger) {
+  display: none !important;
+}
+.main.is-sharing-capture :deep(.detail-header) {
+  align-items: flex-start;
+}
+.main.is-sharing-capture :deep(.el-table__header-wrapper),
+.main.is-sharing-capture :deep(.el-table__body-wrapper) {
+  overflow: visible !important;
+}
+.main.is-sharing-capture :deep(.el-table .cell) {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  line-height: 1.35;
+}
+.main.is-sharing-capture :deep(.el-table__body td.el-table__cell) {
+  vertical-align: top;
+}
+.main.is-sharing-capture :deep(.tech-chips) {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.main.is-sharing-capture :deep(.tech-chip),
+.main.is-sharing-capture :deep(.val-chip),
+.main.is-sharing-capture :deep(.theme-chip) {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.main.is-sharing-capture :deep(.advice) {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+}
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.empty-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 360px;
+  color: #6e6e73;
+  background: var(--glass, #faf8f4);
+  border-radius: var(--radius, 12px);
+  border: 1px solid var(--glass-border, rgba(0, 0, 0, 0.06));
+}
+.page-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--muted);
+}
+.page-empty h3 {
+  margin: 0 0 8px;
+  color: var(--ink, #1d1d1f);
+}
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.brief-panel {
+  margin-bottom: 16px;
+  padding: 16px 18px 14px;
+  border-radius: 14px;
+  background: linear-gradient(165deg, #faf7f1 0%, #f3efe8 55%, #eef2f7 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+.brief-head {
+  margin-bottom: 12px;
+}
+.brief-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.brief-title-row h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1d1d1f;
+}
+.stance-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.05);
+  color: #515154;
+}
+.stance-pill.stance-防守 {
+  background: rgba(196, 61, 74, 0.12);
+  color: #c43d4a;
+}
+.stance-pill.stance-均衡偏谨慎,
+.stance-pill.stance-均衡 {
+  background: rgba(179, 107, 0, 0.12);
+  color: #b36b00;
+}
+.stance-pill.stance-偏进攻 {
+  background: rgba(31, 138, 76, 0.12);
+  color: #1f8a4c;
+}
+.brief-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #3a3a3c;
+  font-weight: 600;
+}
+.brief-thesis {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.brief-thesis p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #3a3a3c;
+}
+.brief-label {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #86868b;
+  text-transform: uppercase;
+}
+.brief-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.brief-block {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  min-width: 0;
+}
+.brief-list,
+.watch-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brief-list li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #3a3a3c;
+}
+.brief-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.brief-list li:first-child {
+  padding-top: 0;
+}
+.tip-tag {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.05);
+  color: #6e6e73;
+}
+.brief-list li.is-critical .tip-tag {
+  background: rgba(196, 61, 74, 0.12);
+  color: #c43d4a;
+}
+.brief-list li.is-warn .tip-tag {
+  background: rgba(179, 107, 0, 0.12);
+  color: #b36b00;
+}
+.brief-list li.is-info .tip-tag {
+  background: rgba(0, 113, 227, 0.1);
+  color: #0071e3;
+}
+.tip-text {
+  min-width: 0;
+  flex: 1;
+}
+.brief-watch {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.watch-list li {
+  position: relative;
+  padding: 5px 0 5px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #515154;
+}
+.watch-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #0071e3;
+}
+.brief-foot {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: #8e8e93;
+}
+@media (max-width: 960px) {
+  .brief-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.stat-card {
+  background: var(--glass, #f7f4ee);
+  border: 1px solid var(--glass-border, rgba(0, 0, 0, 0.05));
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.stat-card label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.stat-card b {
+  font-size: 18px;
+}
+.up {
+  color: var(--up);
+}
+.down {
+  color: var(--down);
+}
+.pct-aside {
+  margin-left: 6px;
+  font-size: 0.82em;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.holding-layout {
+  margin-top: 14px;
+}
+.today-pnl,
+.hold-pnl {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 92px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  line-height: 1.15;
+}
+.today-pnl b,
+.hold-pnl b {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.today-pnl small,
+.hold-pnl small {
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.88;
+}
+.today-pnl.up,
+.hold-pnl.up {
+  color: var(--up);
+  background: rgba(255, 59, 48, 0.08);
+}
+.today-pnl.down,
+.hold-pnl.down {
+  color: var(--down);
+  background: rgba(52, 199, 89, 0.08);
+}
+.today-pnl {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.03);
+}
+.theme-panel,
+.daily-panel {
+  margin: 2px 0 12px;
+  padding: 12px 14px 14px;
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+}
+.theme-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.theme-panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.theme-panel-title h3 {
+  margin: 0;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.industry-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.theme-panel-body {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: 12px 20px;
+  align-items: center;
+}
+.theme-panel-body.with-industry {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(0, 1.1fr);
+}
+.pie-wrap {
+  min-width: 0;
+}
+.pie-caption {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.pie-chart {
+  width: 100%;
+  height: 220px;
+}
+.pie-empty,
+.chart-empty {
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 10px;
+}
+.theme-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 0;
+}
+.theme-bar-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 48px 72px;
+  gap: 8px;
+  align-items: center;
+}
+.theme-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.theme-chip--sm {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+.theme-chip--soft {
+  font-weight: 500;
+  opacity: 0.92;
+}
+.tech-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0;
+}
+.tech-sum {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+.tech-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.tech-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tech-chip.on {
+  color: #0a66c2;
+  background: rgba(0, 113, 227, 0.1);
+  border-color: rgba(0, 113, 227, 0.18);
+}
+.val-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 650;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.val-chip.cheap {
+  color: #1f8a4c;
+  background: rgba(52, 199, 89, 0.12);
+  border-color: rgba(52, 199, 89, 0.22);
+}
+.val-chip.rich {
+  color: #c43d4a;
+  background: rgba(255, 59, 48, 0.1);
+  border-color: rgba(255, 59, 48, 0.2);
+}
+.val-chip.fair {
+  color: #0a66c2;
+  background: rgba(0, 113, 227, 0.08);
+  border-color: rgba(0, 113, 227, 0.16);
+}
+.verdict {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-soft);
+}
+.verdict.ok {
+  color: #1f8a4c;
+}
+.verdict.warn {
+  color: #c43d4a;
+}
+.verdict.soft {
+  color: #b36b00;
+}
+.advice {
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+.theme-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+.theme-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  opacity: 0.92;
+}
+.theme-bar-pct {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink-soft);
+}
+.theme-bar-mv {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.muted {
+  font-size: 11px;
+  color: var(--muted);
+}
+.holding-table {
+  min-width: 0;
+}
+.daily-chart {
+  height: 260px;
+  width: 100%;
+}
+.import-tip {
+  margin: 0 0 10px;
+}
+.share-tip {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #86868b;
+}
+.share-mode-row {
+  margin-bottom: 12px;
+}
+.share-stage {
+  /* 勿用 flex + 默认 stretch，会把预览图纵向压扁 */
+  display: block;
+  width: 100%;
+  max-height: min(72vh, 860px);
+  overflow: auto;
+  padding: 12px;
+  background: #ececec;
+  border-radius: 12px;
+  text-align: center;
+  box-sizing: border-box;
+}
+.share-stage.is-long {
+  max-height: min(78vh, 920px);
+  text-align: left;
+}
+.share-stage img {
+  width: min(100%, 1480px);
+  max-width: none;
+  height: auto;
+  display: inline-block;
+  vertical-align: top;
+  object-fit: contain;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+}
+.share-stage.is-long img {
+  /* 逻辑宽度由 inline style 控制，避免 width:100% 放大发糊 */
+  width: auto;
+  max-width: 100%;
+  height: auto;
+}
+@media (max-width: 960px) {
+  .layout,
+  .layout.is-side-collapsed {
+    grid-template-columns: 1fr;
+  }
+  .side,
+  .side.collapsed {
+    position: static;
+    min-height: 0;
+  }
+  .side.collapsed .side-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .stat-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .theme-panel-body,
+  .theme-panel-body.with-industry {
+    grid-template-columns: 1fr;
+  }
+  .theme-bar-row {
+    grid-template-columns: 64px minmax(0, 1fr) 48px;
+  }
+  .theme-bar-mv {
+    display: none;
+  }
+}
+</style>

@@ -863,9 +863,15 @@ public class DecisionServiceImpl implements IDecisionService {
                 .eq(DailyAction::getActionDate, actionDate)
                 .orderByAsc(DailyAction::getAction)
                 .orderByDesc(DailyAction::getScore));
-        MarketBriefingResp briefing = loadBriefingSnapshot(actionDate);
-        if (Objects.isNull(briefing)) {
+        MarketBriefingResp briefing;
+        if (actionDate.equals(LocalDate.now())) {
+            // 今日大盘与看板对齐：走实时简报（指数/量能/涨跌家数会覆盖）
             briefing = marketBriefingService.briefing();
+        } else {
+            briefing = loadBriefingSnapshot(actionDate);
+            if (Objects.isNull(briefing)) {
+                briefing = marketBriefingService.briefing();
+            }
         }
         List<String> mainlineNames = resolveMainlineNames(briefing);
         Set<String> codes = new HashSet<>();

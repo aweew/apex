@@ -101,10 +101,23 @@ def main() -> int:
             str(args.sleep),
             "--no-resume",
         ]
-        rc = subprocess.call(cmd, cwd=str(ROOT))
+        # Windows 上偶发 exit=-1（进程被外部打断/管道异常）；对瞬时失败重试一轮
+        rc = -1
+        attempts = 2
+        for attempt in range(1, attempts + 1):
+            print(f"[round {done_rounds}] run attempt={attempt}/{attempts}")
+            sys.stdout.flush()
+            rc = subprocess.call(cmd, cwd=str(ROOT))
+            if rc == 0:
+                break
+            print(f"round {done_rounds} attempt={attempt} 退出码 {rc}", file=sys.stderr)
+            sys.stderr.flush()
+            # 非瞬时错误（脚本业务失败）不再重试
+            if rc > 0:
+                break
         if rc != 0:
-            print(f"round {done_rounds} 退出码 {rc}", file=sys.stderr)
-            return rc
+            print(f"round {done_rounds} 最终失败 exit={rc}", file=sys.stderr)
+            return rc if rc != 0 else 1
     print(f"完成 rounds={done_rounds}")
     return 0
 

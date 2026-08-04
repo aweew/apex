@@ -187,12 +187,20 @@ onMounted(load)
       <div>
         <p class="eyebrow">Apex · Signals</p>
         <h1><TermTip term="strategy_signal">策略信号</TermTip></h1>
-        <p class="sub">S1/S2/S3 · 股票池 {{ universeCount }} 只 · 可一键模拟下单</p>
+        <p class="sub">
+          S1/S2/S3 · 股票池 {{ universeCount }} 只
+          <span class="muted">（本地日线≥60根且非ST；全市场约五千，缺K线的需先补日线）</span>
+          · 可一键模拟下单
+        </p>
       </div>
       <div class="actions">
-        <el-button @click="onRefreshUniverse" :loading="loading">刷新全市场股票池</el-button>
-        <el-button type="primary" @click="onRun" :loading="loading">运行信号</el-button>
-        <el-button text @click="load">刷新</el-button>
+        <el-button @click="onRefreshUniverse" :loading="loading" title="按本地日线重建可扫描股票池，不跑策略">
+          ① 重建股票池
+        </el-button>
+        <el-button type="primary" @click="onRun" :loading="loading" title="对当前股票池跑 S1/S2/S3，生成买卖信号">
+          ② 跑策略信号
+        </el-button>
+        <el-button text @click="load" title="只重新拉取已有信号/统计，不重算">重载列表</el-button>
         <el-button text @click="exportCsv" :disabled="!filtered.length">导出本地</el-button>
         <el-link
           type="primary"
@@ -241,8 +249,8 @@ onMounted(load)
 
       <div v-if="!loading && !rows.length" class="page-empty">
         <h3>暂无信号</h3>
-        <p>自选同步日线 → 刷新股票池 → 运行信号</p>
-        <el-button type="primary" :loading="loading" @click="onRun">运行信号</el-button>
+        <p>先补日线 → ①重建股票池 → ②跑策略信号</p>
+        <el-button type="primary" :loading="loading" @click="onRun">② 跑策略信号</el-button>
       </div>
 
       <el-table v-else :data="filtered" size="small" stripe height="calc(100vh - 340px)">

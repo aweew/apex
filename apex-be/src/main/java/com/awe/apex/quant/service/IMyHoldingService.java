@@ -19,6 +19,14 @@ public interface IMyHoldingService {
     List<MyHolding> listHoldings();
 
     /**
+     * 对给定持仓行做行情/题材/技术/估值 enrich（不读写库）
+     *
+     * @param list 持仓行（需含 code/quantity/cost 等）
+     * @return 同一列表（已填充展示字段）
+     */
+    List<MyHolding> enrichHoldings(List<MyHolding> list);
+
+    /**
      * 新增或更新持仓（同代码合并更新）
      *
      * @param req 请求
@@ -40,4 +48,13 @@ public interface IMyHoldingService {
      * @return 结果（含 holdings）
      */
     Map<String, Object> refreshQuotes(Boolean onlyMissing);
+
+    /**
+     * 按代码列表刷新行情到 stock_basic（供组合等复用）
+     *
+     * @param codes       代码
+     * @param onlyMissing 是否只刷本地无现价的
+     * @return success/fail/message
+     */
+    Map<String, Object> refreshQuotesForCodes(List<String> codes, Boolean onlyMissing);
 }

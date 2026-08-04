@@ -99,6 +99,7 @@ class MarketBriefingMathTest {
 
         List<BigDecimal> pcts = List.of(
                 new BigDecimal("-1"), new BigDecimal("0.5"), new BigDecimal("1.2"), new BigDecimal("3"));
+        assertEquals(new BigDecimal("0.93"), MarketBriefingMath.average(pcts, 2));
         assertEquals(new BigDecimal("0.85"), MarketBriefingMath.median(pcts, 2));
         assertNull(MarketBriefingMath.median(List.of(), 2));
         assertNull(MarketBriefingMath.average(null, 2));

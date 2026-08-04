@@ -12,6 +12,7 @@ import ScreenerView from '../views/ScreenerView.vue'
 import ValuationView from '../views/ValuationView.vue'
 import DecisionView from '../views/DecisionView.vue'
 import HoldingView from '../views/HoldingView.vue'
+import PortfolioView from '../views/PortfolioView.vue'
 import ObserveView from '../views/ObserveView.vue'
 import HotView from '../views/HotView.vue'
 import NewsView from '../views/NewsView.vue'
@@ -33,6 +34,7 @@ const router = createRouter({
     { path: '/hot', name: 'hot', component: HotView },
     { path: '/news', name: 'news', component: NewsView },
     { path: '/holding', name: 'holding', component: HoldingView },
+    { path: '/portfolio', name: 'portfolio', component: PortfolioView },
     { path: '/observe', name: 'observe', component: ObserveView },
     { path: '/pipeline', name: 'pipeline', component: PipelineView },
     { path: '/screener', name: 'screener', component: ScreenerView },

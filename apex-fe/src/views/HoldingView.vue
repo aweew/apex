@@ -5,6 +5,17 @@ import * as echarts from 'echarts'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listHoldings, refreshHoldingQuotes, removeHolding, saveHolding } from '../api/holding'
 import { saveObserve } from '../api/observe'
+import {
+  HOLDING_SHARE_WIDTH,
+  buildHoldingShareSheet,
+  mountHoldingShareSheet,
+} from '../utils/holdingShareSheet.js'
+import {
+  captureElementBlob,
+  copyImageBlob,
+  downloadBlob,
+  shareFilename,
+} from '../utils/shareCapture.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -14,6 +25,13 @@ const industryPieRef = ref(null)
 const themePieRef = ref(null)
 let industryChart = null
 let themeChart = null
+
+const sharing = ref(false)
+const shareOpen = ref(false)
+const sharePreviewUrl = ref('')
+const copying = ref(false)
+const downloading = ref(false)
+let sharePreviewObjectUrl = ''
 
 /** 默认隐藏二级行业分布/列，可手动打开 */
 const showIndustry = ref(false)
@@ -48,6 +66,13 @@ const CORE_THEME_META = {
     border: 'rgba(255, 159, 10, 0.28)',
     chart: '#ff9f0a',
   },
+  锂电: {
+    short: '锂电',
+    color: '#6b4fbb',
+    bg: 'rgba(94, 92, 230, 0.12)',
+    border: 'rgba(94, 92, 230, 0.24)',
+    chart: '#5e5ce6',
+  },
 }
 
 function themeMeta(name) {
@@ -64,6 +89,38 @@ function themeMeta(name) {
 
 function isCoreTheme(name) {
   return Object.prototype.hasOwnProperty.call(CORE_THEME_META, name)
+}
+
+/** 非核心题材时优先用二级行业，避免概念里弱 AI 标签抢展示 */
+const SOFT_THEME_SKIP =
+  /融资融券|深股通|沪股通|HS300|中证|创业|基金重仓|股权激励|证金|富时|MSCI|中盘|预增|AH股|深成|上证|机构重仓|央视|专精特新|深圳特区|西部大开发|海南|股权转让|人工智能|AI应用|DeepSeek|ChatGPT|融资|回购/
+
+function softTheme(row) {
+  const industry = String(row?.industry || '').trim()
+  if (industry === 'ETF') return 'ETF'
+  if (industry && industry !== '未分类') {
+    return industry.replace(/[ⅡI]+$/u, '')
+  }
+  const concepts = String(row?.concepts || '').split(/[,，、;；|/]/)
+  for (const raw of concepts) {
+    const text = String(raw || '').trim()
+    if (!text || SOFT_THEME_SKIP.test(text)) continue
+    return text
+  }
+  const code = String(row?.code || '')
+  if (/^(15|16|51|56|58)\d{4}$/.test(code) || /ETF|基金|LOF/i.test(String(row?.name || ''))) {
+    return 'ETF'
+  }
+  return ''
+}
+
+function displayTheme(row) {
+  // 有可信核心题材优先；否则用二级行业
+  return primaryTheme(row) || softTheme(row)
+}
+
+function isSoftOnlyTheme(row) {
+  return !primaryTheme(row) && !!softTheme(row)
 }
 
 const totalPnl = computed(() =>
@@ -138,27 +195,59 @@ const industryDist = computed(() => {
 })
 
 /**
- * 题材分布：只统计核心题材（每票唯一主营题材，整票市值计入）
+ * 题材分布：与表格「题材」列同一口径（行业优先）
  */
 const themeDist = computed(() => {
   const map = new Map()
   for (const row of rows.value) {
     const value = rowWeight(row)
     if (value <= 0) continue
-    const cores = (Array.isArray(row.themeTags) ? row.themeTags : []).filter(isCoreTheme)
-    const primary = cores[0]
-    if (!primary) continue
-    map.set(primary, (map.get(primary) || 0) + value)
+    const name = displayTheme(row) || '未分类'
+    map.set(name, (map.get(name) || 0) + value)
   }
   return toDist(map)
 })
 
-/** 核心题材标签条（与饼图同源） */
-const themeTagBar = computed(() => [...themeDist.value])
+const themeTagBar = computed(() => [...themeDist.value].slice(0, 12))
 
-const themeHitCount = computed(() =>
-  rows.value.filter((r) => Array.isArray(r.themeTags) && r.themeTags.some(isCoreTheme)).length,
-)
+const themeHitCount = computed(() => rows.value.filter((r) => !!displayTheme(r)).length)
+
+const DIST_PALETTE = [
+  '#0071e3',
+  '#1f8a4c',
+  '#c43d4a',
+  '#b36b00',
+  '#6b4fbb',
+  '#0a66c2',
+  '#d4537e',
+  '#2a9d8f',
+  '#e76f51',
+  '#457b9d',
+  '#8e8e93',
+  '#5ac8fa',
+]
+
+function distColor(name, index) {
+  const meta = CORE_THEME_META[name]
+  if (meta?.chart) return meta.chart
+  return DIST_PALETTE[index % DIST_PALETTE.length]
+}
+
+function compactDist(dist, maxSlices = 7) {
+  if (!dist?.length || dist.length <= maxSlices) return dist || []
+  const head = dist.slice(0, maxSlices - 1)
+  const tail = dist.slice(maxSlices - 1)
+  const otherValue = tail.reduce((s, x) => s + (Number(x.value) || 0), 0)
+  const sum = dist.reduce((s, x) => s + (Number(x.value) || 0), 0)
+  return [
+    ...head,
+    {
+      name: '其他',
+      value: Math.round(otherValue * 100) / 100,
+      pct: sum > 0 ? otherValue / sum : 0,
+    },
+  ]
+}
 
 function primaryTheme(row) {
   const tags = Array.isArray(row?.themeTags) ? row.themeTags.filter(isCoreTheme) : []
@@ -272,11 +361,11 @@ async function onRefreshQuotes(forceAll = true) {
 }
 
 function pieOption(data, opts = {}) {
-  const themeColors = !!opts.themeColors
   const compact = !!opts.compact
+  const colors = Array.isArray(opts.colors) ? opts.colors : null
   return {
     backgroundColor: 'transparent',
-    color: [
+    color: colors || [
       '#0071e3', '#34c759', '#ff9500', '#af52de', '#ff3b30',
       '#5ac8fa', '#ffcc00', '#ff2d55', '#5856d6', '#8e8e93',
     ],
@@ -295,36 +384,25 @@ function pieOption(data, opts = {}) {
     series: [
       {
         type: 'pie',
-        radius: compact ? ['42%', '68%'] : ['40%', '66%'],
-        center: ['50%', '52%'],
+        radius: compact ? ['46%', '72%'] : ['40%', '66%'],
+        center: ['50%', '50%'],
         avoidLabelOverlap: true,
         itemStyle: {
           borderRadius: 6,
           borderColor: '#fff',
           borderWidth: 2,
         },
-        label: {
-          show: !themeColors,
-          formatter: (p) => `${p.name}\n${p.percent.toFixed(0)}%`,
-          fontSize: 11,
-          color: '#515154',
-          lineHeight: 14,
-        },
-        labelLine: {
-          show: !themeColors,
-          length: 8,
-          length2: 6,
-        },
+        // 右侧题材条已列名称，饼图不外标，避免小扇区标签重叠
+        label: { show: false },
+        labelLine: { show: false },
         emphasis: {
           scaleSize: 4,
+          label: { show: false },
         },
-        data: data.map((d) => {
+        data: data.map((d, i) => {
           const item = { name: d.name, value: d.value }
-          if (themeColors) {
-            item.itemStyle = {
-              color: themeMeta(d.name).chart || themeMeta(d.name).color,
-              opacity: 0.92,
-            }
+          if (colors) {
+            item.itemStyle = { color: colors[i % colors.length], opacity: 0.92 }
           }
           return item
         }),
@@ -351,7 +429,9 @@ function renderPies() {
     industryChart.dispose()
     industryChart = null
   }
-  themeChart = renderOnePie(themePieRef, themeChart, themeDist.value, { themeColors: true })
+  const pieData = compactDist(themeDist.value)
+  const colors = pieData.map((x, i) => distColor(x.name, i))
+  themeChart = renderOnePie(themePieRef, themeChart, pieData, { colors })
 }
 
 function onResize() {
@@ -454,6 +534,150 @@ watch([industryDist, themeDist, showIndustry], async () => {
   renderPies()
 })
 
+function revokeSharePreview() {
+  if (sharePreviewObjectUrl) {
+    URL.revokeObjectURL(sharePreviewObjectUrl)
+    sharePreviewObjectUrl = ''
+  }
+  sharePreviewUrl.value = ''
+}
+
+function shareRowsPayload() {
+  const total = rows.value.reduce((sum, row) => sum + rowWeight(row), 0)
+  const list = rows.value.map((row) => {
+    const w = rowWeight(row)
+    const weightPct = total > 0 ? (w / total) * 100 : 0
+    const theme = displayTheme(row)
+    const meta = theme && isCoreTheme(theme) ? themeMeta(theme) : null
+    const techHits = hitTech(row).map((s) => shortTechLabel(s.label)).filter(Boolean)
+    const tech = row.techSummary || techHits.slice(0, 3).join(' ') || ''
+    return {
+      code: row.code,
+      name: row.name,
+      quantity: row.quantity,
+      weightPct,
+      pctChg: row.pctChg,
+      theme: meta?.short || theme || '',
+      themeColor: meta?.color || '#515154',
+      themeBg: meta?.bg || 'rgba(0,0,0,.04)',
+      themeBorder: meta?.border || 'rgba(0,0,0,.08)',
+      tech,
+      techHits: techHits.slice(0, 4),
+      valuation: row.valuationLabel || '',
+      valuationLevel: row.valuationLevel || '',
+      verdict: row.verdict || '',
+      advice: row.advice || '',
+    }
+  })
+  list.sort((a, b) => (b.weightPct || 0) - (a.weightPct || 0))
+  return list
+}
+
+async function captureHoldingShare() {
+  if (!rows.value.length) throw new Error('暂无持仓')
+  const titleDate = new Date().toISOString().slice(0, 10)
+  const sheet = buildHoldingShareSheet({
+    titleDate,
+    count: rows.value.length,
+    todayPct: totalTodayPct.value,
+    themeHitCount: themeHitCount.value,
+    themes: themeDist.value.map((t, i) => {
+      const meta = themeMeta(t.name)
+      return {
+        name: t.name,
+        short: meta.short || t.name,
+        pct: t.pct,
+        color: distColor(t.name, i),
+        bg: meta.bg,
+      }
+    }),
+    otherPct: 0,
+    rows: shareRowsPayload(),
+  })
+  const mounted = mountHoldingShareSheet(sheet)
+  try {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const width = HOLDING_SHARE_WIDTH
+    const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
+    sheet.style.width = `${width}px`
+    sheet.style.height = `${height}px`
+    const dpr = Math.max(window.devicePixelRatio || 1, 2)
+    return await captureElementBlob(sheet, {
+      scale: Math.min(dpr, 2),
+      width,
+      height,
+      backgroundColor: '#f7f4ee',
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        overflow: 'visible',
+        transform: 'none',
+        margin: '0',
+        opacity: '1',
+        fontFamily: '"Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif',
+        letterSpacing: '0',
+      },
+    })
+  } finally {
+    mounted.dispose()
+  }
+}
+
+async function openShare() {
+  if (!rows.value.length) {
+    ElMessage.warning('暂无持仓可分享')
+    return
+  }
+  sharing.value = true
+  try {
+    const blob = await captureHoldingShare()
+    revokeSharePreview()
+    sharePreviewObjectUrl = URL.createObjectURL(blob)
+    sharePreviewUrl.value = sharePreviewObjectUrl
+    shareOpen.value = true
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '截图失败')
+  } finally {
+    sharing.value = false
+  }
+}
+
+async function onCopyShare() {
+  copying.value = true
+  try {
+    const blob = await captureHoldingShare()
+    await copyImageBlob(blob)
+    ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '复制失败，请改用下载')
+  } finally {
+    copying.value = false
+  }
+}
+
+async function onDownloadShare() {
+  downloading.value = true
+  try {
+    const blob = await captureHoldingShare()
+    downloadBlob(blob, shareFilename('apex_holding', new Date().toISOString().slice(0, 10)))
+    ElMessage.success('已下载分享图')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '下载失败')
+  } finally {
+    downloading.value = false
+  }
+}
+
+function closeShare() {
+  shareOpen.value = false
+  revokeSharePreview()
+  copying.value = false
+  downloading.value = false
+}
+
 onMounted(async () => {
   await load({ silent: true })
   const missing = rows.value.some((r) => r.marketPrice == null)
@@ -465,6 +689,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  revokeSharePreview()
   industryChart?.dispose()
   themeChart?.dispose()
   industryChart = null
@@ -478,9 +703,12 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">Apex · Holding</p>
         <h1>真实持仓</h1>
-        <p>手动维护；决策卖出/持有读这里。日常点「刷新行情」更新价格。</p>
+        <p>手动维护；决策卖出/持有读这里。日常点「刷新行情+日线」更新价格与 K 线。亦可在「组合」中查看默认仓。</p>
       </div>
       <div class="actions">
+        <el-button type="primary" plain :loading="sharing" :disabled="!rows.length" @click="openShare">
+          {{ sharing ? '生成中…' : '分享截图' }}
+        </el-button>
         <el-button type="primary" @click="openCreate">添加持仓</el-button>
         <el-button
           plain
@@ -488,8 +716,9 @@ onBeforeUnmount(() => {
           :disabled="!rows.length"
           @click="onRefreshQuotes(true)"
         >
-          刷新行情
+          刷新行情+日线
         </el-button>
+        <el-button plain @click="router.push('/portfolio')">组合</el-button>
         <el-button plain @click="router.push('/decision')">智能决策</el-button>
         <el-button plain @click="router.push('/observe')">观察池</el-button>
         <el-button text :loading="loading" @click="load()">重载列表</el-button>
@@ -530,8 +759,8 @@ onBeforeUnmount(() => {
     <section v-if="rows.length" class="theme-panel">
       <div class="theme-panel-head">
         <div class="theme-panel-title">
-          <h3>核心题材</h3>
-          <span class="muted">命中 {{ themeHitCount }} 只 · 每票唯一主营题材</span>
+          <h3>题材分布</h3>
+          <span class="muted">覆盖 {{ themeHitCount }} 只 · 与表格题材列一致</span>
         </div>
         <label class="industry-toggle">
           <span>二级行业</span>
@@ -547,20 +776,20 @@ onBeforeUnmount(() => {
         <div class="pie-wrap">
           <div class="pie-caption">题材分布</div>
           <div v-if="themeDist.length" ref="themePieRef" class="pie-chart" />
-          <div v-else class="pie-empty">暂无核心题材命中</div>
+          <div v-else class="pie-empty">暂无题材数据</div>
         </div>
         <div v-if="themeTagBar.length" class="theme-bars">
           <div
-            v-for="item in themeTagBar"
+            v-for="(item, idx) in themeTagBar"
             :key="item.name"
             class="theme-bar-row"
           >
             <span
               class="theme-chip"
               :style="{
-                color: themeMeta(item.name).color,
-                background: themeMeta(item.name).bg,
-                borderColor: themeMeta(item.name).border,
+                color: isCoreTheme(item.name) ? themeMeta(item.name).color : '#515154',
+                background: isCoreTheme(item.name) ? themeMeta(item.name).bg : 'rgba(0,0,0,.04)',
+                borderColor: isCoreTheme(item.name) ? themeMeta(item.name).border : 'rgba(0,0,0,.08)',
               }"
             >
               {{ themeMeta(item.name).short }}
@@ -570,7 +799,7 @@ onBeforeUnmount(() => {
                 class="theme-bar-fill"
                 :style="{
                   width: `${Math.max(item.pct * 100, 2)}%`,
-                  background: themeMeta(item.name).chart || themeMeta(item.name).color,
+                  background: distColor(item.name, idx),
                 }"
               />
             </div>
@@ -625,15 +854,16 @@ onBeforeUnmount(() => {
         <el-table-column label="题材" width="96">
           <template #default="{ row }">
             <span
-              v-if="primaryTheme(row)"
+              v-if="displayTheme(row)"
               class="theme-chip theme-chip--sm"
+              :class="{ 'theme-chip--soft': isSoftOnlyTheme(row) }"
               :style="{
-                color: themeMeta(primaryTheme(row)).color,
-                background: themeMeta(primaryTheme(row)).bg,
-                borderColor: themeMeta(primaryTheme(row)).border,
+                color: themeMeta(displayTheme(row)).color,
+                background: themeMeta(displayTheme(row)).bg,
+                borderColor: themeMeta(displayTheme(row)).border,
               }"
             >
-              {{ themeMeta(primaryTheme(row)).short }}
+              {{ isCoreTheme(displayTheme(row)) ? themeMeta(displayTheme(row)).short : displayTheme(row) }}
             </span>
             <span v-else class="muted">-</span>
           </template>
@@ -718,6 +948,27 @@ onBeforeUnmount(() => {
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="shareOpen"
+      title="分享持仓截图"
+      width="1580px"
+      append-to-body
+      destroy-on-close
+      align-center
+      class="holding-share-dialog"
+      @closed="revokeSharePreview"
+    >
+      <p class="share-tip">含仓位/题材/技术/估值/评价/建议，不含金额；可复制或下载 PNG。</p>
+      <div class="share-stage">
+        <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="持仓分享预览" />
+      </div>
+      <template #footer>
+        <el-button @click="closeShare">关闭</el-button>
+        <el-button type="primary" plain :loading="copying" @click="onCopyShare">复制图片</el-button>
+        <el-button type="primary" :loading="downloading" @click="onDownloadShare">下载 PNG</el-button>
       </template>
     </el-dialog>
   </div>
@@ -906,6 +1157,11 @@ onBeforeUnmount(() => {
   border-radius: 6px;
 }
 
+.theme-chip--soft {
+  font-weight: 500;
+  opacity: 0.92;
+}
+
 .tech-cell {
   display: flex;
   flex-direction: column;
@@ -1036,5 +1292,35 @@ onBeforeUnmount(() => {
   .theme-bar-mv {
     display: none;
   }
+}
+
+.share-tip {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #86868b;
+}
+
+.share-stage {
+  /* 勿用 flex + 默认 stretch，会把预览图纵向压扁 */
+  display: block;
+  width: 100%;
+  max-height: min(72vh, 860px);
+  overflow: auto;
+  padding: 12px;
+  background: #ececec;
+  border-radius: 12px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.share-stage img {
+  width: min(100%, 1480px);
+  max-width: none;
+  height: auto;
+  display: inline-block;
+  vertical-align: top;
+  object-fit: contain;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
 }
 </style>

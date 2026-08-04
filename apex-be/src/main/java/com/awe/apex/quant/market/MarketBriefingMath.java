@@ -74,36 +74,36 @@ public final class MarketBriefingMath {
     }
 
     /**
-     * 微盘相对大盘：中证2000 − 沪深300
+     * 微盘相对大盘：微盘涨跌幅 − 沪深300
      *
-     * @param csi2000Pct 中证2000涨跌幅%
-     * @param hs300Pct   沪深300涨跌幅%
+     * @param microPct 微盘涨跌幅%
+     * @param hs300Pct 沪深300涨跌幅%
      * @return 相对强度%，可空
      */
-    public static BigDecimal microVsLarge(BigDecimal csi2000Pct, BigDecimal hs300Pct) {
-        if (Objects.isNull(csi2000Pct) || Objects.isNull(hs300Pct)) {
+    public static BigDecimal microVsLarge(BigDecimal microPct, BigDecimal hs300Pct) {
+        if (Objects.isNull(microPct) || Objects.isNull(hs300Pct)) {
             return null;
         }
-        return csi2000Pct.subtract(hs300Pct).setScale(2, RoundingMode.HALF_UP);
+        return microPct.subtract(hs300Pct).setScale(2, RoundingMode.HALF_UP);
     }
 
     /**
      * 赚钱效应一句话提示
      *
-     * @param medianPct     涨幅中位数%
-     * @param microVsLarge  微盘相对大盘%
-     * @param csi2000Pct    中证2000涨跌幅%
+     * @param medianPct    涨幅中位数%
+     * @param microVsLarge 微盘相对大盘%
+     * @param microPct     微盘涨跌幅%
      * @return 提示文案
      */
-    public static String effectHint(BigDecimal medianPct, BigDecimal microVsLarge, BigDecimal csi2000Pct) {
-        if (Objects.isNull(medianPct) && Objects.isNull(microVsLarge) && Objects.isNull(csi2000Pct)) {
+    public static String effectHint(BigDecimal medianPct, BigDecimal microVsLarge, BigDecimal microPct) {
+        if (Objects.isNull(medianPct) && Objects.isNull(microVsLarge) && Objects.isNull(microPct)) {
             return null;
         }
         boolean medianUp = Objects.nonNull(medianPct) && medianPct.compareTo(ZERO) > 0;
         boolean medianDown = Objects.nonNull(medianPct) && medianPct.compareTo(ZERO) < 0;
         boolean microLead = Objects.nonNull(microVsLarge) && microVsLarge.compareTo(new BigDecimal("1")) >= 0;
         boolean largeLead = Objects.nonNull(microVsLarge) && microVsLarge.compareTo(new BigDecimal("-1")) <= 0;
-        boolean microUp = Objects.nonNull(csi2000Pct) && csi2000Pct.compareTo(ZERO) > 0;
+        boolean microUp = Objects.nonNull(microPct) && microPct.compareTo(ZERO) > 0;
         if (medianUp && microLead) {
             return "中位数与微盘同步偏强，赚钱效应偏向小票。";
         }
@@ -122,7 +122,7 @@ public final class MarketBriefingMath {
         if (medianDown) {
             return "全A中位数收绿，多数个股承压。";
         }
-        return "赚钱效应观察：结合中位数与中证2000判断。";
+        return "赚钱效应观察：结合中位数、全A等权与微盘判断。";
     }
 
     /**

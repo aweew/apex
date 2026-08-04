@@ -1,17 +1,35 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import {
   GLOSSARY_EVENT,
   allCategories,
   findTerm,
   searchTerms,
 } from '../glossary/lookup.js'
+import {
+  buildGlossaryShareSheet,
+  mountGlossaryShareSheet,
+} from '../utils/glossaryShareSheet.js'
+import {
+  captureElementBlob,
+  copyImageBlob,
+  downloadBlob,
+  shareFilename,
+} from '../utils/shareCapture.js'
 
 const visible = ref(false)
 const query = ref('')
 const category = ref('')
 const activeId = ref('')
 const inputRef = ref(null)
+
+const sharing = ref(false)
+const shareOpen = ref(false)
+const sharePreviewUrl = ref('')
+const copying = ref(false)
+const downloading = ref(false)
+let sharePreviewObjectUrl = ''
 
 const categories = allCategories()
 
@@ -56,6 +74,7 @@ async function openGlossary(termKey) {
 function close() {
   visible.value = false
   query.value = ''
+  closeShare()
 }
 
 function select(term) {
@@ -69,10 +88,106 @@ function onEvent(e) {
 
 function onKeydown(e) {
   if (!visible.value) return
+  if (shareOpen.value) return
   if (e.key === 'Escape') {
     e.preventDefault()
     close()
   }
+}
+
+function revokeSharePreview() {
+  if (sharePreviewObjectUrl) {
+    URL.revokeObjectURL(sharePreviewObjectUrl)
+    sharePreviewObjectUrl = ''
+  }
+  sharePreviewUrl.value = ''
+}
+
+async function captureGlossaryShare() {
+  const term = active.value
+  if (!term) throw new Error('请先选择词条')
+  const titleDate = new Date().toISOString().slice(0, 10)
+  const sheet = buildGlossaryShareSheet({ term, titleDate })
+  const mounted = mountGlossaryShareSheet(sheet)
+  try {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const width = 680
+    const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
+    sheet.style.width = `${width}px`
+    sheet.style.height = `${height}px`
+    const dpr = Math.max(window.devicePixelRatio || 1, 2)
+    return await captureElementBlob(sheet, {
+      scale: Math.min(dpr, 2.5),
+      width,
+      height,
+      backgroundColor: '#f7f4ee',
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        overflow: 'visible',
+        transform: 'none',
+        margin: '0',
+        opacity: '1',
+      },
+    })
+  } finally {
+    mounted.dispose()
+  }
+}
+
+async function openShare() {
+  if (!active.value) {
+    ElMessage.warning('请先选择词条')
+    return
+  }
+  sharing.value = true
+  try {
+    const blob = await captureGlossaryShare()
+    revokeSharePreview()
+    sharePreviewObjectUrl = URL.createObjectURL(blob)
+    sharePreviewUrl.value = sharePreviewObjectUrl
+    shareOpen.value = true
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '截图失败')
+  } finally {
+    sharing.value = false
+  }
+}
+
+async function onCopyShare() {
+  copying.value = true
+  try {
+    const blob = await captureGlossaryShare()
+    await copyImageBlob(blob)
+    ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '复制失败，请改用下载')
+  } finally {
+    copying.value = false
+  }
+}
+
+async function onDownloadShare() {
+  downloading.value = true
+  try {
+    const blob = await captureGlossaryShare()
+    downloadBlob(blob, shareFilename('apex_glossary', active.value?.title))
+    ElMessage.success('已下载分享图')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '下载失败')
+  } finally {
+    downloading.value = false
+  }
+}
+
+function closeShare() {
+  shareOpen.value = false
+  revokeSharePreview()
+  copying.value = false
+  downloading.value = false
 }
 
 onMounted(() => {
@@ -83,6 +198,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener(GLOSSARY_EVENT, onEvent)
   window.removeEventListener('keydown', onKeydown)
+  revokeSharePreview()
 })
 
 defineExpose({ openGlossary, close })
@@ -94,9 +210,19 @@ defineExpose({ openGlossary, close })
       <div class="glossary-head">
         <div class="glossary-title">
           <strong>名词百科</strong>
-          <span>指标 · 策略 · 行情释义</span>
+          <span>Apex · 指标 · 策略 · 行情释义</span>
         </div>
-        <button type="button" class="glossary-esc" @click="close">esc</button>
+        <div class="glossary-actions">
+          <button
+            type="button"
+            class="glossary-share"
+            :disabled="!active || sharing"
+            @click="openShare"
+          >
+            {{ sharing ? '生成中…' : '分享' }}
+          </button>
+          <button type="button" class="glossary-esc" @click="close">esc</button>
+        </div>
       </div>
 
       <div class="glossary-search">
@@ -149,8 +275,18 @@ defineExpose({ openGlossary, close })
 
         <article v-if="active" class="glossary-detail">
           <header>
-            <h2>{{ active.title }}</h2>
-            <span>{{ active.category }}</span>
+            <div class="detail-title">
+              <h2>{{ active.title }}</h2>
+              <span>{{ active.category }}</span>
+            </div>
+            <button
+              type="button"
+              class="detail-share"
+              :disabled="sharing"
+              @click="openShare"
+            >
+              {{ sharing ? '生成中…' : '分享截图' }}
+            </button>
           </header>
           <p class="lead">{{ active.short }}</p>
           <p class="detail">{{ active.detail }}</p>
@@ -163,6 +299,27 @@ defineExpose({ openGlossary, close })
       </div>
     </div>
   </div>
+
+  <el-dialog
+    v-model="shareOpen"
+    title="分享名词百科"
+    width="740px"
+    append-to-body
+    destroy-on-close
+    align-center
+    class="glossary-share-dialog"
+    @closed="revokeSharePreview"
+  >
+    <p class="share-tip">预览含 Apex 品牌信息；可复制或下载 PNG 后发微信/社群。</p>
+    <div class="share-stage">
+      <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="名词百科分享预览" />
+    </div>
+    <template #footer>
+      <el-button @click="closeShare">关闭</el-button>
+      <el-button type="primary" plain :loading="copying" @click="onCopyShare">复制图片</el-button>
+      <el-button type="primary" :loading="downloading" @click="onDownloadShare">下载 PNG</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -193,6 +350,7 @@ defineExpose({ openGlossary, close })
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 14px 16px 8px;
 }
 
@@ -200,6 +358,7 @@ defineExpose({ openGlossary, close })
   display: flex;
   align-items: baseline;
   gap: 10px;
+  min-width: 0;
 }
 
 .glossary-title strong {
@@ -211,9 +370,21 @@ defineExpose({ openGlossary, close })
 .glossary-title span {
   font-size: 12px;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.glossary-esc {
+.glossary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.glossary-share,
+.glossary-esc,
+.detail-share {
   border: 0;
   background: var(--paper-deep);
   color: var(--slate);
@@ -221,6 +392,19 @@ defineExpose({ openGlossary, close })
   padding: 4px 8px;
   border-radius: 8px;
   cursor: pointer;
+}
+
+.glossary-share,
+.detail-share {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.glossary-share:disabled,
+.detail-share:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .glossary-search {
@@ -327,10 +511,19 @@ defineExpose({ openGlossary, close })
 
 .glossary-detail header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.detail-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1;
 }
 
 .glossary-detail h2 {
@@ -342,6 +535,7 @@ defineExpose({ openGlossary, close })
 .glossary-detail header span {
   font-size: 12px;
   color: var(--muted);
+  flex: 0 0 auto;
 }
 
 .glossary-detail .lead {
@@ -380,6 +574,36 @@ defineExpose({ openGlossary, close })
   place-items: center;
 }
 
+.share-tip {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #86868b;
+}
+
+.share-stage {
+  /* 勿用 flex + 默认 stretch，会把预览图纵向压扁 */
+  display: block;
+  width: 100%;
+  max-height: min(62vh, 680px);
+  overflow: auto;
+  padding: 10px;
+  background: #ececec;
+  border-radius: 12px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.share-stage img {
+  width: min(100%, 680px);
+  max-width: none;
+  height: auto;
+  display: inline-block;
+  vertical-align: top;
+  object-fit: contain;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+}
+
 @media (max-width: 720px) {
   .glossary-body {
     grid-template-columns: 1fr;
@@ -393,6 +617,10 @@ defineExpose({ openGlossary, close })
 
   .glossary-detail {
     max-height: none;
+  }
+
+  .glossary-title span {
+    display: none;
   }
 }
 </style>

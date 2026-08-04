@@ -116,7 +116,7 @@ export function buildObserveShareSheet(payload) {
   root.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #eee;">
       <div>
-        <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8e8e93;">Apex · Observe</div>
+        <div style="font-size:11px;letter-spacing:.04em;color:#8e8e93;">Apex · Observe</div>
         <div style="margin-top:2px;font-size:22px;font-weight:750;letter-spacing:.02em;">观察池</div>
         <div style="margin-top:4px;color:#636366;font-size:12px;">${esc(filterText || '当前筛选标的')} · 优先处理接近 / 可执行</div>
       </div>

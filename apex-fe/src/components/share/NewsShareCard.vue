@@ -76,8 +76,8 @@ defineProps({
 
 .brand-mark {
   font-size: 28px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-weight: 750;
+  letter-spacing: 0.12em;
   line-height: 1;
 }
 

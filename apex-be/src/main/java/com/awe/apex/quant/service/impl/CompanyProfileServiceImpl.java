@@ -51,6 +51,27 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
         if (StringUtils.isBlank(pureCode)) {
             throw new BusinessException("证券代码为空");
         }
+        // ETF/场内基金无上市公司 F10
+        if (MarketCodeUtils.isFundOrEtf(pureCode)) {
+            StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
+                    .eq(StockBasic::getCode, pureCode)
+                    .last("LIMIT 1"));
+            String name = Objects.nonNull(basic) ? basic.getName() : pureCode;
+            syncBasicIndustry(pureCode, "ETF");
+            return CompanyProfileResp.builder()
+                    .code(pureCode)
+                    .aCode(pureCode)
+                    .aName(name)
+                    .orgName(name)
+                    .industryL2("ETF")
+                    .industryEm("ETF")
+                    .mainBusiness("场内基金/ETF")
+                    .orgProfile("场内基金/ETF，无上市公司 F10 概况")
+                    .conceptList(List.of("ETF"))
+                    .source("fund-skip")
+                    .note("ETF/场内基金跳过公司概况")
+                    .build();
+        }
         StockCompanyProfile existing = stockCompanyProfileMapper.selectOne(Wrappers.<StockCompanyProfile>lambdaQuery()
                 .eq(StockCompanyProfile::getCode, pureCode)
                 .last("limit 1"));
@@ -139,11 +160,17 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
     private String resolveIndustryL2(String boardPath, String industryEm) {
         if (StringUtils.isNotBlank(boardPath)) {
             String[] parts = boardPath.split("-");
-            if (parts.length >= 2 && StringUtils.isNotBlank(parts[1])) {
-                return parts[1].trim();
+            String level1 = parts.length >= 1 ? parts[0].trim() : "";
+            String level2 = parts.length >= 2 ? parts[1].trim() : "";
+            // 基础化工下二级过细（塑料/树脂等），口语与持仓题材用「化工」更贴切
+            if ("基础化工".equals(level1) || "化工".equals(level1)) {
+                return "化工";
             }
-            if (parts.length == 1 && StringUtils.isNotBlank(parts[0])) {
-                return parts[0].trim();
+            if (StringUtils.isNotBlank(level2)) {
+                return level2;
+            }
+            if (StringUtils.isNotBlank(level1)) {
+                return level1;
             }
         }
         return industryEm;

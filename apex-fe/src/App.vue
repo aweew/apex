@@ -33,6 +33,7 @@ const navGroups = [
       { to: '/decision', label: '决策' },
       { to: '/observe', label: '观察池' },
       { to: '/holding', label: '持仓' },
+      { to: '/portfolio', label: '组合' },
       { to: '/paper', label: '模拟盘' },
     ],
   },
