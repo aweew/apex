@@ -184,6 +184,7 @@ public class DashboardServiceImpl implements IDashboardService {
                 .indexVolume(Objects.nonNull(briefing) ? briefing.getIndexVolume() : null)
                 .indexVolumeText(Objects.nonNull(briefing) ? briefing.getIndexVolumeText() : null)
                 .tips(tips)
+                .effect(Objects.nonNull(briefing) ? briefing.getEffect() : null)
                 .build();
 
         DecisionTodayResp today = todayFuture.join();

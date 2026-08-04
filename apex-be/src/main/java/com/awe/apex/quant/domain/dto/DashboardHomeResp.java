@@ -78,6 +78,7 @@ public class DashboardHomeResp {
         /** 三市成交总额（元） */ private BigDecimal indexVolume;
         /** 三市成交总额文案 */ private String indexVolumeText;
         /** 提示 Top */ private List<String> tips;
+        /** 赚钱效应观测 */ private MarketEffectResp effect;
     }
 
     @Data

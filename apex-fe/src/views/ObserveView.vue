@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -13,6 +13,13 @@ import {
   saveObserve,
 } from '../api/observe'
 import { searchStock } from '../api/stock'
+import {
+  captureElementBlob,
+  copyImageBlob,
+  downloadBlob,
+  shareFilename,
+} from '../utils/shareCapture'
+import { buildObserveShareSheet, mountObserveShareSheet } from '../utils/observeShareSheet'
 
 const router = useRouter()
 const route = useRoute()
@@ -30,6 +37,12 @@ const dialogVisible = ref(false)
 const guideOpenId = ref(null)
 const searchLoading = ref(false)
 const searchOptions = ref([])
+const sharing = ref(false)
+const shareOpen = ref(false)
+const sharePreviewUrl = ref('')
+const copying = ref(false)
+const downloading = ref(false)
+let sharePreviewObjectUrl = ''
 
 const form = reactive({
   id: null,
@@ -468,6 +481,143 @@ function toggleGuide(id) {
   guideOpenId.value = guideOpenId.value === id ? null : id
 }
 
+function filterTextForShare() {
+  const sideMap = { BUY: '买入观察', MOOD: '情绪风向', SELL: '历史卖出', ALL: '全部方向' }
+  const statusMap = {
+    '': '全部状态',
+    READY: '优先处理',
+    TRIGGERED: '可执行',
+    NEAR: '接近',
+    WATCHING: '观察中',
+    ARCHIVED: '已归档',
+  }
+  const side = sideMap[sideTab.value] || '全部方向'
+  const status = statusMap[statusFilter.value] ?? '全部状态'
+  return `${side} · ${status}`
+}
+
+function shareRowsPayload() {
+  return visibleRows.value.map((row) => ({
+    side: sideOf(row),
+    code: row.code,
+    name: row.name,
+    action: actionLabel(row),
+    latestPrice: row.latestPrice,
+    pctChg: row.pctChg,
+    strategy: row.strategyName || strategyLabel(row),
+    valuationLabel: row.valuationLabel,
+    reason: displayPickReasons(row)[0] || shortReason(row),
+    triggerPrice: row.triggerPrice,
+    stopLoss: row.stopLoss,
+    targetPrice: row.targetPrice,
+    pctToTrigger: row.pctToTrigger,
+    pctToStop: row.pctToStop,
+    pctToTarget: row.pctToTarget,
+    statusHint: row.statusHint,
+  }))
+}
+
+function revokeSharePreview() {
+  if (sharePreviewObjectUrl) {
+    URL.revokeObjectURL(sharePreviewObjectUrl)
+    sharePreviewObjectUrl = ''
+  }
+  sharePreviewUrl.value = ''
+}
+
+async function captureObserveShare() {
+  await nextTick()
+  if (!visibleRows.value.length) throw new Error('暂无观察标的')
+  const titleDate = new Date().toISOString().slice(0, 10)
+  const sheet = buildObserveShareSheet({
+    titleDate,
+    filterText: filterTextForShare(),
+    stats: stats.value,
+    rows: shareRowsPayload(),
+  })
+  const mounted = mountObserveShareSheet(sheet)
+  try {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const width = 920
+    const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
+    sheet.style.width = `${width}px`
+    sheet.style.height = `${height}px`
+    const dpr = Math.max(window.devicePixelRatio || 1, 2)
+    const maxEdge = 14000
+    const scaleCap = maxEdge / Math.max(width, height)
+    const scale = Math.min(dpr, Math.max(1.75, scaleCap))
+    return await captureElementBlob(sheet, {
+      scale,
+      width,
+      height,
+      backgroundColor: '#ffffff',
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        overflow: 'visible',
+        transform: 'none',
+        margin: '0',
+        opacity: '1',
+      },
+    })
+  } finally {
+    mounted.dispose()
+  }
+}
+
+async function openShare() {
+  if (!visibleRows.value.length) {
+    ElMessage.warning('暂无观察标的可分享')
+    return
+  }
+  sharing.value = true
+  try {
+    const blob = await captureObserveShare()
+    revokeSharePreview()
+    sharePreviewObjectUrl = URL.createObjectURL(blob)
+    sharePreviewUrl.value = sharePreviewObjectUrl
+    shareOpen.value = true
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '截图失败')
+  } finally {
+    sharing.value = false
+  }
+}
+
+async function onCopyShare() {
+  copying.value = true
+  try {
+    const blob = await captureObserveShare()
+    await copyImageBlob(blob)
+    ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '复制失败，请改用下载')
+  } finally {
+    copying.value = false
+  }
+}
+
+async function onDownloadShare() {
+  downloading.value = true
+  try {
+    const blob = await captureObserveShare()
+    downloadBlob(blob, shareFilename('apex_observe', filterTextForShare()))
+    ElMessage.success('已下载分享图')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '下载失败')
+  } finally {
+    downloading.value = false
+  }
+}
+
+function closeShare() {
+  shareOpen.value = false
+  revokeSharePreview()
+}
+
 let keywordTimer
 watch(keyword, () => {
   clearTimeout(keywordTimer)
@@ -481,6 +631,10 @@ onMounted(async () => {
   if (qCode) {
     openCreate({ code: String(qCode), name: qName ? String(qName) : '' })
   }
+})
+
+onBeforeUnmount(() => {
+  revokeSharePreview()
 })
 </script>
 
@@ -498,6 +652,14 @@ onMounted(async () => {
         </button>
         <button type="button" class="btn btn-ghost" :disabled="refreshing" @click="onRefresh">
           {{ refreshing ? '评估中…' : '重估' }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost"
+          :disabled="sharing || !visibleRows.length"
+          @click="openShare"
+        >
+          {{ sharing ? '生成中…' : '分享截图' }}
         </button>
         <button type="button" class="btn btn-ghost" @click="openCreate()">手动加</button>
         <a
@@ -759,6 +921,28 @@ onMounted(async () => {
         <button type="button" class="btn btn-primary" :disabled="saving" @click="onSave">
           {{ saving ? '保存中…' : '保存' }}
         </button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="shareOpen"
+      title="分享观察池截图"
+      width="96vw"
+      top="3vh"
+      append-to-body
+      destroy-on-close
+      class="observe-share-dialog"
+      @closed="revokeSharePreview"
+    >
+      <p class="share-tip">按当前筛选生成分享图；可复制或下载 PNG 后发微信/社群。</p>
+      <div class="share-stage">
+        <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="观察池分享预览" />
+        <el-empty v-else description="预览生成中…" />
+      </div>
+      <template #footer>
+        <el-button @click="closeShare">关闭</el-button>
+        <el-button :loading="copying" @click="onCopyShare">复制图片</el-button>
+        <el-button type="primary" :loading="downloading" @click="onDownloadShare">下载 PNG</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1422,5 +1606,60 @@ onMounted(async () => {
   .header {
     flex-direction: column;
   }
+}
+
+.share-tip {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--muted, #8a8f98);
+}
+
+.share-stage {
+  max-height: min(72vh, 860px);
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  background: #f5f5f7;
+  text-align: center;
+}
+
+.share-stage img {
+  display: block;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  height: auto;
+}
+</style>
+
+<style>
+.observe-share-dialog.el-dialog {
+  max-width: 1100px;
+  margin-bottom: 4vh;
+}
+
+.observe-share-dialog .el-dialog__body {
+  padding-top: 8px;
+}
+
+.observe-share-dialog .share-tip {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #8a8f98;
+}
+
+.observe-share-dialog .share-stage {
+  max-height: min(72vh, 860px);
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  background: #f5f5f7;
+  text-align: center;
+}
+
+.observe-share-dialog .share-stage img {
+  display: block;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  height: auto;
 }
 </style>

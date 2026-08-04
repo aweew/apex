@@ -7,7 +7,7 @@ import { dashboardHome, dashboardOverview } from '../api/dashboard'
 import { runDecision } from '../api/decision'
 import { startSyncJob } from '../api/sync'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v7'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v8'
 const loading = ref(false)
 const refreshing = ref(false)
 const running = ref(false)
@@ -42,6 +42,7 @@ const account = computed(() => home.value?.account || null)
 const dataHealth = computed(() => home.value?.dataHealth || null)
 const themes = computed(() => market.value?.hotThemes || [])
 const tips = computed(() => market.value?.tips || [])
+const effect = computed(() => market.value?.effect || null)
 const topBuys = computed(() => decision.value?.topBuys || [])
 const topSells = computed(() => decision.value?.topSells || [])
 const valuationDistTotal = computed(() => {
@@ -81,6 +82,12 @@ function fmtIndexPct(v) {
   if (Number.isNaN(n)) return '-'
   const sign = n > 0 ? '+' : ''
   return `${sign}${n.toFixed(2)}%`
+}
+
+function pctDir(v) {
+  const n = Number(v)
+  if (Number.isNaN(n) || n === 0) return 'flat'
+  return n > 0 ? 'up' : 'down'
 }
 
 /** 量能红绿：放量/正比为红，缩量/负比为绿 */
@@ -578,6 +585,28 @@ onBeforeUnmount(() => {
             <i class="down-seg" :style="{ width: breadth.downPct + '%' }" />
           </div>
           <p v-if="breadthHint" class="breadth-hint">{{ breadthHint }}</p>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="effect" class="effect-strip enter delay-1" aria-label="赚钱效应">
+      <div class="effect-head">
+        <span class="effect-title">赚钱效应</span>
+        <span v-if="effect.hint" class="effect-hint">{{ effect.hint }}</span>
+        <span v-else class="effect-hint muted">涨幅中位数 · 中证2000 · 相对沪深300</span>
+      </div>
+      <div class="effect-grid">
+        <div class="effect-cell">
+          <em>涨幅中位数</em>
+          <b :class="pctDir(effect.medianPctChg)">{{ fmtIndexPct(effect.medianPctChg) }}</b>
+        </div>
+        <div class="effect-cell">
+          <em>中证2000</em>
+          <b :class="pctDir(effect.csi2000PctChg)">{{ fmtIndexPct(effect.csi2000PctChg) }}</b>
+        </div>
+        <div class="effect-cell">
+          <em>相对沪深300</em>
+          <b :class="pctDir(effect.microVsLargePct)">{{ fmtIndexPct(effect.microVsLargePct) }}</b>
         </div>
       </div>
     </section>
@@ -1482,6 +1511,88 @@ onBeforeUnmount(() => {
   line-height: 1.35;
   color: var(--muted, #8a8f98);
   letter-spacing: -0.01em;
+}
+
+.effect-strip {
+  margin: 0 0 14px;
+  padding: 14px 16px 12px;
+  border-radius: var(--radius, 14px);
+  border: 1px solid var(--glass-border, var(--line));
+  background: var(--glass, rgba(255, 255, 255, 0.92));
+  backdrop-filter: blur(var(--blur, 8px));
+  box-shadow: var(--shadow-soft, none);
+}
+
+.effect-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.effect-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.effect-hint {
+  font-size: 12px;
+  color: var(--ink-soft, var(--muted));
+  line-height: 1.4;
+}
+
+.effect-hint.muted {
+  color: var(--muted, #8a8f98);
+}
+
+.effect-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.effect-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.03);
+}
+
+.effect-cell em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted, #8a8f98);
+}
+
+.effect-cell b {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.effect-cell i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--slate, #64748b);
+  font-variant-numeric: tabular-nums;
+}
+
+.effect-cell b.up { color: var(--up); }
+.effect-cell b.down { color: var(--down); }
+.effect-cell b.flat { color: var(--slate, #64748b); }
+
+@media (max-width: 560px) {
+  .effect-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .miss-hint {

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -87,5 +88,29 @@ class MarketBriefingMathTest {
     void upSharePctRoundsDown() {
         assertEquals(74, MarketBriefingMath.upSharePct(3912, 1299, 64));
         assertNull(MarketBriefingMath.upSharePct(0, 0, 0));
+    }
+
+    @Test
+    void averageAndMedianOfCrossSection() {
+        List<BigDecimal> prices = List.of(
+                new BigDecimal("10"), new BigDecimal("20"), new BigDecimal("30"));
+        assertEquals(new BigDecimal("20.00"), MarketBriefingMath.average(prices, 2));
+        assertEquals(new BigDecimal("20.00"), MarketBriefingMath.median(prices, 2));
+
+        List<BigDecimal> pcts = List.of(
+                new BigDecimal("-1"), new BigDecimal("0.5"), new BigDecimal("1.2"), new BigDecimal("3"));
+        assertEquals(new BigDecimal("0.85"), MarketBriefingMath.median(pcts, 2));
+        assertNull(MarketBriefingMath.median(List.of(), 2));
+        assertNull(MarketBriefingMath.average(null, 2));
+    }
+
+    @Test
+    void microVsLargeAndEffectHint() {
+        assertEquals(new BigDecimal("3.50"),
+                MarketBriefingMath.microVsLarge(new BigDecimal("2.30"), new BigDecimal("-1.20")));
+        assertNull(MarketBriefingMath.microVsLarge(null, new BigDecimal("1")));
+        String hint = MarketBriefingMath.effectHint(
+                new BigDecimal("0.80"), new BigDecimal("2.50"), new BigDecimal("2.30"));
+        assertTrue(hint.contains("小票"));
     }
 }

@@ -1,6 +1,10 @@
 package com.awe.apex.quant.market;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -11,6 +15,114 @@ public final class MarketBriefingMath {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private MarketBriefingMath() {
+    }
+
+    /**
+     * 算术平均；空列表返回 null
+     *
+     * @param values 数值
+     * @param scale  小数位
+     * @return 平均值
+     */
+    public static BigDecimal average(List<BigDecimal> values, int scale) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        BigDecimal sum = ZERO;
+        int count = 0;
+        for (BigDecimal value : values) {
+            if (Objects.isNull(value)) {
+                continue;
+            }
+            sum = sum.add(value);
+            count++;
+        }
+        if (count <= 0) {
+            return null;
+        }
+        return sum.divide(BigDecimal.valueOf(count), scale, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 中位数；偶数个取中间两数均值
+     *
+     * @param values 数值（会被复制排序，不修改入参）
+     * @param scale  小数位
+     * @return 中位数
+     */
+    public static BigDecimal median(List<BigDecimal> values, int scale) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        List<BigDecimal> sorted = new ArrayList<>();
+        for (BigDecimal value : values) {
+            if (Objects.nonNull(value)) {
+                sorted.add(value);
+            }
+        }
+        if (sorted.isEmpty()) {
+            return null;
+        }
+        Collections.sort(sorted);
+        int size = sorted.size();
+        if (size % 2 == 1) {
+            return sorted.get(size / 2).setScale(scale, RoundingMode.HALF_UP);
+        }
+        BigDecimal left = sorted.get(size / 2 - 1);
+        BigDecimal right = sorted.get(size / 2);
+        return left.add(right).divide(new BigDecimal("2"), scale, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 微盘相对大盘：中证2000 − 沪深300
+     *
+     * @param csi2000Pct 中证2000涨跌幅%
+     * @param hs300Pct   沪深300涨跌幅%
+     * @return 相对强度%，可空
+     */
+    public static BigDecimal microVsLarge(BigDecimal csi2000Pct, BigDecimal hs300Pct) {
+        if (Objects.isNull(csi2000Pct) || Objects.isNull(hs300Pct)) {
+            return null;
+        }
+        return csi2000Pct.subtract(hs300Pct).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 赚钱效应一句话提示
+     *
+     * @param medianPct     涨幅中位数%
+     * @param microVsLarge  微盘相对大盘%
+     * @param csi2000Pct    中证2000涨跌幅%
+     * @return 提示文案
+     */
+    public static String effectHint(BigDecimal medianPct, BigDecimal microVsLarge, BigDecimal csi2000Pct) {
+        if (Objects.isNull(medianPct) && Objects.isNull(microVsLarge) && Objects.isNull(csi2000Pct)) {
+            return null;
+        }
+        boolean medianUp = Objects.nonNull(medianPct) && medianPct.compareTo(ZERO) > 0;
+        boolean medianDown = Objects.nonNull(medianPct) && medianPct.compareTo(ZERO) < 0;
+        boolean microLead = Objects.nonNull(microVsLarge) && microVsLarge.compareTo(new BigDecimal("1")) >= 0;
+        boolean largeLead = Objects.nonNull(microVsLarge) && microVsLarge.compareTo(new BigDecimal("-1")) <= 0;
+        boolean microUp = Objects.nonNull(csi2000Pct) && csi2000Pct.compareTo(ZERO) > 0;
+        if (medianUp && microLead) {
+            return "中位数与微盘同步偏强，赚钱效应偏向小票。";
+        }
+        if (medianDown && largeLead) {
+            return "中位数偏弱且大盘占优，赚钱效应一般。";
+        }
+        if (medianUp && largeLead) {
+            return "个股中位数尚可，但权重/大盘更强，注意风格切换。";
+        }
+        if (medianDown && microUp) {
+            return "指数型微盘偏强、中位数仍弱，分化较大。";
+        }
+        if (medianUp) {
+            return "全A中位数收红，典型个股偏赚钱。";
+        }
+        if (medianDown) {
+            return "全A中位数收绿，多数个股承压。";
+        }
+        return "赚钱效应观察：结合中位数与中证2000判断。";
     }
 
     /**

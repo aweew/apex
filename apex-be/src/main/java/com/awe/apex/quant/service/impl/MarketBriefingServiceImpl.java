@@ -9,6 +9,7 @@ import cn.hutool.json.JSONUtil;
 import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketEffectResp;
 import com.awe.apex.quant.domain.dto.MarketFactorItem;
 import com.awe.apex.quant.domain.dto.MarketIndexItem;
 import com.awe.apex.quant.domain.dto.MarketTipItem;
@@ -23,6 +24,8 @@ import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
 import com.awe.apex.quant.mapper.SectorQuoteMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
+import com.awe.apex.quant.market.MarketBriefingMath;
+import com.awe.apex.quant.market.MarketCrossSectionClient;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.ISectorBoardService;
@@ -33,10 +36,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.Charset;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import com.awe.apex.quant.market.MarketBriefingMath;
-import java.nio.charset.Charset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -68,6 +70,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     private static final long LIVE_AMOUNT_TTL_MS = 45_000L;
     private static final long LIVE_AMOUNT_MISS_TTL_MS = 15_000L;
     private static final long LIVE_QUOTE_TTL_MS = 60_000L;
+    /** 赚钱效应截面较重，3 分钟短缓存（强制刷新仍会清空） */
+    private static final long LIVE_EFFECT_TTL_MS = 180_000L;
     private static final DateTimeFormatter DAY_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final Map<String, String> INDEX_CODE_NAME = Map.of(
             "000001", "上证指数",
@@ -89,6 +93,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     /** 腾讯自选股市场总览（涨跌停与较上日额变动） */
     private QqMarketOverview cachedQqMarket;
     private long cachedQqMarketAtMs;
+    /** 赚钱效应截面短缓存 */
+    private MarketEffectResp cachedMarketEffect;
+    private long cachedMarketEffectAtMs;
     private final Map<LocalDate, BigDecimal> recentLiveAmountByDate = new java.util.LinkedHashMap<>();
 
     @Resource
@@ -108,6 +115,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
     @Resource
     private MarketBriefingSnapshotMapper marketBriefingSnapshotMapper;
+
+    @Resource
+    private MarketCrossSectionClient marketCrossSectionClient;
 
     /**
      * 生成市场简报
@@ -186,6 +196,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             cachedLiveLimitUp = null;
             cachedLiveLimitDown = null;
             cachedLiveLimitsAtMs = 0L;
+            cachedQqMarket = null;
+            cachedQqMarketAtMs = 0L;
+            cachedMarketEffect = null;
+            cachedMarketEffectAtMs = 0L;
         }
     }
 
@@ -210,10 +224,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
 
     /**
-     * 实时覆盖链：指数 → 量能 → 涨跌家数 → 涨跌停
+     * 实时覆盖链：指数 → 量能 → 涨跌家数 → 涨跌停 → 赚钱效应
      */
     private MarketBriefingResp refreshLiveMarketQuotes(MarketBriefingResp resp) {
-        return overlayLiveLimits(overlayLiveBreadth(overlayLiveVolume(overlayLiveIndexes(resp))));
+        return overlayLiveEffect(overlayLiveLimits(overlayLiveBreadth(overlayLiveVolume(overlayLiveIndexes(resp)))));
     }
 
     private MarketBriefingResp overlayLiveIndexes(MarketBriefingResp resp) {
@@ -314,6 +328,188 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             resp.setLimitDownCount(down);
         }
         return resp;
+    }
+
+    /**
+     * 覆盖赚钱效应：平均股价 / 涨幅中位数 / 中证2000 / 大小盘差
+     */
+    private MarketBriefingResp overlayLiveEffect(MarketBriefingResp resp) {
+        if (Objects.isNull(resp)) {
+            return null;
+        }
+        MarketEffectResp effect = fetchLiveMarketEffect();
+        if (Objects.nonNull(effect)) {
+            resp.setEffect(effect);
+        }
+        return resp;
+    }
+
+    /**
+     * 实时赚钱效应（60s 缓存）
+     */
+    private MarketEffectResp fetchLiveMarketEffect() {
+        long now = System.currentTimeMillis();
+        synchronized (cacheLock) {
+            if (Objects.nonNull(cachedMarketEffect)
+                    && now - cachedMarketEffectAtMs < LIVE_EFFECT_TTL_MS) {
+                return cachedMarketEffect;
+            }
+        }
+        BigDecimal avgPrice = null;
+        BigDecimal medianPct = null;
+        Integer sampleSize = null;
+        Integer strongUp = null;
+        Integer strongDown = null;
+        String source = null;
+        try {
+            MarketCrossSectionClient.CrossSectionStats stats = marketCrossSectionClient.fetchHsjAStats();
+            if (Objects.nonNull(stats)) {
+                avgPrice = stats.avgPrice;
+                medianPct = stats.medianPct;
+                sampleSize = stats.sampleSize;
+                strongUp = stats.strongUpCount;
+                strongDown = stats.strongDownCount;
+                source = "eastmoney-clist";
+            }
+        } catch (Exception ex) {
+            log.debug("东财截面赚钱效应失败: {}", ex.getMessage());
+        }
+        if (Objects.isNull(avgPrice) || Objects.isNull(medianPct)) {
+            MarketEffectResp local = effectFromStockBasic();
+            if (Objects.nonNull(local)) {
+                if (Objects.isNull(avgPrice)) {
+                    avgPrice = local.getAvgStockPrice();
+                }
+                if (Objects.isNull(medianPct)) {
+                    medianPct = local.getMedianPctChg();
+                }
+                if (Objects.isNull(sampleSize)) {
+                    sampleSize = local.getSampleSize();
+                }
+                if (Objects.isNull(strongUp)) {
+                    strongUp = local.getStrongUpCount();
+                }
+                if (Objects.isNull(strongDown)) {
+                    strongDown = local.getStrongDownCount();
+                }
+                if (StringUtils.isBlank(source)) {
+                    source = local.getSource();
+                }
+            }
+        }
+        LiveIndexQuote csi2000 = fetchLiveSingleIndex("2.932000", "中证2000");
+        LiveIndexQuote hs300 = fetchLiveSingleIndex("1.000300", "沪深300");
+        BigDecimal csiPct = Objects.nonNull(csi2000) ? csi2000.pctChg : null;
+        BigDecimal hsPct = Objects.nonNull(hs300) ? hs300.pctChg : null;
+        BigDecimal microVsLarge = MarketBriefingMath.microVsLarge(csiPct, hsPct);
+        String hint = MarketBriefingMath.effectHint(medianPct, microVsLarge, csiPct);
+        if (Objects.isNull(avgPrice) && Objects.isNull(medianPct) && Objects.isNull(csiPct)) {
+            return null;
+        }
+        MarketEffectResp effect = MarketEffectResp.builder()
+                .avgStockPrice(avgPrice)
+                .medianPctChg(medianPct)
+                .sampleSize(sampleSize)
+                .csi2000PctChg(csiPct)
+                .csi2000Close(Objects.nonNull(csi2000) ? csi2000.close : null)
+                .hs300PctChg(hsPct)
+                .microVsLargePct(microVsLarge)
+                .strongUpCount(strongUp)
+                .strongDownCount(strongDown)
+                .hint(hint)
+                .source(source)
+                .build();
+        synchronized (cacheLock) {
+            cachedMarketEffect = effect;
+            cachedMarketEffectAtMs = System.currentTimeMillis();
+        }
+        return effect;
+    }
+
+    /**
+     * 本地 stock_basic 兜底截面
+     */
+    private MarketEffectResp effectFromStockBasic() {
+        try {
+            List<StockBasic> rows = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                    .gt(StockBasic::getLatestPrice, 0)
+                    .isNotNull(StockBasic::getPctChg)
+                    .select(StockBasic::getLatestPrice, StockBasic::getPctChg)
+                    .last("LIMIT 8000"));
+            if (CollUtil.isEmpty(rows)) {
+                return null;
+            }
+            List<BigDecimal> prices = new ArrayList<>(rows.size());
+            List<BigDecimal> pcts = new ArrayList<>(rows.size());
+            int strongUp = 0;
+            int strongDown = 0;
+            BigDecimal five = new BigDecimal("5");
+            BigDecimal negFive = new BigDecimal("-5");
+            for (StockBasic row : rows) {
+                if (Objects.nonNull(row.getLatestPrice()) && row.getLatestPrice().signum() > 0) {
+                    prices.add(row.getLatestPrice());
+                }
+                if (Objects.nonNull(row.getPctChg())) {
+                    pcts.add(row.getPctChg());
+                    if (row.getPctChg().compareTo(five) >= 0) {
+                        strongUp++;
+                    } else if (row.getPctChg().compareTo(negFive) <= 0) {
+                        strongDown++;
+                    }
+                }
+            }
+            return MarketEffectResp.builder()
+                    .avgStockPrice(MarketBriefingMath.average(prices, 2))
+                    .medianPctChg(MarketBriefingMath.median(pcts, 2))
+                    .sampleSize(Math.max(prices.size(), pcts.size()))
+                    .strongUpCount(strongUp)
+                    .strongDownCount(strongDown)
+                    .source("stock_basic")
+                    .build();
+        } catch (Exception ex) {
+            log.debug("stock_basic 赚钱效应兜底失败: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 单指数实时行情
+     */
+    private LiveIndexQuote fetchLiveSingleIndex(String secId, String name) {
+        String url = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
+                + "?fltt=2&secids=" + secId + "&fields=f2,f3,f12,f14";
+        try (HttpResponse response = HttpRequest.get(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Referer", "https://quote.eastmoney.com/")
+                .header("Accept", "application/json,text/plain,*/*")
+                .timeout(4000)
+                .execute()) {
+            if (!response.isOk()) {
+                return null;
+            }
+            JSONObject data = JSONUtil.parseObj(response.body()).getJSONObject("data");
+            JSONArray diff = Objects.nonNull(data) ? data.getJSONArray("diff") : null;
+            if (Objects.isNull(diff) || diff.isEmpty()) {
+                return null;
+            }
+            JSONObject row = diff.getJSONObject(0);
+            if (Objects.isNull(row)) {
+                return null;
+            }
+            BigDecimal close = row.getBigDecimal("f2");
+            BigDecimal pct = row.getBigDecimal("f3");
+            if (Objects.isNull(close)) {
+                return null;
+            }
+            LiveIndexQuote quote = new LiveIndexQuote();
+            quote.name = name;
+            quote.close = close.setScale(2, RoundingMode.HALF_UP);
+            quote.pctChg = Objects.nonNull(pct) ? pct.setScale(2, RoundingMode.HALF_UP) : null;
+            return quote;
+        } catch (Exception ex) {
+            log.debug("单指数实时拉取失败 secId={}: {}", secId, ex.getMessage());
+            return null;
+        }
     }
 
     private void persistSnapshot(MarketBriefingResp briefing) {

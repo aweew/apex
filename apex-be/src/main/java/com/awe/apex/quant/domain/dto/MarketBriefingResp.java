@@ -137,4 +137,9 @@ public class MarketBriefingResp {
      * 说明
      */
     private String message;
+
+    /**
+     * 赚钱效应观测（平均股价/中位数/微盘等）
+     */
+    private MarketEffectResp effect;
 }

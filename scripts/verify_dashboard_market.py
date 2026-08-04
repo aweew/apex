@@ -45,6 +45,29 @@ def main():
     for row in m.get("indexes") or []:
         print("index", row.get("name"), row.get("close"), row.get("pctChg"))
 
+    effect = m.get("effect") or {}
+    print(
+        "effect",
+        "avg", effect.get("avgStockPrice"),
+        "median", effect.get("medianPctChg"),
+        "csi2000", effect.get("csi2000PctChg"),
+        "vs300", effect.get("microVsLargePct"),
+        "sample", effect.get("sampleSize"),
+        "src", effect.get("source"),
+    )
+    if not effect:
+        errors.append("赚钱效应 effect 为空")
+    else:
+        if effect.get("avgStockPrice") is None:
+            errors.append("平均股价为空")
+        if effect.get("medianPctChg") is None:
+            errors.append("涨幅中位数为空")
+        if effect.get("csi2000PctChg") is None:
+            errors.append("中证2000涨跌为空")
+        sample = effect.get("sampleSize") or 0
+        if sample < 1000:
+            errors.append(f"截面样本过少 sample={sample}")
+
     if not m.get("indexVolume") or float(m["indexVolume"]) <= 0:
         errors.append("成交额为空")
     if not m.get("indexes"):
