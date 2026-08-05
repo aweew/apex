@@ -116,6 +116,14 @@ public interface IPortfolioService {
     Map<String, Object> refreshQuotes(Long portfolioId, Boolean onlyMissing);
 
     /**
+     * 一键刷新全部活跃组合行情+日线（代码去重）
+     *
+     * @param onlyMissing 是否只刷缺现价的
+     * @return 结果
+     */
+    Map<String, Object> refreshQuotesAll(Boolean onlyMissing);
+
+    /**
      * 我的持仓变更后同步到默认组合（双写）
      *
      * @param holding 持仓

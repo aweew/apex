@@ -81,6 +81,14 @@ apex:
   news:
     python-cmd: python
     script-path: ${user.dir}/../scripts/market_data/sync_news.py
+  # 大模型（Key 放 application-local.yml，勿入库）
+  ai:
+    enabled: true
+    base-url: https://api.moonshot.cn/v1
+    api-key: ${APEX_AI_API_KEY:}
+    model: kimi-k2.6
+    timeout-ms: 45000
+    summary-cache-seconds: 600
   index:
     python-cmd: python
     script-path: ${user.dir}/../scripts/market_data/sync_index.py

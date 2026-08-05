@@ -514,31 +514,101 @@ public class PortfolioServiceImpl implements IPortfolioService {
         List<PortfolioHolding> holdings = portfolioHoldingMapper.selectList(Wrappers.<PortfolioHolding>lambdaQuery()
                 .eq(PortfolioHolding::getPortfolioId, portfolioId)
                 .orderByAsc(PortfolioHolding::getCode));
+        List<String> codes = collectHoldingCodes(holdings);
+        Map<String, Object> core = refreshQuotesForHoldings(holdings, codes, onlyMissing);
+        core.put("detail", detail(portfolioId));
+        return core;
+    }
+
+    /**
+     * 一键刷新全部活跃组合行情+日线（代码去重）
+     *
+     * @param onlyMissing 是否只刷缺现价的
+     * @return 结果
+     */
+    @Override
+    public Map<String, Object> refreshQuotesAll(Boolean onlyMissing) {
+        ensureDefaultPortfolio();
+        List<Portfolio> portfolios = portfolioMapper.selectList(Wrappers.<Portfolio>lambdaQuery()
+                .eq(Portfolio::getStatus, STATUS_ACTIVE));
+        if (CollUtil.isEmpty(portfolios)) {
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("portfolioCount", 0);
+            empty.put("codeCount", 0);
+            empty.put("success", 0);
+            empty.put("fail", 0);
+            empty.put("barSuccess", 0);
+            empty.put("barFail", 0);
+            empty.put("barCount", 0);
+            empty.put("message", "暂无活跃组合");
+            return empty;
+        }
+        List<Long> portfolioIds = new ArrayList<>();
+        for (Portfolio portfolio : portfolios) {
+            portfolioIds.add(portfolio.getId());
+        }
+        List<PortfolioHolding> holdings = portfolioHoldingMapper.selectList(Wrappers.<PortfolioHolding>lambdaQuery()
+                .in(PortfolioHolding::getPortfolioId, portfolioIds)
+                .orderByAsc(PortfolioHolding::getCode));
+        List<String> codes = collectHoldingCodes(holdings);
+        Map<String, Object> core = refreshQuotesForHoldings(holdings, codes, onlyMissing);
+        core.put("portfolioCount", portfolios.size());
+        core.put("codeCount", codes.size());
+        core.put("message", "已刷新 " + portfolios.size() + " 个组合 / "
+                + codes.size() + " 只标的（去重）；"
+                + core.get("message"));
+        return core;
+    }
+
+    /**
+     * 汇总持仓代码（去重保序）
+     *
+     * @param holdings 持仓
+     * @return 代码列表
+     */
+    private List<String> collectHoldingCodes(List<PortfolioHolding> holdings) {
         List<String> codes = new ArrayList<>();
+        if (CollUtil.isEmpty(holdings)) {
+            return codes;
+        }
         for (PortfolioHolding holding : holdings) {
             String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
-            if (StringUtils.isNotBlank(code)) {
+            if (StringUtils.isNotBlank(code) && !codes.contains(code)) {
                 codes.add(code);
             }
         }
+        return codes;
+    }
+
+    /**
+     * 刷新行情+日线并回填持仓名称
+     *
+     * @param holdings     持仓行
+     * @param codes        去重代码
+     * @param onlyMissing  是否只刷缺现价
+     * @return 结果
+     */
+    private Map<String, Object> refreshQuotesForHoldings(List<PortfolioHolding> holdings,
+                                                         List<String> codes,
+                                                         Boolean onlyMissing) {
         Map<String, Object> quoteResult = myHoldingService.refreshQuotesForCodes(codes, onlyMissing);
-        // 回填持仓名称
         LocalDateTime now = LocalDateTime.now();
-        for (PortfolioHolding holding : holdings) {
-            if (StringUtils.isNotBlank(holding.getName()) || StringUtils.isBlank(holding.getCode())) {
-                continue;
-            }
-            String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
-            StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
-                    .eq(StockBasic::getCode, code)
-                    .last("LIMIT 1"));
-            if (Objects.nonNull(basic) && StringUtils.isNotBlank(basic.getName())) {
-                holding.setName(basic.getName());
-                holding.setUpdateTime(now);
-                portfolioHoldingMapper.updateById(holding);
+        if (CollUtil.isNotEmpty(holdings)) {
+            for (PortfolioHolding holding : holdings) {
+                if (StringUtils.isNotBlank(holding.getName()) || StringUtils.isBlank(holding.getCode())) {
+                    continue;
+                }
+                String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+                StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
+                        .eq(StockBasic::getCode, code)
+                        .last("LIMIT 1"));
+                if (Objects.nonNull(basic) && StringUtils.isNotBlank(basic.getName())) {
+                    holding.setName(basic.getName());
+                    holding.setUpdateTime(now);
+                    portfolioHoldingMapper.updateById(holding);
+                }
             }
         }
-        // 组合页「刷新」对齐个股详情：顺带补齐/更新日线，技术/估值才有数据
         int barOk = 0;
         int barFail = 0;
         int barCount = 0;
@@ -551,7 +621,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 barFail = Objects.nonNull(barResp.getFailCount()) ? barResp.getFailCount() : 0;
                 barCount = Objects.nonNull(barResp.getBarCount()) ? barResp.getBarCount() : 0;
             } catch (Exception ex) {
-                log.warn("组合日线同步失败 portfolioId={}, err={}", portfolioId, ex.getMessage());
+                log.warn("组合日线同步失败 codes={}, err={}", codes.size(), ex.getMessage());
                 barFail = codes.size();
             }
         }
@@ -564,7 +634,6 @@ public class PortfolioServiceImpl implements IPortfolioService {
         result.put("message", quoteResult.get("message")
                 + "；日线成功 " + barOk + " / 失败 " + barFail
                 + "（写入 " + barCount + " 根）");
-        result.put("detail", detail(portfolioId));
         return result;
     }
 

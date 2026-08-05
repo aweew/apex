@@ -7,3 +7,9 @@ spring:
 
 apex:
   mx-output-dir: ${user.dir}/../../.mx_output
+  # Kimi / Moonshot（勿提交真实 Key）
+  ai:
+    enabled: true
+    base-url: https://api.moonshot.cn/v1
+    api-key: your_moonshot_api_key
+    model: kimi-k2.6

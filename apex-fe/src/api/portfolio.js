@@ -46,3 +46,11 @@ export function refreshPortfolioQuotes(portfolioId, onlyMissing = false) {
     timeout: 180000,
   })
 }
+
+/** 一键刷新全部活跃组合行情+日线（代码去重） */
+export function refreshAllPortfolioQuotes(onlyMissing = false) {
+  return http.post('/api/portfolio/refresh-quotes-all', null, {
+    params: { onlyMissing },
+    timeout: 300000,
+  })
+}

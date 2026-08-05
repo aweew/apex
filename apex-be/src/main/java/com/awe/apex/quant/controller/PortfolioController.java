@@ -132,6 +132,18 @@ public class PortfolioController {
     }
 
     /**
+     * 一键刷新全部活跃组合行情+日线
+     *
+     * @param onlyMissing 是否只刷缺现价
+     * @return 结果
+     */
+    @PostMapping("/refresh-quotes-all")
+    public Result<Map<String, Object>> refreshQuotesAll(
+            @RequestParam(required = false, defaultValue = "false") Boolean onlyMissing) {
+        return Result.success(portfolioService.refreshQuotesAll(onlyMissing));
+    }
+
+    /**
      * 打当日快照
      *
      * @param id 组合ID

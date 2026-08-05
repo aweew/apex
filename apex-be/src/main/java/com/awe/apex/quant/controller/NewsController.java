@@ -3,7 +3,9 @@ package com.awe.apex.quant.controller;
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.NewsItemResp;
 import com.awe.apex.quant.domain.dto.NewsOverviewResp;
+import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.NewsRefreshResp;
+import com.awe.apex.quant.service.INewsPulseService;
 import com.awe.apex.quant.service.INewsService;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +25,9 @@ public class NewsController {
 
     @Resource
     private INewsService newsService;
+
+    @Resource
+    private INewsPulseService newsPulseService;
 
     /**
      * 新闻总览
@@ -64,5 +69,18 @@ public class NewsController {
             @RequestParam(required = false, defaultValue = "eastmoney,cls,ths,sina") String sources,
             @RequestParam(required = false, defaultValue = "80") Integer limit) {
         return Result.success(newsService.refresh(sources, limit));
+    }
+
+    /**
+     * 今日消息面（资讯+热点+行情立场，Kimi 摘要可降级）
+     *
+     * @param cardLimit 卡片数
+     * @param forceLlm  强制刷新大模型
+     * @return 消息面
+     */
+    @GetMapping("/pulse")
+    public Result<NewsPulseResp> pulse(@RequestParam(defaultValue = "9") Integer cardLimit,
+                                       @RequestParam(defaultValue = "false") Boolean forceLlm) {
+        return Result.success(newsPulseService.pulse(cardLimit, Boolean.TRUE.equals(forceLlm)));
     }
 }

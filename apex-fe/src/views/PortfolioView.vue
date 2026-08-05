@@ -11,6 +11,7 @@ import {
   listPortfolios,
   portfolioDetail,
   refreshPortfolioQuotes,
+  refreshAllPortfolioQuotes,
   removePortfolio,
   removePortfolioHolding,
   savePortfolio,
@@ -790,6 +791,24 @@ async function onRefreshQuotes() {
   }
 }
 
+async function onRefreshQuotesAll() {
+  if (!list.value.length) {
+    ElMessage.warning('暂无组合')
+    return
+  }
+  refreshing.value = true
+  try {
+    const res = await refreshAllPortfolioQuotes(false)
+    ElMessage.success(res?.data?.message || '全部组合行情已刷新')
+    await loadList(true)
+    if (activeId.value) await loadDetail(activeId.value, true)
+  } catch (e) {
+    ElMessage.error(e.message || '全部刷新失败')
+  } finally {
+    refreshing.value = false
+  }
+}
+
 async function onSnapshot() {
   if (!activeId.value) return
   snapshotting.value = true
@@ -1052,6 +1071,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="actions">
         <el-button type="primary" @click="openCreatePf">新建组合</el-button>
+        <el-button plain :loading="refreshing" @click="onRefreshQuotesAll">刷新全部行情</el-button>
         <el-button plain :loading="snapshotting" @click="onSnapshotAll">全部打快照</el-button>
         <el-button plain @click="router.push('/holding')">真实持仓</el-button>
         <el-button text :loading="loading" @click="loadList(true)">刷新</el-button>
@@ -1136,7 +1156,7 @@ onBeforeUnmount(() => {
             </el-dropdown>
             <el-button type="primary" @click="openCreate">添加持仓</el-button>
             <el-button plain :loading="refreshing" :disabled="!rows.length" @click="onRefreshQuotes">
-              刷新行情+日线
+              刷新当前行情+日线
             </el-button>
             <el-button plain @click="openImport">导入</el-button>
             <el-button plain :loading="snapshotting" @click="onSnapshot">打今日快照</el-button>

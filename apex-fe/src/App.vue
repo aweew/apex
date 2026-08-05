@@ -54,7 +54,7 @@ const navGroups = [
       { to: '/sector', label: '板块' },
       { to: '/limit-up', label: '涨停' },
       { to: '/hot', label: '热点' },
-      { to: '/news', label: '资讯' },
+      { to: '/news', label: '消息/资讯' },
     ],
   },
   {
