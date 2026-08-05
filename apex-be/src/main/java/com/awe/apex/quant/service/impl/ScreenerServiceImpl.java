@@ -1,17 +1,22 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import com.awe.apex.common.api.PageResponse;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.domain.dto.ScreenerMetaResp;
 import com.awe.apex.quant.domain.dto.ScreenerReq;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.StockBasic;
+import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.service.IScreenerService;
+import com.awe.apex.quant.service.IUniverseService;
 import com.awe.apex.quant.service.IWatchlistService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
@@ -20,9 +25,11 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 条件选股实现
@@ -34,6 +41,9 @@ public class ScreenerServiceImpl implements IScreenerService {
 
     @Resource
     private IWatchlistService watchlistService;
+
+    @Resource
+    private IUniverseService universeService;
 
     @Resource
     private BarDailyMapper barDailyMapper;
@@ -174,6 +184,115 @@ public class ScreenerServiceImpl implements IScreenerService {
             return filtered.subList(0, limit);
         }
         return filtered;
+    }
+
+    /**
+     * 全市场与股票池数量
+     *
+     * @return 规模信息
+     */
+    @Override
+    public ScreenerMetaResp meta() {
+        Long marketCnt = stockBasicMapper.selectCount(Wrappers.<StockBasic>lambdaQuery());
+        List<UniverseSnapshot> universe = universeService.latest();
+        int universeCnt = CollUtil.isEmpty(universe) ? 0 : universe.size();
+        String batchNo = null;
+        if (CollUtil.isNotEmpty(universe) && StringUtils.isNotBlank(universe.get(0).getBatchNo())) {
+            batchNo = universe.get(0).getBatchNo();
+        }
+        int market = Objects.nonNull(marketCnt) ? marketCnt.intValue() : 0;
+        String note = "全市场 " + market + " 只来自 stock_basic；股票池 " + universeCnt
+                + " 只为策略可扫描池（日线充足且过过滤），不等于全 A。";
+        return ScreenerMetaResp.builder()
+                .marketCount(market)
+                .universeCount(universeCnt)
+                .universeBatchNo(batchNo)
+                .note(note)
+                .build();
+    }
+
+    /**
+     * 分页浏览全市场股票
+     *
+     * @param keyword   关键字
+     * @param page      页码
+     * @param size      每页
+     * @param excludeSt 排除 ST
+     * @return 分页
+     */
+    @Override
+    public PageResponse<WatchlistResp> listMarket(String keyword, Integer page, Integer size, Boolean excludeSt) {
+        long current = Objects.nonNull(page) ? Math.max(1, page) : 1;
+        long pageSize = Objects.nonNull(size) ? Math.max(1, Math.min(size, 200)) : 50;
+        boolean dropSt = !Boolean.FALSE.equals(excludeSt);
+
+        LambdaQueryWrapper<StockBasic> qw = Wrappers.<StockBasic>lambdaQuery();
+        if (dropSt) {
+            qw.and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0));
+            qw.notLike(StockBasic::getName, "ST");
+        }
+        if (StringUtils.isNotBlank(keyword)) {
+            String key = keyword.trim();
+            qw.and(w -> w.like(StockBasic::getCode, key).or().like(StockBasic::getName, key));
+        }
+        qw.orderByAsc(StockBasic::getCode);
+
+        Page<StockBasic> mpPage = stockBasicMapper.selectPage(new Page<>(current, pageSize), qw);
+        List<StockBasic> basics = mpPage.getRecords();
+        List<String> codes = new ArrayList<>();
+        if (CollUtil.isNotEmpty(basics)) {
+            for (StockBasic basic : basics) {
+                if (StringUtils.isNotBlank(basic.getCode())) {
+                    codes.add(basic.getCode());
+                }
+            }
+        }
+        Map<String, Integer> barCountMap = loadBarCounts(codes);
+        Set<String> universeCodes = loadUniverseCodeSet();
+
+        List<WatchlistResp> records = new ArrayList<>();
+        if (CollUtil.isNotEmpty(basics)) {
+            for (StockBasic basic : basics) {
+                String code = basic.getCode();
+                records.add(WatchlistResp.builder()
+                        .code(code)
+                        .name(basic.getName())
+                        .market(basic.getMarket())
+                        .groupName("全部市场")
+                        .source(basic.getSource())
+                        .latestPrice(basic.getLatestPrice())
+                        .pctChg(basic.getPctChg())
+                        .peTtm(basic.getPeTtm())
+                        .pb(basic.getPb())
+                        .industry(basic.getIndustry())
+                        .totalMv(basic.getTotalMv())
+                        .circMv(basic.getCircMv())
+                        .barCount(barCountMap.getOrDefault(code, 0))
+                        .inUniverse(universeCodes.contains(code))
+                        .build());
+            }
+        }
+
+        PageResponse<WatchlistResp> resp = new PageResponse<>();
+        resp.setCurrent(mpPage.getCurrent());
+        resp.setSize(mpPage.getSize());
+        resp.setTotal(mpPage.getTotal());
+        resp.setRecords(records);
+        return resp;
+    }
+
+    private Set<String> loadUniverseCodeSet() {
+        Set<String> set = new HashSet<>();
+        List<UniverseSnapshot> universe = universeService.latest();
+        if (CollUtil.isEmpty(universe)) {
+            return set;
+        }
+        for (UniverseSnapshot row : universe) {
+            if (StringUtils.isNotBlank(row.getCode())) {
+                set.add(row.getCode());
+            }
+        }
+        return set;
     }
 
     /**

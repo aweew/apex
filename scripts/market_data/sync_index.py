@@ -41,6 +41,7 @@ INDEX_META: Dict[str, Dict[str, Any]] = {
     "CN_CYB": {"name": "创业板指", "region": "CN", "fetcher": "zh", "symbol": "sz399006"},
     "CN_BJ50": {"name": "北证50", "region": "CN", "fetcher": "zh", "symbol": "bj899050"},
     "CN_KC50": {"name": "科创50", "region": "CN", "fetcher": "zh", "symbol": "sh000688"},
+    "CN_HS300": {"name": "沪深300", "region": "CN", "fetcher": "zh", "symbol": "sh000300"},
     "HK_HSI": {"name": "恒生指数", "region": "HK", "fetcher": "hk", "symbol": "HSI"},
     "HK_HSTECH": {"name": "恒生科技", "region": "HK", "fetcher": "hk", "symbol": "HSTECH"},
     "JP_N225": {"name": "日经225", "region": "JP", "fetcher": "global", "symbol": "日经225指数"},

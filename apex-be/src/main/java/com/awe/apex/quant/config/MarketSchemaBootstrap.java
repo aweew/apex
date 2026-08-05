@@ -99,9 +99,31 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             ensureColumn("observe_pool", "side",
                     "ALTER TABLE observe_pool ADD COLUMN side VARCHAR(8) NULL DEFAULT 'BUY' COMMENT '方向BUY/SELL'");
             ensurePortfolioTables();
+            ensureCompanyProfileRevenueColumns();
         } catch (Exception ex) {
             log.warn("schema bootstrap skipped: {}", ex.getMessage());
         }
+    }
+
+    /**
+     * 公司概况主营收入构成列
+     */
+    private void ensureCompanyProfileRevenueColumns() {
+        ensureColumn("stock_company_profile", "revenue_report_date",
+                "ALTER TABLE stock_company_profile ADD COLUMN revenue_report_date DATE NULL");
+        ensureColumn("stock_company_profile", "revenue_items",
+                "ALTER TABLE stock_company_profile ADD COLUMN revenue_items TEXT NULL");
+        ensureColumn("stock_company_profile", "top_profit_business",
+                "ALTER TABLE stock_company_profile ADD COLUMN top_profit_business VARCHAR(128) NULL");
+        ensureColumn("stock_company_profile", "top_profit_ratio",
+                "ALTER TABLE stock_company_profile ADD COLUMN top_profit_ratio DECIMAL(10, 4) NULL");
+        // 主营业务原文可能较长，放宽为 TEXT
+        try {
+            jdbcTemplate.execute("ALTER TABLE stock_company_profile MODIFY COLUMN main_business TEXT NULL");
+        } catch (Exception ignored) {
+            // 已是 TEXT 或无权限时忽略
+        }
+        log.info("schema ready: stock_company_profile revenue columns");
     }
 
     /**

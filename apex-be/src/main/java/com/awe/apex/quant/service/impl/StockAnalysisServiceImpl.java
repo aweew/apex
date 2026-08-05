@@ -1,8 +1,13 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.ai.AiChatProperties;
+import com.awe.apex.quant.ai.KimiChatClient;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
@@ -11,17 +16,27 @@ import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.dto.SectorBoardResp;
 import com.awe.apex.quant.domain.dto.SignalItemResp;
 import com.awe.apex.quant.domain.dto.SignalRunReq;
+import com.awe.apex.quant.domain.dto.BarSyncReq;
+import com.awe.apex.quant.domain.dto.StockAnalysisAiResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisCapitalResp;
+import com.awe.apex.quant.domain.dto.StockAnalysisFreshnessResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisTechResp;
 import com.awe.apex.quant.domain.dto.StockDetailResp;
+import com.awe.apex.quant.domain.dto.TechRegimeResult;
 import com.awe.apex.quant.domain.dto.ValuationResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
+import com.awe.apex.quant.domain.entity.MarketNews;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
 import com.awe.apex.quant.indicator.IndicatorUtils;
+import com.awe.apex.quant.indicator.TechRegimeEvaluator;
 import com.awe.apex.quant.indicator.TechSignalEvaluator;
+import com.awe.apex.quant.mapper.BarDailyMapper;
+import com.awe.apex.quant.mapper.MarketNewsMapper;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.strategy.BarSeries;
+import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.ISectorBoardService;
@@ -29,16 +44,20 @@ import com.awe.apex.quant.service.ISignalService;
 import com.awe.apex.quant.service.IStockAnalysisService;
 import com.awe.apex.quant.service.IStockService;
 import com.awe.apex.quant.service.IValuationService;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 个股综合研判：聚合技术、估值、板块资金/热点与策略信号
@@ -49,6 +68,9 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final BigDecimal HUNDRED = new BigDecimal("100");
+    private static final String AI_DISCLAIMER = "AI 解读基于本地规则结果与当日快照，非实时全市场资讯；不构成投资建议。";
+
+    private final ConcurrentHashMap<String, CachedAi> aiCache = new ConcurrentHashMap<>();
 
     @Resource
     private IStockService stockService;
@@ -71,6 +93,24 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
     @Resource
     private TechSignalEvaluator techSignalEvaluator;
 
+    @Resource
+    private TechRegimeEvaluator techRegimeEvaluator;
+
+    @Resource
+    private KimiChatClient kimiChatClient;
+
+    @Resource
+    private AiChatProperties aiChatProperties;
+
+    @Resource
+    private MarketNewsMapper marketNewsMapper;
+
+    @Resource
+    private IBarDailyService barDailyService;
+
+    @Resource
+    private BarDailyMapper barDailyMapper;
+
     /**
      * 一页汇总：技术面 + 估值 + 资金情绪 + 策略结论
      *
@@ -81,6 +121,21 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
      */
     @Override
     public StockAnalysisResp analyze(String code, String side, Integer barLimit) {
+        return analyze(code, side, barLimit, false, false);
+    }
+
+    /**
+     * 一页汇总，可附加 AI 实时解读
+     *
+     * @param code     证券代码
+     * @param side     BUY/SELL
+     * @param barLimit K 线条数
+     * @param withAi   是否调用大模型
+     * @param forceAi  是否忽略缓存强制重跑 AI
+     * @return 综合研判
+     */
+    @Override
+    public StockAnalysisResp analyze(String code, String side, Integer barLimit, boolean withAi, boolean forceAi) {
         if (StringUtils.isBlank(code)) {
             throw new BusinessException("证券代码不能为空");
         }
@@ -90,6 +145,27 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             evalSide = "BUY";
         }
         int limit = Objects.nonNull(barLimit) ? Math.max(60, Math.min(barLimit, 250)) : 120;
+        LocalDate expectedTradeDate = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
+
+        boolean quoteRefreshed = false;
+        boolean barsSynced = false;
+        // 规则研判也会尽量补日线；AI 路径额外刷现价
+        barsSynced = ensureRecentBars(pure, expectedTradeDate);
+        if (withAi) {
+            try {
+                stockService.syncBasic(pure);
+                quoteRefreshed = true;
+            } catch (Exception ex) {
+                log.debug("综合研判刷新行情失败 code={}: {}", pure, ex.getMessage());
+            }
+        } else {
+            try {
+                stockService.syncBasic(pure);
+                quoteRefreshed = true;
+            } catch (Exception ex) {
+                log.debug("综合研判轻量刷价失败 code={}: {}", pure, ex.getMessage());
+            }
+        }
 
         // 1. 行情与日线
         StockDetailResp detail = stockService.detail(pure, limit, false);
@@ -98,6 +174,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         }
         StockBasic basic = detail.getBasic();
         List<BarDaily> bars = detail.getBars();
+        StockAnalysisFreshnessResp freshness = buildFreshness(bars, expectedTradeDate, barsSynced, quoteRefreshed);
 
         // 2. 技术面
         StockAnalysisTechResp tech = buildTech(evalSide, bars, detail);
@@ -120,18 +197,114 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         DecisionItemResp decision = findTodayDecision(pure);
 
         // 7. 综合结论
-        return buildConclusion(basic, tech, valuation, capital, signals, decision, detail);
+        StockAnalysisResp resp = buildConclusion(basic, tech, valuation, capital, signals, decision, detail);
+        resp.setFreshness(freshness);
+        String baseNote = resp.getDataNote();
+        resp.setDataNote((StringUtils.isBlank(baseNote) ? "" : baseNote + " ")
+                + (StringUtils.isBlank(freshness.getNote()) ? "" : freshness.getNote()));
+        if (withAi) {
+            resp.setAi(buildAiBrief(resp, quoteRefreshed, forceAi));
+        } else if (kimiChatClient.available()) {
+            resp.setAi(StockAnalysisAiResp.builder()
+                    .configured(true)
+                    .disclaimer(AI_DISCLAIMER)
+                    .build());
+        } else {
+            resp.setAi(StockAnalysisAiResp.builder()
+                    .configured(false)
+                    .disclaimer("未配置 apex.ai.api-key，AI 解读不可用。")
+                    .build());
+        }
+        return resp;
+    }
+
+    /**
+     * 日线滞后则补近约 90 个自然日
+     */
+    private boolean ensureRecentBars(String code, LocalDate expectedTradeDate) {
+        try {
+            BarDaily latest = barDailyMapper.selectOne(Wrappers.<BarDaily>lambdaQuery()
+                    .eq(BarDaily::getCode, code)
+                    .orderByDesc(BarDaily::getTradeDate)
+                    .last("LIMIT 1"));
+            Long cnt = barDailyMapper.selectCount(Wrappers.<BarDaily>lambdaQuery()
+                    .eq(BarDaily::getCode, code));
+            boolean need = Objects.isNull(latest)
+                    || Objects.isNull(latest.getTradeDate())
+                    || latest.getTradeDate().isBefore(expectedTradeDate)
+                    || Objects.isNull(cnt)
+                    || cnt < 35;
+            if (!need) {
+                return false;
+            }
+            BarSyncReq syncReq = new BarSyncReq();
+            syncReq.setCodes(List.of(code));
+            syncReq.setBeginDate(LocalDate.now().minusDays(120).toString());
+            barDailyService.syncBars(syncReq);
+            log.info("综合研判已补日线 code={} expected={}", code, expectedTradeDate);
+            return true;
+        } catch (Exception ex) {
+            log.warn("综合研判补日线失败 code={}: {}", code, ex.getMessage());
+            return false;
+        }
+    }
+
+    private StockAnalysisFreshnessResp buildFreshness(List<BarDaily> bars,
+                                                      LocalDate expectedTradeDate,
+                                                      boolean barsSynced,
+                                                      boolean quoteRefreshed) {
+        LocalDate lastBar = null;
+        int barCount = 0;
+        if (CollUtil.isNotEmpty(bars)) {
+            barCount = bars.size();
+            BarDaily last = bars.get(bars.size() - 1);
+            if (Objects.nonNull(last)) {
+                lastBar = last.getTradeDate();
+            }
+        }
+        boolean stale = Objects.isNull(lastBar)
+                || Objects.isNull(expectedTradeDate)
+                || lastBar.isBefore(expectedTradeDate);
+        String note;
+        if (Objects.isNull(lastBar)) {
+            note = "本地暂无日线，技术结构可能不完整。";
+        } else if (stale) {
+            note = "日线最后交易日 " + lastBar + "，期望 " + expectedTradeDate + "，仍有滞后。";
+        } else if (barsSynced) {
+            note = "已补齐日线至 " + lastBar + "。";
+        } else {
+            note = "日线新鲜（至 " + lastBar + "）。";
+        }
+        if (quoteRefreshed) {
+            note = note + " 现价已刷新快照。";
+        }
+        return StockAnalysisFreshnessResp.builder()
+                .lastBarDate(lastBar)
+                .expectedTradeDate(expectedTradeDate)
+                .barCount(barCount)
+                .barsSynced(barsSynced)
+                .quoteRefreshed(quoteRefreshed)
+                .barsStale(stale)
+                .note(note)
+                .build();
     }
 
     private StockAnalysisTechResp buildTech(String side, List<BarDaily> bars, StockDetailResp detail) {
-        List<ObserveTechSignal> signals = techSignalEvaluator.evaluate(side, bars);
+        // 结构状态机以多头结构为主；SELL 侧仍附带对应雷达明细供展示
+        TechRegimeResult regime = techRegimeEvaluator.evaluate(
+                bars, detail.getRs20VsHs300(), detail.getRs60VsHs300());
+        List<ObserveTechSignal> signals = "SELL".equals(side)
+                ? techSignalEvaluator.evaluate("SELL", bars)
+                : regime.getRadarSignals();
         int hit = 0;
-        for (ObserveTechSignal s : signals) {
-            if (Boolean.TRUE.equals(s.getHit())) {
-                hit++;
+        if (CollUtil.isNotEmpty(signals)) {
+            for (ObserveTechSignal s : signals) {
+                if (Boolean.TRUE.equals(s.getHit())) {
+                    hit++;
+                }
             }
         }
-        int total = signals.size();
+        int total = CollUtil.isEmpty(signals) ? 0 : signals.size();
         BigDecimal hitRate = total > 0
                 ? BigDecimal.valueOf(hit * 100.0 / total).setScale(1, RoundingMode.HALF_UP)
                 : ZERO;
@@ -156,15 +329,9 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             }
         }
 
-        String summary;
-        if (total == 0) {
-            summary = "日线不足，技术雷达暂无法完整评估（建议同步日线）";
-        } else if (hitRate.compareTo(new BigDecimal("75")) >= 0) {
-            summary = "技术面偏多：均线/MACD/量能等多数指标支持" + ("SELL".equals(side) ? "卖出结构" : "做多结构");
-        } else if (hitRate.compareTo(new BigDecimal("45")) >= 0) {
-            summary = "技术面中性偏分歧：部分指标共振，需结合估值与仓位";
-        } else {
-            summary = "技术面偏弱：多数雷达未命中，追高/抄底需更谨慎";
+        String summary = regime.getSummary();
+        if (TechRegimeEvaluator.REGIME_INSUFFICIENT.equals(regime.getRegime())) {
+            summary = "日线不足，技术结构暂无法完整评估（建议同步日线）";
         }
 
         return StockAnalysisTechResp.builder()
@@ -174,6 +341,9 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
                 .total(total)
                 .hitRate(hitRate)
                 .summary(summary)
+                .regime(regime.getRegime())
+                .regimeLabel(regime.getRegimeLabel())
+                .grade(regime.getGrade())
                 .rsi14(Objects.nonNull(rsi14) ? rsi14.setScale(1, RoundingMode.HALF_UP) : null)
                 .atr14(atr14)
                 .atrPct(atrPct)
@@ -342,15 +512,27 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         List<String> bear = new ArrayList<>();
         List<String> risks = new ArrayList<>();
 
-        // 技术 0~35
+        // 技术 0~35：以结构状态机 grade 为主，雷达命中率作附录说明
         BigDecimal techScore = ZERO;
-        if (Objects.nonNull(tech) && Objects.nonNull(tech.getHitRate())) {
-            techScore = tech.getHitRate().multiply(new BigDecimal("0.35")).setScale(1, RoundingMode.HALF_UP);
-            scoreExplain.add("技术雷达 " + tech.getHitCount() + "/" + tech.getTotal()
-                    + " → " + techScore + " 分");
-            if (tech.getHitRate().compareTo(new BigDecimal("60")) >= 0) {
+        if (Objects.nonNull(tech) && StringUtils.isNotBlank(tech.getRegime())
+                && !TechRegimeEvaluator.REGIME_INSUFFICIENT.equals(tech.getRegime())) {
+            BigDecimal gradeScore;
+            if (TechRegimeEvaluator.GRADE_STRONG.equals(tech.getGrade())) {
+                gradeScore = new BigDecimal("78");
+            } else if (TechRegimeEvaluator.GRADE_WEAK.equals(tech.getGrade())) {
+                gradeScore = new BigDecimal("28");
+            } else {
+                gradeScore = new BigDecimal("52");
+            }
+            techScore = gradeScore.multiply(new BigDecimal("0.35")).setScale(1, RoundingMode.HALF_UP);
+            scoreExplain.add("技术结构 " + tech.getRegimeLabel()
+                    + "（雷达 " + tech.getHitCount() + "/" + tech.getTotal() + "）→ " + techScore + " 分");
+            if (TechRegimeEvaluator.GRADE_STRONG.equals(tech.getGrade())
+                    || TechRegimeEvaluator.REGIME_TREND_HOLD.equals(tech.getRegime())
+                    || TechRegimeEvaluator.REGIME_PULLBACK_WATCH.equals(tech.getRegime())) {
                 bull.add(tech.getSummary());
-            } else if (tech.getHitRate().compareTo(new BigDecimal("40")) < 0) {
+            } else if (TechRegimeEvaluator.GRADE_WEAK.equals(tech.getGrade())
+                    || TechRegimeEvaluator.REGIME_BREAKDOWN_CUT.equals(tech.getRegime())) {
                 bear.add(tech.getSummary());
             }
             if (Objects.nonNull(tech.getRs20VsHs300()) && tech.getRs20VsHs300().compareTo(ZERO) > 0) {
@@ -390,9 +572,10 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             risks.add("估值数据不足");
         }
 
-        // 策略信号 0~15
+        // 策略信号 0~15：买入加分、卖出扣分，口径与要点一致
         BigDecimal signalScore = ZERO;
         BigDecimal bestBuy = null;
+        BigDecimal bestSell = null;
         if (CollUtil.isNotEmpty(signals)) {
             for (SignalItemResp s : signals) {
                 if (Objects.isNull(s) || Objects.isNull(s.getScore())) {
@@ -404,13 +587,30 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
                     }
                     bull.add("策略 " + s.getStrategyId() + " 给出 BUY（分 " + s.getScore() + "）");
                 } else if ("SELL".equalsIgnoreCase(s.getSide())) {
+                    if (Objects.isNull(bestSell) || s.getScore().compareTo(bestSell) > 0) {
+                        bestSell = s.getScore();
+                    }
                     bear.add("策略 " + s.getStrategyId() + " 给出 SELL（分 " + s.getScore() + "）");
                 }
             }
-            if (Objects.nonNull(bestBuy)) {
+            if (Objects.nonNull(bestBuy) && Objects.isNull(bestSell)) {
                 signalScore = bestBuy.multiply(new BigDecimal("0.15")).setScale(1, RoundingMode.HALF_UP);
+            } else if (Objects.nonNull(bestSell) && Objects.isNull(bestBuy)) {
+                // 仅卖出：从中性档往下扣，避免「要点写卖出、得分却为 0」的口径分裂
+                signalScore = new BigDecimal("7.5")
+                        .subtract(bestSell.multiply(new BigDecimal("0.08")))
+                        .max(ZERO)
+                        .min(new BigDecimal("15"))
+                        .setScale(1, RoundingMode.HALF_UP);
+            } else if (Objects.nonNull(bestBuy)) {
+                signalScore = bestBuy.multiply(new BigDecimal("0.15"))
+                        .subtract(bestSell.multiply(new BigDecimal("0.06")))
+                        .max(ZERO)
+                        .min(new BigDecimal("15"))
+                        .setScale(1, RoundingMode.HALF_UP);
             }
-            scoreExplain.add("策略信号 → " + signalScore + " 分");
+            scoreExplain.add("策略信号 → " + signalScore + " 分"
+                    + (Objects.nonNull(bestSell) ? "（含卖出压力）" : ""));
         } else {
             scoreExplain.add("当日无策略信号 → 0 分");
         }
@@ -495,11 +695,30 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
                 + (Objects.nonNull(valuation) && StringUtils.isNotBlank(valuation.getSummary())
                 ? (" 估值：" + valuation.getSummary()) : "");
 
+        List<BigDecimal> closes = new ArrayList<>();
+        if (CollUtil.isNotEmpty(detail.getBars())) {
+            List<BarDaily> asc = new ArrayList<>(detail.getBars());
+            asc.sort((a, b) -> {
+                if (Objects.isNull(a.getTradeDate()) || Objects.isNull(b.getTradeDate())) {
+                    return 0;
+                }
+                return a.getTradeDate().compareTo(b.getTradeDate());
+            });
+            for (BarDaily bar : asc) {
+                if (Objects.nonNull(bar) && Objects.nonNull(bar.getClosePrice())) {
+                    closes.add(bar.getClosePrice());
+                }
+            }
+        }
+
         return StockAnalysisResp.builder()
                 .code(basic.getCode())
                 .name(basic.getName())
                 .latestPrice(basic.getLatestPrice())
                 .pctChg(basic.getPctChg())
+                .pctChg3(periodReturnPct(closes, 3))
+                .pctChg5(periodReturnPct(closes, 5))
+                .pctChg20(periodReturnPct(closes, 20))
                 .industry(basic.getIndustry())
                 .compositeScore(composite)
                 .stance(stance)
@@ -516,5 +735,212 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
                 .decision(decision)
                 .dataNote("资金维暂以量能+所属板块资金+热点代理；非投资建议，仅供研究。")
                 .build();
+    }
+
+    /**
+     * 近 N 日收盘涨跌幅%
+     */
+    private BigDecimal periodReturnPct(List<BigDecimal> closes, int lookback) {
+        if (CollUtil.isEmpty(closes) || closes.size() <= lookback) {
+            return null;
+        }
+        BigDecimal end = closes.get(closes.size() - 1);
+        BigDecimal start = closes.get(closes.size() - 1 - lookback);
+        if (Objects.isNull(end) || Objects.isNull(start) || start.signum() <= 0) {
+            return null;
+        }
+        return end.subtract(start).divide(start, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private StockAnalysisAiResp buildAiBrief(StockAnalysisResp resp, boolean quoteRefreshed, boolean forceAi) {
+        if (!kimiChatClient.available()) {
+            return StockAnalysisAiResp.builder()
+                    .configured(false)
+                    .quoteRefreshed(quoteRefreshed)
+                    .disclaimer("未配置 apex.ai.api-key，AI 解读不可用。")
+                    .build();
+        }
+        String cacheKey = buildAiCacheKey(resp);
+        int ttl = Math.max(60, aiChatProperties.getSummaryCacheSeconds());
+        if (!forceAi) {
+            CachedAi cached = aiCache.get(cacheKey);
+            if (Objects.nonNull(cached)
+                    && cached.at.plusSeconds(ttl).isAfter(LocalDateTime.now())
+                    && Objects.nonNull(cached.payload)
+                    && StringUtils.isNotBlank(cached.payload.getBrief())) {
+                StockAnalysisAiResp hit = cached.payload;
+                hit.setFromCache(true);
+                hit.setConfigured(true);
+                hit.setQuoteRefreshed(quoteRefreshed);
+                return hit;
+            }
+        }
+
+        List<String> newsLines = loadRelatedNews(resp.getCode(), resp.getName());
+        String system = "你是 A 股个股研究助手。只根据给定结构化事实做盘面解读，禁止编造未提供的财报数字、公告或新闻。"
+                + "输出严格 JSON（不要 markdown）："
+                + "{\"stance\":\"积极关注|可跟踪|中性观望|谨慎|回避\","
+                + "\"brief\":\"120-180字中文解读\","
+                + "\"watchPoints\":[\"关注点1\",\"关注点2\",\"关注点3\"],"
+                + "\"riskNote\":\"一句话风险\"}."
+                + "语气专业克制；强调本地日线/财务可能滞后，现价以快照为准。";
+        StringBuilder user = new StringBuilder();
+        user.append("代码：").append(resp.getCode()).append(" 名称：").append(resp.getName()).append('\n');
+        user.append("现价快照：").append(resp.getLatestPrice())
+                .append(" 涨跌幅%：").append(resp.getPctChg())
+                .append(" 行业：").append(resp.getIndustry()).append('\n');
+        if (Objects.nonNull(resp.getFreshness())) {
+            user.append("数据新鲜度：日线最后=")
+                    .append(resp.getFreshness().getLastBarDate())
+                    .append(" 期望=")
+                    .append(resp.getFreshness().getExpectedTradeDate())
+                    .append(" 条数=")
+                    .append(resp.getFreshness().getBarCount())
+                    .append(" 滞后=")
+                    .append(resp.getFreshness().getBarsStale())
+                    .append('\n');
+        }
+        user.append("规则综合分：").append(resp.getCompositeScore())
+                .append(" 规则立场：").append(resp.getStance()).append('\n');
+        user.append("规则摘要：").append(resp.getSummary()).append('\n');
+        user.append("行动提示：").append(resp.getActionHint()).append('\n');
+        if (Objects.nonNull(resp.getTech())) {
+            user.append("技术：").append(resp.getTech().getSummary())
+                    .append(" RS20=").append(resp.getTech().getRs20VsHs300())
+                    .append(" RSI=").append(resp.getTech().getRsi14()).append('\n');
+        }
+        if (Objects.nonNull(resp.getValuation())) {
+            user.append("估值：").append(resp.getValuation().getSummary()).append('\n');
+        }
+        if (Objects.nonNull(resp.getCapital())) {
+            user.append("资金/情绪：").append(resp.getCapital().getVolumeNote());
+            if (StringUtils.isNotBlank(resp.getCapital().getSummary())) {
+                user.append("；").append(resp.getCapital().getSummary());
+            } else if (StringUtils.isNotBlank(resp.getCapital().getSectorNote())) {
+                user.append("；").append(resp.getCapital().getSectorNote());
+            }
+            user.append('\n');
+        }
+        if (CollUtil.isNotEmpty(resp.getBullPoints())) {
+            user.append("多头要点：").append(String.join("；", resp.getBullPoints())).append('\n');
+        }
+        if (CollUtil.isNotEmpty(resp.getBearPoints())) {
+            user.append("空头要点：").append(String.join("；", resp.getBearPoints())).append('\n');
+        }
+        if (CollUtil.isNotEmpty(resp.getSignals())) {
+            user.append("策略信号：");
+            for (SignalItemResp s : resp.getSignals()) {
+                user.append(s.getStrategyId()).append(' ').append(s.getSide())
+                        .append('(').append(s.getScore()).append(") ");
+            }
+            user.append('\n');
+        }
+        user.append("相关新闻标题（可能不全/滞后）：\n");
+        if (CollUtil.isEmpty(newsLines)) {
+            user.append("- （本地库暂无匹配标题）\n");
+        } else {
+            for (String line : newsLines) {
+                user.append("- ").append(line).append('\n');
+            }
+        }
+        user.append("请结合以上事实给出 JSON 解读。");
+
+        String raw = kimiChatClient.chat(system, user.toString(), 700);
+        StockAnalysisAiResp ai = parseAiPayload(raw);
+        ai.setConfigured(true);
+        ai.setFromCache(false);
+        ai.setModel(aiChatProperties.getModel());
+        ai.setQuoteRefreshed(quoteRefreshed);
+        ai.setGeneratedAt(LocalDateTime.now());
+        ai.setDisclaimer(AI_DISCLAIMER);
+        if (StringUtils.isBlank(ai.getBrief())) {
+            ai.setBrief("大模型暂无有效输出，请稍后重试或查看上方规则研判。");
+            ai.setStance(resp.getStance());
+        }
+        aiCache.put(cacheKey, new CachedAi(ai, LocalDateTime.now()));
+        return ai;
+    }
+
+    private String buildAiCacheKey(StockAnalysisResp resp) {
+        return LocalDate.now() + "|" + resp.getCode() + "|"
+                + resp.getLatestPrice() + "|" + resp.getPctChg() + "|"
+                + resp.getCompositeScore() + "|"
+                + (Objects.nonNull(resp.getTech()) ? resp.getTech().getRegime() : "");
+    }
+
+    private List<String> loadRelatedNews(String code, String name) {
+        List<String> lines = new ArrayList<>();
+        try {
+            List<MarketNews> rows = marketNewsMapper.selectList(Wrappers.<MarketNews>lambdaQuery()
+                    .and(w -> {
+                        w.like(MarketNews::getTitle, code);
+                        if (StringUtils.isNotBlank(name) && name.length() >= 2) {
+                            w.or().like(MarketNews::getTitle, name);
+                        }
+                    })
+                    .orderByDesc(MarketNews::getPublishedAt)
+                    .last("LIMIT 5"));
+            if (CollUtil.isEmpty(rows)) {
+                return lines;
+            }
+            for (MarketNews row : rows) {
+                if (Objects.isNull(row) || StringUtils.isBlank(row.getTitle())) {
+                    continue;
+                }
+                String line = row.getTitle();
+                if (Objects.nonNull(row.getPublishedAt())) {
+                    line = row.getPublishedAt().toLocalDate() + " " + line;
+                }
+                lines.add(line);
+            }
+        } catch (Exception ex) {
+            log.debug("综合研判加载相关新闻失败: {}", ex.getMessage());
+        }
+        return lines;
+    }
+
+    private StockAnalysisAiResp parseAiPayload(String raw) {
+        StockAnalysisAiResp empty = StockAnalysisAiResp.builder().build();
+        if (StringUtils.isBlank(raw)) {
+            return empty;
+        }
+        String text = raw.trim();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            try {
+                JSONObject obj = JSONUtil.parseObj(text.substring(start, end + 1));
+                List<String> points = new ArrayList<>();
+                JSONArray arr = obj.getJSONArray("watchPoints");
+                if (Objects.nonNull(arr)) {
+                    for (int i = 0; i < arr.size() && points.size() < 5; i++) {
+                        String p = arr.getStr(i);
+                        if (StringUtils.isNotBlank(p)) {
+                            points.add(p.trim());
+                        }
+                    }
+                }
+                return StockAnalysisAiResp.builder()
+                        .stance(obj.getStr("stance"))
+                        .brief(obj.getStr("brief"))
+                        .watchPoints(points)
+                        .riskNote(obj.getStr("riskNote"))
+                        .build();
+            } catch (Exception ex) {
+                log.debug("AI JSON 解析失败，回退纯文本: {}", ex.getMessage());
+            }
+        }
+        return StockAnalysisAiResp.builder().brief(text).build();
+    }
+
+    private static final class CachedAi {
+        private final StockAnalysisAiResp payload;
+        private final LocalDateTime at;
+
+        private CachedAi(StockAnalysisAiResp payload, LocalDateTime at) {
+            this.payload = payload;
+            this.at = at;
+        }
     }
 }

@@ -48,6 +48,21 @@ public class StockAnalysisTechResp {
     private String summary;
 
     /**
+     * 结构状态码：TREND_HOLD / PULLBACK_WATCH / BREAKDOWN_CUT / REPAIR / NEUTRAL / INSUFFICIENT
+     */
+    private String regime;
+
+    /**
+     * 结构状态中文标签
+     */
+    private String regimeLabel;
+
+    /**
+     * 强弱档：STRONG / NEUTRAL / WEAK
+     */
+    private String grade;
+
+    /**
      * RSI14
      */
     private BigDecimal rsi14;

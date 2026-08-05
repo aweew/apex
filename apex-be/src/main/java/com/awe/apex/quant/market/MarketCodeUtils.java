@@ -135,6 +135,24 @@ public final class MarketCodeUtils {
     }
 
     /**
+     * 东财 F10 网页代码，如 SZ002335 / SH600519
+     *
+     * @param code 证券代码
+     * @return 市场+代码
+     */
+    public static String toEmWebCode(String code) {
+        String pure = normalizeCode(code);
+        if (StringUtils.isBlank(pure)) {
+            return null;
+        }
+        String market = resolveMarket(pure);
+        if (StringUtils.isBlank(market) || "HK".equals(market)) {
+            return null;
+        }
+        return market + pure;
+    }
+
+    /**
      * 东方财富 secid
      *
      * @param code 证券代码

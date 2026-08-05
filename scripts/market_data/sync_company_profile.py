@@ -143,6 +143,84 @@ def _int(val: Optional[str]):
     return int(d) if d is not None else None
 
 
+def to_em_web_code(code: str) -> Optional[str]:
+    digits = normalize_code(code)
+    if not digits:
+        return None
+    if digits.startswith(("5", "6", "9")):
+        return "SH" + digits
+    if digits.startswith(("92", "83", "87", "4")):
+        return "BJ" + digits
+    return "SZ" + digits
+
+
+def fetch_business_composition(code: str) -> Dict[str, Any]:
+    """拉取主营构成：优先按产品，否则按行业。"""
+    em_code = to_em_web_code(code)
+    if not em_code:
+        return {}
+    url = f"https://emweb.securities.eastmoney.com/PC_HSF10/BusinessAnalysis/PageAjax?code={em_code}"
+    try:
+        data = http_get_json(url)
+    except Exception as ex:  # noqa: BLE001
+        print(f"{code} business composition FAIL {ex}", file=sys.stderr)
+        return {}
+    rows = data.get("zygcfx") or []
+    if not rows:
+        return {}
+    product: Dict[str, List[Dict[str, Any]]] = {}
+    industry: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        report_date = str(row.get("REPORT_DATE") or "")[:10]
+        mainop_type = str(row.get("MAINOP_TYPE") or "")
+        if not report_date:
+            continue
+        bucket = product if mainop_type == "2" else industry if mainop_type == "1" else None
+        if bucket is None:
+            continue
+        bucket.setdefault(report_date, []).append(row)
+    chosen_map = product or industry
+    if not chosen_map:
+        return {}
+    latest = sorted(chosen_map.keys(), reverse=True)[0]
+    items = []
+    top_profit_name = None
+    top_profit_ratio = None
+    for row in chosen_map[latest]:
+        name = _text(row, "ITEM_NAME")
+        mbi = row.get("MBI_RATIO")
+        if not name or mbi is None:
+            continue
+        try:
+            revenue_ratio = (Decimal(str(mbi)) * Decimal("100")).quantize(Decimal("0.01"))
+        except (InvalidOperation, ValueError):
+            continue
+        profit_ratio = None
+        mbr = row.get("MBR_RATIO")
+        if mbr is not None:
+            try:
+                profit_ratio = (Decimal(str(mbr)) * Decimal("100")).quantize(Decimal("0.01"))
+            except (InvalidOperation, ValueError):
+                profit_ratio = None
+        income = _dec(str(row.get("MAIN_BUSINESS_INCOME")) if row.get("MAIN_BUSINESS_INCOME") is not None else None)
+        items.append({
+            "name": name,
+            "revenueRatio": float(revenue_ratio),
+            "profitRatio": float(profit_ratio) if profit_ratio is not None else None,
+            "income": float(income) if income is not None else None,
+        })
+        if profit_ratio is not None and (top_profit_ratio is None or profit_ratio > top_profit_ratio):
+            top_profit_ratio = profit_ratio
+            top_profit_name = name
+    items.sort(key=lambda x: x.get("revenueRatio") or 0, reverse=True)
+    return {
+        "revenue_report_date": _date(latest),
+        "revenue_items": json.dumps(items, ensure_ascii=False) if items else None,
+        "top_profit_business": top_profit_name,
+        "top_profit_ratio": top_profit_ratio,
+    }
+
+
 def to_row(code: str, raw: Dict[str, Any]) -> Dict[str, Any]:
     b1 = _text(raw, "BOARD_NAME_1LEVEL")
     b2 = _text(raw, "BOARD_NAME_2LEVEL")
@@ -154,7 +232,7 @@ def to_row(code: str, raw: Dict[str, Any]) -> Dict[str, Any]:
     profile = _text(raw, "ORG_PROFIE")
     if profile:
         profile = profile.replace("\xa0", " ").strip()
-    return {
+    row = {
         "code": code,
         "org_name": _text(raw, "ORG_NAME"),
         "org_name_en": _text(raw, "ORG_NAME_EN"),
@@ -196,7 +274,13 @@ def to_row(code: str, raw: Dict[str, Any]) -> Dict[str, Any]:
         "trade_market": _text(raw, "TRADE_MARKET"),
         "payload": json.dumps(raw, ensure_ascii=False),
         "source": "eastmoney-f10",
+        "revenue_report_date": None,
+        "revenue_items": None,
+        "top_profit_business": None,
+        "top_profit_ratio": None,
     }
+    row.update(fetch_business_composition(code))
+    return row
 
 
 UPSERT_SQL = """
@@ -207,6 +291,7 @@ INSERT INTO stock_company_profile (
   org_form, found_date, list_date, reg_capital, issue_price, employee_num, manager_num,
   main_business, org_profile, org_highlight, business_scope, website, email, phone, fax,
   office_address, reg_address, reg_num, trade_market, payload, source,
+  revenue_report_date, revenue_items, top_profit_business, top_profit_ratio,
   create_time, update_time, deleted
 ) VALUES (
   %(code)s, %(org_name)s, %(org_name_en)s, %(former_name)s, %(a_code)s, %(a_name)s,
@@ -217,6 +302,7 @@ INSERT INTO stock_company_profile (
   %(employee_num)s, %(manager_num)s, %(main_business)s, %(org_profile)s, %(org_highlight)s,
   %(business_scope)s, %(website)s, %(email)s, %(phone)s, %(fax)s, %(office_address)s,
   %(reg_address)s, %(reg_num)s, %(trade_market)s, %(payload)s, %(source)s,
+  %(revenue_report_date)s, %(revenue_items)s, %(top_profit_business)s, %(top_profit_ratio)s,
   NOW(), NOW(), 0
 )
 ON DUPLICATE KEY UPDATE
@@ -234,6 +320,8 @@ ON DUPLICATE KEY UPDATE
   website=VALUES(website), email=VALUES(email), phone=VALUES(phone), fax=VALUES(fax),
   office_address=VALUES(office_address), reg_address=VALUES(reg_address), reg_num=VALUES(reg_num),
   trade_market=VALUES(trade_market), payload=VALUES(payload), source=VALUES(source),
+  revenue_report_date=VALUES(revenue_report_date), revenue_items=VALUES(revenue_items),
+  top_profit_business=VALUES(top_profit_business), top_profit_ratio=VALUES(top_profit_ratio),
   update_time=NOW(), deleted=0
 """
 

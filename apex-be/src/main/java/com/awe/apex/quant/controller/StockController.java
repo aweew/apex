@@ -141,7 +141,10 @@ public class StockController {
     @GetMapping("/{code}/analysis")
     public Result<StockAnalysisResp> analysis(@PathVariable String code,
                                               @RequestParam(defaultValue = "BUY") String side,
-                                              @RequestParam(defaultValue = "120") Integer barLimit) {
-        return Result.success(stockAnalysisService.analyze(code, side, barLimit));
+                                              @RequestParam(defaultValue = "120") Integer barLimit,
+                                              @RequestParam(defaultValue = "false") Boolean withAi,
+                                              @RequestParam(defaultValue = "false") Boolean forceAi) {
+        return Result.success(stockAnalysisService.analyze(
+                code, side, barLimit, Boolean.TRUE.equals(withAi), Boolean.TRUE.equals(forceAi)));
     }
 }

@@ -16,4 +16,16 @@ public interface IStockAnalysisService {
      * @return 综合研判
      */
     StockAnalysisResp analyze(String code, String side, Integer barLimit);
+
+    /**
+     * 一页汇总，可附加 AI 实时解读
+     *
+     * @param code     证券代码
+     * @param side     BUY/SELL
+     * @param barLimit K 线条数
+     * @param withAi   是否调用大模型
+     * @param forceAi  是否忽略缓存强制重跑 AI
+     * @return 综合研判
+     */
+    StockAnalysisResp analyze(String code, String side, Integer barLimit, boolean withAi, boolean forceAi);
 }

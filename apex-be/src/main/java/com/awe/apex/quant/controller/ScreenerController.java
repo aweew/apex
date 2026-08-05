@@ -1,13 +1,17 @@
 package com.awe.apex.quant.controller;
 
+import com.awe.apex.common.api.PageResponse;
 import com.awe.apex.common.api.Result;
+import com.awe.apex.quant.domain.dto.ScreenerMetaResp;
 import com.awe.apex.quant.domain.dto.ScreenerReq;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
 import com.awe.apex.quant.service.IScreenerService;
 import jakarta.annotation.Resource;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -23,10 +27,29 @@ public class ScreenerController {
     private IScreenerService screenerService;
 
     /**
-     * 按估值/行业/K线条件筛选自选
+     * 按估值/行业/K线条件筛选
      */
     @PostMapping("/run")
     public Result<List<WatchlistResp>> run(@RequestBody(required = false) ScreenerReq req) {
         return Result.success(screenerService.run(req));
+    }
+
+    /**
+     * 全市场与股票池数量
+     */
+    @GetMapping("/meta")
+    public Result<ScreenerMetaResp> meta() {
+        return Result.success(screenerService.meta());
+    }
+
+    /**
+     * 分页浏览全市场股票（stock_basic）
+     */
+    @GetMapping("/market")
+    public Result<PageResponse<WatchlistResp>> market(@RequestParam(required = false) String keyword,
+                                                      @RequestParam(defaultValue = "1") Integer page,
+                                                      @RequestParam(defaultValue = "50") Integer size,
+                                                      @RequestParam(defaultValue = "true") Boolean excludeSt) {
+        return Result.success(screenerService.listMarket(keyword, page, size, excludeSt));
     }
 }

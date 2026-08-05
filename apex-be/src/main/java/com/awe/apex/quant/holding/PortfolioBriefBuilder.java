@@ -112,9 +112,15 @@ public final class PortfolioBriefBuilder {
                 watchPoints.add(label + "：日线不足，同步后再做技术/止损评估。");
             }
 
+            // 技术偏弱：结构破位（状态机文案）或雷达明显偏弱
+            String techSummary = holding.getTechSummary();
             int hit = techHit(holding);
             int total = techTotal(holding);
-            if (total > 0 && hit < 3) {
+            boolean breakdown = StringUtils.isNotBlank(techSummary)
+                    && (techSummary.contains("破位减仓") || techSummary.contains("破位"));
+            boolean radarWeak = total > 0 && hit < 3;
+            if (breakdown || (radarWeak && StringUtils.isNotBlank(techSummary)
+                    && !techSummary.contains("上升持有") && !techSummary.contains("回调观察"))) {
                 weakTech++;
             }
             if (isRich(holding.getValuationLevel())) {

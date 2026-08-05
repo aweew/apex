@@ -38,6 +38,21 @@ public class StockAnalysisResp {
     private BigDecimal pctChg;
 
     /**
+     * 近3日涨跌幅%
+     */
+    private BigDecimal pctChg3;
+
+    /**
+     * 近5日涨跌幅%
+     */
+    private BigDecimal pctChg5;
+
+    /**
+     * 近20日涨跌幅%
+     */
+    private BigDecimal pctChg20;
+
+    /**
      * 行业
      */
     private String industry;
@@ -111,4 +126,14 @@ public class StockAnalysisResp {
      * 数据说明
      */
     private String dataNote;
+
+    /**
+     * AI 实时解读（可选；未开启或失败时为 null / configured=false）
+     */
+    private StockAnalysisAiResp ai;
+
+    /**
+     * 数据新鲜度（现价/日线）
+     */
+    private StockAnalysisFreshnessResp freshness;
 }

@@ -113,6 +113,11 @@ public class WatchlistResp {
     private String syncStatus;
 
     /**
+     * 是否在策略股票池中（全市场浏览时填充）
+     */
+    private Boolean inUniverse;
+
+    /**
      * 量比（选股时填充）
      */
     private BigDecimal volumeRatio;

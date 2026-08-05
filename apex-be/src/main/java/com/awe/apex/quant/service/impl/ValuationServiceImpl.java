@@ -259,11 +259,7 @@ public class ValuationServiceImpl implements IValuationService {
 
         BigDecimal score = weightedScore(dims);
         LevelBand band = levelOf(score, pe, pb);
-        List<String> bulls = new ArrayList<>();
-        List<String> bears = new ArrayList<>();
-        fillPoints(bulls, bears, pe, pb, pePct, pbPct, peg, margin, roe, debt, growthPct, stats);
-
-        String summary = buildSummary(basic.getName(), band, pe, pePct, peg, margin, stats.peerCount);
+        String summary = buildSummary(basic.getName(), band, pe, pePct, peg, margin, fairPe, stats.peerCount);
         String action = actionHint(band);
         List<String> assumptions = List.of(
                 "折现率约 9%，用于简化内在价值区间，非精确 DCF",
@@ -272,6 +268,10 @@ public class ValuationServiceImpl implements IValuationService {
                 "无一致预期时不做前瞻 PE；结论仅供研究参考"
         );
         String dataNote = buildDataNote(abs, ind, pe, pb, stats.peerCount);
+
+        List<String> bulls = new ArrayList<>();
+        List<String> bears = new ArrayList<>();
+        fillPoints(bulls, bears, pe, pb, pePct, pbPct, peg, margin, fairPe, roe, debt, growthPct, stats);
 
         return ValuationResp.builder()
                 .code(code)
@@ -671,7 +671,7 @@ public class ValuationServiceImpl implements IValuationService {
     }
 
     private String buildSummary(String name, LevelBand band, BigDecimal pe, BigDecimal pePct,
-                                BigDecimal peg, BigDecimal margin, int peerCount) {
+                                BigDecimal peg, BigDecimal margin, BigDecimal fairPe, int peerCount) {
         StringBuilder sb = new StringBuilder();
         if (StringUtils.isNotBlank(name)) {
             sb.append(name).append("：");
@@ -687,14 +687,23 @@ public class ValuationServiceImpl implements IValuationService {
             sb.append(" · PEG ").append(peg);
         }
         if (Objects.nonNull(margin)) {
-            sb.append(" · 安全边际 ").append(margin).append("%");
+            if (isBrandPremiumGap(pe, fairPe, margin)) {
+                sb.append(" · 简化中枢偏低（品牌/赛道溢价，勿单看安全边际）");
+            } else if (margin.compareTo(new BigDecimal("-79")) <= 0
+                    || margin.compareTo(new BigDecimal("79")) >= 0) {
+                // 已钳制的极端值不直接展示，避免与「合理」档打架
+                sb.append(margin.signum() < 0 ? " · 价格明显高于简化中枢" : " · 价格明显低于简化中枢");
+            } else {
+                sb.append(" · 安全边际 ").append(margin).append("%");
+            }
         }
         return sb.toString();
     }
 
     private void fillPoints(List<String> bulls, List<String> bears,
                             BigDecimal pe, BigDecimal pb, BigDecimal pePct, BigDecimal pbPct,
-                            BigDecimal peg, BigDecimal margin, BigDecimal roe, BigDecimal debt,
+                            BigDecimal peg, BigDecimal margin, BigDecimal fairPe,
+                            BigDecimal roe, BigDecimal debt,
                             BigDecimal growthPct, IndustryStats stats) {
         if (Objects.nonNull(pePct) && pePct.compareTo(new BigDecimal("30")) <= 0 && stats.peerCount >= 8) {
             bulls.add("PE 处于行业较低分位");
@@ -714,7 +723,11 @@ public class ValuationServiceImpl implements IValuationService {
         if (Objects.nonNull(margin) && margin.compareTo(new BigDecimal("15")) >= 0) {
             bulls.add("相对简化内在价值有安全边际");
         } else if (Objects.nonNull(margin) && margin.compareTo(new BigDecimal("-15")) <= 0) {
-            bears.add("现价高于简化内在价值中枢");
+            if (isBrandPremiumGap(pe, fairPe, margin)) {
+                bears.add("价格含品牌/赛道溢价，简化安全边际仅供参考");
+            } else {
+                bears.add("现价高于简化内在价值中枢");
+            }
         }
         if (Objects.nonNull(roe) && roe.compareTo(new BigDecimal("15")) >= 0) {
             bulls.add("ROE 具备一定盈利能力");
@@ -738,6 +751,20 @@ public class ValuationServiceImpl implements IValuationService {
         if (bears.isEmpty()) {
             bears.add("未见突出估值风险，仍需结合仓位与市场环境");
         }
+    }
+
+    /**
+     * PE 接近公允但简化中枢严重偏低：品牌/高 ROE 溢价常见，避免文案写成「合理却安全边际-80%」
+     */
+    private boolean isBrandPremiumGap(BigDecimal pe, BigDecimal fairPe, BigDecimal margin) {
+        if (Objects.isNull(margin) || margin.compareTo(new BigDecimal("-25")) > 0) {
+            return false;
+        }
+        if (Objects.isNull(pe) || Objects.isNull(fairPe) || fairPe.compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        BigDecimal peGap = pe.subtract(fairPe).abs().divide(fairPe, 4, RoundingMode.HALF_UP);
+        return peGap.compareTo(new BigDecimal("0.35")) <= 0;
     }
 
     private BigDecimal calcFairPe(BigDecimal growthPct, BigDecimal roe, BigDecimal netMargin, BigDecimal industryPeMedian) {

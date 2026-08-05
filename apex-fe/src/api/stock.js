@@ -30,10 +30,10 @@ export function refreshCompanyProfile(code) {
   return http.post(`/api/stock/${code}/profile/refresh`)
 }
 
-/** 个股综合研判：技术 + 估值 + 资金情绪 + 策略结论 */
-export function fetchStockAnalysis(code, side = 'BUY', barLimit = 120) {
+/** 个股综合研判：技术 + 估值 + 资金情绪 + 策略结论（可选 AI） */
+export function fetchStockAnalysis(code, side = 'BUY', barLimit = 120, withAi = false, forceAi = false) {
   return http.get(`/api/stock/${encodeURIComponent(code)}/analysis`, {
-    params: { side, barLimit },
-    timeout: 60000,
+    params: { side, barLimit, withAi, forceAi },
+    timeout: withAi ? 90000 : 45000,
   })
 }

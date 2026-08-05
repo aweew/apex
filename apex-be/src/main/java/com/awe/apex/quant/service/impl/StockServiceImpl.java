@@ -11,6 +11,9 @@ import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
+import com.awe.apex.quant.indicator.BenchmarkBarLoader;
+import com.awe.apex.quant.indicator.BenchmarkBarLoader;
+import com.awe.apex.quant.indicator.RelativeStrengthUtils;
 import com.awe.apex.quant.market.IntradayQuoteClient;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
@@ -52,6 +55,9 @@ public class StockServiceImpl implements IStockService {
 
     @Resource
     private WatchlistMapper watchlistMapper;
+
+    @Resource
+    private BenchmarkBarLoader benchmarkBarLoader;
 
     /**
      * 同步并落库基本信息
@@ -148,13 +154,9 @@ public class StockServiceImpl implements IStockService {
         BigDecimal rs60 = null;
         BigDecimal volumeRatio = null;
         try {
-            List<BarDaily> bench = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
-                    .eq(BarDaily::getCode, "000300")
-                    .orderByDesc(BarDaily::getTradeDate)
-                    .last("limit 80"));
-            bench.sort((a, b) -> a.getTradeDate().compareTo(b.getTradeDate()));
-            rs20 = relativeStrengthPct(bars, bench, 20);
-            rs60 = relativeStrengthPct(bars, bench, 60);
+            List<BarDaily> bench = benchmarkBarLoader.loadHs300Asc(80);
+            rs20 = RelativeStrengthUtils.relativeStrengthPct(bars, bench, 20);
+            rs60 = RelativeStrengthUtils.relativeStrengthPct(bars, bench, 60);
             volumeRatio = calcVolumeRatio(bars, 20);
         } catch (Exception ignored) {
             // 相对强度失败不影响详情
@@ -211,27 +213,6 @@ public class StockServiceImpl implements IStockService {
             return null;
         }
         return lastVol.divide(avg, 2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal relativeStrengthPct(List<BarDaily> stock, List<BarDaily> bench, int lookback) {
-        BigDecimal stockRet = periodReturn(stock, lookback);
-        BigDecimal benchRet = periodReturn(bench, lookback);
-        if (Objects.isNull(stockRet) || Objects.isNull(benchRet)) {
-            return null;
-        }
-        return stockRet.subtract(benchRet).multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal periodReturn(List<BarDaily> bars, int lookback) {
-        if (bars == null || bars.size() <= lookback) {
-            return null;
-        }
-        BigDecimal end = bars.get(bars.size() - 1).getClosePrice();
-        BigDecimal start = bars.get(bars.size() - 1 - lookback).getClosePrice();
-        if (Objects.isNull(end) || Objects.isNull(start) || start.signum() <= 0) {
-            return null;
-        }
-        return end.subtract(start).divide(start, 6, RoundingMode.HALF_UP);
     }
 
     /**

@@ -24,6 +24,7 @@ const fundLoading = ref(false)
 const profileLoading = ref(false)
 const profileRefreshing = ref(false)
 const profileExpand = ref(false)
+const mainBusinessExpand = ref(false)
 const conceptExpand = ref(false)
 const code = ref(String(route.params.code || route.query.code || '600519'))
 const basic = ref(null)
@@ -1381,6 +1382,7 @@ async function loadProfile(force = false) {
       : await fetchCompanyProfile(code.value.trim(), false)
     profile.value = res.data || null
     profileExpand.value = false
+    mainBusinessExpand.value = false
     conceptExpand.value = false
   } catch (e) {
     profile.value = null
@@ -1412,6 +1414,19 @@ const profileText = computed(() => {
   if (profileExpand.value || text.length <= 220) return text
   return `${text.slice(0, 220)}…`
 })
+
+const mainBusinessText = computed(() => {
+  const text = profile.value?.mainBusiness || ''
+  if (mainBusinessExpand.value || text.length <= 90) return text
+  return `${text.slice(0, 90)}…`
+})
+
+function fmtRatio(v) {
+  if (v == null || v === '') return ''
+  const n = Number(v)
+  if (!Number.isFinite(n)) return ''
+  return `${n.toFixed(2)}%`
+}
 
 function applyDetail(data) {
   basic.value = data.basic
@@ -1923,10 +1938,6 @@ function dash(v) {
                   <span>{{ dash(profile.managerNum) }}</span>
                 </div>
                 <div class="kv full">
-                  <label>主营业务</label>
-                  <span>{{ dash(profile.mainBusiness) }}</span>
-                </div>
-                <div class="kv full">
                   <label>公司网站</label>
                   <span>
                     <a v-if="profile.website" :href="profile.website.startsWith('http') ? profile.website : 'https://' + profile.website" target="_blank" rel="noreferrer">{{ profile.website }}</a>
@@ -1952,6 +1963,53 @@ function dash(v) {
                 <div class="kv full">
                   <label>统一社会信用代码</label>
                   <span>{{ dash(profile.regNum) }}</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="profile-card">
+              <h3 class="profile-section-title">经营业务</h3>
+              <div class="biz-rows">
+                <div class="biz-row">
+                  <label>主营业务</label>
+                  <div class="biz-content">
+                    <span>{{ dash(mainBusinessText) }}</span>
+                    <button
+                      v-if="(profile.mainBusiness || '').length > 90"
+                      type="button"
+                      class="profile-more-btn"
+                      @click="mainBusinessExpand = !mainBusinessExpand"
+                    >{{ mainBusinessExpand ? '收起' : '展开' }}</button>
+                  </div>
+                </div>
+                <div class="biz-row">
+                  <label>最赚钱业务</label>
+                  <div class="biz-content">
+                    <template v-if="profile.topProfitBusiness">
+                      <span>{{ profile.topProfitBusiness }}</span>
+                      <em v-if="profile.topProfitRatio != null">（利润比例{{ fmtRatio(profile.topProfitRatio) }}）</em>
+                    </template>
+                    <span v-else>-</span>
+                  </div>
+                </div>
+                <div class="biz-row">
+                  <label>收入构成</label>
+                  <div class="biz-content">
+                    <template v-if="(profile.revenueItems || []).length">
+                      <div
+                        v-for="item in profile.revenueItems"
+                        :key="item.name"
+                        class="revenue-item"
+                      >
+                        <span>{{ item.name }}</span>
+                        <em v-if="item.revenueRatio != null">（营收占比{{ fmtRatio(item.revenueRatio) }}）</em>
+                      </div>
+                      <small v-if="profile.revenueReportDate" class="revenue-date">
+                        报告期 {{ profile.revenueReportDate }}
+                      </small>
+                    </template>
+                    <span v-else>-</span>
+                  </div>
                 </div>
               </div>
             </section>
@@ -2182,6 +2240,59 @@ function dash(v) {
   font-style: normal;
   color: var(--slate);
   margin-left: 4px;
+}
+
+.biz-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.biz-row {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  align-items: start;
+}
+
+.biz-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.biz-row:first-child {
+  padding-top: 0;
+}
+
+.biz-row label {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.biz-content {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.biz-content em {
+  font-style: normal;
+  color: var(--slate);
+  margin-left: 2px;
+}
+
+.revenue-item {
+  margin-bottom: 4px;
+}
+
+.revenue-date {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .concept-box {

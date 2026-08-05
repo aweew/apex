@@ -61,6 +61,8 @@ function openFull() {
   border-bottom: 1px dashed rgba(0, 113, 227, 0.45);
   border-radius: 0;
   line-height: inherit;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .term-tip:hover {

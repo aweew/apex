@@ -1,8 +1,10 @@
 package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.CompanyProfileResp;
+import com.awe.apex.quant.domain.dto.MainRevenueItemResp;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StockCompanyProfile;
 import com.awe.apex.quant.mapper.StockBasicMapper;
@@ -11,6 +13,7 @@ import com.awe.apex.quant.market.CompanyProfileClient;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.ICompanyProfileService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +22,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -76,6 +80,14 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
                 .eq(StockCompanyProfile::getCode, pureCode)
                 .last("limit 1"));
         if (!forceRefresh && Objects.nonNull(existing) && StringUtils.isNotBlank(existing.getOrgName())) {
+            // 旧数据缺主营构成时补拉一次
+            if (StringUtils.isBlank(existing.getRevenueItems())) {
+                companyProfileClient.fillBusinessComposition(existing);
+                if (StringUtils.isNotBlank(existing.getRevenueItems())) {
+                    existing.setUpdateTime(LocalDateTime.now());
+                    stockCompanyProfileMapper.updateById(existing);
+                }
+            }
             CompanyProfileResp cached = toResp(existing, "本地公司概况");
             syncBasicIndustry(pureCode, cached.getIndustryL2());
             return cached;
@@ -133,6 +145,10 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
                 .employeeNum(profile.getEmployeeNum())
                 .managerNum(profile.getManagerNum())
                 .mainBusiness(profile.getMainBusiness())
+                .revenueReportDate(profile.getRevenueReportDate())
+                .revenueItems(parseRevenueItems(profile.getRevenueItems()))
+                .topProfitBusiness(profile.getTopProfitBusiness())
+                .topProfitRatio(profile.getTopProfitRatio())
                 .orgProfile(profile.getOrgProfile())
                 .orgHighlight(profile.getOrgHighlight())
                 .businessScope(profile.getBusinessScope())
@@ -148,6 +164,19 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
                 .updateTime(profile.getUpdateTime())
                 .note(note)
                 .build();
+    }
+
+    private List<MainRevenueItemResp> parseRevenueItems(String json) {
+        if (StringUtils.isBlank(json)) {
+            return Collections.emptyList();
+        }
+        try {
+            List<MainRevenueItemResp> list = JsonUtils.parseObject(json, new TypeReference<List<MainRevenueItemResp>>() {
+            });
+            return Objects.isNull(list) ? Collections.emptyList() : list;
+        } catch (Exception ex) {
+            return Collections.emptyList();
+        }
     }
 
     /**

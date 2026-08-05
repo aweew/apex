@@ -175,6 +175,26 @@ public class CompanyProfileResp {
     private String mainBusiness;
 
     /**
+     * 主营收入报告期
+     */
+    private LocalDate revenueReportDate;
+
+    /**
+     * 主营收入构成（按产品优先）
+     */
+    private List<MainRevenueItemResp> revenueItems;
+
+    /**
+     * 最赚钱业务名称
+     */
+    private String topProfitBusiness;
+
+    /**
+     * 最赚钱业务利润占比（百分数）
+     */
+    private BigDecimal topProfitRatio;
+
+    /**
      * 公司介绍
      */
     private String orgProfile;

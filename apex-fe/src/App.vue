@@ -51,6 +51,7 @@ const navGroups = [
     label: '市场',
     items: [
       { to: '/market', label: '行情' },
+      { to: '/heatmap', label: '云图' },
       { to: '/sector', label: '板块' },
       { to: '/limit-up', label: '涨停' },
       { to: '/hot', label: '热点' },

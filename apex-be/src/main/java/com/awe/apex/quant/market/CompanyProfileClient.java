@@ -4,6 +4,7 @@ import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.domain.dto.MainRevenueItemResp;
 import com.awe.apex.quant.domain.entity.StockCompanyProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,9 +12,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+
 /**
  * 东财 F10 公司概况客户端
  */
@@ -65,7 +72,7 @@ public class CompanyProfileClient {
                     text(row, "BOARD_NAME_2LEVEL"),
                     text(row, "BOARD_NAME_3LEVEL")
             );
-            return StockCompanyProfile.builder()
+            StockCompanyProfile profile = StockCompanyProfile.builder()
                     .code(pureCode)
                     .orgName(text(row, "ORG_NAME"))
                     .orgNameEn(text(row, "ORG_NAME_EN"))
@@ -111,11 +118,143 @@ public class CompanyProfileClient {
                     .updateTime(now)
                     .deleted(0)
                     .build();
+            fillBusinessComposition(profile);
+            return profile;
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
             log.warn("拉取公司概况失败，code={}, err={}", pureCode, ex.getMessage());
             throw new BusinessException("拉取公司概况失败: " + ex.getMessage(), ex);
+        }
+    }
+
+    /**
+     * 拉取并回填主营收入构成（按产品优先，否则按行业）
+     *
+     * @param profile 公司概况实体
+     */
+    public void fillBusinessComposition(StockCompanyProfile profile) {
+        if (Objects.isNull(profile) || StringUtils.isBlank(profile.getCode())) {
+            return;
+        }
+        String emCode = MarketCodeUtils.toEmWebCode(profile.getCode());
+        if (StringUtils.isBlank(emCode)) {
+            return;
+        }
+        String url = "https://emweb.securities.eastmoney.com/PC_HSF10/BusinessAnalysis/PageAjax?code=" + emCode;
+        try (HttpResponse response = HttpRequest.get(url)
+                .timeout(15000)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Referer", "https://emweb.securities.eastmoney.com/")
+                .header("Accept", "application/json,text/plain,*/*")
+                .execute()) {
+            if (!response.isOk() || StringUtils.isBlank(response.body())) {
+                return;
+            }
+            JsonNode root = OBJECT_MAPPER.readTree(response.body());
+            JsonNode rows = root.path("zygcfx");
+            if (!rows.isArray() || rows.isEmpty()) {
+                return;
+            }
+            List<JsonNode> productRows = new ArrayList<>();
+            List<JsonNode> industryRows = new ArrayList<>();
+            String latestProductDate = null;
+            String latestIndustryDate = null;
+            for (JsonNode row : rows) {
+                String type = text(row, "MAINOP_TYPE");
+                String reportDate = text(row, "REPORT_DATE");
+                if (StringUtils.isBlank(reportDate)) {
+                    continue;
+                }
+                String day = reportDate.length() >= 10 ? reportDate.substring(0, 10) : reportDate;
+                if ("2".equals(type)) {
+                    if (latestProductDate == null || day.compareTo(latestProductDate) > 0) {
+                        latestProductDate = day;
+                        productRows = new ArrayList<>();
+                    }
+                    if (day.equals(latestProductDate)) {
+                        productRows.add(row);
+                    }
+                } else if ("1".equals(type)) {
+                    if (latestIndustryDate == null || day.compareTo(latestIndustryDate) > 0) {
+                        latestIndustryDate = day;
+                        industryRows = new ArrayList<>();
+                    }
+                    if (day.equals(latestIndustryDate)) {
+                        industryRows.add(row);
+                    }
+                }
+            }
+            List<JsonNode> chosen = !productRows.isEmpty() ? productRows : industryRows;
+            String reportDay = !productRows.isEmpty() ? latestProductDate : latestIndustryDate;
+            if (chosen.isEmpty() || StringUtils.isBlank(reportDay)) {
+                return;
+            }
+            List<MainRevenueItemResp> items = new ArrayList<>();
+            for (JsonNode row : chosen) {
+                String name = text(row, "ITEM_NAME");
+                BigDecimal ratio = toRatioPercent(row.path("MBI_RATIO"));
+                if (StringUtils.isBlank(name) || Objects.isNull(ratio)) {
+                    continue;
+                }
+                items.add(MainRevenueItemResp.builder()
+                        .name(name)
+                        .revenueRatio(ratio)
+                        .profitRatio(toRatioPercent(row.path("MBR_RATIO")))
+                        .income(toDecimalNode(row.path("MAIN_BUSINESS_INCOME")))
+                        .build());
+            }
+            items.sort(Comparator.comparing(
+                    (MainRevenueItemResp item) -> Objects.isNull(item.getRevenueRatio())
+                            ? BigDecimal.ZERO : item.getRevenueRatio()).reversed());
+            if (items.isEmpty()) {
+                return;
+            }
+            MainRevenueItemResp topProfit = null;
+            for (MainRevenueItemResp item : items) {
+                if (Objects.isNull(item.getProfitRatio())) {
+                    continue;
+                }
+                if (Objects.isNull(topProfit)
+                        || item.getProfitRatio().compareTo(topProfit.getProfitRatio()) > 0) {
+                    topProfit = item;
+                }
+            }
+            profile.setRevenueReportDate(LocalDate.parse(reportDay, DAY));
+            try {
+                profile.setRevenueItems(OBJECT_MAPPER.writeValueAsString(items));
+            } catch (Exception ex) {
+                profile.setRevenueItems(null);
+            }
+            if (Objects.nonNull(topProfit)) {
+                profile.setTopProfitBusiness(topProfit.getName());
+                profile.setTopProfitRatio(topProfit.getProfitRatio());
+            }
+        } catch (Exception ex) {
+            log.warn("拉取主营构成失败 code={} err={}", profile.getCode(), ex.getMessage());
+        }
+    }
+
+    private BigDecimal toRatioPercent(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        try {
+            BigDecimal raw = new BigDecimal(node.asText().replace(",", "").trim());
+            return raw.multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private BigDecimal toDecimalNode(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(node.asText().replace(",", "").trim());
+        } catch (Exception ex) {
+            return null;
         }
     }
 

@@ -6,7 +6,7 @@ import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.MyHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.BarSyncReq;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
-import com.awe.apex.quant.domain.dto.ObserveTechSignal;
+import com.awe.apex.quant.domain.dto.TechRegimeResult;
 import com.awe.apex.quant.domain.dto.ValuationBriefResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.MyHolding;
@@ -15,7 +15,9 @@ import com.awe.apex.quant.domain.entity.SectorConstituent;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StockCompanyProfile;
 import com.awe.apex.quant.holding.ThemeBucketMatcher;
-import com.awe.apex.quant.indicator.TechSignalEvaluator;
+import com.awe.apex.quant.indicator.BenchmarkBarLoader;
+import com.awe.apex.quant.indicator.RelativeStrengthUtils;
+import com.awe.apex.quant.indicator.TechRegimeEvaluator;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.MyHoldingMapper;
 import com.awe.apex.quant.mapper.SectorBasicMapper;
@@ -83,7 +85,10 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     private IValuationService valuationService;
 
     @Resource
-    private TechSignalEvaluator techSignalEvaluator;
+    private TechRegimeEvaluator techRegimeEvaluator;
+
+    @Resource
+    private BenchmarkBarLoader benchmarkBarLoader;
 
     @Resource
     private ICompanyProfileService companyProfileService;
@@ -124,6 +129,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         ensureMissingProfiles(list, profileMap);
         Map<String, List<String>> sectorNamesByCode = loadConceptSectorNames(list);
         Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(list);
+        List<BarDaily> hs300Bars = benchmarkBarLoader.loadHs300Asc(80);
         List<String> valCodes = new ArrayList<>();
         for (MyHolding holding : list) {
             String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
@@ -177,7 +183,10 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             appendHkNameHints(holding.getName(), strongTexts);
             holding.setThemeTags(ThemeBucketMatcher.match(strongTexts, weakTexts));
             fillPnl(holding);
-            fillInsight(holding, barsByCode.get(code), valuationMap.get(code));
+            List<BarDaily> bars = barsByCode.get(code);
+            BigDecimal rs20 = RelativeStrengthUtils.relativeStrengthPct(bars, hs300Bars, 20);
+            BigDecimal rs60 = RelativeStrengthUtils.relativeStrengthPct(bars, hs300Bars, 60);
+            fillInsight(holding, bars, valuationMap.get(code), rs20, rs60);
         }
         return list;
     }
@@ -668,28 +677,15 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     }
 
     /**
-     * 填充技术指标、估值、评价与建议（持仓视角，技术按多头健康度）
+     * 填充技术结构、估值、评价与建议（状态机 + RS，雷达仅展示）
      */
-    private void fillInsight(MyHolding holding, List<BarDaily> bars, ValuationBriefResp valuation) {
-        List<ObserveTechSignal> techSignals = techSignalEvaluator.evaluate("BUY", bars);
-        int hit = 0;
-        for (ObserveTechSignal signal : techSignals) {
-            if (Boolean.TRUE.equals(signal.getHit())) {
-                hit++;
-            }
-        }
-        holding.setTechSignals(techSignals);
-        holding.setTechHitCount(hit);
-        holding.setTechTotal(techSignals.size());
-        if (CollUtil.isEmpty(techSignals)) {
-            holding.setTechSummary("日线不足");
-        } else if (hit >= 5) {
-            holding.setTechSummary("技术 " + hit + "/" + techSignals.size() + " · 偏强");
-        } else if (hit >= 3) {
-            holding.setTechSummary("技术 " + hit + "/" + techSignals.size() + " · 中性");
-        } else {
-            holding.setTechSummary("技术 " + hit + "/" + techSignals.size() + " · 偏弱");
-        }
+    private void fillInsight(MyHolding holding, List<BarDaily> bars, ValuationBriefResp valuation,
+                             BigDecimal rs20, BigDecimal rs60) {
+        TechRegimeResult regime = techRegimeEvaluator.evaluate(bars, rs20, rs60);
+        holding.setTechSignals(regime.getRadarSignals());
+        holding.setTechHitCount(regime.getHitCount());
+        holding.setTechTotal(regime.getTotal());
+        holding.setTechSummary(regime.getSummary());
 
         if (Objects.nonNull(valuation)) {
             holding.setValuationLevel(valuation.getLevel());
@@ -718,35 +714,69 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             return;
         }
 
-        if (CollUtil.isEmpty(techSignals)) {
+        if (TechRegimeEvaluator.REGIME_INSUFFICIENT.equals(regime.getRegime())) {
             holding.setVerdict("数据不足");
             holding.setAdvice("日线不足，建议先同步行情后再评估");
             return;
         }
 
-        if (hit >= 5 && !rich) {
+        String state = regime.getRegime();
+        String rsTone = regime.getRsTone();
+        boolean rsBear = TechRegimeEvaluator.RS_BEARISH.equals(rsTone);
+        boolean rsBull = TechRegimeEvaluator.RS_BULLISH.equals(rsTone);
+
+        if (TechRegimeEvaluator.REGIME_TREND_HOLD.equals(state)) {
+            if (rsBear) {
+                holding.setVerdict(rich ? "谨慎持有" : "继续持有");
+                holding.setAdvice(rich
+                        ? "趋势仍在但相对大盘偏弱且估值偏贵，逢高减仓、止损勿放松"
+                        : "趋势仍在但相对大盘偏弱，按止损纪律持有，勿追高加仓");
+                return;
+            }
             holding.setVerdict(cheap ? "持有偏多" : "继续持有");
             holding.setAdvice(cheap
-                    ? "技术偏强且估值不贵，可持有；回撤再评估加仓"
-                    : "技术偏强，按止损纪律持有，勿追高加仓");
+                    ? "上升结构且估值不贵，可持有；回撤再评估加仓"
+                    : "上升结构，按止损纪律持有，勿追高加仓");
             return;
         }
-        if (hit >= 3) {
+        if (TechRegimeEvaluator.REGIME_PULLBACK_WATCH.equals(state)) {
             if (rich) {
                 holding.setVerdict("谨慎持有");
-                holding.setAdvice("估值偏贵，逢高减仓，止损勿放松");
+                holding.setAdvice(rsBear
+                        ? "趋势内回调且相对偏弱、估值偏贵，逢高减仓，止损勿放松"
+                        : "趋势内回调且估值偏贵，逢高减仓，止损勿放松");
             } else {
                 holding.setVerdict("继续持有");
-                holding.setAdvice("技术中性，持有观望，贴近止损管理");
+                holding.setAdvice(rsBull
+                        ? "趋势内回调且相对大盘偏强，持有观察，贴近止损管理"
+                        : "趋势内回调，持有观察，贴近止损管理");
             }
             return;
         }
-        if (rich) {
-            holding.setVerdict("逢高减仓");
-            holding.setAdvice("技术偏弱且估值偏贵，优先减仓降风险");
-        } else {
+        if (TechRegimeEvaluator.REGIME_REPAIR.equals(state)) {
             holding.setVerdict("谨慎持有");
-            holding.setAdvice("技术偏弱，收紧止损，反弹减仓或观察离场");
+            holding.setAdvice("修复观察，勿盲目摊薄；确认站稳再考虑加仓");
+            return;
+        }
+        if (TechRegimeEvaluator.REGIME_BREAKDOWN_CUT.equals(state)) {
+            if (rich) {
+                holding.setVerdict("逢高减仓");
+                holding.setAdvice("结构破位且估值偏贵，优先减仓降风险");
+            } else {
+                holding.setVerdict("谨慎持有");
+                holding.setAdvice("结构破位迹象，收紧止损，确认破位再离场");
+            }
+            return;
+        }
+        // 中性震荡
+        if (rich) {
+            holding.setVerdict("谨慎持有");
+            holding.setAdvice("震荡且估值偏贵，逢高减仓，止损勿放松");
+        } else {
+            holding.setVerdict("继续持有");
+            holding.setAdvice(rsBull
+                    ? "中性震荡但相对大盘偏强，持有观望，贴近止损管理"
+                    : "中性震荡，持有观望，贴近止损管理");
         }
     }
 
