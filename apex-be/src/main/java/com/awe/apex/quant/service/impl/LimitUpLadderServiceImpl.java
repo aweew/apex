@@ -1,6 +1,8 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.LimitUpEffectResp;
@@ -9,10 +11,13 @@ import com.awe.apex.quant.domain.dto.LimitUpRefreshResp;
 import com.awe.apex.quant.domain.dto.LimitUpStockItem;
 import com.awe.apex.quant.domain.dto.LimitUpThemeStat;
 import com.awe.apex.quant.domain.dto.LimitUpTier;
+import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.LimitUpPool;
 import com.awe.apex.quant.domain.entity.StockBasic;
+import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
+import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.util.ProcessIoUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -61,6 +66,9 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
     @Resource
     private StockBasicMapper stockBasicMapper;
 
+    @Resource
+    private BarDailyMapper barDailyMapper;
+
     @Value("${apex.hot.python-cmd:python}")
     private String pythonCmd;
 
@@ -95,33 +103,34 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
         LocalDate prevDate = findPrevDate(resolved, available);
         Map<String, Integer> prevLianban = loadPrevLianban(prevDate);
 
-        Map<Integer, List<LimitUpPool>> byTier = new LinkedHashMap<>();
+        Map<Integer, List<LimitUpStockItem>> byTier = new LinkedHashMap<>();
+        Set<String> todayCodes = new HashSet<>();
         int maxLb = 0;
         LocalDateTime syncedAt = null;
         for (LimitUpPool row : today) {
             int lb = Objects.nonNull(row.getLianban()) ? row.getLianban() : 1;
             maxLb = Math.max(maxLb, lb);
-            byTier.computeIfAbsent(lb, k -> new ArrayList<>()).add(row);
+            todayCodes.add(row.getCode());
+            byTier.computeIfAbsent(lb, k -> new ArrayList<>()).add(toStockItem(row, false));
             if (Objects.isNull(syncedAt) && Objects.nonNull(row.getSyncedAt())) {
                 syncedAt = row.getSyncedAt();
             }
         }
+
+        // 昨日连板（≥2板）今日未涨停：挂到「晋级目标」高度（昨N板 → 今日N+1板梯队），排除昨首板
+        int failCount = appendFailedStocks(byTier, prevDate, todayCodes, resolved);
 
         List<Integer> tiersDesc = byTier.keySet().stream()
                 .sorted(Comparator.reverseOrder())
                 .collect(Collectors.toList());
         List<LimitUpTier> tiers = new ArrayList<>();
         for (Integer lb : tiersDesc) {
-            List<LimitUpPool> stocks = byTier.get(lb);
+            List<LimitUpStockItem> items = byTier.get(lb);
             BigDecimal rate = null;
             String promoteLabel = null;
             if (lb >= 2) {
                 promoteLabel = promoteLabel(lb);
                 rate = calcPromoteRate(lb, prevLianban, today);
-            }
-            List<LimitUpStockItem> items = new ArrayList<>();
-            for (LimitUpPool row : stocks) {
-                items.add(toStockItem(row));
             }
             tiers.add(LimitUpTier.builder()
                     .lianban(lb)
@@ -135,6 +144,13 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
 
         List<LimitUpThemeStat> themes = buildThemes(today);
         LimitUpEffectResp effect = buildEffect(prevDate, prevLianban, today);
+        String msg = resolved + " 涨停 " + today.size() + " 家 · 最高 " + maxLb + " 板";
+        if (failCount > 0) {
+            msg = msg + " · 断板 " + failCount + " 家";
+        }
+        if (Objects.nonNull(effect) && Objects.nonNull(effect.getPromoteRate())) {
+            msg = msg + " · 晋级率 " + effect.getPromoteRate() + "%";
+        }
         return LimitUpLadderResp.builder()
                 .tradeDate(resolved)
                 .availableDates(available)
@@ -144,9 +160,7 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                 .tiers(tiers)
                 .syncedAt(syncedAt)
                 .effect(effect)
-                .message(resolved + " 涨停 " + today.size() + " 家 · 最高 " + maxLb + " 板"
-                        + (Objects.nonNull(effect) && Objects.nonNull(effect.getPromoteRate())
-                        ? (" · 晋级率 " + effect.getPromoteRate() + "%") : ""))
+                .message(msg)
                 .build();
     }
 
@@ -251,7 +265,247 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
         return map;
     }
 
-    private LimitUpStockItem toStockItem(LimitUpPool row) {
+    /**
+     * 昨日 ≥2 板且今日未涨停的个股，挂到晋级目标高度（昨 N 板 → N+1 板梯队）并标记 failed。
+     * 例：昨 8 板今日断板 → 出现在「9板 / 八进九」梯队。
+     * 涨跌幅优先 stock_basic → 当日日线 → 新浪实时批量补齐（stock_basic 常未全量同步）。
+     *
+     * @param byTier     梯队
+     * @param prevDate   上一交易日
+     * @param todayCodes 今日涨停代码
+     * @param tradeDate  当前复盘日（用于取当日涨跌幅）
+     * @return 断板家数
+     */
+    private int appendFailedStocks(Map<Integer, List<LimitUpStockItem>> byTier,
+                                   LocalDate prevDate, Set<String> todayCodes, LocalDate tradeDate) {
+        if (Objects.isNull(prevDate)) {
+            return 0;
+        }
+        List<LimitUpPool> prevRows = limitUpPoolMapper.selectList(Wrappers.<LimitUpPool>lambdaQuery()
+                .eq(LimitUpPool::getTradeDate, prevDate)
+                .ge(LimitUpPool::getLianban, 2)
+                .orderByDesc(LimitUpPool::getLianban)
+                .orderByAsc(LimitUpPool::getCode));
+        if (CollUtil.isEmpty(prevRows)) {
+            return 0;
+        }
+        List<String> failCodes = new ArrayList<>();
+        List<LimitUpPool> failRows = new ArrayList<>();
+        for (LimitUpPool row : prevRows) {
+            if (StringUtils.isBlank(row.getCode()) || todayCodes.contains(row.getCode())) {
+                continue;
+            }
+            failCodes.add(row.getCode());
+            failRows.add(row);
+        }
+        if (CollUtil.isEmpty(failRows)) {
+            return 0;
+        }
+        Map<String, StockBasic> basics = new HashMap<>();
+        List<StockBasic> basicList = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                .in(StockBasic::getCode, failCodes));
+        for (StockBasic basic : basicList) {
+            basics.put(basic.getCode(), basic);
+        }
+        Map<String, BarDaily> dayBars = loadDayBars(failCodes, tradeDate);
+        List<String> needLive = new ArrayList<>();
+        for (String code : failCodes) {
+            StockBasic basic = basics.get(code);
+            if (Objects.nonNull(basic) && Objects.nonNull(basic.getPctChg())) {
+                continue;
+            }
+            BarDaily bar = dayBars.get(code);
+            if (Objects.nonNull(bar) && Objects.nonNull(bar.getPctChg())) {
+                continue;
+            }
+            needLive.add(code);
+        }
+        Map<String, LiveSnap> liveSnaps = fetchLiveSnaps(needLive);
+        for (LimitUpPool row : failRows) {
+            int prevLb = Objects.nonNull(row.getLianban()) ? row.getLianban() : 2;
+            // 晋级目标高度：昨 N 板失败 → 挂在 N+1 板（与「N进N+1」标签对齐）
+            int targetLb = prevLb + 1;
+            LimitUpStockItem item = toStockItem(row, true);
+            // 卡片连板数保留昨高度，便于识别「几进几失败」；先清空昨涨停涨跌幅，再填今日涨跌
+            item.setLianban(prevLb);
+            item.setPctChg(null);
+            item.setLatestPrice(null);
+            StockBasic basic = basics.get(row.getCode());
+            if (Objects.nonNull(basic)) {
+                if (StringUtils.isBlank(item.getName()) && StringUtils.isNotBlank(basic.getName())) {
+                    item.setName(basic.getName());
+                }
+                item.setPctChg(basic.getPctChg());
+                item.setLatestPrice(basic.getLatestPrice());
+                if (StringUtils.isBlank(item.getTheme()) && StringUtils.isNotBlank(basic.getIndustry())) {
+                    item.setTheme(basic.getIndustry());
+                }
+            }
+            if (Objects.isNull(item.getPctChg()) || Objects.isNull(item.getLatestPrice())) {
+                BarDaily bar = dayBars.get(row.getCode());
+                if (Objects.nonNull(bar)) {
+                    if (Objects.isNull(item.getPctChg()) && Objects.nonNull(bar.getPctChg())) {
+                        item.setPctChg(bar.getPctChg());
+                    }
+                    if (Objects.isNull(item.getLatestPrice()) && Objects.nonNull(bar.getClosePrice())) {
+                        item.setLatestPrice(bar.getClosePrice());
+                    }
+                }
+            }
+            if (Objects.isNull(item.getPctChg()) || Objects.isNull(item.getLatestPrice())) {
+                LiveSnap snap = liveSnaps.get(row.getCode());
+                if (Objects.nonNull(snap)) {
+                    if (Objects.isNull(item.getPctChg()) && Objects.nonNull(snap.pctChg)) {
+                        item.setPctChg(snap.pctChg);
+                    }
+                    if (Objects.isNull(item.getLatestPrice()) && Objects.nonNull(snap.price)) {
+                        item.setLatestPrice(snap.price);
+                    }
+                    if (StringUtils.isBlank(item.getName()) && StringUtils.isNotBlank(snap.name)) {
+                        item.setName(snap.name);
+                    }
+                }
+            }
+            // 断板不再展示昨封板时间/封单，避免误解为今日封板
+            item.setFirstSealTime(null);
+            item.setLastSealTime(null);
+            item.setSealAmount(null);
+            item.setBreakCount(null);
+            item.setYizi(false);
+            byTier.computeIfAbsent(targetLb, k -> new ArrayList<>()).add(item);
+        }
+        return failRows.size();
+    }
+
+    private Map<String, BarDaily> loadDayBars(List<String> codes, LocalDate tradeDate) {
+        Map<String, BarDaily> map = new HashMap<>();
+        if (CollUtil.isEmpty(codes) || Objects.isNull(tradeDate)) {
+            return map;
+        }
+        List<BarDaily> rows = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                .eq(BarDaily::getTradeDate, tradeDate)
+                .in(BarDaily::getCode, codes)
+                .select(BarDaily::getCode, BarDaily::getPctChg, BarDaily::getClosePrice));
+        for (BarDaily row : rows) {
+            if (StringUtils.isNotBlank(row.getCode())) {
+                map.put(row.getCode(), row);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 新浪批量快照补涨跌幅（断板股常缺 stock_basic 行情）
+     */
+    private Map<String, LiveSnap> fetchLiveSnaps(List<String> codes) {
+        Map<String, LiveSnap> result = new HashMap<>();
+        if (CollUtil.isEmpty(codes)) {
+            return result;
+        }
+        int chunkSize = 40;
+        for (int from = 0; from < codes.size(); from += chunkSize) {
+            int to = Math.min(from + chunkSize, codes.size());
+            List<String> chunk = codes.subList(from, to);
+            List<String> symbols = new ArrayList<>();
+            Map<String, String> symbolToCode = new HashMap<>();
+            for (String code : chunk) {
+                String pure = MarketCodeUtils.normalizeHoldingCode(code);
+                if (StringUtils.isBlank(pure)) {
+                    continue;
+                }
+                String market = MarketCodeUtils.resolveMarket(pure);
+                String symbol;
+                if ("SH".equals(market)) {
+                    symbol = "sh" + pure;
+                } else if ("BJ".equals(market)) {
+                    symbol = "bj" + pure;
+                } else {
+                    symbol = "sz" + pure;
+                }
+                symbols.add(symbol);
+                symbolToCode.put(symbol, pure);
+            }
+            if (symbols.isEmpty()) {
+                continue;
+            }
+            String url = "https://hq.sinajs.cn/list=" + String.join(",", symbols);
+            try (HttpResponse response = HttpRequest.get(url)
+                    .timeout(8000)
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .header("Referer", "https://finance.sina.com.cn")
+                    .execute()) {
+                if (!response.isOk()) {
+                    continue;
+                }
+                String body = response.body();
+                if (response.bodyBytes() != null) {
+                    body = new String(response.bodyBytes(), Charset.forName("GBK"));
+                }
+                String[] lines = body.split(";");
+                for (String line : lines) {
+                    if (StringUtils.isBlank(line) || !line.contains("=")) {
+                        continue;
+                    }
+                    int eq = line.indexOf('=');
+                    String left = line.substring(0, eq).trim();
+                    int hq = left.lastIndexOf('_');
+                    String symbol = hq >= 0 ? left.substring(hq + 1) : left;
+                    symbol = symbol.toLowerCase();
+                    String code = symbolToCode.get(symbol);
+                    if (StringUtils.isBlank(code)) {
+                        continue;
+                    }
+                    int q1 = line.indexOf('"');
+                    int q2 = line.lastIndexOf('"');
+                    if (q1 < 0 || q2 <= q1) {
+                        continue;
+                    }
+                    String[] parts = line.substring(q1 + 1, q2).split(",");
+                    if (parts.length < 4 || StringUtils.isBlank(parts[0])) {
+                        continue;
+                    }
+                    BigDecimal price = parseDecimal(parts[3]);
+                    BigDecimal prevClose = parseDecimal(parts[2]);
+                    if (Objects.nonNull(price) && price.signum() <= 0) {
+                        price = null;
+                    }
+                    BigDecimal pct = null;
+                    if (Objects.nonNull(price) && Objects.nonNull(prevClose) && prevClose.signum() > 0) {
+                        pct = price.subtract(prevClose)
+                                .multiply(BigDecimal.valueOf(100))
+                                .divide(prevClose, 2, RoundingMode.HALF_UP);
+                    }
+                    LiveSnap snap = new LiveSnap();
+                    snap.name = parts[0];
+                    snap.price = price;
+                    snap.pctChg = pct;
+                    result.put(code, snap);
+                }
+            } catch (Exception ex) {
+                log.debug("断板股实时行情补齐失败: {}", ex.getMessage());
+            }
+        }
+        return result;
+    }
+
+    private BigDecimal parseDecimal(String raw) {
+        if (StringUtils.isBlank(raw)) {
+            return null;
+        }
+        try {
+            return new BigDecimal(raw.trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static final class LiveSnap {
+        private String name;
+        private BigDecimal price;
+        private BigDecimal pctChg;
+    }
+
+    private LimitUpStockItem toStockItem(LimitUpPool row, boolean failed) {
         String theme = StringUtils.isNotBlank(row.getTheme()) ? row.getTheme() : row.getIndustry();
         return LimitUpStockItem.builder()
                 .code(row.getCode())
@@ -266,7 +520,36 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                 .turnoverRate(row.getTurnoverRate())
                 .theme(theme)
                 .ztStats(row.getZtStats())
+                .yizi(isYizi(row))
+                .failed(failed)
                 .build();
+    }
+
+    /**
+     * 一字板：集合竞价封板（09:25）且当日未开板
+     */
+    private boolean isYizi(LimitUpPool row) {
+        if (Objects.isNull(row)) {
+            return false;
+        }
+        int breakCount = Objects.nonNull(row.getBreakCount()) ? row.getBreakCount() : 0;
+        if (breakCount > 0) {
+            return false;
+        }
+        String raw = row.getFirstSealTime();
+        if (StringUtils.isBlank(raw)) {
+            return false;
+        }
+        String digits = raw.replaceAll("\\D", "");
+        if (digits.length() < 4) {
+            return false;
+        }
+        if (digits.length() >= 6) {
+            digits = digits.substring(0, 6);
+        } else {
+            digits = digits.substring(0, 4);
+        }
+        return digits.startsWith("0925");
     }
 
     private LimitUpEffectResp buildEffect(LocalDate prevDate, Map<String, Integer> prevLianban,

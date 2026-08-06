@@ -75,4 +75,14 @@ public class LimitUpStockItem {
      * 涨停统计
      */
     private String ztStats;
+
+    /**
+     * 是否一字板（竞价封死且未开板）
+     */
+    private Boolean yizi;
+
+    /**
+     * 是否断板终结（昨连板今日未晋级且未涨停，排除昨首板）
+     */
+    private Boolean failed;
 }

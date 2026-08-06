@@ -34,6 +34,31 @@ function fmtSealAmount(v) {
   return n.toFixed(0)
 }
 
+const THEME_PALETTE = [
+  { color: '#c43d4a', bg: 'rgba(196, 61, 74, 0.12)', border: 'rgba(196, 61, 74, 0.32)' },
+  { color: '#1f8a4c', bg: 'rgba(31, 138, 76, 0.12)', border: 'rgba(31, 138, 76, 0.30)' },
+  { color: '#0a66c2', bg: 'rgba(10, 102, 194, 0.12)', border: 'rgba(10, 102, 194, 0.30)' },
+  { color: '#b36b00', bg: 'rgba(179, 107, 0, 0.14)', border: 'rgba(179, 107, 0, 0.32)' },
+  { color: '#6b4fbb', bg: 'rgba(107, 79, 187, 0.12)', border: 'rgba(107, 79, 187, 0.30)' },
+  { color: '#c45c26', bg: 'rgba(196, 92, 38, 0.12)', border: 'rgba(196, 92, 38, 0.30)' },
+  { color: '#0d8a8a', bg: 'rgba(13, 138, 138, 0.12)', border: 'rgba(13, 138, 138, 0.30)' },
+  { color: '#a83d7a', bg: 'rgba(168, 61, 122, 0.12)', border: 'rgba(168, 61, 122, 0.30)' },
+  { color: '#3d6b9a', bg: 'rgba(61, 107, 154, 0.12)', border: 'rgba(61, 107, 154, 0.30)' },
+  { color: '#7a8a1f', bg: 'rgba(122, 138, 31, 0.12)', border: 'rgba(122, 138, 31, 0.30)' },
+]
+
+function themeTone(theme) {
+  const s = String(theme || '')
+  if (!s) return { color: '#86868b', bg: 'rgba(0,0,0,0.04)', border: 'rgba(0,0,0,0.08)' }
+  let h = 0
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0
+  return THEME_PALETTE[Math.abs(h) % THEME_PALETTE.length]
+}
+
+function badgeHtml(text, bg) {
+  return `<i style="display:inline-flex;align-items:center;justify-content:center;min-width:12px;height:12px;padding:0 2px;border-radius:2px;background:${bg};color:#fff;font-size:8px;font-style:normal;font-weight:700;line-height:1;">${esc(text)}</i>`
+}
+
 /**
  * @param {object} payload
  * @param {string} payload.titleDate
@@ -57,7 +82,7 @@ export function buildLimitUpShareSheet(payload) {
 
   const root = document.createElement('div')
   root.setAttribute('data-lu-share-sheet', '1')
-  root.setAttribute('data-ver', 'inline-v3')
+  root.setAttribute('data-ver', 'inline-v4')
   root.style.cssText = [
     'box-sizing:border-box',
     'width:1180px',
@@ -73,7 +98,8 @@ export function buildLimitUpShareSheet(payload) {
     .slice(0, 16)
     .map((t) => {
       const on = activeTheme && activeTheme === t.theme
-      return `<span style="display:inline-block;flex:0 0 auto;width:max-content;padding:2px 8px;border-radius:999px;border:1px solid ${on ? 'rgba(196,86,86,.45)' : 'rgba(0,0,0,.08)'};background:${on ? 'rgba(196,86,86,.1)' : '#fff'};font-size:11px;line-height:1.4;color:${on ? '#c45656' : '#3a3a3c'};white-space:nowrap;word-break:keep-all;">${esc(t.theme)}&nbsp;<b style="color:#c45656;font-size:10px;font-weight:700;">${esc(t.count)}</b></span>`
+      const tone = themeTone(t.theme)
+      return `<span style="display:inline-block;flex:0 0 auto;width:max-content;padding:2px 8px;border-radius:999px;border:1px solid ${tone.border};background:${on ? tone.bg : '#fff'};font-size:11px;line-height:1.4;color:${tone.color};font-weight:${on ? 650 : 400};white-space:nowrap;word-break:keep-all;">${esc(t.theme)}&nbsp;<b style="color:${tone.color};font-size:10px;font-weight:700;">${esc(t.count)}</b></span>`
     })
     .join('')
 
@@ -81,34 +107,54 @@ export function buildLimitUpShareSheet(payload) {
     .map((tier) => {
       const cards = (tier.stocks || [])
         .map((s) => {
-          const time = esc(s.lastSealTime || s.firstSealTime || '--:--')
+          const failed = !!s.failed
+          const time = failed ? '' : esc(s.lastSealTime || s.firstSealTime || '--:--')
           const name = esc(s.name || s.code || '-')
-          const theme = esc(s.theme || '-')
+          const theme = s.theme || '-'
+          const tone = themeTone(s.theme)
           const badges = []
+          if (!failed && s.yizi) badges.push(badgeHtml('一', '#c45656'))
           if (Number(s.lianban) > 1) {
-            badges.push(`<i style="display:inline-flex;align-items:center;justify-content:center;min-width:12px;height:12px;padding:0 2px;border-radius:2px;background:#409eff;color:#fff;font-size:8px;font-style:normal;font-weight:700;line-height:1;">${esc(s.lianban)}</i>`)
+            badges.push(badgeHtml(String(s.lianban), failed ? '#d1d1d6' : '#409eff'))
           }
-          if (Number(s.breakCount) > 0) {
-            badges.push('<i style="display:inline-flex;align-items:center;justify-content:center;min-width:12px;height:12px;padding:0 2px;border-radius:2px;background:#e6a23c;color:#fff;font-size:8px;font-style:normal;font-weight:700;line-height:1;">炸</i>')
-          }
+          if (!failed && Number(s.breakCount) > 0) badges.push(badgeHtml('炸', '#e6a23c'))
           const pctText = fmtPctChg(s.pctChg)
+          const pctN = Number(s.pctChg)
+          const pctColor = Number.isNaN(pctN) || pctN === 0
+            ? '#86868b'
+            : pctN > 0 ? '#c45656' : '#3d9a4a'
           const pctHtml = pctText
-            ? `<span style="flex:0 0 auto;font-size:9px;font-weight:700;color:#c45656;font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2;">${esc(pctText)}</span>`
+            ? `<span style="flex:0 0 auto;font-size:9px;font-weight:700;color:${pctColor};font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2;">${esc(pctText)}</span>`
             : ''
           const meta = []
-          if (s.sealAmount != null) meta.push(`封 ${fmtSealAmount(s.sealAmount)}`)
-          if (s.turnoverRate != null) meta.push(`换 ${fmtRate(s.turnoverRate)}`)
-          return `<div style="box-sizing:border-box;width:100px;padding:4px 5px 3px;border:1px solid #ebebef;border-radius:5px;background:#fff;">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:2px;">
+          if (!failed && s.sealAmount != null) meta.push(`封 ${fmtSealAmount(s.sealAmount)}`)
+          if (!failed && s.turnoverRate != null) meta.push(`换 ${fmtRate(s.turnoverRate)}`)
+          const cardBorder = failed ? '1px solid #f0f0f2' : '1px solid #ebebef'
+          const cardBg = failed ? '#fcfcfd' : '#fff'
+          const nameColor = '#1d1d1f'
+          const themeHtmlInner = s.theme
+            ? `<span style="flex:1 1 auto;min-width:0;font-size:8px;font-weight:650;color:${tone.color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35;">${esc(theme)}</span>`
+            : `<span style="flex:1 1 auto;min-width:0;font-size:8px;color:#86868b;">-</span>`
+          const failX = failed
+            ? `<span style="position:absolute;inset:-2px;display:flex;align-items:center;justify-content:center;font-size:60px;font-weight:200;line-height:1;color:rgba(60,60,67,.16);pointer-events:none;font-family:'Helvetica Neue',Arial,sans-serif;">×</span>`
+            : ''
+          const contentOpacity = failed ? 'opacity:.52;' : ''
+          return `<div style="box-sizing:border-box;position:relative;overflow:hidden;width:100px;padding:4px 5px 3px;border:${cardBorder};border-radius:5px;background:${cardBg};">
+            ${failX}
+            <div style="position:relative;z-index:1;${contentOpacity}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:2px;min-height:11px;">
               <span style="font-size:8px;color:#aeaeb2;white-space:nowrap;">${time}</span>
-              <span style="display:inline-flex;gap:2px;">${badges.join('')}</span>
             </div>
-            <div style="margin-top:1px;font-size:11px;font-weight:700;color:#1d1d1f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25;">${name}</div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;">
-              <div style="flex:1 1 auto;min-width:0;font-size:8px;color:#86868b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${theme}</div>
+              <div style="flex:1 1 auto;min-width:0;font-size:11px;font-weight:700;color:${nameColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25;">${name}</div>
+              <span style="display:inline-flex;flex:0 0 auto;gap:2px;">${badges.join('')}</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;">
+              ${themeHtmlInner}
               ${pctHtml}
             </div>
-            <div style="margin-top:1px;font-size:8px;color:#aeaeb2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;">${esc(meta.join(' '))}</div>
+            ${meta.length ? `<div style="margin-top:1px;font-size:8px;color:#aeaeb2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;">${esc(meta.join(' '))}</div>` : ''}
+            </div>
           </div>`
         })
         .join('')

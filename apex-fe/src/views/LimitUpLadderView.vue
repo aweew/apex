@@ -136,6 +136,62 @@ function fmtSealAmount(v) {
   return n.toFixed(0)
 }
 
+/** 题材配色：与上方 chip、卡片题材共用同一套哈希色 */
+const THEME_PALETTE = [
+  { color: '#c43d4a', bg: 'rgba(196, 61, 74, 0.12)', border: 'rgba(196, 61, 74, 0.32)' },
+  { color: '#1f8a4c', bg: 'rgba(31, 138, 76, 0.12)', border: 'rgba(31, 138, 76, 0.30)' },
+  { color: '#0a66c2', bg: 'rgba(10, 102, 194, 0.12)', border: 'rgba(10, 102, 194, 0.30)' },
+  { color: '#b36b00', bg: 'rgba(179, 107, 0, 0.14)', border: 'rgba(179, 107, 0, 0.32)' },
+  { color: '#6b4fbb', bg: 'rgba(107, 79, 187, 0.12)', border: 'rgba(107, 79, 187, 0.30)' },
+  { color: '#c45c26', bg: 'rgba(196, 92, 38, 0.12)', border: 'rgba(196, 92, 38, 0.30)' },
+  { color: '#0d8a8a', bg: 'rgba(13, 138, 138, 0.12)', border: 'rgba(13, 138, 138, 0.30)' },
+  { color: '#a83d7a', bg: 'rgba(168, 61, 122, 0.12)', border: 'rgba(168, 61, 122, 0.30)' },
+  { color: '#3d6b9a', bg: 'rgba(61, 107, 154, 0.12)', border: 'rgba(61, 107, 154, 0.30)' },
+  { color: '#7a8a1f', bg: 'rgba(122, 138, 31, 0.12)', border: 'rgba(122, 138, 31, 0.30)' },
+]
+
+function hashTheme(theme) {
+  const s = String(theme || '')
+  let h = 0
+  for (let i = 0; i < s.length; i += 1) {
+    h = (h * 31 + s.charCodeAt(i)) | 0
+  }
+  return Math.abs(h)
+}
+
+function themeTone(theme) {
+  if (!theme) {
+    return { color: '#86868b', bg: 'rgba(0,0,0,0.04)', border: 'rgba(0,0,0,0.08)' }
+  }
+  return THEME_PALETTE[hashTheme(theme) % THEME_PALETTE.length]
+}
+
+function themeChipStyle(theme, on) {
+  const t = themeTone(theme)
+  if (on) {
+    return {
+      color: t.color,
+      background: t.bg,
+      borderColor: t.border,
+    }
+  }
+  return {
+    color: t.color,
+    background: '#fff',
+    borderColor: t.border,
+  }
+}
+
+function themeTagStyle(theme) {
+  return { color: themeTone(theme).color }
+}
+
+function pctClass(v) {
+  const n = Number(v)
+  if (Number.isNaN(n) || n === 0) return ''
+  return n > 0 ? 'up' : 'down'
+}
+
 async function load() {
   loading.value = true
   try {
@@ -363,7 +419,7 @@ onBeforeUnmount(() => {
         / 同板 <b>{{ effect.promoteHold != null ? effect.promoteHold : '-' }}</b>
         / 断板 <b>{{ effect.promoteFail ?? '-' }}</b>
       </span>
-      <span v-if="effect.promoteRate != null">晋级率 <b>{{ fmtRate(effect.promoteRate) }}</b></span>
+      <span v-if="effect.promoteRate != null"><TermTip term="promote_rate">晋级率</TermTip> <b>{{ fmtRate(effect.promoteRate) }}</b></span>
       <span v-if="effect.avgNextPct != null">均涨跌 <b>{{ fmtRate(effect.avgNextPct) }}</b></span>
       <span v-if="effect.failNames?.length" class="fail-names">断板 {{ effect.failNames.join('、') }}</span>
     </section>
@@ -391,12 +447,13 @@ onBeforeUnmount(() => {
             type="button"
             class="theme-chip"
             :class="{ on: activeTheme === t.theme }"
+            :style="themeChipStyle(t.theme, activeTheme === t.theme)"
             :title="`筛选「${t.theme}」；右键或「板块」进板块页`"
             @click="onThemeClick(t.theme)"
             @dblclick="goSector(t.theme, $event)"
           >
             <em>{{ t.theme }}</em>
-            <b>{{ t.count }}</b>
+            <b :style="{ color: themeTone(t.theme).color }">{{ t.count }}</b>
           </button>
           <button
             v-if="activeTheme"
@@ -416,9 +473,11 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="legend no-capture">
-          <span><i class="badge lb">N</i>连板</span>
-          <span><i class="badge break">炸</i>炸板</span>
-          <span><i class="badge obs">观</i>观察池</span>
+          <span class="legend-item"><i class="badge lb">N</i>连板</span>
+          <span class="legend-item"><i class="badge break">炸</i>炸板</span>
+          <span class="legend-item"><i class="badge yizi">一</i>一字板</span>
+          <span class="legend-item"><i class="legend-fail-mark" aria-hidden="true">×</i>断板</span>
+          <span class="legend-item"><i class="badge obs show">观</i>观察池</span>
           <span class="muted">末封 / 封单 / 换手 · 单击题材筛选 · 双击进板块</span>
         </div>
       </section>
@@ -447,38 +506,46 @@ onBeforeUnmount(() => {
         <div class="tier-grid">
           <button
             v-for="s in tier.stocks"
-            :key="s.code"
+            :key="s.failed ? `fail-${s.code}` : s.code"
             type="button"
             class="card"
-            :class="{ hot: activeTheme && s.theme === activeTheme }"
+            :class="{
+              hot: activeTheme && s.theme === activeTheme && !s.failed,
+              failed: !!s.failed,
+            }"
+            :title="s.failed ? '昨日连板今日断板' : undefined"
             @click="router.push(`/stock/${s.code}`)"
           >
             <div class="card-top">
-              <span class="seal">{{ s.lastSealTime || s.firstSealTime || '--:--' }}</span>
+              <span class="seal">{{ s.failed ? '' : (s.lastSealTime || s.firstSealTime || '--:--') }}</span>
+              <button
+                type="button"
+                class="badge obs no-capture"
+                title="加入观察池"
+                @click="addObserve(s, $event)"
+              >观</button>
+            </div>
+            <div class="card-name-row">
+              <div class="card-name">{{ s.name || s.code }}</div>
               <span class="badges">
+                <i v-if="!s.failed && s.yizi" class="badge yizi" title="一字板">一</i>
                 <i v-if="s.lianban > 1" class="badge lb">{{ s.lianban }}</i>
-                <i v-if="s.breakCount > 0" class="badge break">炸</i>
-                <button
-                  type="button"
-                  class="badge obs no-capture"
-                  title="加入观察池"
-                  @click="addObserve(s, $event)"
-                >观</button>
+                <i v-if="!s.failed && s.breakCount > 0" class="badge break">炸</i>
               </span>
             </div>
-            <div class="card-name">{{ s.name || s.code }}</div>
             <div class="card-sub">
               <button
                 v-if="s.theme"
                 type="button"
                 class="card-theme"
+                :style="themeTagStyle(s.theme)"
                 :title="`筛选题材 ${s.theme}`"
                 @click.stop="onThemeClick(s.theme)"
               >{{ s.theme }}</button>
               <div v-else class="card-theme mute">-</div>
-              <div v-if="s.pctChg != null" class="card-pct up">{{ fmtPctChg(s.pctChg) }}</div>
+              <div v-if="s.pctChg != null" class="card-pct" :class="pctClass(s.pctChg)">{{ fmtPctChg(s.pctChg) }}</div>
             </div>
-            <div class="card-meta">
+            <div v-if="!s.failed" class="card-meta">
               <span v-if="s.sealAmount != null">封 {{ fmtSealAmount(s.sealAmount) }}</span>
               <span v-if="s.turnoverRate != null">换 {{ fmtRate(s.turnoverRate) }}</span>
             </div>
@@ -636,7 +703,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   white-space: nowrap;
   word-break: keep-all;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
 
 .theme-chip em {
@@ -646,20 +713,17 @@ onBeforeUnmount(() => {
 .theme-chip b {
   font-size: 11px;
   font-weight: 700;
-  color: var(--lu-red);
   font-variant-numeric: tabular-nums;
 }
 
 .theme-chip:hover {
-  border-color: rgba(196, 86, 86, 0.35);
-  background: var(--lu-red-soft);
+  filter: brightness(0.98);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .theme-chip.on {
-  border-color: rgba(196, 86, 86, 0.45);
-  background: var(--lu-red-soft);
-  color: var(--lu-red);
   font-weight: 650;
+  box-shadow: inset 0 0 0 1px currentColor;
 }
 
 .theme-clear {
@@ -687,15 +751,48 @@ onBeforeUnmount(() => {
   color: #86868b;
   font-size: 11px;
   align-items: center;
+  line-height: 1;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
 }
 
 .legend .badge {
-  margin-right: 3px;
-  vertical-align: middle;
+  margin: 0;
+  flex-shrink: 0;
+  position: relative;
+  top: 0;
+}
+
+.legend .badge.obs.show {
+  opacity: 1;
+  pointer-events: none;
+}
+
+.legend-fail-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: #fcfcfd;
+  color: rgba(60, 60, 67, 0.35);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 300;
+  line-height: 1;
+  font-family: "Helvetica Neue", Arial, sans-serif;
 }
 
 .legend .muted {
   color: #aeaeb2;
+  line-height: 1.2;
+  align-self: center;
 }
 
 .tier {
@@ -750,6 +847,7 @@ onBeforeUnmount(() => {
 }
 
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -762,6 +860,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   text-align: left;
   min-height: 0;
+  overflow: hidden;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
@@ -776,11 +875,54 @@ onBeforeUnmount(() => {
   background: #fffaf8;
 }
 
+.card.failed {
+  border-color: #f0f0f2;
+  background: #fcfcfd;
+  box-shadow: none;
+}
+
+.card.failed:hover {
+  border-color: #e8e8ec;
+  box-shadow: none;
+  transform: none;
+}
+
+.card.failed::after {
+  content: '×';
+  position: absolute;
+  inset: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64px;
+  font-weight: 200;
+  font-style: normal;
+  line-height: 1;
+  color: rgba(60, 60, 67, 0.16);
+  pointer-events: none;
+  z-index: 2;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+}
+
+.card.failed .card-top,
+.card.failed .card-name-row,
+.card.failed .card-sub,
+.card.failed .card-meta {
+  position: relative;
+  z-index: 1;
+  opacity: 0.52;
+}
+
+.card.failed .badge.lb {
+  background: #d1d1d6;
+}
+
 .card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 2px;
+  min-height: 13px;
 }
 
 .seal {
@@ -789,9 +931,19 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
+.card-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  min-width: 0;
+}
+
 .badges {
   display: inline-flex;
+  flex: 0 0 auto;
   gap: 2px;
+  align-items: center;
 }
 
 .badge {
@@ -817,6 +969,10 @@ onBeforeUnmount(() => {
   background: #e6a23c;
 }
 
+.badge.yizi {
+  background: #c45656;
+}
+
 .badge.obs {
   border: 0;
   cursor: pointer;
@@ -838,6 +994,8 @@ onBeforeUnmount(() => {
 }
 
 .card-name {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   font-weight: 700;
   color: #1d1d1f;
@@ -861,17 +1019,28 @@ onBeforeUnmount(() => {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
+  color: #86868b;
+}
+
+.card-pct.up {
+  color: var(--lu-red);
+}
+
+.card-pct.down {
+  color: var(--lu-green);
 }
 
 .card-theme {
   flex: 1;
   min-width: 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
   padding: 0;
   margin: 0;
   font: inherit;
   font-size: 9px;
+  font-weight: 650;
   color: #86868b;
   text-align: left;
   cursor: pointer;
@@ -879,10 +1048,11 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+  line-height: 1.35;
+  box-sizing: border-box;
 }
 
 .card-theme:hover {
-  color: var(--lu-red);
   text-decoration: underline;
 }
 
