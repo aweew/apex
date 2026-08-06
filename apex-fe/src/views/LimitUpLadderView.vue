@@ -82,7 +82,11 @@ function disableUnavailableDate(date) {
 
 function fmtRate(v) {
   if (v == null || v === '') return ''
-  return `${Number(v).toFixed(1)}%`
+  const n = Number(v)
+  if (Number.isNaN(n)) return ''
+  // 100.0% → 100%，避免左侧窄栏叠字
+  if (Math.abs(n - Math.round(n)) < 0.05) return `${Math.round(n)}%`
+  return `${n.toFixed(1)}%`
 }
 
 function fmtPctChg(v) {
@@ -500,8 +504,8 @@ onBeforeUnmount(() => {
         <aside class="tier-side">
           <div class="tier-title">{{ tier.title }}</div>
           <div v-if="tier.promoteLabel || tier.promoteRate != null" class="tier-promote">
-            <span v-if="tier.promoteLabel">{{ tier.promoteLabel }}</span>
-            <span v-if="tier.promoteRate != null">{{ fmtRate(tier.promoteRate) }}</span>
+            <span v-if="tier.promoteLabel" class="tier-promote-label">{{ tier.promoteLabel }}</span>
+            <span v-if="tier.promoteRate != null" class="tier-promote-rate">{{ fmtRate(tier.promoteRate) }}</span>
           </div>
           <div class="tier-count">{{ tier.count }} 家</div>
         </aside>
@@ -799,10 +803,12 @@ onBeforeUnmount(() => {
 
 .tier {
   display: grid;
-  grid-template-columns: 58px 1fr;
-  gap: 8px;
+  grid-template-columns: max-content 1fr;
+  column-gap: 6px;
+  row-gap: 0;
+  align-items: start;
   margin-bottom: 10px;
-  padding: 4px 2px 10px 4px;
+  padding: 4px 2px 10px 2px;
   border-bottom: 1px solid #f0f0f2;
 }
 
@@ -812,33 +818,59 @@ onBeforeUnmount(() => {
 }
 
 .tier-side {
-  padding: 2px 0 0;
+  /* 与首行单张卡片同高，内部垂直居中，和第一行卡片对齐 */
+  --lu-card-row-h: 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  box-sizing: border-box;
+  width: max-content;
+  min-height: var(--lu-card-row-h);
+  height: var(--lu-card-row-h);
+  padding: 0;
   text-align: left;
 }
 
 .tier-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--lu-red);
   line-height: 1.15;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .tier-promote {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin-top: 2px;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 1px;
+  color: var(--lu-green);
+  line-height: 1.15;
+}
+
+.tier-promote-label,
+.tier-promote-rate {
+  display: block;
   font-size: 10px;
   font-weight: 650;
-  color: var(--lu-green);
-  line-height: 1.25;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.tier-promote-rate {
+  font-variant-numeric: tabular-nums;
+  margin-top: 0;
 }
 
 .tier-count {
-  margin-top: 2px;
-  font-size: 11px;
+  margin-top: 1px;
+  font-size: 10px;
   color: #aeaeb2;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .tier-grid {
@@ -1073,7 +1105,7 @@ onBeforeUnmount(() => {
 
 .card-meta {
   display: flex;
-  gap: 5px;
+  gap: 8px;
   font-size: 9px;
   color: #aeaeb2;
   margin-top: 0;
@@ -1141,13 +1173,13 @@ onBeforeUnmount(() => {
   }
 
   .tier {
-    grid-template-columns: 52px 1fr;
-    gap: 6px;
-    padding-left: 2px;
+    grid-template-columns: max-content 1fr;
+    column-gap: 5px;
+    padding-left: 0;
   }
 
   .tier-title {
-    font-size: 16px;
+    font-size: 15px;
   }
 
   .card {

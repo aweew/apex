@@ -14,7 +14,10 @@ function esc(s) {
 
 function fmtRate(v) {
   if (v == null || v === '') return ''
-  return `${Number(v).toFixed(1)}%`
+  const n = Number(v)
+  if (Number.isNaN(n)) return ''
+  if (Math.abs(n - Math.round(n)) < 0.05) return `${Math.round(n)}%`
+  return `${n.toFixed(1)}%`
 }
 
 function fmtPctChg(v) {
@@ -157,24 +160,25 @@ export function buildLimitUpShareSheet(payload) {
               ${themeHtmlInner}
               ${pctHtml}
             </div>
-            ${meta.length ? `<div style="margin-top:1px;font-size:8px;color:#aeaeb2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;">${esc(meta.join(' '))}</div>` : ''}
+            ${meta.length ? `<div style="display:flex;gap:8px;margin-top:1px;font-size:8px;color:#aeaeb2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;font-variant-numeric:tabular-nums;">${meta.map((m) => `<span>${esc(m)}</span>`).join('')}</div>` : ''}
             </div>
           </div>`
         })
         .join('')
 
-      const promoteBits = []
-      if (tier.promoteLabel) promoteBits.push(esc(tier.promoteLabel))
-      if (tier.promoteRate != null) promoteBits.push(esc(fmtRate(tier.promoteRate)))
-      const promote = promoteBits.length
-        ? `<div style="margin-top:2px;font-size:10px;font-weight:650;color:#3d9a4a;line-height:1.25;white-space:nowrap;">${promoteBits.join(' ')}</div>`
+      const promoteLabel = tier.promoteLabel
+        ? `<div style="margin-top:1px;font-size:10px;font-weight:650;color:#3d9a4a;line-height:1.15;white-space:nowrap;">${esc(tier.promoteLabel)}</div>`
+        : ''
+      const promoteRate = tier.promoteRate != null
+        ? `<div style="font-size:10px;font-weight:650;color:#3d9a4a;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums;">${esc(fmtRate(tier.promoteRate))}</div>`
         : ''
 
-      return `<section style="display:grid;grid-template-columns:58px 1fr;gap:8px;margin-bottom:8px;padding:2px 0 8px;border-bottom:1px solid #f0f0f2;">
-        <aside style="padding-top:2px;text-align:left;">
-          <div style="font-size:16px;font-weight:800;color:#c45656;line-height:1.15;">${esc(tier.title)}</div>
-          ${promote}
-          <div style="margin-top:2px;font-size:10px;color:#aeaeb2;">${esc(tier.count ?? tier.stocks?.length ?? 0)} 家</div>
+      return `<section style="display:grid;grid-template-columns:max-content 1fr;column-gap:6px;align-items:start;margin-bottom:8px;padding:2px 0 8px;border-bottom:1px solid #f0f0f2;">
+        <aside style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start;box-sizing:border-box;width:max-content;min-height:72px;height:72px;padding:0;text-align:left;">
+          <div style="font-size:15px;font-weight:800;color:#c45656;line-height:1.15;white-space:nowrap;">${esc(tier.title)}</div>
+          ${promoteLabel}
+          ${promoteRate}
+          <div style="margin-top:1px;font-size:10px;color:#aeaeb2;white-space:nowrap;line-height:1.2;">${esc(tier.count ?? tier.stocks?.length ?? 0)} 家</div>
         </aside>
         <div style="display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start;">${cards}</div>
       </section>`
