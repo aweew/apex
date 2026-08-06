@@ -223,7 +223,7 @@ onMounted(loadList)
   <div class="page">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Watchlist</p>
+        <p class="eyebrow">灵枢 · Watchlist</p>
         <h1>自选股</h1>
         <p>导入 → 同步日线 → 看行情 → 进决策 / 观察池 / K线</p>
       </div>

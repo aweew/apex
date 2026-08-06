@@ -301,7 +301,7 @@ onMounted(load)
   <div class="page decision" v-loading="loading">
     <header class="header dec-header">
       <div>
-        <p class="eyebrow">Apex · Decision</p>
+        <p class="eyebrow">灵枢 · Decision</p>
         <h1>智能决策</h1>
         <p class="sub">
           {{ data?.message || '先看市场立场，再按评分出买卖单' }}

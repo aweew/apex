@@ -1,6 +1,8 @@
 /**
- * 名词百科分享画布：关键样式走 inline，避免截图克隆丢失 class CSS；必须带 Apex 品牌信息。
+ * 名词百科分享画布：关键样式走 inline，避免截图克隆丢失 class CSS；必须带灵枢 Apex 品牌信息。
  */
+
+import { BRAND, shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
 
 function esc(s) {
   return String(s ?? '')
@@ -52,27 +54,21 @@ export function buildGlossaryShareSheet(payload) {
       linear-gradient(165deg, #faf7f1 0%, #f0ebe3 48%, #e8eef4 100%);"></div>
     <div style="position:relative;z-index:1;">
       <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:22px;">
-        <div style="display:flex;align-items:baseline;gap:12px;">
-          <span style="font-size:26px;font-weight:750;letter-spacing:.12em;line-height:1;">APEX</span>
-          <span style="font-size:13px;color:#6e6e73;letter-spacing:.06em;">名词百科</span>
-        </div>
+        ${shareBrandLockupHtml({ subtitle: '名词百科', markSize: 48 })}
         <div style="text-align:right;color:#8e8e93;font-size:11px;font-variant-numeric:tabular-nums;">
           ${esc(titleDate || '')}
         </div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
         <span style="display:inline-flex;padding:3px 10px;border-radius:999px;background:rgba(0,0,0,.06);color:#3a3a3c;font-size:12px;font-weight:650;">${esc(term.category || '词条')}</span>
-        <span style="display:inline-flex;padding:3px 10px;border-radius:999px;background:rgba(0,113,227,.1);color:#0071e3;font-size:12px;font-weight:650;">Apex Glossary</span>
+        <span style="display:inline-flex;padding:3px 10px;border-radius:999px;background:rgba(0,113,227,.1);color:#0071e3;font-size:12px;font-weight:650;">${esc(BRAND.nameZh)} Glossary</span>
       </div>
       <h2 style="margin:0 0 12px;font-size:26px;font-weight:750;letter-spacing:-.03em;line-height:1.25;">${esc(term.title || '未命名词条')}</h2>
       ${short ? `<p style="margin:0 0 10px;font-size:15px;line-height:1.65;color:#1d1d1f;">${esc(short)}</p>` : ''}
       ${detail ? `<p style="margin:0;font-size:13px;line-height:1.7;color:#3a3a3c;">${esc(detail)}</p>` : ''}
       ${tipHtml}
       ${aliasesHtml}
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px;padding-top:14px;border-top:1px solid rgba(0,0,0,.08);color:#8e8e93;font-size:11px;">
-        <span style="font-weight:650;color:#6e6e73;">来自 Apex 本地量化台</span>
-        <span>仅供研究参考 · 不构成投资建议</span>
-      </div>
+      ${shareBrandFooterHtml({ note: `来自 ${BRAND.nameZh} ${BRAND.product} · 仅供研究参考 · 不构成投资建议` })}
     </div>
   `
   return root

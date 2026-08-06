@@ -96,7 +96,7 @@ onMounted(load)
   <div class="page">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Daily</p>
+        <p class="eyebrow">灵枢 · Daily</p>
         <h1>日终清单</h1>
         <p>
           建议买卖 + 持有离场条件 · 可一键录入真实成交

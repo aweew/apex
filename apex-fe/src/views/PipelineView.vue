@@ -101,7 +101,7 @@ onMounted(loadUniverse)
   <div class="page pipe-page">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Pipeline</p>
+        <p class="eyebrow">灵枢 · Pipeline</p>
         <h1>研究流水线</h1>
         <p class="sub">一键：行情准备 → 智能决策（股票池 · 信号 · 研判 · 观察池）</p>
       </div>

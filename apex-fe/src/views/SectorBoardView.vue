@@ -336,7 +336,7 @@ onBeforeUnmount(() => {
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Sector</p>
+        <p class="eyebrow">灵枢 · Sector</p>
         <h1>板块行情</h1>
         <p>主线强弱 · 涨停家数 · 联动决策候选</p>
       </div>

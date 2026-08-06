@@ -185,7 +185,7 @@ onMounted(load)
   <div class="page signal-page" v-loading="loading || ordering">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Signals</p>
+        <p class="eyebrow">灵枢 · Signals</p>
         <h1><TermTip term="strategy_signal">策略信号</TermTip></h1>
         <p class="sub">
           S1/S2/S3 · 股票池 {{ universeCount }} 只

@@ -1633,7 +1633,7 @@ function dash(v) {
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Stock</p>
+        <p class="eyebrow">灵枢 · Stock</p>
         <h1>{{ basic?.name || '股票详情' }} <span class="code">{{ basic?.code || code }}</span></h1>
         <p>{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>

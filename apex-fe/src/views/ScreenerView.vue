@@ -211,7 +211,7 @@ onMounted(() => {
   <div class="page screener-page">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Screener</p>
+        <p class="eyebrow">灵枢 · Screener</p>
         <h1>条件选股</h1>
         <p class="meta-line">
           <span class="chip">全市场 <b>{{ meta.marketCount ?? '—' }}</b></span>

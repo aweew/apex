@@ -1,6 +1,32 @@
 import { domToBlob, domToPng } from 'modern-screenshot'
 
 /**
+ * 等待节点内图片加载完成，避免分享截图丢品牌 Logo
+ * @param {HTMLElement} el
+ * @param {number} [timeoutMs]
+ */
+export async function waitForImages(el, timeoutMs = 4000) {
+  if (!el?.querySelectorAll) return
+  const imgs = Array.from(el.querySelectorAll('img'))
+  if (!imgs.length) return
+  await Promise.all(
+    imgs.map(
+      (img) =>
+        new Promise((resolve) => {
+          if (img.complete && img.naturalWidth > 0) {
+            resolve()
+            return
+          }
+          const done = () => resolve()
+          img.addEventListener('load', done, { once: true })
+          img.addEventListener('error', done, { once: true })
+          setTimeout(done, timeoutMs)
+        }),
+    ),
+  )
+}
+
+/**
  * 将 DOM 节点截成 PNG Blob
  * @param {HTMLElement} el
  * @param {object} [opts]
@@ -10,6 +36,7 @@ export async function captureElementBlob(el, opts = {}) {
   if (!el || typeof el.cloneNode !== 'function') {
     throw new Error('截图节点不存在或不是 DOM 元素')
   }
+  await waitForImages(el)
   const blob = await domToBlob(el, {
     scale: 2,
     backgroundColor: '#ffffff',
@@ -29,6 +56,7 @@ export async function captureElementPng(el, opts = {}) {
   if (!el || typeof el.cloneNode !== 'function') {
     throw new Error('截图节点不存在或不是 DOM 元素')
   }
+  await waitForImages(el)
   return domToPng(el, {
     scale: 2,
     backgroundColor: '#ffffff',

@@ -96,6 +96,12 @@ public class PortfolioSummaryResp {
     private PortfolioBriefResp brief;
 
     /**
+     * 前三仓位（列表轻量填充，按权重）
+     */
+    @Builder.Default
+    private List<PortfolioTopHoldingResp> topHoldings = new ArrayList<>();
+
+    /**
      * 持仓明细（详情时填充）
      */
     @Builder.Default

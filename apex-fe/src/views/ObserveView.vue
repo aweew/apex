@@ -642,7 +642,7 @@ onBeforeUnmount(() => {
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Observe</p>
+        <p class="eyebrow">灵枢 · Observe</p>
         <h1>观察池</h1>
         <p>买入机会 + 情绪风向标；优先处理「接近 / 可执行」</p>
       </div>

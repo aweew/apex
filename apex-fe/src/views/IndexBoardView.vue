@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
   <div class="page mc-page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Quotation</p>
+        <p class="eyebrow">灵枢 · Quotation</p>
         <h1>行情中心</h1>
         <p>{{ briefing?.message || '沪深市场总览 · 指数 · 涨跌分布 · 板块热力' }}</p>
       </div>
@@ -797,7 +797,7 @@ onBeforeUnmount(() => {
       class="market-share-dialog"
       @closed="revokeSharePreview"
     >
-      <p class="share-tip">含 Apex 品牌与赚钱效应；可复制或下载 PNG 后发微信/社群。</p>
+      <p class="share-tip">含灵枢 Apex 品牌与赚钱效应；可复制或下载 PNG 后发微信/社群。</p>
       <div class="share-stage">
         <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="行情分享预览" />
       </div>

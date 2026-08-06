@@ -210,7 +210,7 @@ defineExpose({ openGlossary, close })
       <div class="glossary-head">
         <div class="glossary-title">
           <strong>名词百科</strong>
-          <span>Apex · 指标 · 策略 · 行情释义</span>
+          <span>灵枢 · 指标 · 策略 · 行情释义</span>
         </div>
         <div class="glossary-actions">
           <button
@@ -310,7 +310,7 @@ defineExpose({ openGlossary, close })
     class="glossary-share-dialog"
     @closed="revokeSharePreview"
   >
-    <p class="share-tip">预览含 Apex 品牌信息；可复制或下载 PNG 后发微信/社群。</p>
+    <p class="share-tip">预览含灵枢 Apex 品牌与口号；可复制或下载 PNG 后发微信/社群。</p>
     <div class="share-stage">
       <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="名词百科分享预览" />
     </div>

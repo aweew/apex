@@ -1,8 +1,10 @@
 /**
- * 持仓分享画布：浅色高级风；仓位占比+数量，不含金额；品牌 APEX。
+ * 持仓分享画布：浅色高级风；仓位占比+数量，不含金额；品牌灵枢 Apex。
  * 字体刻意用系统中文字体 + 标准字重，避免截图克隆时字形变形。
  * 表格列宽全部固定，保证跨行对齐。
  */
+
+import { shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
 
 export const HOLDING_SHARE_WIDTH = 1480
 
@@ -230,11 +232,7 @@ export function buildHoldingShareSheet(payload) {
     <div style="position:relative;z-index:1;padding:28px 26px 20px;letter-spacing:0;box-sizing:border-box;">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:14px;">
         <div style="min-width:0;">
-          <div style="display:flex;align-items:center;gap:10px;white-space:nowrap;">
-            <span style="font-size:26px;font-weight:700;letter-spacing:0.08em;line-height:1;color:#1d1d1f;font-family:Arial,'Microsoft YaHei',sans-serif;">APEX</span>
-            <span style="width:1px;height:14px;background:rgba(0,0,0,.14);"></span>
-            <span style="font-size:13px;font-weight:700;color:#6e6e73;">真实持仓</span>
-          </div>
+          ${shareBrandLockupHtml({ subtitle: '真实持仓', markSize: 48 })}
           <div style="margin-top:8px;color:#86868b;font-size:12px;white-space:nowrap;">仓位 · 题材 · 技术/估值 · 评价建议 · 不含金额</div>
         </div>
         <div style="text-align:right;flex:0 0 auto;white-space:nowrap;">
@@ -266,13 +264,7 @@ export function buildHoldingShareSheet(payload) {
         ${moreNote}
       </div>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.08);white-space:nowrap;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:13px;font-weight:700;letter-spacing:0.08em;color:#1d1d1f;font-family:Arial,'Microsoft YaHei',sans-serif;">APEX</span>
-          <span style="font-size:11px;color:#8e8e93;">本地量化台</span>
-        </div>
-        <span style="font-size:11px;color:#8e8e93;">${esc(titleDate)} · 仅展示占比与研判 · 不构成投资建议</span>
-      </div>
+      ${shareBrandFooterHtml({ note: `${esc(titleDate)} · 仅展示占比与研判 · 不构成投资建议` })}
     </div>
   `
   return root

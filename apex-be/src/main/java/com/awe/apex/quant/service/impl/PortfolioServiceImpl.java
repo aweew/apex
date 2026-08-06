@@ -12,6 +12,7 @@ import com.awe.apex.quant.domain.dto.PortfolioImportReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportResp;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
+import com.awe.apex.quant.domain.dto.PortfolioTopHoldingResp;
 import com.awe.apex.quant.domain.dto.ObserveTechSignal;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.MyHolding;
@@ -64,6 +65,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
     private static final Pattern LINE_SPLIT = Pattern.compile("[,，\\t\\s]+");
     private static final BigDecimal FALLBACK_STOP_PCT = new BigDecimal("0.08");
     private static final BigDecimal FALLBACK_TAKE_PCT = new BigDecimal("0.20");
+
+    /** 批量导入时跳过逐条刷快照，导入结束后统一刷一次 */
+    private static final ThreadLocal<Boolean> SKIP_TODAY_SNAPSHOT_REFRESH = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     @Resource
     private PortfolioMapper portfolioMapper;
@@ -150,6 +154,28 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
         }
         return def;
+    }
+
+    /**
+     * 持仓变更后：若已有当日快照则静默重打，避免曲线/当日盈亏仍是旧仓位
+     *
+     * @param portfolioId 组合ID
+     */
+    private void refreshTodaySnapshotQuietly(Long portfolioId) {
+        if (Objects.isNull(portfolioId) || Boolean.TRUE.equals(SKIP_TODAY_SNAPSHOT_REFRESH.get())) {
+            return;
+        }
+        try {
+            PortfolioDaily today = portfolioDailyMapper.selectOne(Wrappers.<PortfolioDaily>lambdaQuery()
+                    .eq(PortfolioDaily::getPortfolioId, portfolioId)
+                    .eq(PortfolioDaily::getTradeDate, LocalDate.now())
+                    .last("LIMIT 1"));
+            if (Objects.nonNull(today)) {
+                snapshot(portfolioId);
+            }
+        } catch (Exception ex) {
+            log.warn("持仓变更后刷新当日快照失败 portfolioId={} err={}", portfolioId, ex.getMessage());
+        }
     }
 
     /**
@@ -309,12 +335,23 @@ public class PortfolioServiceImpl implements IPortfolioService {
             exist.setTakeProfit(req.getTakeProfit());
             exist.setNote(StringUtils.trim(req.getNote()));
             exist.setUpdateTime(now);
-            portfolioHoldingMapper.updateById(exist);
+            // 显式 set，避免 updateById 策略跳过空值导致成本/数量未落库
+            portfolioHoldingMapper.update(null, Wrappers.<PortfolioHolding>lambdaUpdate()
+                    .eq(PortfolioHolding::getId, exist.getId())
+                    .set(PortfolioHolding::getCode, code)
+                    .set(PortfolioHolding::getName, name)
+                    .set(PortfolioHolding::getQuantity, quantity)
+                    .set(PortfolioHolding::getCostPrice, req.getCostPrice())
+                    .set(PortfolioHolding::getStopLoss, req.getStopLoss())
+                    .set(PortfolioHolding::getTakeProfit, req.getTakeProfit())
+                    .set(PortfolioHolding::getNote, StringUtils.trim(req.getNote()))
+                    .set(PortfolioHolding::getUpdateTime, now));
             fillPnl(exist, basic);
             if (Objects.equals(portfolio.getIsDefault(), 1)) {
                 mirrorToMyHolding(exist);
             }
             touchPortfolio(portfolioId);
+            refreshTodaySnapshotQuietly(portfolioId);
             return exist;
         }
         PortfolioHolding created = PortfolioHolding.builder()
@@ -336,6 +373,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
             mirrorToMyHolding(created);
         }
         touchPortfolio(portfolioId);
+        refreshTodaySnapshotQuietly(portfolioId);
         return created;
     }
 
@@ -363,6 +401,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
         }
         touchPortfolio(portfolioId);
+        refreshTodaySnapshotQuietly(portfolioId);
     }
 
     /**
@@ -383,18 +422,26 @@ public class PortfolioServiceImpl implements IPortfolioService {
         int success = 0;
         int fail = 0;
         List<String> errors = new ArrayList<>();
-        for (int i = 0; i < lines.length; i++) {
-            String raw = lines[i].trim();
-            if (StringUtils.isBlank(raw) || raw.startsWith("#")) {
-                continue;
+        SKIP_TODAY_SNAPSHOT_REFRESH.set(Boolean.TRUE);
+        try {
+            for (int i = 0; i < lines.length; i++) {
+                String raw = lines[i].trim();
+                if (StringUtils.isBlank(raw) || raw.startsWith("#")) {
+                    continue;
+                }
+                try {
+                    PortfolioHoldingSaveReq saveReq = parseImportLine(raw);
+                    saveHolding(portfolioId, saveReq);
+                    success++;
+                } catch (Exception ex) {
+                    fail++;
+                    errors.add("第" + (i + 1) + "行: " + ex.getMessage());
+                }
             }
-            try {
-                PortfolioHoldingSaveReq saveReq = parseImportLine(raw);
-                saveHolding(portfolioId, saveReq);
-                success++;
-            } catch (Exception ex) {
-                fail++;
-                errors.add("第" + (i + 1) + "行: " + ex.getMessage());
+        } finally {
+            SKIP_TODAY_SNAPSHOT_REFRESH.set(Boolean.FALSE);
+            if (success > 0) {
+                refreshTodaySnapshotQuietly(portfolioId);
             }
         }
         return PortfolioImportResp.builder().success(success).fail(fail).errors(errors).build();
@@ -663,7 +710,15 @@ public class PortfolioServiceImpl implements IPortfolioService {
             exist.setTakeProfit(holding.getTakeProfit());
             exist.setNote(holding.getNote());
             exist.setUpdateTime(now);
-            portfolioHoldingMapper.updateById(exist);
+            portfolioHoldingMapper.update(null, Wrappers.<PortfolioHolding>lambdaUpdate()
+                    .eq(PortfolioHolding::getId, exist.getId())
+                    .set(PortfolioHolding::getName, holding.getName())
+                    .set(PortfolioHolding::getQuantity, holding.getQuantity())
+                    .set(PortfolioHolding::getCostPrice, holding.getCostPrice())
+                    .set(PortfolioHolding::getStopLoss, holding.getStopLoss())
+                    .set(PortfolioHolding::getTakeProfit, holding.getTakeProfit())
+                    .set(PortfolioHolding::getNote, holding.getNote())
+                    .set(PortfolioHolding::getUpdateTime, now));
         } else {
             portfolioHoldingMapper.insert(PortfolioHolding.builder()
                     .portfolioId(def.getId())
@@ -680,6 +735,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                     .build());
         }
         touchPortfolio(def.getId());
+        refreshTodaySnapshotQuietly(def.getId());
     }
 
     /**
@@ -759,6 +815,28 @@ public class PortfolioServiceImpl implements IPortfolioService {
         if (withHoldings) {
             brief = PortfolioBriefBuilder.build(holdings);
         }
+        List<PortfolioTopHoldingResp> topHoldings = List.of();
+        if (!withHoldings && CollUtil.isNotEmpty(holdings)) {
+            List<PortfolioHolding> ranked = new ArrayList<>(holdings);
+            ranked.sort((a, b) -> {
+                BigDecimal wa = Objects.nonNull(a.getWeightPct()) ? a.getWeightPct() : BigDecimal.ZERO;
+                BigDecimal wb = Objects.nonNull(b.getWeightPct()) ? b.getWeightPct() : BigDecimal.ZERO;
+                return wb.compareTo(wa);
+            });
+            List<PortfolioTopHoldingResp> tops = new ArrayList<>();
+            int lim = Math.min(3, ranked.size());
+            for (int i = 0; i < lim; i++) {
+                PortfolioHolding h = ranked.get(i);
+                tops.add(PortfolioTopHoldingResp.builder()
+                        .code(h.getCode())
+                        .name(h.getName())
+                        .pctChg(h.getPctChg())
+                        .weightPct(h.getWeightPct())
+                        .todayPnl(h.getTodayPnl())
+                        .build());
+            }
+            topHoldings = tops;
+        }
         return PortfolioSummaryResp.builder()
                 .id(portfolio.getId())
                 .name(portfolio.getName())
@@ -775,6 +853,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .todayPct(todayPct)
                 .updateTime(portfolio.getUpdateTime())
                 .brief(brief)
+                .topHoldings(topHoldings)
                 .holdings(withHoldings ? holdings : List.of())
                 .build();
     }

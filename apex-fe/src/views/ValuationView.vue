@@ -158,7 +158,7 @@ onMounted(() => {
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Valuation</p>
+        <p class="eyebrow">灵枢 · Valuation</p>
         <h1>估值系统</h1>
         <p>行业相对 PE/PB · PEG · 简化内在价值 · 财务质量 → 低估 / 合理 / 高估</p>
       </div>

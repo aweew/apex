@@ -12,6 +12,8 @@ import {
   freezeCanvasesForCapture,
   shareFilename,
 } from '../utils/shareCapture'
+import BrandShareLockup from '../components/share/BrandShareLockup.vue'
+import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -443,7 +445,7 @@ onBeforeUnmount(() => {
   <div class="page heatmap-page" v-loading="loading">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Heatmap</p>
+        <p class="eyebrow">灵枢 · Heatmap</p>
         <h1>大盘云图</h1>
         <p>{{ subtitle }}</p>
       </div>
@@ -480,13 +482,16 @@ onBeforeUnmount(() => {
     <div ref="shareCardRef" class="share-card">
       <div class="share-head">
         <div>
-          <strong>Apex 大盘云图</strong>
-          <span>{{ typeLabel }} · {{ colorLabel }} · {{ nodeCount }} 块</span>
+          <BrandShareLockup subtitle="大盘云图" theme="dark" :size="44" />
+          <span class="share-meta">{{ typeLabel }} · {{ colorLabel }} · {{ nodeCount }} 块</span>
         </div>
         <em v-if="data?.tradeDate">{{ data.tradeDate }}</em>
       </div>
       <div ref="chartRef" class="chart" />
-      <p class="share-foot">块越大权重越高 · 红涨绿跌 · 仅供研究参考</p>
+      <BrandShareFoot
+        theme="dark"
+        :note="`${data?.tradeDate || ''} · 仅供研究参考 · 不构成投资建议`"
+      />
     </div>
 
     <el-drawer v-model="drawerOpen" :title="drawerTitle" size="420px">
@@ -575,35 +580,30 @@ onBeforeUnmount(() => {
 .share-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 8px;
   margin-bottom: 8px;
   color: #e6edf3;
 }
 
-.share-head strong {
-  margin-right: 10px;
-  font-size: 15px;
+.share-meta {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #8b949e;
 }
 
-.share-head span,
 .share-head em {
   font-style: normal;
   font-size: 12px;
   color: #8b949e;
+  white-space: nowrap;
 }
 
 .chart {
   width: 100%;
   height: min(72vh, 720px);
   min-height: 420px;
-}
-
-.share-foot {
-  margin: 6px 0 0;
-  text-align: right;
-  font-size: 11px;
-  color: #6e7681;
 }
 
 .share-preview {

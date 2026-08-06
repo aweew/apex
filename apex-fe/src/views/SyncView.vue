@@ -311,7 +311,7 @@ onUnmounted(stopPoll)
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Sync</p>
+        <p class="eyebrow">灵枢 · Sync</p>
         <h1>数据同步</h1>
         <p>
           {{ overview?.message || '统一管理行情 / 板块 / 热点 / 资讯 / 基本面等同步任务，可看进度、可启停' }}

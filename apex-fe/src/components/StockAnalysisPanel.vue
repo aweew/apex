@@ -11,6 +11,9 @@ import {
   resetScrollForCapture,
   shareFilename,
 } from '../utils/shareCapture'
+import BrandShareLockup from './share/BrandShareLockup.vue'
+import BrandShareFoot from './share/BrandShareFoot.vue'
+import { BRAND } from '../brand/identity.js'
 
 const props = defineProps({
   code: { type: String, required: true },
@@ -433,7 +436,7 @@ defineExpose({ reload: () => loadRules() })
       <header class="share-head">
         <div class="share-head-top">
           <div class="share-head-main">
-            <strong>Apex 个股研判</strong>
+            <BrandShareLockup subtitle="个股研判" :size="44" />
             <div class="quote-id">
               <b class="quote-name">{{ data.name || '-' }}</b>
               <span class="quote-code">{{ data.code }}</span>
@@ -663,7 +666,7 @@ defineExpose({ reload: () => loadRules() })
         </section>
       </div>
 
-      <p class="footnote">仅供研究参考，不构成投资建议</p>
+      <BrandShareFoot :note="`${BRAND.nameZh} · 仅供研究参考 · 不构成投资建议`" />
     </div>
 
     <el-dialog v-model="shareOpen" title="分享个股研判" width="720px" destroy-on-close @closed="closeShare">
@@ -716,13 +719,6 @@ defineExpose({ reload: () => loadRules() })
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-}
-
-.share-head strong {
-  font-size: 13px;
-  letter-spacing: -0.02em;
-  color: var(--slate);
-  font-weight: 650;
 }
 
 .quote-id {
@@ -1568,13 +1564,6 @@ defineExpose({ reload: () => loadRules() })
 .muted {
   color: var(--muted);
   font-size: 13px;
-}
-
-.footnote {
-  margin: 2px 0 0;
-  font-size: 11px;
-  color: var(--muted);
-  text-align: right;
 }
 
 .share-preview {

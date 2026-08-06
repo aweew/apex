@@ -328,7 +328,7 @@ onBeforeUnmount(() => {
   <div class="page lu-page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Limit-Up</p>
+        <p class="eyebrow">灵枢 · Limit-Up</p>
         <h1>涨停复盘</h1>
         <p>{{ data?.message || '连板天梯 · 东财涨停池 · 情绪与接力参考' }}</p>
       </div>
@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
       </section>
 
       <footer class="board-foot">
-        <span>Apex · 涨停复盘</span>
+        <span>灵枢 · 涨停复盘</span>
         <span>{{ data?.tradeDate || tradeDate || '' }} · 仅供研究</span>
       </footer>
     </div>

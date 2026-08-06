@@ -1,5 +1,5 @@
 /**
- * Apex 全局指标/名词百科词条。
+ * 灵枢 Apex 全局指标/名词百科词条。
  * 新增词条只需追加本文件；页面用 <TermTip term="id"> 或打开「名词」面板搜索。
  */
 export const GLOSSARY_CATEGORIES = ['绩效', '风险', '技术', '基本面', '策略', '行情']

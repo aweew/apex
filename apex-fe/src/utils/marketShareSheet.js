@@ -1,6 +1,8 @@
 /**
- * 行情中心分享画布：inline 样式截图；品牌统一为 Apex。
+ * 行情中心分享画布：inline 样式截图；品牌统一为灵枢 Apex。
  */
+
+import { shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
 
 function esc(s) {
   return String(s ?? '')
@@ -136,11 +138,7 @@ export function buildMarketShareSheet(payload) {
     <div style="position:relative;z-index:1;padding:28px 30px 22px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px;">
         <div>
-          <div style="display:flex;align-items:center;gap:12px;">
-            <span style="font-size:28px;font-weight:750;letter-spacing:.12em;line-height:1;color:#f5f5f7;">APEX</span>
-            <span style="width:1px;height:16px;background:rgba(245,245,247,.2);"></span>
-            <span style="font-size:13px;font-weight:600;color:rgba(245,245,247,.55);letter-spacing:.06em;">行情中心</span>
-          </div>
+          ${shareBrandLockupHtml({ subtitle: '行情中心', theme: 'dark', markSize: 48 })}
           <div style="margin-top:8px;color:rgba(245,245,247,.48);font-size:12px;max-width:560px;">${esc(message || '沪深市场总览 · 赚钱效应 · 板块热力')}</div>
         </div>
         <div style="text-align:right;flex:0 0 auto;">
@@ -188,13 +186,7 @@ export function buildMarketShareSheet(payload) {
         ${listBlock('概念涨幅 TOP', concepts)}
       </div>` : ''}
 
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:13px;font-weight:720;letter-spacing:.1em;color:#f5f5f7;">APEX</span>
-          <span style="font-size:11px;color:rgba(245,245,247,.4);">本地量化台</span>
-        </div>
-        <span style="font-size:11px;color:rgba(245,245,247,.38);">${esc(titleDate)} · 仅供研究参考 · 不构成投资建议</span>
-      </div>
+      ${shareBrandFooterHtml({ theme: 'dark', note: `${esc(titleDate)} · 仅供研究参考 · 不构成投资建议` })}
     </div>
   `
   return root

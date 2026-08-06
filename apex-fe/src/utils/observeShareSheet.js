@@ -2,6 +2,8 @@
  * 观察池分享画布：关键样式走 inline，避免截图克隆丢失 class CSS
  */
 
+import { shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
+
 function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -116,9 +118,8 @@ export function buildObserveShareSheet(payload) {
   root.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #eee;">
       <div>
-        <div style="font-size:11px;letter-spacing:.04em;color:#8e8e93;">Apex · Observe</div>
-        <div style="margin-top:2px;font-size:22px;font-weight:750;letter-spacing:.02em;">观察池</div>
-        <div style="margin-top:4px;color:#636366;font-size:12px;">${esc(filterText || '当前筛选标的')} · 优先处理接近 / 可执行</div>
+        ${shareBrandLockupHtml({ subtitle: '观察池', markSize: 44 })}
+        <div style="margin-top:6px;color:#636366;font-size:12px;">${esc(filterText || '当前筛选标的')} · 优先处理接近 / 可执行</div>
       </div>
       <div style="text-align:right;color:#636366;font-size:12px;font-variant-numeric:tabular-nums;">
         <div style="font-weight:700;color:#1d1d1f;">${esc(titleDate)}</div>
@@ -135,10 +136,7 @@ export function buildObserveShareSheet(payload) {
       ${cardsHtml || '<div style="padding:28px;text-align:center;color:#8e8e93;">暂无观察标的</div>'}
     </div>
     ${moreNote}
-    <div style="display:flex;justify-content:space-between;margin-top:16px;padding-top:10px;border-top:1px solid #eee;color:#8e8e93;font-size:10px;">
-      <span>Apex · 观察池</span>
-      <span>${esc(titleDate)} · 仅供研究，不构成投资建议</span>
-    </div>
+    ${shareBrandFooterHtml({ note: `${esc(titleDate)} · 仅供研究参考 · 不构成投资建议` })}
   `
   return root
 }

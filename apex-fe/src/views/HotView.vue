@@ -111,7 +111,7 @@ onMounted(load)
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Hot</p>
+        <p class="eyebrow">灵枢 · Hot</p>
         <h1>市场热点</h1>
         <p>
           {{ data?.message || '聚合东财人气 / 雪球关注 / 百度热搜，多源共振优先看' }}

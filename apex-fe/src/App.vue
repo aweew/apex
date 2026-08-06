@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { searchStock } from './api/stock'
 import http from './api/http'
 import GlossaryPanel from './components/GlossaryPanel.vue'
+import { BRAND } from './brand/identity.js'
 
 const router = useRouter()
 const healthOk = ref(null)
@@ -244,9 +245,13 @@ onBeforeUnmount(() => {
 <template>
   <div class="shell" :class="{ dense: denseMode }">
     <nav class="nav">
-      <div class="brand-block">
-        <strong class="brand">Apex</strong>
-        <span class="tagline">本地量化</span>
+      <div class="brand-block" :title="BRAND.slogan">
+        <img class="brand-logo" :src="BRAND.assets.mark" :alt="`${BRAND.nameZh} ${BRAND.nameEn}`" />
+        <div class="brand-text">
+          <strong class="brand">{{ BRAND.nameZh }}</strong>
+          <span class="brand-en">{{ BRAND.nameEn }}</span>
+        </div>
+        <span class="tagline">{{ BRAND.taglineShort }}</span>
       </div>
       <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
         <i class="dot" />
@@ -379,9 +384,27 @@ onBeforeUnmount(() => {
 
 .brand-block {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
+}
+
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  display: block;
+  padding: 2px;
+  border-radius: 50%;
+  background: #0c1015;
+  box-sizing: border-box;
+}
+
+.brand-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .brand {
@@ -389,7 +412,17 @@ onBeforeUnmount(() => {
   font-family: var(--font-display);
   font-size: 17px;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.brand-en {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--slate);
+  text-transform: uppercase;
+  font-family: var(--font-display), Arial, sans-serif;
 }
 
 .tagline {

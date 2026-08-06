@@ -2,6 +2,8 @@
  * 涨停复盘分享画布：全部关键样式走 inline，避免截图克隆丢失 class CSS
  */
 
+import { shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
+
 function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -131,17 +133,17 @@ export function buildLimitUpShareSheet(payload) {
 
   root.innerHTML = `
     <header style="margin-bottom:12px;padding:12px 14px 10px;border:1px solid #eee;border-radius:12px;background:linear-gradient(180deg,#fff8f6 0%,#fff 70%);">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:8px;">
-        <h2 style="margin:0;font-size:18px;font-weight:750;color:#c45656;">${esc(titleDate)} A股 涨停复盘</h2>
-        <span style="font-size:11px;color:#86868b;white-space:nowrap;">${esc(total)} 家${activeTheme ? ` · ${esc(activeTheme)}` : ''}</span>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;">
+        <div>
+          ${shareBrandLockupHtml({ subtitle: '涨停复盘', markSize: 44 })}
+          <h2 style="margin:8px 0 0;font-size:18px;font-weight:750;color:#c45656;">${esc(titleDate)} A股 涨停复盘</h2>
+        </div>
+        <span style="font-size:11px;color:#86868b;white-space:nowrap;padding-top:4px;">${esc(total)} 家${activeTheme ? ` · ${esc(activeTheme)}` : ''}</span>
       </div>
       ${themeHtml ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%;">${themeHtml}</div>` : ''}
     </header>
     <div>${tiersHtml || '<div style="padding:40px;text-align:center;color:#86868b;">暂无数据</div>'}</div>
-    <footer style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:10px;padding-top:8px;border-top:1px dashed #ececef;font-size:10px;color:#aeaeb2;white-space:nowrap;">
-      <span style="flex:0 0 auto;white-space:nowrap;">Apex · 涨停复盘</span>
-      <span style="flex:0 0 auto;white-space:nowrap;">${esc(tradeDate)} · 仅供研究</span>
-    </footer>
+    ${shareBrandFooterHtml({ note: `${esc(tradeDate)} · 仅供研究参考 · 不构成投资建议` })}
   `
   return root
 }

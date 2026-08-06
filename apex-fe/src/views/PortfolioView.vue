@@ -25,6 +25,11 @@ import {
   mountHoldingShareSheet,
 } from '../utils/holdingShareSheet.js'
 import {
+  PORTFOLIO_TODAY_SHARE_WIDTH,
+  buildPortfolioTodayShareSheet,
+  mountPortfolioTodayShareSheet,
+} from '../utils/portfolioTodayShareSheet.js'
+import {
   captureElementBlob,
   copyImageBlob,
   downloadBlob,
@@ -33,6 +38,8 @@ import {
   resetScrollForCapture,
   shareFilename,
 } from '../utils/shareCapture.js'
+import BrandShareLockup from '../components/share/BrandShareLockup.vue'
+import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -68,6 +75,34 @@ const shareMode = ref('card')
 const copying = ref(false)
 const downloading = ref(false)
 let sharePreviewObjectUrl = ''
+/** 多选组合：今日战绩拼图 */
+const selectedIds = ref([])
+
+const selectedPortfolios = computed(() => {
+  const set = new Set(selectedIds.value.map(Number))
+  return (list.value || []).filter((x) => set.has(Number(x.id)))
+})
+
+function isSelected(id) {
+  return selectedIds.value.some((x) => Number(x) === Number(id))
+}
+
+function toggleSelect(id, checked) {
+  const nid = Number(id)
+  if (checked) {
+    if (!isSelected(nid)) selectedIds.value = [...selectedIds.value, nid]
+  } else {
+    selectedIds.value = selectedIds.value.filter((x) => Number(x) !== nid)
+  }
+}
+
+function toggleSelectAll(checked) {
+  if (checked) {
+    selectedIds.value = (list.value || []).map((x) => Number(x.id))
+  } else {
+    selectedIds.value = []
+  }
+}
 
 const SIDE_COLLAPSE_KEY = 'apex.portfolio.sideCollapsed'
 const sideCollapsed = ref(localStorage.getItem(SIDE_COLLAPSE_KEY) === '1')
@@ -84,16 +119,14 @@ const shareCol = computed(() =>
     ? {
         code: 78,
         name: 92,
-        today: 108,
+        today: 88,
         price: 76,
         stop: 76,
-        mv: 88,
-        pnl: 108,
         theme: 112,
-        tech: 320,
+        tech: 340,
         val: 112,
         verdict: 92,
-        advice: 260,
+        advice: 280,
       }
     : {
         code: 96,
@@ -435,6 +468,9 @@ async function loadList(silent = false) {
   try {
     const res = await listPortfolios(includeArchived.value)
     list.value = res?.data || []
+    selectedIds.value = selectedIds.value.filter((id) =>
+      list.value.some((x) => Number(x.id) === Number(id)),
+    )
     if (!activeId.value && list.value.length) {
       const def = list.value.find((x) => x.isDefault) || list.value[0]
       activeId.value = def.id
@@ -697,10 +733,10 @@ async function onSave() {
       id: form.id,
       code: form.code,
       name: form.name,
-      quantity: form.quantity,
-      costPrice: form.costPrice === '' ? null : Number(form.costPrice),
-      stopLoss: form.stopLoss === '' ? null : Number(form.stopLoss),
-      takeProfit: form.takeProfit === '' ? null : Number(form.takeProfit),
+      quantity: Number(form.quantity || 0),
+      costPrice: form.costPrice === '' || form.costPrice == null ? null : Number(form.costPrice),
+      stopLoss: form.stopLoss === '' || form.stopLoss == null ? null : Number(form.stopLoss),
+      takeProfit: form.takeProfit === '' || form.takeProfit == null ? null : Number(form.takeProfit),
       note: form.note,
     })
     ElMessage.success('持仓已保存')
@@ -982,19 +1018,80 @@ async function capturePageShareBlob() {
   }
 }
 
+async function captureTodayBattleShareBlob() {
+  const picks = selectedPortfolios.value
+  if (!picks.length) throw new Error('请先勾选要分享的组合')
+  const titleDate = new Date().toISOString().slice(0, 10)
+  const sheet = buildPortfolioTodayShareSheet({
+    titleDate,
+    portfolios: picks.map((p) => ({
+      id: p.id,
+      name: p.name,
+      positionCount: p.positionCount,
+      todayPct: p.todayPct,
+      topHoldings: (p.topHoldings || []).map((h) => ({
+        code: h.code,
+        name: h.name,
+        weightPct: h.weightPct,
+        pctChg: h.pctChg,
+      })),
+    })),
+  })
+  const mounted = mountPortfolioTodayShareSheet(sheet)
+  try {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const width = PORTFOLIO_TODAY_SHARE_WIDTH
+    const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
+    sheet.style.width = `${width}px`
+    sheet.style.height = `${height}px`
+    const dpr = Math.max(window.devicePixelRatio || 1, 2)
+    sharePreviewLogicalWidth.value = width
+    return await captureElementBlob(sheet, {
+      scale: Math.min(dpr, 2),
+      width,
+      height,
+      backgroundColor: '#f7f9fc',
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        overflow: 'visible',
+        transform: 'none',
+        margin: '0',
+        opacity: '1',
+        padding: '0',
+        boxSizing: 'border-box',
+        fontFamily: '"Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif',
+      },
+    })
+  } finally {
+    mounted.dispose()
+  }
+}
+
 async function openShare(mode = 'card') {
-  if (!rows.value.length) return
-  const nextMode = mode === 'page' ? 'page' : 'card'
+  const nextMode = mode === 'page' ? 'page' : mode === 'today' ? 'today' : 'card'
+  if (nextMode === 'today') {
+    if (!selectedPortfolios.value.length) {
+      ElMessage.warning('请先在左侧勾选要对比的组合')
+      return
+    }
+  } else if (!rows.value.length) {
+    return
+  }
   shareMode.value = nextMode
   sharing.value = true
   try {
-    const blob = nextMode === 'page' ? await capturePageShareBlob() : await captureCardShareBlob()
+    const blob =
+      nextMode === 'page'
+        ? await capturePageShareBlob()
+        : nextMode === 'today'
+          ? await captureTodayBattleShareBlob()
+          : await captureCardShareBlob()
     revokeSharePreview()
     sharePreviewObjectUrl = URL.createObjectURL(blob)
     sharePreviewUrl.value = sharePreviewObjectUrl
     shareOpen.value = true
     await nextTick()
-    // 预览滚回顶部，避免只看到题材条末尾+表格
     const stage = document.querySelector('.holding-share-dialog .share-stage')
     if (stage) stage.scrollTop = 0
   } catch (e) {
@@ -1029,7 +1126,12 @@ async function onDownloadShare() {
   try {
     const blob = await fetch(sharePreviewObjectUrl).then((r) => r.blob())
     const name = detail.value?.name || '组合'
-    const prefix = shareMode.value === 'page' ? `apex-portfolio-page-${name}` : `apex-portfolio-${name}`
+    const prefix =
+      shareMode.value === 'page'
+        ? `apex-portfolio-page-${name}`
+        : shareMode.value === 'today'
+          ? `apex-portfolio-today-${selectedIds.value.length}组`
+          : `apex-portfolio-${name}`
     downloadBlob(blob, shareFilename(prefix))
   } catch (e) {
     ElMessage.error(e.message || '下载失败')
@@ -1065,7 +1167,7 @@ onBeforeUnmount(() => {
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Portfolio</p>
+        <p class="eyebrow">灵枢 · Portfolio</p>
         <h1>组合</h1>
         <p>跟踪自己的或别人的实盘；详情区与「真实持仓」同风格，可导入与每日浮盈快照。</p>
       </div>
@@ -1090,16 +1192,42 @@ onBeforeUnmount(() => {
           </template>
         </div>
         <template v-if="!sideCollapsed">
+          <div class="side-select-bar">
+            <el-checkbox
+              :model-value="list.length > 0 && selectedIds.length === list.length"
+              :indeterminate="selectedIds.length > 0 && selectedIds.length < list.length"
+              size="small"
+              @change="toggleSelectAll"
+            >
+              全选
+            </el-checkbox>
+            <span class="side-select-count">已选 {{ selectedIds.length }}</span>
+            <el-button
+              link
+              type="primary"
+              size="small"
+              :disabled="!selectedIds.length || sharing"
+              :loading="sharing && shareMode === 'today'"
+              @click="openShare('today')"
+            >
+              今日战绩
+            </el-button>
+          </div>
           <div v-if="!list.length" class="side-empty">暂无组合</div>
           <button
             v-for="row in list"
             :key="row.id"
             type="button"
             class="pf-card"
-            :class="{ active: row.id === activeId, archived: row.status === 'ARCHIVED' }"
+            :class="{ active: row.id === activeId, archived: row.status === 'ARCHIVED', picked: isSelected(row.id) }"
             @click="selectPortfolio(row)"
           >
             <div class="pf-top">
+              <el-checkbox
+                :model-value="isSelected(row.id)"
+                @click.stop
+                @change="(v) => toggleSelect(row.id, v)"
+              />
               <strong>{{ row.name }}</strong>
               <span v-if="row.isDefault" class="tag">默认</span>
             </div>
@@ -1109,6 +1237,12 @@ onBeforeUnmount(() => {
             <div class="pf-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
               今日 {{ fmtSignedMoney(row.todayPnl) }}
               <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
+            </div>
+            <div v-if="row.topHoldings?.length" class="pf-tops">
+              <span v-for="h in row.topHoldings.slice(0, 3)" :key="h.code" class="pf-top-chip">
+                {{ h.name || h.code }}
+                <em :class="Number(h.pctChg) >= 0 ? 'up' : 'down'">{{ fmtSignedPct(h.pctChg) }}</em>
+              </span>
             </div>
             <div class="pf-ops" @click.stop>
               <el-button link type="primary" @click="openEditPf(row)">编辑</el-button>
@@ -1132,9 +1266,12 @@ onBeforeUnmount(() => {
       </aside>
 
       <main ref="detailCaptureRef" class="main" v-if="detail">
+        <div v-show="sharingCapture" class="share-brand-strip">
+          <BrandShareLockup :subtitle="detail.isDefault ? '真实持仓' : '组合跟踪'" :size="44" />
+        </div>
         <header class="detail-header">
           <div class="detail-title">
-            <p class="eyebrow share-hide-meta">{{ detail.isDefault ? 'Apex · Holding' : 'Apex · Track' }}</p>
+            <p class="eyebrow share-hide-meta">{{ detail.isDefault ? '灵枢 · Holding' : '灵枢 · Track' }}</p>
             <h2>{{ detail.name }}</h2>
             <p v-if="detail.ownerLabel || detail.note" class="detail-sub share-hide-meta">
               <template v-if="detail.ownerLabel">{{ detail.ownerLabel }}</template>
@@ -1143,14 +1280,17 @@ onBeforeUnmount(() => {
             </p>
           </div>
           <div class="actions">
-            <el-dropdown trigger="click" :disabled="!rows.length || sharing" @command="openShare">
-              <el-button type="primary" plain :loading="sharing" :disabled="!rows.length">
+            <el-dropdown trigger="click" :disabled="sharing" @command="openShare">
+              <el-button type="primary" plain :loading="sharing">
                 {{ sharing ? '生成中…' : '分享截图' }}
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="card">卡片海报</el-dropdown-item>
-                  <el-dropdown-item command="page">右侧原样长图</el-dropdown-item>
+                  <el-dropdown-item command="today" :disabled="!selectedIds.length">
+                    今日战绩拼图{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="card" :disabled="!rows.length">卡片海报</el-dropdown-item>
+                  <el-dropdown-item command="page" :disabled="!rows.length">右侧原样长图</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -1164,26 +1304,29 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
-        <div v-if="rows.length" class="stat-cards">
+        <div v-if="rows.length" class="stat-cards" :class="{ 'stat-cards--share': sharingCapture }">
           <div class="stat-card">
             <label>持仓只数</label>
             <b>{{ rows.length }}</b>
           </div>
-          <div class="stat-card">
+          <div v-if="!sharingCapture" class="stat-card">
             <label>总市值</label>
             <b>{{ fmtMoney(totalMv) }}</b>
           </div>
           <div class="stat-card">
-            <label>今日盈亏</label>
-            <b :class="totalTodayPnl >= 0 ? 'up' : 'down'">
-              <template v-if="hasTodayPnl">
+            <label>{{ sharingCapture ? '今日涨跌' : '今日盈亏' }}</label>
+            <b :class="(sharingCapture ? totalTodayPct : totalTodayPnl) >= 0 ? 'up' : 'down'">
+              <template v-if="sharingCapture">
+                {{ totalTodayPct != null ? fmtSignedPct(totalTodayPct) : '-' }}
+              </template>
+              <template v-else-if="hasTodayPnl">
                 {{ fmtSignedMoney(totalTodayPnl) }}
                 <span v-if="totalTodayPct != null" class="pct-aside">{{ fmtSignedPct(totalTodayPct) }}</span>
               </template>
               <template v-else>-</template>
             </b>
           </div>
-          <div class="stat-card">
+          <div v-if="!sharingCapture" class="stat-card">
             <label>持仓盈亏</label>
             <b :class="totalPnl >= 0 ? 'up' : 'down'">{{ fmtSignedMoney(totalPnl) }}</b>
           </div>
@@ -1285,7 +1428,7 @@ onBeforeUnmount(() => {
                   />
                 </div>
                 <span class="theme-bar-pct">{{ (item.pct * 100).toFixed(1) }}%</span>
-                <span class="theme-bar-mv muted">{{ fmtMoney(item.value) }}</span>
+                <span v-if="!sharingCapture" class="theme-bar-mv muted">{{ fmtMoney(item.value) }}</span>
               </div>
             </div>
           </div>
@@ -1305,15 +1448,25 @@ onBeforeUnmount(() => {
               </template>
             </el-table-column>
             <el-table-column prop="name" label="名称" :width="shareCol.name" :sortable="!sharingCapture" />
-            <el-table-column prop="todayPnl" label="今日盈亏" :width="shareCol.today" :sortable="!sharingCapture">
+            <el-table-column
+              prop="todayPnl"
+              :label="sharingCapture ? '今日涨跌' : '今日盈亏'"
+              :width="shareCol.today"
+              :sortable="!sharingCapture"
+            >
               <template #default="{ row }">
                 <div
                   v-if="row.todayPnl != null || row.pctChg != null"
                   class="today-pnl"
                   :class="todayPnlTone(row)"
                 >
-                  <b>{{ row.todayPnl != null ? fmtSignedMoney(row.todayPnl) : '-' }}</b>
-                  <small v-if="row.pctChg != null">{{ fmtSignedPct(row.pctChg) }}</small>
+                  <template v-if="sharingCapture">
+                    <b>{{ row.pctChg != null ? fmtSignedPct(row.pctChg) : '-' }}</b>
+                  </template>
+                  <template v-else>
+                    <b>{{ row.todayPnl != null ? fmtSignedMoney(row.todayPnl) : '-' }}</b>
+                    <small v-if="row.pctChg != null">{{ fmtSignedPct(row.pctChg) }}</small>
+                  </template>
                 </div>
                 <span v-else class="muted">-</span>
               </template>
@@ -1335,12 +1488,24 @@ onBeforeUnmount(() => {
                 {{ row.takeProfit != null ? Number(row.takeProfit).toFixed(2) : '-' }}
               </template>
             </el-table-column>
-            <el-table-column prop="marketValue" label="市值" :width="shareCol.mv" :sortable="!sharingCapture">
+            <el-table-column
+              v-if="!sharingCapture"
+              prop="marketValue"
+              label="市值"
+              :width="shareCol.mv"
+              sortable
+            >
               <template #default="{ row }">
                 {{ row.marketValue != null ? fmtMoney(row.marketValue) : '-' }}
               </template>
             </el-table-column>
-            <el-table-column prop="pnl" label="持仓盈亏" :width="shareCol.pnl" :sortable="!sharingCapture">
+            <el-table-column
+              v-if="!sharingCapture"
+              prop="pnl"
+              label="持仓盈亏"
+              :width="shareCol.pnl"
+              sortable
+            >
               <template #default="{ row }">
                 <div
                   v-if="row.pnl != null"
@@ -1469,6 +1634,11 @@ onBeforeUnmount(() => {
           <div v-if="!dailyRows.length" class="chart-empty">暂无快照，点击上方按钮写入今日数据</div>
           <div v-show="dailyRows.length" ref="chartRef" class="daily-chart" />
         </section>
+        <BrandShareFoot
+          v-show="sharingCapture"
+          class="share-brand-foot-strip"
+          :note="`${new Date().toISOString().slice(0, 10)} · 仅供研究参考 · 不构成投资建议`"
+        />
       </main>
 
       <main v-else class="main empty-main">
@@ -1586,8 +1756,14 @@ onBeforeUnmount(() => {
 
     <el-dialog
       v-model="shareOpen"
-      :title="shareMode === 'page' ? '分享组合长图' : '分享组合截图'"
-      :width="shareMode === 'page' ? '92vw' : '1580px'"
+      :title="
+        shareMode === 'page'
+          ? '分享组合长图'
+          : shareMode === 'today'
+            ? '组合今日战绩拼图'
+            : '分享组合截图'
+      "
+      :width="shareMode === 'page' ? '92vw' : shareMode === 'today' ? '1180px' : '1580px'"
       append-to-body
       destroy-on-close
       align-center
@@ -1596,17 +1772,18 @@ onBeforeUnmount(() => {
     >
       <div class="share-mode-row">
         <el-radio-group v-model="shareMode" size="small" @change="(v) => openShare(v)">
-          <el-radio-button value="card">卡片海报</el-radio-button>
-          <el-radio-button value="page">右侧原样长图</el-radio-button>
+          <el-radio-button value="today" :disabled="!selectedIds.length">今日战绩拼图</el-radio-button>
+          <el-radio-button value="card" :disabled="!rows.length">卡片海报</el-radio-button>
+          <el-radio-button value="page" :disabled="!rows.length">右侧原样长图</el-radio-button>
         </el-radio-group>
       </div>
-      <div class="share-stage" :class="{ 'is-long': shareMode === 'page' }">
+      <div class="share-stage" :class="{ 'is-long': shareMode === 'page' || shareMode === 'today' }">
         <img
           v-if="sharePreviewUrl"
           :src="sharePreviewUrl"
           alt="组合分享预览"
           :style="
-            shareMode === 'page' && sharePreviewLogicalWidth
+            (shareMode === 'page' || shareMode === 'today') && sharePreviewLogicalWidth
               ? { width: `${sharePreviewLogicalWidth}px`, maxWidth: '100%' }
               : undefined
           "
@@ -1767,6 +1944,18 @@ onBeforeUnmount(() => {
   font-size: 13px;
   padding: 24px 8px;
 }
+.side-select-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+.side-select-count {
+  flex: 1;
+  font-size: 12px;
+  color: #86868b;
+}
 .pf-card {
   display: block;
   width: 100%;
@@ -1785,6 +1974,9 @@ onBeforeUnmount(() => {
 .pf-card.active {
   border-color: rgba(0, 113, 227, 0.35);
   box-shadow: 0 0 0 1px rgba(0, 113, 227, 0.12);
+}
+.pf-card.picked {
+  background: rgba(0, 113, 227, 0.04);
 }
 .pf-card.archived {
   opacity: 0.65;
@@ -1821,6 +2013,31 @@ onBeforeUnmount(() => {
   margin-left: 6px;
   font-weight: 500;
 }
+.pf-tops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 6px;
+}
+.pf-top-chip {
+  font-size: 11px;
+  color: #6e6e73;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.3;
+}
+.pf-top-chip em {
+  font-style: normal;
+  margin-left: 3px;
+  font-weight: 600;
+}
+.pf-top-chip em.up {
+  color: #c23a3a;
+}
+.pf-top-chip em.down {
+  color: #1f7a4d;
+}
 .pf-ops {
   position: absolute;
   top: 8px;
@@ -1846,6 +2063,9 @@ onBeforeUnmount(() => {
 .main.is-sharing-capture {
   min-width: 1520px;
   box-sizing: border-box;
+}
+.share-brand-strip {
+  margin-bottom: 12px;
 }
 .main.is-sharing-capture :deep(.detail-header .actions),
 .main.is-sharing-capture :deep(.share-hide-meta),
@@ -1918,6 +2138,10 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 14px;
+}
+.stat-cards--share {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 420px;
 }
 .brief-panel {
   margin-bottom: 16px;

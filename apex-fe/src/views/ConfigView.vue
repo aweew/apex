@@ -149,7 +149,7 @@ onMounted(load)
   <div class="page">
     <header class="header">
       <div>
-        <p class="eyebrow">Apex · Config</p>
+        <p class="eyebrow">灵枢 · Config</p>
         <h1>参数与登录</h1>
         <p>成本假设 / 撮合模式 · 本地单用户登录 · 定时同步 · 决策评分阈值</p>
       </div>

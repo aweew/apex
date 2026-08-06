@@ -1,4 +1,8 @@
 <script setup>
+import { BRAND } from '../../brand/identity.js'
+import BrandShareLockup from './BrandShareLockup.vue'
+import BrandShareFoot from './BrandShareFoot.vue'
+
 defineProps({
   item: { type: Object, required: true },
   sourceLabel: { type: Function, default: (s) => s },
@@ -10,8 +14,7 @@ defineProps({
   <div class="share-card">
     <div class="share-bg" aria-hidden="true" />
     <header class="share-brand">
-      <div class="brand-mark">APEX</div>
-      <div class="brand-sub">资讯速览</div>
+      <BrandShareLockup subtitle="资讯速览" :size="48" />
     </header>
 
     <div class="share-meta">
@@ -27,11 +30,7 @@ defineProps({
       <span v-for="code in item.relatedCodes.slice(0, 8)" :key="code" class="code">{{ code }}</span>
     </div>
 
-    <footer class="share-foot">
-      <span>来自 Apex 本地量化台</span>
-      <span class="dot">·</span>
-      <span>仅供研究参考</span>
-    </footer>
+    <BrandShareFoot :note="`${BRAND.nameZh} · 仅供研究参考 · 不构成投资建议`" />
   </div>
 </template>
 
@@ -61,30 +60,13 @@ defineProps({
 .share-meta,
 .share-title,
 .share-body,
-.share-codes,
-.share-foot {
+.share-codes {
   position: relative;
   z-index: 1;
 }
 
 .share-brand {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
   margin-bottom: 22px;
-}
-
-.brand-mark {
-  font-size: 28px;
-  font-weight: 750;
-  letter-spacing: 0.12em;
-  line-height: 1;
-}
-
-.brand-sub {
-  font-size: 13px;
-  color: #6e6e73;
-  letter-spacing: 0.08em;
 }
 
 .share-meta {
@@ -159,18 +141,8 @@ defineProps({
   font-variant-numeric: tabular-nums;
 }
 
-.share-foot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 28px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(29, 29, 31, 0.08);
-  font-size: 12px;
-  color: #86868b;
-}
-
-.dot {
-  opacity: 0.5;
+:deep(.brand-share-foot) {
+  position: relative;
+  z-index: 1;
 }
 </style>
