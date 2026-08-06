@@ -1,13 +1,19 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.ai.AiChatProperties;
+import com.awe.apex.quant.ai.KimiChatClient;
 import com.awe.apex.quant.decision.DecisionScoreReq;
 import com.awe.apex.quant.decision.DecisionScoreResp;
 import com.awe.apex.quant.decision.DecisionScorer;
+import com.awe.apex.quant.decision.MainlineBoardRules;
 import com.awe.apex.quant.decision.MainlineMatcher;
 import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
+import com.awe.apex.quant.domain.dto.DecisionBuyAiResp;
+import com.awe.apex.quant.domain.dto.DecisionBuyAiStockNote;
 import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
@@ -79,6 +85,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 智能决策：编排股票池 / 策略信号 / 共振 / 热点 / 基本面 / 风控
@@ -160,8 +167,16 @@ public class DecisionServiceImpl implements IDecisionService {
     @Resource
     private IConfigService configService;
 
+    @Resource
+    private KimiChatClient kimiChatClient;
+
+    @Resource
+    private AiChatProperties aiChatProperties;
+
     private static final BigDecimal FALLBACK_STOP_PCT = new BigDecimal("0.08");
     private static final BigDecimal FALLBACK_TAKE_PCT = new BigDecimal("0.20");
+    private static final String BUY_AI_DISCLAIMER = "AI 总结仅供研究参考，不构成投资建议；请结合本地规则评分与风控自行决策。";
+    private final Map<String, CachedBuyAi> buyAiCache = new ConcurrentHashMap<>();
 
     /**
      * 一键生成今日决策：刷新股票池 → 跑策略 → 共振/基本面/风控 → 落库 → 同步观察池
@@ -1205,6 +1220,244 @@ public class DecisionServiceImpl implements IDecisionService {
                 .build();
     }
 
+    /**
+     * 建议买入清单的 AI 详细总结
+     *
+     * @param date      决策日
+     * @param groupName 分组
+     * @param force     强制刷新
+     * @return AI 总结
+     */
+    @Override
+    public DecisionBuyAiResp buyAiSummary(LocalDate date, String groupName, Boolean force) {
+        DecisionTodayResp today = today(date, groupName);
+        List<DecisionItemResp> buys = Objects.nonNull(today.getBuys()) ? today.getBuys() : List.of();
+        LocalDate actionDate = Objects.nonNull(today.getActionDate()) ? today.getActionDate() : LocalDate.now();
+        if (CollUtil.isEmpty(buys)) {
+            return DecisionBuyAiResp.builder()
+                    .configured(kimiChatClient.available())
+                    .fromCache(false)
+                    .actionDate(actionDate)
+                    .buyCount(0)
+                    .summary("当前无建议买入标的，暂不生成 AI 总结。请先一键生成决策。")
+                    .watchPoints(List.of())
+                    .stockNotes(List.of())
+                    .disclaimer(BUY_AI_DISCLAIMER)
+                    .generatedAt(LocalDateTime.now())
+                    .build();
+        }
+        if (!kimiChatClient.available()) {
+            return DecisionBuyAiResp.builder()
+                    .configured(false)
+                    .fromCache(false)
+                    .actionDate(actionDate)
+                    .buyCount(buys.size())
+                    .summary("未配置 apex.ai.api-key，AI 总结不可用。可先查看下方规则评分与理由。")
+                    .watchPoints(List.of())
+                    .stockNotes(List.of())
+                    .disclaimer(BUY_AI_DISCLAIMER)
+                    .generatedAt(LocalDateTime.now())
+                    .build();
+        }
+
+        String cacheKey = buildBuyAiCacheKey(actionDate, buys);
+        int ttl = Math.max(60, aiChatProperties.getSummaryCacheSeconds());
+        boolean forceRefresh = Boolean.TRUE.equals(force);
+        if (!forceRefresh) {
+            CachedBuyAi cached = buyAiCache.get(cacheKey);
+            if (Objects.nonNull(cached)
+                    && cached.at.plusSeconds(ttl).isAfter(LocalDateTime.now())
+                    && Objects.nonNull(cached.payload)
+                    && StringUtils.isNotBlank(cached.payload.getSummary())) {
+                DecisionBuyAiResp hit = cached.payload;
+                hit.setFromCache(true);
+                hit.setConfigured(true);
+                return hit;
+            }
+        }
+
+        MarketBriefingResp briefing = today.getMarketBriefing();
+        String system = "你是 A 股交易决策助手。只根据给定的「建议买入」结构化清单做详细总结，禁止编造未提供的财报、公告或新闻。"
+                + "输出严格 JSON（不要 markdown）："
+                + "{\"stance\":\"可分批试探|精选跟踪|均衡配置|暂缓进攻|防守观望\","
+                + "\"summary\":\"200-350字中文详细总结，覆盖市场环境与买入清单结构、主线/估值/风险取舍\","
+                + "\"watchPoints\":[\"关注点1\",\"关注点2\",\"关注点3\"],"
+                + "\"stockNotes\":[{\"code\":\"代码\",\"name\":\"简称\",\"note\":\"一句话点评\",\"priority\":\"高|中|低|观望\"}],"
+                + "\"riskNote\":\"一句话风险\"}."
+                + "stockNotes 最多覆盖清单前 8 只，按优先度排序；语气专业克制，强调规则评分与仓位纪律。";
+
+        StringBuilder user = new StringBuilder();
+        user.append("决策日：").append(actionDate).append('\n');
+        if (StringUtils.isNotBlank(today.getGroupName())) {
+            user.append("自选分组：").append(today.getGroupName()).append('\n');
+        }
+        if (Objects.nonNull(briefing)) {
+            user.append("市场立场：").append(briefing.getStance())
+                    .append(" 得分：").append(briefing.getStanceScore())
+                    .append(" 仓位系数：").append(briefing.getBuyWeightFactor()).append('\n');
+            if (StringUtils.isNotBlank(briefing.getStanceReason())) {
+                user.append("立场理由：").append(briefing.getStanceReason()).append('\n');
+            }
+            if (StringUtils.isNotBlank(briefing.getPositionAdvice())) {
+                user.append("仓位建议：").append(briefing.getPositionAdvice()).append('\n');
+            }
+            if (CollUtil.isNotEmpty(briefing.getHotThemes())) {
+                user.append("主线题材：").append(String.join("、", briefing.getHotThemes())).append('\n');
+            }
+        }
+        user.append("买入条数：").append(buys.size())
+                .append(" 可执行：").append(today.getExecutableCount())
+                .append(" 低估：").append(today.getValuationCheapCount())
+                .append(" 主线匹配：").append(today.getMainlineMatchCount()).append('\n');
+        user.append("清单明细：\n");
+        int limit = Math.min(buys.size(), 12);
+        for (int i = 0; i < limit; i++) {
+            DecisionItemResp item = buys.get(i);
+            user.append(i + 1).append(". ")
+                    .append(item.getCode()).append(' ')
+                    .append(nullToEmpty(item.getName()))
+                    .append(" 策略=").append(nullToEmpty(item.getStrategyId()))
+                    .append(" 评分=").append(item.getScore())
+                    .append(" 仓位=").append(item.getSuggestedWeight())
+                    .append(" 估值=").append(nullToEmpty(item.getValuationLabel()))
+                    .append(" 主线=").append(Boolean.TRUE.equals(item.getMainlineMatch())
+                            ? nullToEmpty(item.getMainlineName()) : "否")
+                    .append(" 可执行=").append(Boolean.TRUE.equals(item.getExecutableHint()))
+                    .append('\n');
+            if (StringUtils.isNotBlank(item.getScoreExplain())) {
+                user.append("   拆解：").append(item.getScoreExplain()).append('\n');
+            }
+            if (StringUtils.isNotBlank(item.getReason())) {
+                user.append("   理由：").append(item.getReason()).append('\n');
+            }
+            if (StringUtils.isNotBlank(item.getLinkHint())) {
+                user.append("   联动：").append(item.getLinkHint()).append('\n');
+            }
+            if (CollUtil.isNotEmpty(item.getRiskFlags())) {
+                user.append("   风险：").append(String.join("、", item.getRiskFlags())).append('\n');
+            }
+        }
+        user.append("请结合以上事实给出 JSON 详细总结。");
+
+        String raw = kimiChatClient.chat(system, user.toString(), 1200);
+        DecisionBuyAiResp ai = parseBuyAiPayload(raw);
+        ai.setConfigured(true);
+        ai.setFromCache(false);
+        ai.setModel(aiChatProperties.getModel());
+        ai.setActionDate(actionDate);
+        ai.setBuyCount(buys.size());
+        ai.setGeneratedAt(LocalDateTime.now());
+        ai.setDisclaimer(BUY_AI_DISCLAIMER);
+        if (StringUtils.isBlank(ai.getSummary())) {
+            ai.setSummary("大模型暂无有效输出，请稍后重试；可先阅读清单中的评分拆解与理由。");
+            ai.setStance(Objects.nonNull(briefing) ? briefing.getStance() : "均衡配置");
+        }
+        // 补全未返回的 code/name
+        if (CollUtil.isNotEmpty(ai.getStockNotes())) {
+            Map<String, DecisionItemResp> buyMap = new HashMap<>();
+            for (DecisionItemResp item : buys) {
+                if (StringUtils.isNotBlank(item.getCode())) {
+                    buyMap.put(item.getCode(), item);
+                }
+            }
+            for (DecisionBuyAiStockNote note : ai.getStockNotes()) {
+                if (Objects.isNull(note) || StringUtils.isBlank(note.getCode())) {
+                    continue;
+                }
+                DecisionItemResp src = buyMap.get(note.getCode());
+                if (Objects.nonNull(src) && StringUtils.isBlank(note.getName())) {
+                    note.setName(src.getName());
+                }
+            }
+        }
+        buyAiCache.put(cacheKey, new CachedBuyAi(ai, LocalDateTime.now()));
+        log.info("决策买入AI总结完成 date={} buys={} fromCache=false", actionDate, buys.size());
+        return ai;
+    }
+
+    private String buildBuyAiCacheKey(LocalDate actionDate, List<DecisionItemResp> buys) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(actionDate).append('|');
+        int n = Math.min(buys.size(), 12);
+        for (int i = 0; i < n; i++) {
+            DecisionItemResp item = buys.get(i);
+            sb.append(item.getCode()).append(':')
+                    .append(item.getScore()).append(':')
+                    .append(item.getStrategyId()).append(';');
+        }
+        return sb.toString();
+    }
+
+    private DecisionBuyAiResp parseBuyAiPayload(String raw) {
+        DecisionBuyAiResp empty = DecisionBuyAiResp.builder()
+                .watchPoints(List.of())
+                .stockNotes(List.of())
+                .build();
+        if (StringUtils.isBlank(raw)) {
+            return empty;
+        }
+        String text = raw.trim();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return DecisionBuyAiResp.builder().summary(text).watchPoints(List.of()).stockNotes(List.of()).build();
+        }
+        try {
+            JsonNode root = JsonUtils.getObjectMapper().readTree(text.substring(start, end + 1));
+            List<String> points = new ArrayList<>();
+            JsonNode wp = root.get("watchPoints");
+            if (Objects.nonNull(wp) && wp.isArray()) {
+                for (JsonNode node : wp) {
+                    if (points.size() >= 5) {
+                        break;
+                    }
+                    if (Objects.nonNull(node) && StringUtils.isNotBlank(node.asText())) {
+                        points.add(node.asText().trim());
+                    }
+                }
+            }
+            List<DecisionBuyAiStockNote> notes = new ArrayList<>();
+            JsonNode sn = root.get("stockNotes");
+            if (Objects.nonNull(sn) && sn.isArray()) {
+                for (JsonNode node : sn) {
+                    if (notes.size() >= 8 || Objects.isNull(node) || !node.isObject()) {
+                        continue;
+                    }
+                    String code = node.has("code") ? node.get("code").asText() : null;
+                    if (StringUtils.isBlank(code)) {
+                        continue;
+                    }
+                    notes.add(DecisionBuyAiStockNote.builder()
+                            .code(code.trim())
+                            .name(node.has("name") ? node.get("name").asText() : null)
+                            .note(node.has("note") ? node.get("note").asText() : null)
+                            .priority(node.has("priority") ? node.get("priority").asText() : null)
+                            .build());
+                }
+            }
+            return DecisionBuyAiResp.builder()
+                    .stance(root.has("stance") ? root.get("stance").asText() : null)
+                    .summary(root.has("summary") ? root.get("summary").asText() : null)
+                    .watchPoints(points)
+                    .stockNotes(notes)
+                    .riskNote(root.has("riskNote") ? root.get("riskNote").asText() : null)
+                    .build();
+        } catch (Exception ex) {
+            log.debug("买入AI JSON 解析失败，回退纯文本: {}", ex.getMessage());
+            return DecisionBuyAiResp.builder().summary(text).watchPoints(List.of()).stockNotes(List.of()).build();
+        }
+    }
+
+    private static final class CachedBuyAi {
+        private final DecisionBuyAiResp payload;
+        private final LocalDateTime at;
+
+        private CachedBuyAi(DecisionBuyAiResp payload, LocalDateTime at) {
+            this.payload = payload;
+            this.at = at;
+        }
+    }
+
     private List<String> parseStrategiesCsv(String csv) {
         if (StringUtils.isBlank(csv)) {
             return List.of();
@@ -2086,7 +2339,9 @@ public class DecisionServiceImpl implements IDecisionService {
         List<String> names = new ArrayList<>();
         if (Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getHotThemes())) {
             for (String theme : briefing.getHotThemes()) {
-                if (StringUtils.isNotBlank(theme) && names.size() < 8) {
+                if (StringUtils.isNotBlank(theme)
+                        && !MainlineBoardRules.isOutcomeBoard(theme)
+                        && names.size() < 8) {
                     names.add(theme.trim());
                 }
             }
@@ -2095,7 +2350,10 @@ public class DecisionServiceImpl implements IDecisionService {
             try {
                 List<SectorBoardItem> mainline = sectorBoardService.mainline(null, 8);
                 for (SectorBoardItem item : mainline) {
-                    if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getName()) && names.size() < 8) {
+                    if (Objects.nonNull(item)
+                            && StringUtils.isNotBlank(item.getName())
+                            && !MainlineBoardRules.isOutcomeBoard(item.getName())
+                            && names.size() < 8) {
                         names.add(item.getName().trim());
                     }
                 }

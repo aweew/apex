@@ -15,6 +15,11 @@ import {
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 
+const props = defineProps({
+  /** 嵌入行情页时为 true，不展示独立页头 */
+  embedded: { type: Boolean, default: false },
+})
+
 const router = useRouter()
 const loading = ref(false)
 const chartRef = ref(null)
@@ -99,65 +104,121 @@ function fmtYi(v) {
 function pctColor(v) {
   const n = Number(v)
   if (Number.isNaN(n) || n === 0) return '#8b949e'
-  return n > 0 ? '#e5484d' : '#2da44e'
+  return n > 0 ? '#f04848' : '#1aad5b'
 }
 
-/** JRJ 风格：红涨绿跌连续色阶 */
+function clamp01(x) {
+  return Math.max(0, Math.min(1, x))
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t
+}
+
+function mixHex(a, b, t) {
+  const pa = parseInt(a.slice(1), 16)
+  const pb = parseInt(b.slice(1), 16)
+  const ar = (pa >> 16) & 255
+  const ag = (pa >> 8) & 255
+  const ab = pa & 255
+  const br = (pb >> 16) & 255
+  const bg = (pb >> 8) & 255
+  const bb = pb & 255
+  const r = Math.round(lerp(ar, br, t))
+  const g = Math.round(lerp(ag, bg, t))
+  const bl = Math.round(lerp(ab, bb, t))
+  return `#${((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1)}`
+}
+
+/** A股云图：红涨绿跌，中间深灰底板，饱和度随幅度增强 */
+function heatColor(colorKey, raw) {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return '#2a3139'
+
+  if (colorKey === 'pe') {
+    const t = clamp01(n / 80)
+    if (t < 0.5) return mixHex('#1aad5b', '#3a4450', t * 2)
+    return mixHex('#3a4450', '#e64545', (t - 0.5) * 2)
+  }
+
+  if (colorKey === 'netInflow') {
+    const t = clamp01((n + 5e9) / 1e10)
+    if (t < 0.48) return mixHex('#0f7a45', '#2a3139', t / 0.48)
+    if (t > 0.52) return mixHex('#2a3139', '#d63b3b', (t - 0.52) / 0.48)
+    return '#2a3139'
+  }
+
+  // 涨跌幅：±5% 封顶，弱幅略暗，强幅更艳
+  const capped = Math.max(-5, Math.min(5, n))
+  const intensity = Math.pow(Math.abs(capped) / 5, 0.72)
+  if (Math.abs(capped) < 0.08) return '#2a3139'
+  if (capped > 0) return mixHex('#3a2a2e', '#f04848', 0.35 + intensity * 0.65)
+  return mixHex('#24352c', '#1aad5b', 0.35 + intensity * 0.65)
+}
+
+function labelInk(bg) {
+  const hex = String(bg || '').replace('#', '')
+  if (hex.length !== 6) return '#f5f7fa'
+  const r = parseInt(hex.slice(0, 2), 16)
+  const g = parseInt(hex.slice(2, 4), 16)
+  const b = parseInt(hex.slice(4, 6), 16)
+  const luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+  return luma > 0.55 ? '#0f1419' : '#f5f7fa'
+}
+
+/** 底部色阶条（仅作图例，着色由 heatColor 直算） */
 function buildVisualMap(colorKey) {
+  const base = {
+    show: true,
+    calculable: false,
+    orient: 'horizontal',
+    left: 'center',
+    bottom: 4,
+    itemWidth: 14,
+    itemHeight: 8,
+    textStyle: { color: 'rgba(230,237,243,.55)', fontSize: 10 },
+    hoverLink: false,
+    seriesIndex: [],
+  }
   if (colorKey === 'pe') {
     return {
+      ...base,
       min: 0,
       max: 80,
-      calculable: false,
-      orient: 'horizontal',
-      left: 'center',
-      bottom: 8,
       text: ['高估值', '低估值'],
-      inRange: {
-        color: ['#1a7f4b', '#7dcea0', '#f5f5f5', '#f5b7b1', '#c0392b'],
-      },
-      textStyle: { color: '#8b949e', fontSize: 11 },
+      inRange: { color: ['#1aad5b', '#3a4450', '#e64545'] },
     }
   }
   if (colorKey === 'netInflow') {
     return {
+      ...base,
       min: -5e9,
       max: 5e9,
-      calculable: false,
-      orient: 'horizontal',
-      left: 'center',
-      bottom: 8,
       text: ['流入', '流出'],
-      inRange: {
-        color: ['#1a7f4b', '#7dcea0', '#2a3038', '#e57373', '#c62828'],
-      },
-      textStyle: { color: '#8b949e', fontSize: 11 },
+      inRange: { color: ['#0f7a45', '#2a3139', '#d63b3b'] },
       formatter: (v) => fmtYi(v),
     }
   }
   return {
+    ...base,
     min: -5,
     max: 5,
-    calculable: false,
-    orient: 'horizontal',
-    left: 'center',
-    bottom: 8,
     text: ['涨', '跌'],
-    inRange: {
-      color: ['#0d5c2e', '#1a7f4b', '#2da44e', '#3d444d', '#e57373', '#e5484d', '#b71c1c'],
-    },
-    textStyle: { color: '#8b949e', fontSize: 11 },
-    formatter: (v) => `${Number(v).toFixed(1)}%`,
+    inRange: { color: ['#1aad5b', '#2a3139', '#f04848'] },
+    formatter: (v) => `${Number(v).toFixed(0)}%`,
   }
 }
 
 function toTreeData(nodes, colorKey) {
   return (nodes || []).map((n) => {
     const colorVal = n.colorValue != null ? Number(n.colorValue) : Number(n.pctChg)
+    const safeColor = Number.isFinite(colorVal) ? colorVal : 0
+    const fill = heatColor(colorKey, safeColor)
+    const metric = formatMetric(n, colorKey)
     return {
       name: n.name,
       value: Math.max(Number(n.value) || 1, 1),
-      colorValue: Number.isFinite(colorVal) ? colorVal : 0,
+      colorValue: safeColor,
       code: n.code,
       pctChg: n.pctChg,
       circMv: n.circMv,
@@ -169,48 +230,62 @@ function toTreeData(nodes, colorKey) {
       netInflow: n.netInflow,
       leadStockName: n.leadStockName,
       leadStockPct: n.leadStockPct,
-      labelText: formatBlockLabel(n, colorKey),
+      itemStyle: {
+        color: fill,
+        borderColor: '#0b0f14',
+        borderWidth: 1.5,
+        gapWidth: 1.5,
+      },
+      label: {
+        color: labelInk(fill),
+      },
+      labelName: n.name || '',
+      labelMetric: metric,
     }
   })
 }
 
-function formatBlockLabel(n, colorKey) {
-  const name = n.name || ''
-  let metric = ''
-  if (colorKey === 'pe') metric = n.avgPe != null ? `PE ${Number(n.avgPe).toFixed(1)}` : ''
-  else if (colorKey === 'netInflow') metric = n.netInflow != null ? fmtYi(n.netInflow) : ''
-  else metric = fmtPct(n.pctChg)
-  return metric ? `${name}\n${metric}` : name
+function formatMetric(n, colorKey) {
+  if (colorKey === 'pe') return n.avgPe != null ? `PE ${Number(n.avgPe).toFixed(1)}` : ''
+  if (colorKey === 'netInflow') return n.netInflow != null ? fmtYi(n.netInflow) : ''
+  return fmtPct(n.pctChg)
 }
 
 function renderChart() {
   if (!chartRef.value) return
-  if (!chart) chart = echarts.init(chartRef.value)
+  if (!chart) chart = echarts.init(chartRef.value, null, { renderer: 'canvas' })
   const nodes = data.value?.nodes || []
   const colorKey = colorBy.value
   const tree = toTreeData(nodes, colorKey)
   chart.setOption(
     {
       backgroundColor: 'transparent',
+      animationDuration: 280,
+      animationEasing: 'cubicOut',
       tooltip: {
-        backgroundColor: 'rgba(15,20,25,0.92)',
-        borderColor: '#30363d',
+        backgroundColor: 'rgba(12,16,21,0.94)',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        padding: [10, 12],
         textStyle: { color: '#e6edf3', fontSize: 12 },
+        extraCssText: 'border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.35);',
         formatter(info) {
           const d = info?.data || {}
           const lines = [
-            `<b>${d.name || ''}</b>`,
-            `涨跌 ${fmtPct(d.pctChg)}`,
-            d.circMv != null ? `流通 ${fmtYi(d.circMv)}` : null,
-            d.amount != null ? `成交额 ${fmtYi(d.amount)}` : null,
-            d.stockCount != null ? `家数 ${d.stockCount}（↑${d.upCount ?? '-'} ↓${d.downCount ?? '-'}）` : null,
-            d.avgPe != null ? `均PE ${Number(d.avgPe).toFixed(1)}` : null,
-            d.netInflow != null ? `净流入 ${fmtYi(d.netInflow)}` : null,
+            `<div style="font-weight:700;font-size:13px;margin-bottom:6px;">${d.name || ''}</div>`,
+            `<div>涨跌 <span style="color:${pctColor(d.pctChg)};font-weight:700;">${fmtPct(d.pctChg)}</span></div>`,
+            d.circMv != null ? `<div>流通 ${fmtYi(d.circMv)}</div>` : null,
+            d.amount != null ? `<div>成交额 ${fmtYi(d.amount)}</div>` : null,
+            d.stockCount != null
+              ? `<div>家数 ${d.stockCount}（↑${d.upCount ?? '-'} ↓${d.downCount ?? '-'}）</div>`
+              : null,
+            d.avgPe != null ? `<div>均PE ${Number(d.avgPe).toFixed(1)}</div>` : null,
+            d.netInflow != null ? `<div>净流入 ${fmtYi(d.netInflow)}</div>` : null,
             d.leadStockName
-              ? `领涨 ${d.leadStockName} ${fmtPct(d.leadStockPct)}`
+              ? `<div>领涨 ${d.leadStockName} <span style="color:${pctColor(d.leadStockPct)};">${fmtPct(d.leadStockPct)}</span></div>`
               : null,
           ]
-          return lines.filter(Boolean).join('<br/>')
+          return lines.filter(Boolean).join('')
         },
       },
       visualMap: buildVisualMap(colorKey),
@@ -218,46 +293,68 @@ function renderChart() {
         {
           type: 'treemap',
           width: '100%',
-          height: '92%',
-          top: 0,
-          bottom: 36,
+          height: '100%',
+          top: 4,
+          left: 4,
+          right: 4,
+          bottom: 28,
           roam: false,
           nodeClick: false,
           breadcrumb: { show: false },
-          visualDimension: 1,
+          squareRatio: 0.72 * (1 + Math.sqrt(5)),
           label: {
             show: true,
-            formatter: (p) => p.data?.labelText || p.name,
-            color: '#fff',
-            fontSize: 12,
-            fontWeight: 600,
-            lineHeight: 16,
-            textShadowColor: 'rgba(0,0,0,0.45)',
-            textShadowBlur: 3,
+            position: 'inside',
+            padding: [4, 6],
+            formatter(p) {
+              const name = p.data?.labelName || p.name || ''
+              const metric = p.data?.labelMetric || ''
+              return metric ? `${name}\n${metric}` : name
+            },
+            fontSize: 13,
+            fontWeight: 700,
+            lineHeight: 17,
+            fontFamily: '"Plus Jakarta Sans","PingFang SC","Microsoft YaHei",sans-serif',
+            textShadowColor: 'rgba(0,0,0,0.35)',
+            textShadowBlur: 2,
           },
           upperLabel: { show: false },
           itemStyle: {
-            borderColor: '#0f1419',
-            borderWidth: 2,
-            gapWidth: 2,
+            borderColor: '#0b0f14',
+            borderWidth: 1.5,
+            gapWidth: 1.5,
+            borderRadius: 2,
           },
           emphasis: {
-            itemStyle: { borderColor: '#e6edf3', borderWidth: 2 },
+            itemStyle: {
+              borderColor: 'rgba(255,255,255,0.55)',
+              borderWidth: 2,
+              shadowBlur: 12,
+              shadowColor: 'rgba(0,0,0,0.35)',
+            },
+            label: {
+              fontWeight: 750,
+            },
           },
           levels: [
             {
               itemStyle: {
-                borderColor: '#0f1419',
+                borderColor: '#0b0f14',
                 borderWidth: 0,
                 gapWidth: 2,
               },
+              upperLabel: { show: false },
+            },
+            {
+              itemStyle: {
+                borderWidth: 1.5,
+                gapWidth: 1.5,
+                borderColor: '#0b0f14',
+                borderRadius: 2,
+              },
             },
           ],
-          data: tree.map((t) => ({
-            ...t,
-            visualDimension: 1,
-            value: [t.value, t.colorValue],
-          })),
+          data: tree,
         },
       ],
     },
@@ -442,8 +539,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page heatmap-page" v-loading="loading">
-    <header class="header">
+  <div
+    class="heatmap-page"
+    :class="{ embedded, page: !embedded }"
+    v-loading="loading"
+  >
+    <header v-if="!embedded" class="header">
       <div>
         <p class="eyebrow">灵枢 · Heatmap</p>
         <h1>大盘云图</h1>
@@ -478,6 +579,38 @@ onBeforeUnmount(() => {
         <el-button plain @click="router.push('/sector')">板块榜</el-button>
       </div>
     </header>
+
+    <section v-else id="heatmap" class="embed-head">
+      <div class="embed-title">
+        <h2>大盘云图</h2>
+        <p>{{ subtitle }}</p>
+      </div>
+      <div class="actions">
+        <el-radio-group v-model="boardType" size="small">
+          <el-radio-button v-for="t in TYPE_OPTS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
+        </el-radio-group>
+        <el-select v-model="colorBy" size="small" style="width: 110px">
+          <el-option
+            v-for="c in COLOR_OPTS"
+            :key="c.value"
+            :label="c.label"
+            :value="c.value"
+            :disabled="(boardType === 'INDUSTRY' && c.value === 'netInflow') || (boardType !== 'INDUSTRY' && c.value === 'pe')"
+          />
+        </el-select>
+        <el-select v-model="sizeBy" size="small" style="width: 110px">
+          <el-option
+            v-for="s in SIZE_OPTS"
+            :key="s.value"
+            :label="s.label"
+            :value="s.value"
+            :disabled="(boardType === 'INDUSTRY' && s.value === 'amount') || (boardType !== 'INDUSTRY' && s.value === 'circMv')"
+          />
+        </el-select>
+        <el-button :loading="loading" @click="load">刷新</el-button>
+        <el-button type="primary" :loading="sharing" :disabled="!nodeCount" @click="openShare">分享</el-button>
+      </div>
+    </section>
 
     <div ref="shareCardRef" class="share-card">
       <div class="share-head">
@@ -516,12 +649,23 @@ onBeforeUnmount(() => {
       </div>
     </el-drawer>
 
-    <el-dialog v-model="shareOpen" title="分享大盘云图" width="720px" destroy-on-close @closed="closeShare">
+    <el-dialog
+      v-model="shareOpen"
+      title="分享大盘云图"
+      width="720px"
+      append-to-body
+      destroy-on-close
+      align-center
+      class="heatmap-share-dialog"
+      @closed="revokeSharePreview"
+    >
+      <p class="share-tip">含灵枢 Apex 品牌；可复制或下载 PNG 后发微信/社群。</p>
       <div v-if="sharePreviewUrl" class="share-preview">
         <img :src="sharePreviewUrl" alt="大盘云图分享预览" />
       </div>
       <template #footer>
-        <el-button :loading="copying" @click="onCopyShare">复制图片</el-button>
+        <el-button @click="closeShare">关闭</el-button>
+        <el-button type="primary" plain :loading="copying" @click="onCopyShare">复制图片</el-button>
         <el-button type="primary" :loading="downloading" @click="onDownloadShare">下载 PNG</el-button>
       </template>
     </el-dialog>
@@ -540,6 +684,39 @@ onBeforeUnmount(() => {
 
 .heatmap-page {
   min-height: calc(100vh - 48px);
+}
+
+.heatmap-page.embedded {
+  min-height: 0;
+  margin-top: 16px;
+}
+
+.embed-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius, 12px);
+  background: var(--glass-strong, rgba(255, 255, 255, 0.04));
+}
+
+.embed-title h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.embed-title p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted, #8b949e);
+}
+
+.embedded .chart {
+  height: min(56vh, 620px);
+  min-height: 360px;
 }
 
 .header {
@@ -570,10 +747,14 @@ onBeforeUnmount(() => {
 }
 
 .share-card {
-  background: #0f1419;
-  border: 1px solid #30363d;
-  border-radius: 10px;
-  padding: 12px 12px 8px;
+  position: relative;
+  background:
+    radial-gradient(ellipse 70% 45% at 0% 0%, rgba(0, 113, 227, 0.14), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 100% 0%, rgba(196, 86, 86, 0.1), transparent 50%),
+    linear-gradient(165deg, #141a22 0%, #0f1419 52%, #0c1015 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 14px 14px 10px;
   overflow: hidden;
 }
 
@@ -582,7 +763,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   color: #e6edf3;
 }
 
@@ -590,27 +771,38 @@ onBeforeUnmount(() => {
   display: block;
   margin-top: 6px;
   font-size: 12px;
-  color: #8b949e;
+  color: rgba(230, 237, 243, 0.48);
 }
 
 .share-head em {
   font-style: normal;
   font-size: 12px;
-  color: #8b949e;
+  color: rgba(230, 237, 243, 0.48);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .chart {
   width: 100%;
   height: min(72vh, 720px);
   min-height: 420px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0b0f14;
+}
+
+.share-tip {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted, #8b949e);
 }
 
 .share-preview {
   max-height: 70vh;
   overflow: auto;
   background: #0f1419;
-  border-radius: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .share-preview img {

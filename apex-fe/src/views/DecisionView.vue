@@ -1,15 +1,29 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   fetchDecisionAttribution,
+  fetchDecisionBuyAiSummary,
   fetchDecisionHistory,
   fetchDecisionPlaybook,
   fetchDecisionToday,
   runDecision,
 } from '../api/decision'
 import { getAccount, orderFromSignal, placeOrder } from '../api/paper'
+import {
+  buildDecisionShareSheet,
+  DECISION_SHARE_WIDTH,
+  mountDecisionShareSheet,
+} from '../utils/decisionShareSheet.js'
+import {
+  captureElementBlob,
+  copyImageBlob,
+  downloadBlob,
+  shareFilename,
+} from '../utils/shareCapture.js'
+import { preloadBrandAssets } from '../brand/identity.js'
+import { normalizeHotThemes } from '../utils/hotTheme.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -34,6 +48,14 @@ const buyMinScore = ref(savedFilters.minScore ?? '')
 const buyMainlineOnly = ref(!!savedFilters.mainlineOnly)
 const buyExecutableOnly = ref(!!savedFilters.executableOnly)
 const buyCheapOnly = ref(!!savedFilters.cheapOnly)
+
+/** 表格长文案悬停：加宽、可换行，避免 show-overflow-tooltip 截断 */
+const longTextTooltip = {
+  effect: 'dark',
+  placement: 'top',
+  popperClass: 'decision-long-tooltip',
+  showAfter: 200,
+}
 
 function persistBuyFilters() {
   try {
@@ -75,14 +97,28 @@ const filteredBuys = computed(() => {
 const briefing = computed(() => data.value?.marketBriefing || null)
 const factors = computed(() => briefing.value?.factors || [])
 const tips = computed(() => briefing.value?.tips || [])
-const indexLines = computed(() => briefing.value?.indexLines || [])
-const hotThemes = computed(() => briefing.value?.hotThemes || [])
+const hotThemes = computed(() => normalizeHotThemes(briefing.value))
 const strategies = computed(() => playbook.value?.strategies || [])
+const buyAi = ref(null)
+const buyAiLoading = ref(false)
+const sharing = ref(false)
+const shareOpen = ref(false)
+const sharePreviewUrl = ref('')
+const copying = ref(false)
+const downloading = ref(false)
+let sharePreviewObjectUrl = ''
 const scorePct = computed(() => {
   const s = Number(briefing.value?.stanceScore)
   if (Number.isNaN(s)) return 0
   return Math.max(0, Math.min(100, s))
 })
+
+function priorityType(p) {
+  if (p === '高') return 'danger'
+  if (p === '中') return 'warning'
+  if (p === '观望') return 'info'
+  return ''
+}
 
 function stanceClass(s) {
   if (s === '进攻') return 'stance-attack'
@@ -159,6 +195,7 @@ async function load() {
     data.value = res.data
     pickDefaultTab()
     await Promise.all([loadHistory(), loadAttribution()])
+    loadBuyAi(false)
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
   } finally {
@@ -178,6 +215,7 @@ async function onRun() {
       res.data?.message ||
         (obs != null ? `决策已生成，并写入观察池 ${obs} 条` : '决策已生成'),
     )
+    loadBuyAi(true)
   } catch (e) {
     ElMessage.error(e.message || '生成失败')
   } finally {
@@ -192,6 +230,7 @@ async function openHistoryDay(row) {
     const res = await fetchDecisionToday(row.actionDate, groupName.value)
     data.value = res.data
     pickDefaultTab()
+    loadBuyAi(false)
     ElMessage.success(`已切换到决策日 ${row.actionDate}`)
   } catch (e) {
     ElMessage.error(e.message || '加载历史决策失败')
@@ -219,34 +258,130 @@ function fmtScore(v) {
   return Number(v).toFixed(1)
 }
 
-function parseIndexLine(line) {
-  const raw = String(line || '')
-  const m = raw.match(/^(.+?)\s+([+-]?\d+(?:\.\d+)?)%\s*[·•]\s*(.+)$/)
-  if (!m) return { name: raw, pct: null, close: '', dir: '' }
-  const pct = Number(m[2])
-  return {
-    name: m[1].trim(),
-    pct,
-    close: m[3].trim(),
-    dir: pct > 0 ? 'up' : pct < 0 ? 'down' : '',
+async function loadBuyAi(force = false) {
+  if (!buys.value.length) {
+    buyAi.value = null
+    return
+  }
+  buyAiLoading.value = true
+  try {
+    const res = await fetchDecisionBuyAiSummary(
+      data.value?.actionDate,
+      groupName.value,
+      force,
+    )
+    buyAi.value = res.data
+  } catch (e) {
+    buyAi.value = {
+      configured: false,
+      summary: e.message || 'AI 总结加载失败',
+      watchPoints: [],
+      stockNotes: [],
+    }
+  } finally {
+    buyAiLoading.value = false
   }
 }
 
-const indexCards = computed(() => {
-  const rows = briefing.value?.indexes
-  if (rows?.length) {
-    return rows.map((x) => {
-      const pct = x?.pctChg != null ? Number(x.pctChg) : null
-      return {
-        name: x?.name || '',
-        pct,
-        close: x?.close != null ? Number(x.close).toFixed(2) : '-',
-        dir: x?.direction || (pct > 0 ? 'up' : pct < 0 ? 'down' : ''),
-      }
-    }).filter((x) => x.name)
+function revokeSharePreview() {
+  if (sharePreviewObjectUrl) {
+    URL.revokeObjectURL(sharePreviewObjectUrl)
+    sharePreviewObjectUrl = ''
   }
-  return (indexLines.value || []).map(parseIndexLine).filter((x) => x.name)
-})
+  sharePreviewUrl.value = ''
+}
+
+async function captureDecisionShare() {
+  await preloadBrandAssets(['markShare'])
+  const sheet = buildDecisionShareSheet({
+    titleDate: data.value?.actionDate || new Date().toISOString().slice(0, 10),
+    groupName: data.value?.groupName || groupName.value,
+    stance: briefing.value?.stance || '均衡',
+    stanceScore: briefing.value?.stanceScore,
+    stanceReason: briefing.value?.stanceReason || '',
+    positionAdvice: briefing.value?.positionAdvice || data.value?.riskNote || '',
+    hotThemes: hotThemes.value || [],
+    buyCount: data.value?.buyCount ?? buys.value.length,
+    sellCount: data.value?.sellCount ?? sells.value.length,
+    holdCount: data.value?.holdCount ?? holds.value.length,
+    executableCount: data.value?.executableCount ?? 0,
+    aiSummary: buyAi.value?.summary || '',
+    aiStance: buyAi.value?.stance || '',
+    aiModel: buyAi.value?.model || '',
+    buys: filteredBuys.value.length ? filteredBuys.value : buys.value,
+    sells: sells.value,
+  })
+  const mounted = mountDecisionShareSheet(sheet)
+  try {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const width = DECISION_SHARE_WIDTH
+    const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
+    sheet.style.width = `${width}px`
+    sheet.style.height = `${height}px`
+    return await captureElementBlob(sheet, {
+      scale: 2,
+      width,
+      height,
+      backgroundColor: '#f7f9fc',
+    })
+  } finally {
+    mounted.dispose()
+  }
+}
+
+async function openShare() {
+  if (!buys.value.length && !sells.value.length && !holds.value.length) {
+    ElMessage.warning('暂无决策清单可分享，请先一键生成决策')
+    return
+  }
+  sharing.value = true
+  try {
+    const blob = await captureDecisionShare()
+    revokeSharePreview()
+    sharePreviewObjectUrl = URL.createObjectURL(blob)
+    sharePreviewUrl.value = sharePreviewObjectUrl
+    shareOpen.value = true
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '生成分享图失败')
+  } finally {
+    sharing.value = false
+  }
+}
+
+async function onCopyShare() {
+  copying.value = true
+  try {
+    const blob = await captureDecisionShare()
+    await copyImageBlob(blob)
+    ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '复制失败，请改用下载')
+  } finally {
+    copying.value = false
+  }
+}
+
+async function onDownloadShare() {
+  downloading.value = true
+  try {
+    const blob = await captureDecisionShare()
+    const stamp = data.value?.actionDate || new Date().toISOString().slice(0, 10)
+    downloadBlob(blob, shareFilename('apex_decision', stamp))
+    ElMessage.success('已下载分享图')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error(e.message || '下载失败')
+  } finally {
+    downloading.value = false
+  }
+}
+
+function closeShare() {
+  shareOpen.value = false
+  revokeSharePreview()
+}
 
 async function onPaperOrder(row) {
   if (!row || row.action === 'HOLD') return
@@ -295,6 +430,10 @@ async function onPaperOrder(row) {
 }
 
 onMounted(load)
+
+onBeforeUnmount(() => {
+  revokeSharePreview()
+})
 </script>
 
 <template>
@@ -310,13 +449,15 @@ onMounted(load)
       <div class="actions">
         <el-input v-model="groupName" class="group-input" placeholder="自选分组" clearable />
         <el-button type="primary" class="cta" :loading="loading" @click="onRun">一键生成决策</el-button>
-        <el-button type="warning" plain @click="router.push('/observe')">观察池</el-button>
-        <el-link
+        <el-button
           type="primary"
-          :href="`http://127.0.0.1:8080/apex/api/export/decision?groupName=${encodeURIComponent(groupName || '')}`"
-          target="_blank"
-        >导出CSV</el-link>
-        <el-button text @click="load">刷新</el-button>
+          plain
+          :loading="sharing"
+          :disabled="!buys.length && !sells.length && !holds.length"
+          @click="openShare"
+        >
+          {{ sharing ? '生成中…' : '分享截图' }}
+        </el-button>
       </div>
     </header>
 
@@ -350,26 +491,19 @@ onMounted(load)
             <h2><span class="pill">{{ briefing.stance || '均衡' }}</span></h2>
             <p class="reason">{{ briefing.stanceReason }}</p>
             <p class="advice">{{ briefing.positionAdvice || data?.riskNote }}</p>
-          </div>
-        </div>
-      </div>
-      <div class="stance-side">
-        <div class="side-block">
-          <div class="side-title">大盘</div>
-          <div class="index-list">
-            <div v-for="idx in indexCards.slice(0, 4)" :key="idx.name" class="index-line">
-              <span class="n">{{ idx.name }}</span>
-              <span class="c" :class="idx.dir">{{ idx.close || '-' }}</span>
-              <span class="p" :class="idx.dir">
-                {{ idx.pct == null ? '-' : (idx.pct > 0 ? '+' : '') + Number(idx.pct).toFixed(2) + '%' }}
+            <div v-if="hotThemes.length" class="theme-row theme-inline">
+              <span class="side-title inline"><TermTip term="mainline">主线</TermTip></span>
+              <span
+                v-for="t in hotThemes.slice(0, 6)"
+                :key="t.key"
+                class="theme-chip"
+              >
+                <span class="theme-name">{{ t.name }}</span>
+                <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
+                  <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
+                </span>
               </span>
             </div>
-          </div>
-        </div>
-        <div v-if="hotThemes.length" class="side-block">
-          <div class="side-title">主线题材</div>
-          <div class="theme-row">
-            <span v-for="t in hotThemes.slice(0, 6)" :key="t" class="theme-chip">{{ t }}</span>
           </div>
         </div>
       </div>
@@ -443,6 +577,40 @@ onMounted(load)
 
       <el-tabs v-model="activeTab" class="tabs">
         <el-tab-pane :label="`建议买入 (${buys.length})`" name="buys">
+          <div v-if="buys.length" class="buy-ai-panel" v-loading="buyAiLoading">
+            <div class="buy-ai-head">
+              <div>
+                <h3>AI 详细总结</h3>
+                <p class="muted">
+                  <template v-if="buyAi?.stance">立场 {{ buyAi.stance }} · </template>
+                  <template v-if="buyAi?.fromCache">缓存 · </template>
+                  <template v-if="buyAi?.model">{{ buyAi.model }} · </template>
+                  基于当日买入清单与市场立场
+                </p>
+              </div>
+              <el-button size="small" type="warning" plain :loading="buyAiLoading" @click="loadBuyAi(true)">
+                重新生成
+              </el-button>
+            </div>
+            <p v-if="buyAi?.summary" class="buy-ai-summary">{{ buyAi.summary }}</p>
+            <p v-else-if="buyAiLoading" class="muted">AI 总结生成中…</p>
+            <p v-else class="muted">暂无 AI 正文</p>
+            <div v-if="buyAi?.watchPoints?.length" class="buy-ai-watch">
+              <span v-for="(p, i) in buyAi.watchPoints.slice(0, 5)" :key="'wp' + i" class="watch-chip">{{ p }}</span>
+            </div>
+            <div v-if="buyAi?.stockNotes?.length" class="buy-ai-notes">
+              <div v-for="n in buyAi.stockNotes" :key="n.code" class="note-row">
+                <el-button link type="primary" @click="router.push(`/stock/${n.code}`)">{{ n.code }}</el-button>
+                <span class="note-name">{{ n.name || '-' }}</span>
+                <el-tag v-if="n.priority" size="small" effect="plain" :type="priorityType(n.priority)">
+                  {{ n.priority }}
+                </el-tag>
+                <span class="note-text">{{ n.note || '-' }}</span>
+              </div>
+            </div>
+            <p v-if="buyAi?.riskNote" class="buy-ai-risk">风险：{{ buyAi.riskNote }}</p>
+            <p v-if="buyAi?.disclaimer" class="buy-ai-disc">{{ buyAi.disclaimer }}</p>
+          </div>
           <div v-if="buys.length" class="toolbar-bar">
             <el-select
               v-model="buyStrategyFilter"
@@ -531,7 +699,12 @@ onMounted(load)
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="scoreExplain" label="评分拆解" min-width="200" show-overflow-tooltip />
+            <el-table-column
+              prop="scoreExplain"
+              label="评分拆解"
+              min-width="200"
+              :show-overflow-tooltip="longTextTooltip"
+            />
             <el-table-column label="风险" width="120">
               <template #default="{ row }">
                 <template v-if="row.riskFlags?.length">
@@ -547,7 +720,12 @@ onMounted(load)
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="reason" label="理由" min-width="160" show-overflow-tooltip />
+            <el-table-column
+              prop="reason"
+              label="理由"
+              min-width="200"
+              :show-overflow-tooltip="longTextTooltip"
+            />
             <el-table-column label="操作" width="140" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link :loading="ordering" @click="onPaperOrder(row)">模拟买</el-button>
@@ -575,9 +753,24 @@ onMounted(load)
           <el-table-column label="评分" width="110">
             <template #default="{ row }"><ScoreBar :score="row.score" /></template>
           </el-table-column>
-          <el-table-column prop="exitRule" label="触发规则" min-width="150" show-overflow-tooltip />
-          <el-table-column prop="scoreExplain" label="拆解" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="reason" label="理由" min-width="160" show-overflow-tooltip />
+          <el-table-column
+            prop="exitRule"
+            label="触发规则"
+            min-width="150"
+            :show-overflow-tooltip="longTextTooltip"
+          />
+          <el-table-column
+            prop="scoreExplain"
+            label="拆解"
+            min-width="160"
+            :show-overflow-tooltip="longTextTooltip"
+          />
+            <el-table-column
+              prop="reason"
+              label="理由"
+              min-width="200"
+              :show-overflow-tooltip="longTextTooltip"
+            />
             <el-table-column label="操作" width="90" fixed="right">
               <template #default="{ row }">
                 <el-button type="danger" link :loading="ordering" @click="onPaperOrder(row)">模拟卖</el-button>
@@ -594,9 +787,24 @@ onMounted(load)
               </template>
             </el-table-column>
             <el-table-column prop="name" label="名称" width="110" />
-            <el-table-column prop="reason" label="理由" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="exitRule" label="止损/止盈" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="fundNote" label="基本面" min-width="160" show-overflow-tooltip />
+            <el-table-column
+              prop="reason"
+              label="理由"
+              min-width="200"
+              :show-overflow-tooltip="longTextTooltip"
+            />
+            <el-table-column
+              prop="exitRule"
+              label="止损/止盈"
+              min-width="150"
+              :show-overflow-tooltip="longTextTooltip"
+            />
+            <el-table-column
+              prop="fundNote"
+              label="基本面"
+              min-width="160"
+              :show-overflow-tooltip="longTextTooltip"
+            />
           </el-table>
         </el-tab-pane>
       </el-tabs>
@@ -722,6 +930,28 @@ onMounted(load)
         </el-table>
       </el-collapse-item>
     </el-collapse>
+
+    <el-dialog
+      v-model="shareOpen"
+      title="分享智能决策截图"
+      width="96vw"
+      top="3vh"
+      append-to-body
+      destroy-on-close
+      class="decision-share-dialog"
+      @closed="revokeSharePreview"
+    >
+      <p class="share-tip">按当前决策清单生成分享图；可复制或下载 PNG 后发微信/社群。</p>
+      <div class="share-stage">
+        <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="智能决策分享预览" />
+        <el-empty v-else description="预览生成中…" />
+      </div>
+      <template #footer>
+        <el-button @click="closeShare">关闭</el-button>
+        <el-button :loading="copying" @click="onCopyShare">复制图片</el-button>
+        <el-button type="primary" :loading="downloading" @click="onDownloadShare">下载 PNG</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -771,9 +1001,7 @@ onMounted(load)
 /* —— 市场立场 —— */
 .stance-panel {
   position: relative;
-  display: grid;
-  grid-template-columns: 1.45fr 1fr;
-  gap: 18px;
+  display: block;
   padding: 18px 20px;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
@@ -890,45 +1118,11 @@ onMounted(load)
   font-weight: 600;
 }
 
-.stance-side {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border-left: 1px solid var(--line);
-  padding-left: 18px;
-}
-
 .side-title {
   font-size: 11px;
   font-weight: 650;
   color: var(--muted);
   letter-spacing: 0.04em;
-  margin-bottom: 6px;
-}
-
-.index-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.index-line {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 10px;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.index-line .n {
-  color: var(--ink-soft);
-}
-
-.index-line .c,
-.index-line .p {
-  font-weight: 650;
-  min-width: 4.5em;
-  text-align: right;
 }
 
 .theme-row {
@@ -937,12 +1131,145 @@ onMounted(load)
   gap: 6px;
 }
 
+.theme-inline {
+  margin-top: 10px;
+  align-items: center;
+}
+
+.side-title.inline {
+  margin: 0;
+  margin-right: 2px;
+}
+
 .theme-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   padding: 3px 9px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.04);
   color: var(--ink-soft);
+}
+
+.theme-name {
+  color: var(--ink-soft);
+}
+
+.theme-pct {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.theme-sign {
+  display: inline-block;
+  /* 中文字体里 +/− 视觉中心偏低，上移与数字光学对齐 */
+  transform: translateY(-0.14em);
+  line-height: 1;
+}
+
+.theme-pct.up {
+  color: var(--up);
+}
+
+.theme-pct.down {
+  color: var(--down);
+}
+
+.buy-ai-panel {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: linear-gradient(165deg, rgba(0, 113, 227, 0.05), transparent 55%), var(--glass);
+}
+
+.buy-ai-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.buy-ai-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.buy-ai-head .muted {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.buy-ai-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+}
+
+.buy-ai-watch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.watch-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--ink-soft);
+}
+
+.buy-ai-notes {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-row {
+  display: grid;
+  grid-template-columns: 72px 72px auto 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.note-name {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.note-text {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.buy-ai-risk {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #c45656;
+  font-weight: 600;
+}
+
+.buy-ai-disc {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* —— 因子条 —— */
@@ -1213,15 +1540,12 @@ onMounted(load)
 }
 
 @media (max-width: 900px) {
-  .stance-panel {
-    grid-template-columns: 1fr;
+  .note-row {
+    grid-template-columns: 64px 1fr;
   }
 
-  .stance-side {
-    border-left: none;
-    padding-left: 0;
-    border-top: 1px solid var(--line);
-    padding-top: 12px;
+  .note-row .note-text {
+    grid-column: 1 / -1;
   }
 
   .factor-strip,
@@ -1235,5 +1559,52 @@ onMounted(load)
     flex-direction: column;
     align-items: flex-start;
   }
+}
+</style>
+
+<style>
+.decision-share-dialog.el-dialog {
+  max-width: 1100px;
+}
+
+.decision-share-dialog .el-dialog__body {
+  padding-top: 8px;
+}
+
+.decision-share-dialog .share-tip {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.decision-share-dialog .share-stage {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  max-height: min(72vh, 820px);
+  overflow: auto;
+  background: #eef1f6;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.decision-share-dialog .share-stage img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+}
+</style>
+
+<!-- tooltip 挂到 body，需非 scoped -->
+<style>
+.decision-long-tooltip {
+  max-width: min(560px, 92vw) !important;
+  line-height: 1.55 !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  font-size: 13px !important;
+  padding: 10px 12px !important;
 }
 </style>

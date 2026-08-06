@@ -1,21 +1,18 @@
 <script setup>
-import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { dashboardHome, dashboardOverview } from '../api/dashboard'
+import { dashboardHome } from '../api/dashboard'
 import { runDecision } from '../api/decision'
 import { startSyncJob } from '../api/sync'
+import { normalizeHotThemes } from '../utils/hotTheme.js'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v11'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v12'
 const loading = ref(false)
 const refreshing = ref(false)
 const running = ref(false)
 const home = ref(null)
 const loadError = ref('')
-const chartRef = ref(null)
-let chart
-let equityTimer = null
 
 function readHomeCache() {
   try {
@@ -38,9 +35,8 @@ function writeHomeCache(data) {
 const market = computed(() => home.value?.market || null)
 const decision = computed(() => home.value?.decision || null)
 const observeAlerts = computed(() => home.value?.observeAlerts || [])
-const account = computed(() => home.value?.account || null)
 const dataHealth = computed(() => home.value?.dataHealth || null)
-const themes = computed(() => market.value?.hotThemes || [])
+const themes = computed(() => normalizeHotThemes(market.value))
 const tips = computed(() => market.value?.tips || [])
 const effect = computed(() => market.value?.effect || null)
 const topBuys = computed(() => decision.value?.topBuys || [])
@@ -52,7 +48,6 @@ const valuationDistTotal = computed(() => {
     + (Number(d.valuationFairCount) || 0)
     + (Number(d.valuationRichCount) || 0)
 })
-const hasEquity = computed(() => (home.value?.equityCurve || []).length > 0)
 const indexCards = computed(() => {
   const rows = market.value?.indexes
   if (rows?.length) return rows
@@ -99,6 +94,20 @@ function volumeDir(trend, vsMa5Pct) {
   if (!Number.isNaN(n) && n < 0) return 'down'
   return ''
 }
+
+/** 缩量/放量 + 较前日%（优先用数值拼接，避免只显示「缩量」） */
+const volumeChangeText = computed(() => {
+  const m = market.value
+  if (!m) return ''
+  const pct = m.volumeVsMa5Pct
+  if (pct != null && pct !== '' && !Number.isNaN(Number(pct))) {
+    const n = Number(pct)
+    const trend = m.volumeTrend || (n >= 0 ? '放量' : '缩量')
+    const sign = n > 0 ? '+' : ''
+    return `${trend} ${sign}${n.toFixed(2)}%`
+  }
+  return m.volumeLabel || m.volumeTrend || ''
+})
 
 const breadth = computed(() => {
   const up = Number(market.value?.breadthUp)
@@ -184,100 +193,6 @@ function fmtWeight(v) {
   return (Number(v) * 100).toFixed(1) + '%'
 }
 
-function fmtAsset(v) {
-  if (v == null || v === '') return '-'
-  const n = Number(v)
-  if (Number.isNaN(n)) return String(v)
-  return n.toLocaleString('zh-CN', { maximumFractionDigits: 0 })
-}
-
-function renderEquity(points) {
-  if (!chartRef.value) return
-  const rows = points || []
-  if (!rows.length) {
-    if (chart) {
-      chart.clear()
-    }
-    return
-  }
-  if (!chart) chart = echarts.init(chartRef.value)
-  const vals = rows.map((p) => Number(p.equity))
-  chart.setOption({
-    backgroundColor: 'transparent',
-    grid: { left: 48, right: 12, top: 20, bottom: 28 },
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(255,255,255,0.92)',
-      borderColor: 'rgba(0,0,0,0.06)',
-      textStyle: { color: '#1d1d1f', fontSize: 12 },
-    },
-    xAxis: {
-      type: 'category',
-      data: rows.map((p) => p.tradeDate),
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { fontSize: 10, color: '#86868b' },
-    },
-    yAxis: {
-      type: 'value',
-      scale: true,
-      splitNumber: 3,
-      axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: { lineStyle: { color: 'rgba(0,0,0,0.05)' } },
-      axisLabel: { fontSize: 10, color: '#86868b' },
-    },
-    series: [
-      {
-        type: 'line',
-        showSymbol: false,
-        smooth: 0.25,
-        data: vals,
-        lineStyle: { color: '#0071e3', width: 2.2 },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(0,113,227,0.22)' },
-            { offset: 1, color: 'rgba(0,113,227,0.02)' },
-          ]),
-        },
-      },
-    ],
-  })
-}
-
-async function loadEquityLazy() {
-  try {
-    const res = await dashboardOverview()
-    const curve = res.data?.equityCurve || []
-    const metrics = res.data?.paperMetrics
-    if (!home.value) return
-    home.value = {
-      ...home.value,
-      equityCurve: curve,
-      account: home.value.account
-        ? {
-            ...home.value.account,
-            maxDrawdown: metrics?.maxDrawdown ?? home.value.account.maxDrawdown,
-            winRate: metrics?.winRate ?? home.value.account.winRate,
-          }
-        : home.value.account,
-    }
-    writeHomeCache(home.value)
-    await nextTick()
-    renderEquity(curve)
-  } catch {
-    // 权益曲线延后失败不影响首屏
-  }
-}
-
-function scheduleEquityLazy() {
-  if (equityTimer) clearTimeout(equityTimer)
-  // 错开首屏竞争，避免一进页就打沉重 overview
-  equityTimer = setTimeout(() => {
-    loadEquityLazy()
-  }, 1200)
-}
-
 async function load(opts = {}) {
   const silent = !!opts.silent
   const forceRefresh = opts.forceRefresh !== false
@@ -305,9 +220,6 @@ async function load(opts = {}) {
           : `行情已刷新 · ${stance || '简报已重建'}`,
       )
     }
-    await nextTick()
-    renderEquity(home.value?.equityCurve)
-    scheduleEquityLazy()
   } catch (e) {
     if (!hasCache) {
       home.value = null
@@ -362,26 +274,14 @@ async function onRunDecision() {
   }
 }
 
-function onResize() {
-  chart?.resize()
-}
-
 onMounted(() => {
   const cached = readHomeCache()
   if (cached) {
     home.value = cached
-    nextTick(() => renderEquity(cached.equityCurve))
     load({ silent: true, forceRefresh: true })
   } else {
     load({ forceRefresh: true })
   }
-  window.addEventListener('resize', onResize)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', onResize)
-  if (equityTimer) clearTimeout(equityTimer)
-  chart?.dispose()
-  chart = null
 })
 </script>
 
@@ -542,14 +442,15 @@ onBeforeUnmount(() => {
           <div class="stat-line">
             <span
               class="stat"
-              :title="market?.volumeVsMa5Pct != null ? `较前日 ${fmtIndexPct(market.volumeVsMa5Pct)}` : '三市成交额（上证+深成+北证）'"
+              :title="market?.volumeVsMa5Pct != null ? `三市成交较上一交易日 ${fmtIndexPct(market.volumeVsMa5Pct)}` : '三市成交额（上证+深成+北证）'"
             >
               <em>三市</em>
               <b :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)">{{ market?.indexVolumeText || '--' }}</b>
               <i
-                v-if="market?.volumeLabel"
+                v-if="volumeChangeText"
+                class="vol-change"
                 :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)"
-              >{{ market.volumeLabel }}</i>
+              >{{ volumeChangeText }}</i>
               <i v-else class="miss-hint">暂无今日额</i>
             </span>
             <span class="dot" aria-hidden="true" />
@@ -594,7 +495,7 @@ onBeforeUnmount(() => {
 
     <section v-if="effect" class="effect-strip enter delay-1" aria-label="赚钱效应">
       <div class="effect-head">
-        <span class="effect-title">赚钱效应</span>
+        <span class="effect-title"><TermTip term="money_effect">赚钱效应</TermTip></span>
         <span v-if="effect.hint" class="effect-hint">{{ effect.hint }}</span>
         <span v-else class="effect-hint muted">平均股价 · 中位数 · 全A等权 · 微盘股 · 沪深300</span>
       </div>
@@ -833,8 +734,16 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div v-if="themes.length" class="theme-row">
-        <span v-for="(t, i) in themes" :key="t" class="theme-chip" :style="{ '--i': i }">
-          {{ t }}
+        <span
+          v-for="(t, i) in themes"
+          :key="t.key"
+          class="theme-chip"
+          :style="{ '--i': i }"
+        >
+          <span class="theme-name">{{ t.name }}</span>
+          <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
+            <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
+          </span>
         </span>
       </div>
       <div v-else class="empty-guide">
@@ -850,60 +759,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <!-- ⑤ 账户快览 -->
-    <section class="panel enter delay-4">
-      <div class="panel-head">
-        <div>
-          <h3>账户快览</h3>
-          <p class="panel-desc">核心指标 · 细节见模拟盘</p>
-        </div>
-        <el-button link type="primary" @click="router.push('/paper')">更多绩效 →</el-button>
-      </div>
-      <div class="kpi-row">
-        <div class="kpi">
-          <label>总资产</label>
-          <b class="num">{{ account ? fmtAsset(account.totalAsset) : '-' }}</b>
-        </div>
-        <div class="kpi">
-          <label>累计收益</label>
-          <b
-            class="num"
-            :class="account && Number(account.totalReturn) >= 0 ? 'up' : account ? 'down' : ''"
-          >
-            {{ account ? fmtPct(account.totalReturn) : '-' }}
-          </b>
-        </div>
-        <div class="kpi">
-          <label>仓位</label>
-          <b class="num">{{ account ? fmtPct(account.positionRatio, 1) : '-' }}</b>
-        </div>
-        <div class="kpi">
-          <label>最大回撤</label>
-          <b class="num">{{ account ? fmtPct(account.maxDrawdown) : '-' }}</b>
-        </div>
-        <div class="kpi">
-          <label>胜率</label>
-          <b class="num">{{ account ? fmtPct(account.winRate, 0) : '-' }}</b>
-        </div>
-        <div class="kpi" :class="{ warn: account && (account.criticalCount || 0) > 0 }">
-          <label>告警</label>
-          <b class="num">
-            {{ account ? `C${account.criticalCount || 0} / W${account.warnCount || 0}` : '-' }}
-          </b>
-        </div>
-      </div>
-      <div class="chart-shell" :class="{ empty: !hasEquity }">
-        <div class="chart-label">纸面权益</div>
-        <div ref="chartRef" class="mini-chart" :class="{ hidden: !hasEquity }" />
-        <div v-if="!hasEquity" class="chart-empty">
-          <p>暂无权益曲线</p>
-          <span>在模拟盘产生成交后，这里会画出纸面净值走势。</span>
-          <el-button size="small" round @click="router.push('/paper')">去模拟盘</el-button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ⑥ 数据可信度 -->
+    <!-- ⑤ 数据可信度 -->
     <section
       class="panel health enter delay-5"
       :class="'lvl-' + (dataHealth?.level || 'yellow').toLowerCase()"
@@ -1466,6 +1322,13 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
+.stat i.vol-change {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
 .stat .slash,
 .stat .miss {
   color: var(--muted);
@@ -1744,6 +1607,9 @@ onBeforeUnmount(() => {
 }
 
 .theme-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 500;
   padding: 6px 12px;
@@ -1753,6 +1619,35 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(0, 113, 227, 0.12);
   animation: chipIn 0.35s ease both;
   animation-delay: calc(var(--i, 0) * 0.04s);
+}
+
+.theme-name {
+  color: var(--ink-soft);
+}
+
+.theme-pct {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.theme-sign {
+  display: inline-block;
+  transform: translateY(-0.14em);
+  line-height: 1;
+}
+
+.theme-pct.up {
+  color: var(--up);
+}
+
+.theme-pct.down {
+  color: var(--down);
 }
 
 @keyframes chipIn {

@@ -65,6 +65,7 @@ public class DashboardHomeResp {
         /** 仓位建议 */ private String positionAdvice;
         /** 数据等级 */ private String dataLevel;
         /** 主线题材 */ private List<String> hotThemes;
+        /** 主线题材（含涨幅） */ private List<MarketHotThemeItem> hotThemeItems;
         /** 涨停家数 */ private Integer limitUpCount;
         /** 跌停家数 */ private Integer limitDownCount;
         /** 上涨家数（不含平盘） */ private Integer breadthUp;

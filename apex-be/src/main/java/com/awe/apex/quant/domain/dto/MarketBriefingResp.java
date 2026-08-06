@@ -104,9 +104,14 @@ public class MarketBriefingResp {
     private Integer limitUpCount;
 
     /**
-     * 热点板块/题材
+     * 热点板块/题材（名称，兼容旧逻辑/匹配）
      */
     private List<String> hotThemes;
+
+    /**
+     * 热点板块/题材（含当日涨幅）
+     */
+    private List<MarketHotThemeItem> hotThemeItems;
 
     /**
      * 数据充分性 GREEN/YELLOW/RED

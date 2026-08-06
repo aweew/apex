@@ -1029,6 +1029,7 @@ async function captureTodayBattleShareBlob() {
       name: p.name,
       positionCount: p.positionCount,
       todayPct: p.todayPct,
+      todayPnl: p.todayPnl,
       topHoldings: (p.topHoldings || []).map((h) => ({
         code: h.code,
         name: h.name,

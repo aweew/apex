@@ -2,6 +2,7 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
+import com.awe.apex.quant.domain.dto.DecisionBuyAiResp;
 import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionPlaybookResp;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
@@ -66,6 +67,22 @@ public class DecisionController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestParam(required = false) String groupName) {
         return Result.success(decisionService.today(date, groupName));
+    }
+
+    /**
+     * 建议买入 AI 详细总结
+     *
+     * @param date      决策日
+     * @param groupName 分组
+     * @param force     是否强制刷新
+     * @return AI 总结
+     */
+    @GetMapping("/buy-ai-summary")
+    public Result<DecisionBuyAiResp> buyAiSummary(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) String groupName,
+            @RequestParam(required = false, defaultValue = "false") Boolean force) {
+        return Result.success(decisionService.buyAiSummary(date, groupName, force));
     }
 
     /**

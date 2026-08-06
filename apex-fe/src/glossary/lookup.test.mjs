@@ -18,3 +18,11 @@ test('searchTerms finds english fragment', () => {
   const rows = searchTerms('var')
   assert.ok(rows.some((t) => t.id === 'var95'))
 })
+
+test('findTerm resolves strategy ids to dedicated entries', () => {
+  assert.equal(findTerm('S1')?.id, 's1_ma_trend')
+  assert.equal(findTerm('S2')?.id, 's2_rsi_pullback')
+  assert.equal(findTerm('主线')?.id, 'mainline')
+  assert.equal(findTerm('赚钱效应')?.id, 'money_effect')
+  assert.equal(findTerm('PEG')?.id, 'peg')
+})

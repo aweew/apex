@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service;
 
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
+import com.awe.apex.quant.domain.dto.DecisionBuyAiResp;
 import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
@@ -45,4 +46,14 @@ public interface IDecisionService {
      * @return 归因
      */
     DecisionAttributionResp attribution(Integer days);
+
+    /**
+     * 建议买入清单的 AI 详细总结
+     *
+     * @param date      决策日，可空=今天
+     * @param groupName 分组名（写入上下文，可空）
+     * @param force     是否强制刷新（跳过缓存）
+     * @return AI 总结
+     */
+    DecisionBuyAiResp buyAiSummary(LocalDate date, String groupName, Boolean force);
 }

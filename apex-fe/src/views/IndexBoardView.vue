@@ -4,7 +4,7 @@
  * 指数条 → 市场脉搏 → 走势图+板块热力 → 涨跌榜
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { fetchIndexBars, fetchIndexBoard, refreshIndexBoard } from '../api/indexBoard'
@@ -20,8 +20,11 @@ import {
   downloadBlob,
   shareFilename,
 } from '../utils/shareCapture.js'
+import HeatmapView from './HeatmapView.vue'
+import { normalizeHotThemes } from '../utils/hotTheme.js'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const refreshing = ref(false)
 const marketTab = ref('ab') // ab | global
@@ -71,6 +74,7 @@ const heroIndexes = computed(() => {
 })
 
 const effect = computed(() => briefing.value?.effect || null)
+const hotThemes = computed(() => normalizeHotThemes(briefing.value))
 
 /** 赚钱效应五指标（展示用） */
 const effectMetrics = computed(() => {
@@ -470,9 +474,13 @@ function closeShare() {
   downloading.value = false
 }
 
-onMounted(() => {
-  load(true)
+onMounted(async () => {
+  await load(true)
   window.addEventListener('resize', onResize)
+  if (route.hash === '#heatmap') {
+    await nextTick()
+    document.getElementById('heatmap')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -732,12 +740,22 @@ onBeforeUnmount(() => {
             <button type="button" @click="router.push('/observe')">观察池</button>
             <button type="button" @click="router.push('/dashboard')">决策看板</button>
           </div>
-          <p v-if="briefing?.hotThemes?.length" class="themes">
+          <p v-if="hotThemes.length" class="themes">
             主线
-            <span v-for="t in briefing.hotThemes.slice(0, 5)" :key="t">{{ t }}</span>
+            <span
+              v-for="t in hotThemes.slice(0, 5)"
+              :key="t.key"
+            >
+              <span class="theme-name">{{ t.name }}</span>
+              <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
+                <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
+              </span>
+            </span>
           </p>
         </section>
       </div>
+
+      <HeatmapView embedded />
     </template>
 
     <template v-else>
@@ -1320,10 +1338,41 @@ onBeforeUnmount(() => {
 }
 
 .themes span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 2px 8px;
   border-radius: 999px;
   background: #f1f5f9;
   color: var(--mc-ink);
+}
+
+.themes .theme-name {
+  color: var(--mc-ink);
+}
+
+.themes .theme-pct {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.themes .theme-sign {
+  display: inline-block;
+  transform: translateY(-0.14em);
+  line-height: 1;
+}
+
+.themes .theme-pct.up {
+  color: var(--up, #c45656);
+}
+
+.themes .theme-pct.down {
+  color: var(--down, #1f7a4d);
 }
 
 .market-sec {

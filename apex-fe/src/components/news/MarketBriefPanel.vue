@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchMarketBriefing } from '../../api/market'
+import { normalizeHotThemes } from '../../utils/hotTheme.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -10,6 +11,7 @@ const briefing = ref(null)
 
 const indexes = computed(() => (briefing.value?.indexes || []).slice(0, 6))
 const effect = computed(() => briefing.value?.effect || null)
+const hotThemes = computed(() => normalizeHotThemes(briefing.value))
 
 function fmtPct(v) {
   if (v == null || v === '') return '-'
@@ -69,9 +71,17 @@ defineExpose({ load })
       </div>
     </div>
 
-    <div v-if="briefing?.hotThemes?.length" class="themes">
+    <div v-if="hotThemes.length" class="themes">
       <label>主线</label>
-      <span v-for="t in briefing.hotThemes.slice(0, 6)" :key="t">{{ t }}</span>
+      <span
+        v-for="t in hotThemes.slice(0, 6)"
+        :key="t.key"
+      >
+        <span class="theme-name">{{ t.name }}</span>
+        <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
+          <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
+        </span>
+      </span>
     </div>
 
     <p v-if="briefing?.stanceReason" class="reason">{{ briefing.stanceReason }}</p>
@@ -166,12 +176,43 @@ defineExpose({ load })
   color: var(--muted);
 }
 .themes span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
   font-weight: 600;
-  color: #0a66c2;
-  background: rgba(0, 113, 227, 0.08);
+  color: #3a3a3c;
+  background: rgba(0, 0, 0, 0.04);
   padding: 2px 8px;
   border-radius: 6px;
+}
+
+.themes .theme-name {
+  color: #3a3a3c;
+}
+
+.themes .theme-pct {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.themes .theme-sign {
+  display: inline-block;
+  transform: translateY(-0.14em);
+  line-height: 1;
+}
+
+.themes .theme-pct.up {
+  color: #c45656;
+}
+
+.themes .theme-pct.down {
+  color: #1f8a4c;
 }
 .reason {
   margin: 0;

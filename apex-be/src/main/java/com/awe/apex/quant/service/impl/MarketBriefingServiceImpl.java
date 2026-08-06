@@ -8,9 +8,11 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.decision.MainlineBoardRules;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.MarketEffectResp;
 import com.awe.apex.quant.domain.dto.MarketFactorItem;
+import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MarketIndexItem;
 import com.awe.apex.quant.domain.dto.MarketTipItem;
 import com.awe.apex.quant.domain.dto.SectorBoardItem;
@@ -226,11 +228,35 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
 
     /**
-     * 实时覆盖链：指数 → 量能 → 涨跌家数 → 涨跌停 → 赚钱效应 → 因子/立场对齐
+     * 实时覆盖链：指数 → 量能 → 涨跌家数 → 涨跌停 → 赚钱效应 → 主线题材 → 因子/立场对齐
      */
     private MarketBriefingResp refreshLiveMarketQuotes(MarketBriefingResp resp) {
         return reconcileFactorsWithLive(
-                overlayLiveEffect(overlayLiveLimits(overlayLiveBreadth(overlayLiveVolume(overlayLiveIndexes(resp))))));
+                overlayHotThemes(
+                        overlayLiveEffect(
+                                overlayLiveLimits(
+                                        overlayLiveBreadth(
+                                                overlayLiveVolume(
+                                                        overlayLiveIndexes(resp)))))));
+    }
+
+    /**
+     * 每次出简报时刷新主线（排除结果型板，附涨幅），避免沿用旧快照里的「昨日连板」等
+     */
+    private MarketBriefingResp overlayHotThemes(MarketBriefingResp resp) {
+        if (Objects.isNull(resp)) {
+            return null;
+        }
+        List<MarketHotThemeItem> items = loadHotThemeItems();
+        List<String> names = new ArrayList<>();
+        for (MarketHotThemeItem item : items) {
+            if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getName())) {
+                names.add(item.getName());
+            }
+        }
+        resp.setHotThemeItems(items);
+        resp.setHotThemes(names);
+        return resp;
     }
 
     /**
@@ -408,10 +434,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         resp.setBuyWeightFactor(buyFactor);
         resp.setPositionAdvice(positionAdvice);
         resp.setDataSufficient(dataSufficient);
-        resp.setStanceReason("评分 " + score + "/100 · 数据" + dataLevel
-                + " · 综合大盘、趋势、量能、风格、广度与涨停情绪（已对齐实时）");
+        resp.setStanceReason("评分 " + score + "/100 · 综合大盘、趋势、量能、风格、广度与涨停情绪");
         if (Objects.nonNull(resp.getAsOf())) {
-            resp.setMessage("市场简报 · " + resp.getAsOf() + " · 立场「" + stance + "」· 数据" + dataLevel);
+            resp.setMessage("市场简报 · " + resp.getAsOf() + " · 立场「" + stance + "」· 数据" + dataLevelLabel(dataLevel));
         }
         // 去掉与实时大盘矛盾的旧提示，并重写立场首条
         List<MarketTipItem> tips = Objects.nonNull(resp.getTips()) ? new ArrayList<>(resp.getTips()) : new ArrayList<>();
@@ -1377,15 +1402,31 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
 
         // —— 主线题材 ——
-        List<String> hotThemes = hotThemes();
-        if (CollUtil.isNotEmpty(hotThemes)) {
+        List<MarketHotThemeItem> hotThemeItems = loadHotThemeItems();
+        List<String> hotThemes = new ArrayList<>();
+        for (MarketHotThemeItem item : hotThemeItems) {
+            if (StringUtils.isNotBlank(item.getName())) {
+                hotThemes.add(item.getName());
+            }
+        }
+        if (CollUtil.isNotEmpty(hotThemeItems)) {
+            int tipN = Math.min(4, hotThemeItems.size());
+            List<String> tipLabels = new ArrayList<>();
+            for (int i = 0; i < tipN; i++) {
+                tipLabels.add(formatThemeWithPct(hotThemeItems.get(i)));
+            }
+            int factorN = Math.min(3, hotThemeItems.size());
+            List<String> factorLabels = new ArrayList<>();
+            for (int i = 0; i < factorN; i++) {
+                factorLabels.add(formatThemeWithPct(hotThemeItems.get(i)));
+            }
             factors.add(MarketFactorItem.builder()
                     .name("主线题材")
-                    .value(String.join("、", hotThemes.subList(0, Math.min(3, hotThemes.size()))))
+                    .value(String.join("、", factorLabels))
                     .signal("提示")
-                    .note("板块涨幅/净流入靠前")
+                    .note("资金+持续性为主，附当日涨幅")
                     .build());
-            tips.add(tip("info", "今日关注主线：" + String.join("、", hotThemes.subList(0, Math.min(4, hotThemes.size())))
+            tips.add(tip("info", "今日关注主线：" + String.join("、", tipLabels)
                     + "；买卖优先与主线同向。"));
         }
 
@@ -1425,8 +1466,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             tips.add(0, tip("info", "市场中性偏均衡：有信号再做，仓位中等、纪律优先。"));
         }
 
-        String stanceReason = "评分 " + score + "/100 · 数据" + dataLevel
-                + " · 综合大盘、趋势、量能、风格、广度与涨停情绪";
+        String stanceReason = "评分 " + score + "/100 · 综合大盘、趋势、量能、风格、广度与涨停情绪";
         if (tips.size() > 10) {
             tips = new ArrayList<>(tips.subList(0, 10));
         }
@@ -1450,14 +1490,15 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .limitUpCount(resolveLimitUpCount(lu))
                 .limitDownCount(resolveLimitDownCount())
                 .hotThemes(hotThemes)
+                .hotThemeItems(hotThemeItems)
                 .dataLevel(dataLevel)
                 .dataSufficient(dataSufficient)
                 .breadthUp(breadthUp)
                 .breadthDown(breadthDown)
                 .breadthFlat(breadthFlat)
                 .message(Objects.nonNull(asOf)
-                        ? ("市场简报 · " + asOf + " · 立场「" + stance + "」· 数据" + dataLevel)
-                        : "市场简报（指数数据不足）· 数据" + dataLevel)
+                        ? ("市场简报 · " + asOf + " · 立场「" + stance + "」· 数据" + dataLevelLabel(dataLevel))
+                        : "市场简报（指数数据不足）· 数据" + dataLevelLabel(dataLevel))
                 .build();
     }
 
@@ -1660,6 +1701,22 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
         // 板块汇总无平盘字段，且存在重复计票，仅作兜底
         return new int[]{up, down, 0};
+    }
+
+    /**
+     * 数据充分性中文标签
+     */
+    private static String dataLevelLabel(String level) {
+        if ("GREEN".equals(level)) {
+            return "正常";
+        }
+        if ("YELLOW".equals(level)) {
+            return "预警";
+        }
+        if ("RED".equals(level)) {
+            return "异常";
+        }
+        return StringUtils.isBlank(level) ? "-" : level;
     }
 
     private String resolveDataLevel(List<IndexBar> sh, LocalDate asOf, LimitUpStat lu) {
@@ -2182,14 +2239,18 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         return stat;
     }
 
-    private List<String> hotThemes() {
-        List<String> themes = new ArrayList<>();
+    private List<MarketHotThemeItem> loadHotThemeItems() {
+        List<MarketHotThemeItem> themes = new ArrayList<>();
         try {
             List<SectorBoardItem> mainline = sectorBoardService.mainline(null, 6);
             if (CollUtil.isNotEmpty(mainline)) {
                 for (SectorBoardItem item : mainline) {
-                    if (StringUtils.isNotBlank(item.getName())) {
-                        themes.add(item.getName());
+                    if (StringUtils.isNotBlank(item.getName()) && !MainlineBoardRules.isOutcomeBoard(item.getName())) {
+                        themes.add(MarketHotThemeItem.builder()
+                                .name(item.getName())
+                                .pctChg(scalePct(item.getPctChg()))
+                                .boardType(item.getBoardType())
+                                .build());
                     }
                 }
             }
@@ -2199,9 +2260,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (CollUtil.isNotEmpty(themes)) {
             return themes;
         }
-        // 退化：取题材/概念当日涨幅前几
+        // 退化：题材/概念按净流入+3日涨幅，排除结果型板
         SectorQuote latest = sectorQuoteMapper.selectOne(Wrappers.<SectorQuote>lambdaQuery()
-                .in(SectorQuote::getBoardType, List.of("THEME", "CONCEPT"))
+                .in(SectorQuote::getBoardType, List.of("THEME", "CONCEPT", "INDUSTRY"))
                 .orderByDesc(SectorQuote::getTradeDate)
                 .last("LIMIT 1"));
         if (Objects.isNull(latest) || Objects.isNull(latest.getTradeDate())) {
@@ -2209,21 +2270,54 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
         List<SectorQuote> tops = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
                 .eq(SectorQuote::getTradeDate, latest.getTradeDate())
-                .in(SectorQuote::getBoardType, List.of("THEME", "CONCEPT"))
+                .in(SectorQuote::getBoardType, List.of("INDUSTRY", "CONCEPT", "THEME"))
+                .orderByDesc(SectorQuote::getNetInflow)
+                .orderByDesc(SectorQuote::getPctChg3d)
                 .orderByDesc(SectorQuote::getPctChg)
-                .last("LIMIT 8"));
+                .last("LIMIT 30"));
         Map<String, Boolean> seen = new HashMap<>();
         for (SectorQuote q : tops) {
-            if (StringUtils.isBlank(q.getName()) || seen.containsKey(q.getName())) {
+            if (StringUtils.isBlank(q.getName())
+                    || MainlineBoardRules.isOutcomeBoard(q.getName())
+                    || seen.containsKey(q.getName())) {
                 continue;
             }
             seen.put(q.getName(), Boolean.TRUE);
-            themes.add(q.getName());
+            themes.add(MarketHotThemeItem.builder()
+                    .name(q.getName())
+                    .pctChg(scalePct(q.getPctChg()))
+                    .boardType(q.getBoardType())
+                    .build());
             if (themes.size() >= 5) {
                 break;
             }
         }
         return themes;
+    }
+
+    private static BigDecimal scalePct(BigDecimal pct) {
+        if (Objects.isNull(pct)) {
+            return null;
+        }
+        return pct.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static String formatThemeWithPct(MarketHotThemeItem item) {
+        if (Objects.isNull(item) || StringUtils.isBlank(item.getName())) {
+            return "";
+        }
+        if (Objects.isNull(item.getPctChg())) {
+            return item.getName();
+        }
+        BigDecimal pct = item.getPctChg();
+        String sign = "";
+        if (pct.compareTo(BigDecimal.ZERO) > 0) {
+            sign = "+";
+        } else if (pct.compareTo(BigDecimal.ZERO) < 0) {
+            sign = "\u2212";
+        }
+        String abs = pct.abs().setScale(2, RoundingMode.HALF_UP).toPlainString();
+        return item.getName() + " " + sign + abs + "%";
     }
 
     private String lineOf(String label, List<IndexBar> bars) {

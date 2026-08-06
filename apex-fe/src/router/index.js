@@ -20,7 +20,6 @@ import IndexBoardView from '../views/IndexBoardView.vue'
 import SectorBoardView from '../views/SectorBoardView.vue'
 import LimitUpLadderView from '../views/LimitUpLadderView.vue'
 import SyncView from '../views/SyncView.vue'
-import HeatmapView from '../views/HeatmapView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -29,7 +28,7 @@ const router = createRouter({
     { path: '/dashboard', name: 'dashboard', component: DashboardView },
     { path: '/decision', name: 'decision', component: DecisionView },
     { path: '/market', name: 'market', component: IndexBoardView },
-    { path: '/heatmap', name: 'heatmap', component: HeatmapView },
+    { path: '/heatmap', redirect: { path: '/market', hash: '#heatmap' } },
     { path: '/sector', name: 'sector', component: SectorBoardView },
     { path: '/limit-up', name: 'limitUp', component: LimitUpLadderView },
     { path: '/sync', name: 'sync', component: SyncView },

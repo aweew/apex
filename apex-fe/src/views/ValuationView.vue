@@ -202,19 +202,19 @@ onMounted(() => {
         <h3>关键指标</h3>
         <div class="meta">
           <div><label>行业</label><span>{{ detail.industry || '-' }}</span></div>
-          <div><label>PE(TTM)</label><b>{{ fmt(detail.peTtm) }}</b></div>
+          <div><label><TermTip term="pe_ttm">PE(TTM)</TermTip></label><b>{{ fmt(detail.peTtm) }}</b></div>
           <div><label>行业PE中位</label><span>{{ fmt(detail.industryPeMedian) }}</span></div>
-          <div><label>PE分位</label><span>{{ detail.pePercentile != null ? fmtPct(detail.pePercentile) : '-' }}</span></div>
-          <div><label>PB</label><b>{{ fmt(detail.pb) }}</b></div>
+          <div><label><TermTip term="pe_percentile">PE分位</TermTip></label><span>{{ detail.pePercentile != null ? fmtPct(detail.pePercentile) : '-' }}</span></div>
+          <div><label><TermTip term="pb">PB</TermTip></label><b>{{ fmt(detail.pb) }}</b></div>
           <div><label>行业PB中位</label><span>{{ fmt(detail.industryPbMedian) }}</span></div>
           <div><label>PB分位</label><span>{{ detail.pbPercentile != null ? fmtPct(detail.pbPercentile) : '-' }}</span></div>
-          <div><label>PEG</label><b>{{ fmt(detail.peg) }}</b></div>
+          <div><label><TermTip term="peg">PEG</TermTip></label><b>{{ fmt(detail.peg) }}</b></div>
           <div><label>盈利收益率</label><span>{{ detail.earningsYield != null ? fmtPct(detail.earningsYield) : '-' }}</span></div>
-          <div><label>公允PE</label><span>{{ fmt(detail.fairPe, 1) }}</span></div>
+          <div><label><TermTip term="fair_value">公允PE</TermTip></label><span>{{ fmt(detail.fairPe, 1) }}</span></div>
           <div><label>公允PB</label><span>{{ fmt(detail.fairPb) }}</span></div>
           <div><label>同业样本</label><span>{{ detail.industryPeerCount ?? '-' }}</span></div>
           <div><label>报告期</label><span>{{ detail.reportDate || '-' }}</span></div>
-          <div><label>ROE</label><span>{{ fmtPct(detail.roe) }}</span></div>
+          <div><label><TermTip term="roe">ROE</TermTip></label><span>{{ fmtPct(detail.roe) }}</span></div>
           <div><label>资产负债率</label><span>{{ fmtPct(detail.debtRatio) }}</span></div>
           <div><label>净利同比</label><span>{{ fmtPct(detail.netProfitYoy) }}</span></div>
           <div><label>营收同比</label><span>{{ fmtPct(detail.revenueYoy) }}</span></div>

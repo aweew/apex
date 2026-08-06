@@ -77,7 +77,8 @@ public class DecisionPlaybookServiceImpl implements IDecisionPlaybookService {
         return DecisionPlaybookResp.builder()
                 .pipelineSteps(List.of(
                         "1. 市场简报：大盘/趋势/量能/风格/广度/涨停 → 进攻|均衡|防守，调节买入仓位系数",
-                        "2. 扫描池：全 A 市值优先 + 主线行业补扫 + 热点 Top50 + 持仓",
+                        "2. 扫描池：全 A 市值优先 + 主线行业补扫 + 热点 Top50 + 持仓"
+                                + "（主线排除昨日连板/涨停等结果型板；打分偏资金与 3/5 日持续性，非纯当日涨幅）",
                         "3. 跑策略：S1/S2/S3 产出连续强度 BUY/SELL（参数可在系统配置改）",
                         "4. 多策略共振：近 " + cfWindow + " 日同向 ≥" + cfMin + " 策略加分",
                         "5. 热点/主线/基本面/估值：DecisionScorer 统一加减分与仓位",

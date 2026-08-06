@@ -16,6 +16,7 @@ import com.awe.apex.quant.domain.entity.SectorQuote;
 import com.awe.apex.quant.mapper.SectorBasicMapper;
 import com.awe.apex.quant.mapper.SectorConstituentMapper;
 import com.awe.apex.quant.mapper.SectorQuoteMapper;
+import com.awe.apex.quant.decision.MainlineBoardRules;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.util.ProcessIoUtils;
@@ -315,45 +316,51 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
         }
 
         List<SectorBoardItem> pool = new ArrayList<>();
-        for (String type : List.of("THEME", "CONCEPT", "INDUSTRY")) {
+        for (String type : List.of("INDUSTRY", "CONCEPT", "THEME")) {
             LocalDate resolvedDate = resolveTradeDate(tradeDate, null, latestTradeDate(type));
             if (Objects.isNull(resolvedDate)) {
                 continue;
             }
+            // 多取一些再过滤结果型板；排序用净流入优先，避免纯涨幅刷榜
             List<SectorQuote> quotes = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
                     .eq(SectorQuote::getBoardType, type)
                     .eq(SectorQuote::getTradeDate, resolvedDate)
+                    .orderByDesc(SectorQuote::getNetInflow)
+                    .orderByDesc(SectorQuote::getPctChg3d)
                     .orderByDesc(SectorQuote::getPctChg)
-                    .last("LIMIT 40"));
+                    .last("LIMIT 60"));
             if (CollUtil.isEmpty(quotes)) {
                 continue;
             }
             for (SectorQuote quote : quotes) {
+                if (MainlineBoardRules.isOutcomeBoard(quote.getName())) {
+                    continue;
+                }
                 pool.add(toBoardItem(quote));
             }
         }
         if (CollUtil.isEmpty(pool)) {
             return List.of();
         }
-        // 按涨跌幅/3日/5日/净流入/涨停家数/连板高度综合打分
+        // 资金+持续性为主，当日涨幅降权；排除结果型板后按综合分取 Top
         BigDecimal maxPct = absMax(pool, SectorBoardItem::getPctChg);
         BigDecimal max3 = absMax(pool, SectorBoardItem::getPctChg3d);
         BigDecimal max5 = absMax(pool, SectorBoardItem::getPctChg5d);
-        BigDecimal maxIn = absMax(pool, SectorBoardItem::getNetInflow);
+        BigDecimal maxIn = absMax(pool, this::preferInflow);
+        BigDecimal maxAmt = absMax(pool, SectorBoardItem::getAmount);
         BigDecimal maxLu = absMaxInt(pool, SectorBoardItem::getLimitUpCount);
         BigDecimal maxLb = absMaxInt(pool, SectorBoardItem::getMaxLianban);
         List<SectorBoardItem> scored = new ArrayList<>();
         for (SectorBoardItem item : pool) {
             double score = 0;
-            score += 0.30 * norm(item.getPctChg(), maxPct);
-            score += 0.20 * norm(item.getPctChg3d(), max3);
-            score += 0.10 * norm(item.getPctChg5d(), max5);
-            score += 0.20 * norm(item.getNetInflow(), maxIn);
-            score += 0.12 * norm(toBig(item.getLimitUpCount()), maxLu);
-            score += 0.08 * norm(toBig(item.getMaxLianban()), maxLb);
-            if ("THEME".equals(item.getBoardType())) {
-                score += 0.05;
-            }
+            score += 0.12 * norm(item.getPctChg(), maxPct);
+            score += 0.22 * norm(item.getPctChg3d(), max3);
+            score += 0.15 * norm(item.getPctChg5d(), max5);
+            score += 0.25 * norm(preferInflow(item), maxIn);
+            score += 0.10 * norm(item.getAmount(), maxAmt);
+            score += 0.08 * norm(toBig(item.getLimitUpCount()), maxLu);
+            score += 0.03 * norm(toBig(item.getMaxLianban()), maxLb);
+            score += MainlineBoardRules.typeBonus(item.getBoardType());
             SectorBoardItem copy = SectorBoardItem.builder()
                     .code(item.getCode())
                     .name(item.getName())
@@ -378,13 +385,16 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
                     .build();
             scored.add(copy);
         }
-        scored.sort(Comparator.comparing(SectorBoardItem::getMainlineScore,
-                Comparator.nullsLast(Comparator.reverseOrder())));
+        scored.sort(Comparator
+                .comparing(SectorBoardItem::getMainlineScore, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(item -> MainlineBoardRules.typeRank(item.getBoardType())));
         List<SectorBoardItem> top = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        Set<String> seenCode = new HashSet<>();
+        Set<String> seenName = new HashSet<>();
         for (SectorBoardItem item : scored) {
-            String key = item.getBoardType() + ":" + item.getCode();
-            if (!seen.add(key)) {
+            String codeKey = item.getBoardType() + ":" + item.getCode();
+            String nameKey = StringUtils.isBlank(item.getName()) ? codeKey : item.getName().trim();
+            if (!seenCode.add(codeKey) || !seenName.add(nameKey)) {
                 continue;
             }
             top.add(item);
@@ -394,6 +404,21 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
         }
         mainlineCache.put(cacheKey, new MainlineCacheEntry(top, System.currentTimeMillis() + MAINLINE_CACHE_TTL_MS));
         return top;
+    }
+
+    /**
+     * 优先取绝对值更大的资金流入（主净流入 vs 板块净流入）
+     */
+    private BigDecimal preferInflow(SectorBoardItem item) {
+        BigDecimal main = item.getMainNetInflow();
+        BigDecimal net = item.getNetInflow();
+        if (Objects.isNull(main)) {
+            return net;
+        }
+        if (Objects.isNull(net)) {
+            return main;
+        }
+        return main.abs().compareTo(net.abs()) >= 0 ? main : net;
     }
 
     /**

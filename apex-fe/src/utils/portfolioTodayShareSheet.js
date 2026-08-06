@@ -1,5 +1,5 @@
 /**
- * 多组合今日战绩拼图分享（仅涨跌幅/仓位占比，不含金额）
+ * 多组合今日战绩拼图分享（涨跌幅% + 今日盈亏额 + 仓位占比）
  */
 
 import { shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
@@ -20,6 +20,21 @@ function fmtPct(v, digits = 2) {
   if (Number.isNaN(n)) return '--'
   const sign = n > 0 ? '+' : ''
   return `${sign}${n.toFixed(digits)}%`
+}
+
+function fmtMoney(v) {
+  if (v == null || v === '') return '--'
+  const n = Number(v)
+  if (Number.isNaN(n)) return '--'
+  const sign = n > 0 ? '+' : ''
+  const abs = Math.abs(n)
+  if (abs >= 10000) {
+    return `${sign}${(n / 10000).toFixed(2)}万`
+  }
+  return `${sign}${n.toLocaleString('zh-CN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`
 }
 
 function fmtWeight(v) {
@@ -63,6 +78,7 @@ export function buildPortfolioTodayShareSheet(opts = {}) {
   const cards = portfolios
     .map((pf) => {
       const tops = (pf.topHoldings || []).slice(0, 3)
+      const toneVal = pf.todayPct != null ? pf.todayPct : pf.todayPnl
       const topHtml = tops.length
         ? tops
             .map((h, i) => {
@@ -78,16 +94,15 @@ export function buildPortfolioTodayShareSheet(opts = {}) {
             .join('')
         : `<div style="padding:10px 0 2px;color:#8e8e93;font-size:12px;">暂无持仓</div>`
 
-      return `<div style="padding:14px 14px 12px;border-radius:16px;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.06);box-sizing:border-box;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;">
-          <div style="min-width:0;">
-            <div style="font-size:16px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(pf.name || '组合')}</div>
-            <div style="margin-top:4px;font-size:11px;color:#86868b;">${esc(pf.positionCount || 0)} 只</div>
+      return `<div style="padding:16px 16px 12px;border-radius:16px;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.06);box-sizing:border-box;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(pf.name || '组合')}</div>
+            <div style="margin-top:5px;font-size:12px;color:#86868b;">${esc(pf.positionCount || 0)} 只持仓</div>
           </div>
-          <div style="text-align:right;flex:0 0 auto;">
-            <div style="display:inline-block;padding:6px 10px;border-radius:12px;background:${pctBg(pf.todayPct)};">
-              <div style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;color:${pctColor(pf.todayPct)};line-height:1.1;">${esc(fmtPct(pf.todayPct))}</div>
-            </div>
+          <div style="text-align:right;flex:0 0 auto;padding:8px 12px;border-radius:14px;background:${pctBg(toneVal)};">
+            <div style="font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:${pctColor(toneVal)};line-height:1.1;letter-spacing:-.02em;">${esc(fmtPct(pf.todayPct))}</div>
+            <div style="margin-top:4px;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;color:${pctColor(pf.todayPnl != null ? pf.todayPnl : toneVal)};line-height:1.2;">${esc(fmtMoney(pf.todayPnl))}</div>
           </div>
         </div>
         <div style="font-size:11px;font-weight:700;color:#6e6e73;margin-bottom:2px;">前三仓位</div>
