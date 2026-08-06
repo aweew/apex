@@ -60,7 +60,9 @@ const filteredTiers = computed(() => {
 const totalShown = computed(() => {
   let n = 0
   for (const tier of filteredTiers.value) {
-    n += tier.stocks?.length || 0
+    for (const s of tier.stocks || []) {
+      if (!s.failed) n += 1
+    }
   }
   return n
 })
@@ -937,28 +939,35 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 3px;
   min-width: 0;
+  height: 16px;
 }
 
 .badges {
   display: inline-flex;
   flex: 0 0 auto;
+  flex-wrap: nowrap;
   gap: 2px;
   align-items: center;
+  height: 16px;
+  line-height: 1;
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 13px;
-  height: 13px;
-  padding: 0 2px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
   border-radius: 3px;
   font-size: 9px;
   font-style: normal;
   font-weight: 700;
   color: #fff;
   line-height: 1;
+  vertical-align: middle;
 }
 
 .badge.lb {
@@ -1002,7 +1011,8 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.25;
+  line-height: 16px;
+  height: 16px;
 }
 
 .card-sub {

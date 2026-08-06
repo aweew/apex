@@ -56,7 +56,7 @@ function themeTone(theme) {
 }
 
 function badgeHtml(text, bg) {
-  return `<i style="display:inline-flex;align-items:center;justify-content:center;min-width:12px;height:12px;padding:0 2px;border-radius:2px;background:${bg};color:#fff;font-size:8px;font-style:normal;font-weight:700;line-height:1;">${esc(text)}</i>`
+  return `<i style="display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;flex-shrink:0;min-width:14px;height:14px;padding:0 3px;border-radius:2px;background:${bg};color:#fff;font-size:8px;font-style:normal;font-weight:700;line-height:1;">${esc(text)}</i>`
 }
 
 /**
@@ -78,7 +78,11 @@ export function buildLimitUpShareSheet(payload) {
   } = payload || {}
 
   let total = 0
-  for (const tier of tiers) total += tier.stocks?.length || 0
+  for (const tier of tiers) {
+    for (const s of tier.stocks || []) {
+      if (!s.failed) total += 1
+    }
+  }
 
   const root = document.createElement('div')
   root.setAttribute('data-lu-share-sheet', '1')
@@ -145,9 +149,9 @@ export function buildLimitUpShareSheet(payload) {
             <div style="display:flex;justify-content:space-between;align-items:center;gap:2px;min-height:11px;">
               <span style="font-size:8px;color:#aeaeb2;white-space:nowrap;">${time}</span>
             </div>
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;">
-              <div style="flex:1 1 auto;min-width:0;font-size:11px;font-weight:700;color:${nameColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25;">${name}</div>
-              <span style="display:inline-flex;flex:0 0 auto;gap:2px;">${badges.join('')}</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;height:16px;">
+              <div style="flex:1 1 auto;min-width:0;font-size:11px;font-weight:700;color:${nameColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:16px;height:16px;">${name}</div>
+              <span style="display:inline-flex;flex:0 0 auto;flex-wrap:nowrap;gap:2px;align-items:center;height:16px;">${badges.join('')}</span>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;">
               ${themeHtmlInner}
