@@ -13,7 +13,7 @@ import {
   downloadBlob,
   shareFilename,
 } from '../utils/shareCapture'
-import { buildLimitUpShareSheet, mountShareSheet } from '../utils/limitUpShareSheet'
+import { buildLimitUpShareSheet, mountShareSheet, LIMIT_UP_SHARE_WIDTH } from '../utils/limitUpShareSheet'
 
 const router = useRouter()
 const tradeDateStore = useTradeDateStore()
@@ -25,6 +25,9 @@ const copying = ref(false)
 const downloading = ref(false)
 const shareOpen = ref(false)
 const sharePreviewUrl = ref('')
+/** @type {import('vue').Ref<'desktop'|'mobile'>} */
+const shareMode = ref('desktop')
+const sharePreviewWidth = ref(LIMIT_UP_SHARE_WIDTH.desktop)
 const data = ref(null)
 const availableDateSet = ref(new Set())
 const activeTheme = ref('')
@@ -278,21 +281,23 @@ function revokeSharePreview() {
   sharePreviewUrl.value = ''
 }
 
-async function captureBoard() {
+async function captureBoard(mode = shareMode.value) {
   await nextTick()
   if (!filteredTiers.value.length) throw new Error('暂无复盘内容')
 
+  const layout = mode === 'mobile' ? 'mobile' : 'desktop'
+  const width = LIMIT_UP_SHARE_WIDTH[layout]
   const sheet = buildLimitUpShareSheet({
     titleDate: titleDate.value,
     tradeDate: String(data.value?.tradeDate || tradeDate.value || '').slice(0, 10),
     activeTheme: activeTheme.value,
     themes: themes.value,
     tiers: filteredTiers.value,
+    layout,
   })
-  const mounted = mountShareSheet(sheet)
+  const mounted = mountShareSheet(sheet, width)
   try {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-    const width = 1180
     const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
     sheet.style.width = `${width}px`
     sheet.style.height = `${height}px`
@@ -320,17 +325,21 @@ async function captureBoard() {
   }
 }
 
-async function openShare() {
+async function openShare(mode) {
   if (!filteredTiers.value.length) {
     ElMessage.warning('暂无复盘内容可分享')
     return
   }
+  if (mode === 'desktop' || mode === 'mobile') {
+    shareMode.value = mode
+  }
   sharing.value = true
   try {
-    const blob = await captureBoard()
+    const blob = await captureBoard(shareMode.value)
     revokeSharePreview()
     sharePreviewObjectUrl = URL.createObjectURL(blob)
     sharePreviewUrl.value = sharePreviewObjectUrl
+    sharePreviewWidth.value = LIMIT_UP_SHARE_WIDTH[shareMode.value]
     shareOpen.value = true
   } catch (e) {
     console.error(e)
@@ -340,10 +349,15 @@ async function openShare() {
   }
 }
 
+async function onShareModeChange(mode) {
+  if (!shareOpen.value) return
+  await openShare(mode)
+}
+
 async function onCopyShare() {
   copying.value = true
   try {
-    const blob = await captureBoard()
+    const blob = await captureBoard(shareMode.value)
     await copyImageBlob(blob)
     ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
   } catch (e) {
@@ -357,8 +371,9 @@ async function onCopyShare() {
 async function onDownloadShare() {
   downloading.value = true
   try {
-    const blob = await captureBoard()
-    downloadBlob(blob, shareFilename('apex_limitup', titleDate.value || 'ladder'))
+    const blob = await captureBoard(shareMode.value)
+    const suffix = shareMode.value === 'mobile' ? 'mobile' : 'ladder'
+    downloadBlob(blob, shareFilename(`apex_limitup_${suffix}`, titleDate.value || 'ladder'))
     ElMessage.success('已下载分享图')
   } catch (e) {
     console.error(e)
@@ -567,7 +582,7 @@ onBeforeUnmount(() => {
 
     <el-dialog
       v-model="shareOpen"
-      title="分享涨停复盘截图"
+      :title="shareMode === 'mobile' ? '分享涨停复盘 · 手机版' : '分享涨停复盘 · 桌面版'"
       width="96vw"
       top="3vh"
       append-to-body
@@ -575,9 +590,25 @@ onBeforeUnmount(() => {
       class="lu-share-dialog"
       @closed="revokeSharePreview"
     >
-      <p class="share-tip">预览可滚动查看全图；推荐下载 PNG 后发微信/社群。</p>
-      <div class="share-stage">
-        <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="涨停复盘分享预览" />
+      <div class="share-mode-row">
+        <el-radio-group
+          v-model="shareMode"
+          size="small"
+          :disabled="sharing"
+          @change="onShareModeChange"
+        >
+          <el-radio-button value="desktop">桌面版 1180</el-radio-button>
+          <el-radio-button value="mobile">手机版 750</el-radio-button>
+        </el-radio-group>
+        <span class="share-tip-inline">预览可滚动；推荐下载 PNG 发微信/社群</span>
+      </div>
+      <div class="share-stage" :class="{ 'is-mobile': shareMode === 'mobile' }">
+        <img
+          v-if="sharePreviewUrl"
+          :src="sharePreviewUrl"
+          alt="涨停复盘分享预览"
+          :style="{ width: `${sharePreviewWidth}px` }"
+        />
         <el-empty v-else description="预览生成中…" />
       </div>
       <template #footer>
@@ -1140,9 +1171,16 @@ onBeforeUnmount(() => {
   font-weight: 650;
 }
 
-.share-tip {
-  margin: 0 0 10px;
-  font-size: 13px;
+.share-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.share-tip-inline {
+  font-size: 12px;
   color: #86868b;
 }
 
@@ -1156,8 +1194,11 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
+.share-stage.is-mobile {
+  text-align: center;
+}
+
 .share-stage img {
-  width: 1180px;
   max-width: none;
   height: auto;
   display: inline-block;
@@ -1205,9 +1246,16 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-.lu-share-dialog .share-tip {
-  margin: 0 0 10px;
-  font-size: 13px;
+.lu-share-dialog .share-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.lu-share-dialog .share-tip-inline {
+  font-size: 12px;
   color: #86868b;
 }
 
@@ -1225,8 +1273,6 @@ onBeforeUnmount(() => {
 }
 
 .lu-share-dialog .share-stage img {
-  /* 按逻辑宽度展示，保留 2x 像素密度，避免被浏览器二次拉伸发虚 */
-  width: 1180px !important;
   max-width: none !important;
   height: auto !important;
   image-rendering: auto;

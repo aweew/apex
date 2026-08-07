@@ -4,6 +4,11 @@
 
 import { shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
 
+export const LIMIT_UP_SHARE_WIDTH = {
+  desktop: 1180,
+  mobile: 750,
+}
+
 function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -58,8 +63,11 @@ function themeTone(theme) {
   return THEME_PALETTE[Math.abs(h) % THEME_PALETTE.length]
 }
 
-function badgeHtml(text, bg) {
-  return `<i style="display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;flex-shrink:0;min-width:14px;height:14px;padding:0 3px;border-radius:2px;background:${bg};color:#fff;font-size:8px;font-style:normal;font-weight:700;line-height:1;">${esc(text)}</i>`
+function badgeHtml(text, bg, mobile) {
+  const minW = mobile ? 13 : 14
+  const h = mobile ? 13 : 14
+  const fs = mobile ? 8 : 8
+  return `<i style="display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;flex-shrink:0;min-width:${minW}px;height:${h}px;padding:0 3px;border-radius:2px;background:${bg};color:#fff;font-size:${fs}px;font-style:normal;font-weight:700;line-height:1;">${esc(text)}</i>`
 }
 
 /**
@@ -69,6 +77,7 @@ function badgeHtml(text, bg) {
  * @param {string} [payload.activeTheme]
  * @param {Array<{theme:string,count:number}>} payload.themes
  * @param {Array} payload.tiers
+ * @param {'desktop'|'mobile'} [payload.layout]
  * @returns {HTMLElement}
  */
 export function buildLimitUpShareSheet(payload) {
@@ -78,7 +87,19 @@ export function buildLimitUpShareSheet(payload) {
     activeTheme = '',
     themes = [],
     tiers = [],
+    layout = 'desktop',
   } = payload || {}
+
+  const mobile = layout === 'mobile'
+  const width = mobile ? LIMIT_UP_SHARE_WIDTH.mobile : LIMIT_UP_SHARE_WIDTH.desktop
+  const pad = mobile ? '18px 14px 14px' : '28px 28px 20px'
+  const cardW = mobile ? 92 : 100
+  const cardRowH = mobile ? 68 : 72
+  const markSize = mobile ? 36 : 44
+  const titleFs = mobile ? 16 : 18
+  const tierTitleFs = mobile ? 14 : 15
+  const nameFs = mobile ? 11 : 11
+  const themeChipFs = mobile ? 10 : 11
 
   let total = 0
   for (const tier of tiers) {
@@ -89,24 +110,25 @@ export function buildLimitUpShareSheet(payload) {
 
   const root = document.createElement('div')
   root.setAttribute('data-lu-share-sheet', '1')
-  root.setAttribute('data-ver', 'inline-v4')
+  root.setAttribute('data-ver', mobile ? 'inline-v5-m' : 'inline-v5')
+  root.setAttribute('data-layout', mobile ? 'mobile' : 'desktop')
   root.style.cssText = [
     'box-sizing:border-box',
-    'width:1180px',
-    'padding:28px 28px 20px',
+    `width:${width}px`,
+    `padding:${pad}`,
     'background:#ffffff',
     'color:#1d1d1f',
     'font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif',
-    'font-size:12px',
+    `font-size:${mobile ? 11 : 12}px`,
     'line-height:1.35',
   ].join(';')
 
   const themeHtml = (themes || [])
-    .slice(0, 16)
+    .slice(0, mobile ? 12 : 16)
     .map((t) => {
       const on = activeTheme && activeTheme === t.theme
       const tone = themeTone(t.theme)
-      return `<span style="display:inline-block;flex:0 0 auto;width:max-content;padding:2px 8px;border-radius:999px;border:1px solid ${tone.border};background:${on ? tone.bg : '#fff'};font-size:11px;line-height:1.4;color:${tone.color};font-weight:${on ? 650 : 400};white-space:nowrap;word-break:keep-all;">${esc(t.theme)}&nbsp;<b style="color:${tone.color};font-size:10px;font-weight:700;">${esc(t.count)}</b></span>`
+      return `<span style="display:inline-block;flex:0 0 auto;width:max-content;padding:2px 7px;border-radius:999px;border:1px solid ${tone.border};background:${on ? tone.bg : '#fff'};font-size:${themeChipFs}px;line-height:1.4;color:${tone.color};font-weight:${on ? 650 : 400};white-space:nowrap;word-break:keep-all;">${esc(t.theme)}&nbsp;<b style="color:${tone.color};font-size:${Math.max(9, themeChipFs - 1)}px;font-weight:700;">${esc(t.count)}</b></span>`
     })
     .join('')
 
@@ -120,40 +142,39 @@ export function buildLimitUpShareSheet(payload) {
           const theme = s.theme || '-'
           const tone = themeTone(s.theme)
           const badges = []
-          if (!failed && s.yizi) badges.push(badgeHtml('一', '#c45656'))
+          if (!failed && s.yizi) badges.push(badgeHtml('一', '#c45656', mobile))
           if (Number(s.lianban) > 1) {
-            badges.push(badgeHtml(String(s.lianban), failed ? '#d1d1d6' : '#409eff'))
+            badges.push(badgeHtml(String(s.lianban), failed ? '#d1d1d6' : '#409eff', mobile))
           }
-          if (!failed && Number(s.breakCount) > 0) badges.push(badgeHtml('炸', '#e6a23c'))
+          if (!failed && Number(s.breakCount) > 0) badges.push(badgeHtml('炸', '#e6a23c', mobile))
           const pctText = fmtPctChg(s.pctChg)
           const pctN = Number(s.pctChg)
           const pctColor = Number.isNaN(pctN) || pctN === 0
             ? '#86868b'
             : pctN > 0 ? '#c45656' : '#3d9a4a'
           const pctHtml = pctText
-            ? `<span style="flex:0 0 auto;font-size:9px;font-weight:700;color:${pctColor};font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2;">${esc(pctText)}</span>`
+            ? `<span style="flex:0 0 auto;font-size:${mobile ? 8 : 9}px;font-weight:700;color:${pctColor};font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2;">${esc(pctText)}</span>`
             : ''
           const meta = []
           if (!failed && s.sealAmount != null) meta.push(`封 ${fmtSealAmount(s.sealAmount)}`)
           if (!failed && s.turnoverRate != null) meta.push(`换 ${fmtRate(s.turnoverRate)}`)
           const cardBorder = failed ? '1px solid #f0f0f2' : '1px solid #ebebef'
           const cardBg = failed ? '#fcfcfd' : '#fff'
-          const nameColor = '#1d1d1f'
           const themeHtmlInner = s.theme
             ? `<span style="flex:1 1 auto;min-width:0;font-size:8px;font-weight:650;color:${tone.color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35;">${esc(theme)}</span>`
             : `<span style="flex:1 1 auto;min-width:0;font-size:8px;color:#86868b;">-</span>`
           const failX = failed
-            ? `<span style="position:absolute;inset:-2px;display:flex;align-items:center;justify-content:center;font-size:60px;font-weight:200;line-height:1;color:rgba(60,60,67,.16);pointer-events:none;font-family:'Helvetica Neue',Arial,sans-serif;">×</span>`
+            ? `<span style="position:absolute;inset:-2px;display:flex;align-items:center;justify-content:center;font-size:${mobile ? 52 : 60}px;font-weight:200;line-height:1;color:rgba(60,60,67,.16);pointer-events:none;font-family:'Helvetica Neue',Arial,sans-serif;">×</span>`
             : ''
           const contentOpacity = failed ? 'opacity:.52;' : ''
-          return `<div style="box-sizing:border-box;position:relative;overflow:hidden;width:100px;padding:4px 5px 3px;border:${cardBorder};border-radius:5px;background:${cardBg};">
+          return `<div style="box-sizing:border-box;position:relative;overflow:hidden;width:${cardW}px;padding:4px 5px 3px;border:${cardBorder};border-radius:5px;background:${cardBg};">
             ${failX}
             <div style="position:relative;z-index:1;${contentOpacity}">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:2px;min-height:11px;">
               <span style="font-size:8px;color:#aeaeb2;white-space:nowrap;">${time}</span>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;height:16px;">
-              <div style="flex:1 1 auto;min-width:0;font-size:11px;font-weight:700;color:${nameColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:16px;height:16px;">${name}</div>
+              <div style="flex:1 1 auto;min-width:0;font-size:${nameFs}px;font-weight:700;color:#1d1d1f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:16px;height:16px;">${name}</div>
               <span style="display:inline-flex;flex:0 0 auto;flex-wrap:nowrap;gap:2px;align-items:center;height:16px;">${badges.join('')}</span>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;">
@@ -173,28 +194,28 @@ export function buildLimitUpShareSheet(payload) {
         ? `<div style="font-size:10px;font-weight:650;color:#3d9a4a;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums;">${esc(fmtRate(tier.promoteRate))}</div>`
         : ''
 
-      return `<section style="display:grid;grid-template-columns:max-content 1fr;column-gap:6px;align-items:start;margin-bottom:8px;padding:2px 0 8px;border-bottom:1px solid #f0f0f2;">
-        <aside style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start;box-sizing:border-box;width:max-content;min-height:72px;height:72px;padding:0;text-align:left;">
-          <div style="font-size:15px;font-weight:800;color:#c45656;line-height:1.15;white-space:nowrap;">${esc(tier.title)}</div>
+      return `<section style="display:grid;grid-template-columns:max-content 1fr;column-gap:${mobile ? 5 : 6}px;align-items:start;margin-bottom:${mobile ? 7 : 8}px;padding:2px 0 ${mobile ? 7 : 8}px;border-bottom:1px solid #f0f0f2;">
+        <aside style="display:flex;flex-direction:column;justify-content:center;align-items:flex-start;box-sizing:border-box;width:max-content;min-height:${cardRowH}px;height:${cardRowH}px;padding:0;text-align:left;">
+          <div style="font-size:${tierTitleFs}px;font-weight:800;color:#c45656;line-height:1.15;white-space:nowrap;">${esc(tier.title)}</div>
           ${promoteLabel}
           ${promoteRate}
           <div style="margin-top:1px;font-size:10px;color:#aeaeb2;white-space:nowrap;line-height:1.2;">${esc(tier.count ?? tier.stocks?.length ?? 0)} 家</div>
         </aside>
-        <div style="display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start;">${cards}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:${mobile ? 4 : 5}px;align-content:flex-start;">${cards}</div>
       </section>`
     })
     .join('')
 
   root.innerHTML = `
-    <header style="margin-bottom:12px;padding:12px 14px 10px;border:1px solid #eee;border-radius:12px;background:linear-gradient(180deg,#fff8f6 0%,#fff 70%);">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;">
+    <header style="margin-bottom:${mobile ? 10 : 12}px;padding:${mobile ? '10px 12px 8px' : '12px 14px 10px'};border:1px solid #eee;border-radius:${mobile ? 10 : 12}px;background:linear-gradient(180deg,#fff8f6 0%,#fff 70%);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;">
         <div>
-          ${shareBrandLockupHtml({ subtitle: '涨停复盘', markSize: 44 })}
-          <h2 style="margin:8px 0 0;font-size:18px;font-weight:750;color:#c45656;">${esc(titleDate)} A股 涨停复盘</h2>
+          ${shareBrandLockupHtml({ subtitle: '涨停复盘', markSize })}
+          <h2 style="margin:8px 0 0;font-size:${titleFs}px;font-weight:750;color:#c45656;">${esc(titleDate)} A股 涨停复盘</h2>
         </div>
-        <span style="font-size:11px;color:#86868b;white-space:nowrap;padding-top:4px;">${esc(total)} 家${activeTheme ? ` · ${esc(activeTheme)}` : ''}</span>
+        <span style="font-size:${mobile ? 10 : 11}px;color:#86868b;white-space:nowrap;padding-top:4px;">${esc(total)} 家${activeTheme ? ` · ${esc(activeTheme)}` : ''}</span>
       </div>
-      ${themeHtml ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%;">${themeHtml}</div>` : ''}
+      ${themeHtml ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;width:100%;">${themeHtml}</div>` : ''}
     </header>
     <div>${tiersHtml || '<div style="padding:40px;text-align:center;color:#86868b;">暂无数据</div>'}</div>
     ${shareBrandFooterHtml({ note: `${esc(tradeDate)} · 仅供研究参考 · 不构成投资建议` })}
@@ -210,16 +231,18 @@ export function buildLimitUpShareHtml(payload) {
 /**
  * 挂载分享画布并返回卸载函数
  * @param {HTMLElement} sheet
+ * @param {number} [hostWidth]
  * @returns {{ host: HTMLElement, sheet: HTMLElement, dispose: () => void }}
  */
-export function mountShareSheet(sheet) {
+export function mountShareSheet(sheet, hostWidth) {
+  const width = hostWidth || LIMIT_UP_SHARE_WIDTH.desktop
   const host = document.createElement('div')
   host.setAttribute('data-lu-share-host', '1')
   host.style.cssText = [
     'position:fixed',
     'left:-10000px',
     'top:0',
-    'width:1180px',
+    `width:${width}px`,
     'pointer-events:none',
     'z-index:2147483000',
     'overflow:visible',
