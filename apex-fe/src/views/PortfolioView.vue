@@ -1241,7 +1241,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="row.topHoldings?.length" class="pf-tops">
               <span v-for="h in row.topHoldings.slice(0, 3)" :key="h.code" class="pf-top-chip">
-                {{ h.name || h.code }}
+                <StockBoardTag :code="h.code" :market="h.market">{{ h.name || h.code }}</StockBoardTag>
                 <em :class="Number(h.pctChg) >= 0 ? 'up' : 'down'">{{ fmtSignedPct(h.pctChg) }}</em>
               </span>
             </div>
@@ -1448,7 +1448,11 @@ onBeforeUnmount(() => {
                 <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" :width="shareCol.name" :sortable="!sharingCapture" />
+            <el-table-column prop="name" label="名称" :width="shareCol.name" :sortable="!sharingCapture">
+              <template #default="{ row }">
+                <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+              </template>
+            </el-table-column>
             <el-table-column
               prop="todayPnl"
               :label="sharingCapture ? '今日涨跌' : '今日盈亏'"

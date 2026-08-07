@@ -532,7 +532,9 @@ onBeforeUnmount(() => {
               >观</button>
             </div>
             <div class="card-name-row">
-              <div class="card-name">{{ s.name || s.code }}</div>
+              <div class="card-name">
+                <StockBoardTag :code="s.code" :market="s.market">{{ s.name || s.code }}</StockBoardTag>
+              </div>
               <span class="badges">
                 <i v-if="!s.failed && s.yizi" class="badge yizi" title="一字板">一</i>
                 <i v-if="s.lianban > 1" class="badge lb">{{ s.lianban }}</i>
@@ -1045,6 +1047,17 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   line-height: 16px;
   height: 16px;
+}
+
+.card-name :deep(.stock-board-wrap) {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.card-name :deep(.stock-board-wrap > :not(.stock-board-tag)) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card-sub {

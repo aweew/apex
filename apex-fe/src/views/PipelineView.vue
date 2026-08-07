@@ -177,7 +177,11 @@ onMounted(loadUniverse)
             <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" width="120" />
+        <el-table-column prop="name" label="名称" width="140">
+          <template #default="{ row }">
+            <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+          </template>
+        </el-table-column>
         <el-table-column prop="reasonTags" label="标签/评分" min-width="280" show-overflow-tooltip />
         <el-table-column prop="batchNo" label="批次" width="150" />
       </el-table>

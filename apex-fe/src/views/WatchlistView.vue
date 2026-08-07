@@ -320,9 +320,11 @@ onMounted(loadList)
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="120">
+      <el-table-column prop="name" label="名称" min-width="136">
         <template #default="{ row }">
-          <el-button link @click="router.push(`/stock/${row.code}`)">{{ row.name || '-' }}</el-button>
+          <StockBoardTag :code="row.code" :market="row.market">
+            <el-button link @click="router.push(`/stock/${row.code}`)">{{ row.name || '-' }}</el-button>
+          </StockBoardTag>
         </template>
       </el-table-column>
       <el-table-column prop="latestPrice" label="最新价" width="100" sortable />

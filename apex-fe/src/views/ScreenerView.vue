@@ -314,7 +314,11 @@ onMounted(() => {
             <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="108" />
+        <el-table-column prop="name" label="名称" min-width="128">
+          <template #default="{ row }">
+            <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+          </template>
+        </el-table-column>
         <el-table-column prop="latestPrice" label="现价" min-width="84" />
         <el-table-column prop="pctChg" label="今日%" min-width="80">
           <template #default="{ row }">
@@ -417,7 +421,11 @@ onMounted(() => {
             <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="120" />
+        <el-table-column prop="name" label="名称" min-width="140">
+          <template #default="{ row }">
+            <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+          </template>
+        </el-table-column>
         <el-table-column prop="market" label="市场" width="72" />
         <el-table-column label="股票池" width="80">
           <template #default="{ row }">

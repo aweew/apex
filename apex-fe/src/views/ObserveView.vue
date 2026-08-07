@@ -742,6 +742,7 @@ onBeforeUnmount(() => {
             >
               {{ sideOf(row) === 'BUY' ? '买' : sideOf(row) === 'MOOD' ? '情' : '卖' }}
             </span>
+            <StockBoardTag :code="row.code" :market="row.market" />
             <button type="button" class="code" @click="router.push(`/stock/${row.code}`)">
               {{ row.code }}
             </button>

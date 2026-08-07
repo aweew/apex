@@ -76,6 +76,69 @@ public final class MarketCodeUtils {
     }
 
     /**
+     * 推断板块标签：科 / 创 / 京 / 港 / 美；主板返回 null
+     *
+     * @param code 证券代码
+     * @return 板块单字标签
+     */
+    public static String resolveBoardTag(String code) {
+        if (StringUtils.isBlank(code)) {
+            return null;
+        }
+        String pure = code.trim().toUpperCase();
+        if (pure.endsWith(".US") || pure.endsWith(".NYSE") || pure.endsWith(".NASDAQ")
+                || "US".equals(resolveMarketSuffix(pure))) {
+            return "美";
+        }
+        if (pure.matches("^[A-Z]{1,5}$")) {
+            return "美";
+        }
+        String market = resolveMarket(pure);
+        if ("HK".equals(market)) {
+            return "港";
+        }
+        if ("BJ".equals(market)) {
+            return "京";
+        }
+        String digits = normalizeCode(pure);
+        if (StringUtils.isBlank(digits)) {
+            return null;
+        }
+        // 科创板
+        if (digits.startsWith("688") || digits.startsWith("689")) {
+            return "科";
+        }
+        // 创业板
+        if (digits.startsWith("300") || digits.startsWith("301")) {
+            return "创";
+        }
+        return null;
+    }
+
+    /**
+     * 解析代码后缀中的市场（如 600519.SH → SH）
+     *
+     * @param pure 大写代码
+     * @return 市场或 null
+     */
+    private static String resolveMarketSuffix(String pure) {
+        if (StringUtils.isBlank(pure) || !pure.contains(".")) {
+            return null;
+        }
+        String[] parts = pure.split("\\.");
+        if (parts.length != 2) {
+            return null;
+        }
+        String suffix = parts[1];
+        if ("SH".equals(suffix) || "SZ".equals(suffix) || "BJ".equals(suffix)
+                || "HK".equals(suffix) || "US".equals(suffix)
+                || "NYSE".equals(suffix) || "NASDAQ".equals(suffix)) {
+            return "US".equals(suffix) || "NYSE".equals(suffix) || "NASDAQ".equals(suffix) ? "US" : suffix;
+        }
+        return null;
+    }
+
+    /**
      * 是否港股代码（常见 4~5 位，如 1810 / 01810 / 03986）
      *
      * @param digits 纯数字代码

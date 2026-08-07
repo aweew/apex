@@ -132,7 +132,11 @@ onMounted(load)
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" width="120" />
+      <el-table-column prop="name" label="名称" width="140">
+        <template #default="{ row }">
+          <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+        </template>
+      </el-table-column>
       <el-table-column prop="strategyId" label="策略" width="80" />
       <el-table-column label="评分" width="100">
         <template #default="{ row }">

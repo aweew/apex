@@ -635,7 +635,11 @@ onBeforeUnmount(() => {
               <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" min-width="96" />
+          <el-table-column prop="name" label="名称" min-width="116">
+            <template #default="{ row }">
+              <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+            </template>
+          </el-table-column>
           <el-table-column prop="latestPrice" label="现价" width="72" />
           <el-table-column prop="pctChg" label="涨跌%" width="80">
             <template #default="{ row }">

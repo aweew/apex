@@ -531,7 +531,11 @@ onBeforeUnmount(() => {
             </el-button>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="100" sortable />
+        <el-table-column prop="name" label="名称" min-width="120" sortable>
+          <template #default="{ row }">
+            <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+          </template>
+        </el-table-column>
         <el-table-column prop="latestPrice" label="最新价" width="90" sortable />
         <el-table-column label="涨跌幅" width="90" sortable prop="pctChg">
           <template #default="{ row }">

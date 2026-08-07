@@ -618,7 +618,11 @@ onMounted(() => {
                 </button>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="90" />
+            <el-table-column prop="name" label="名称" width="110">
+              <template #default="{ row }">
+                <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+              </template>
+            </el-table-column>
             <el-table-column prop="strategyId" label="策略" width="56" />
             <el-table-column label="评分" width="110">
               <template #default="{ row }">
@@ -702,7 +706,11 @@ onMounted(() => {
                 </button>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="90" />
+            <el-table-column prop="name" label="名称" width="110">
+              <template #default="{ row }">
+                <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+              </template>
+            </el-table-column>
             <el-table-column label="策略" width="72">
               <template #default="{ row }">
                 <span :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
