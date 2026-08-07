@@ -87,7 +87,7 @@ public class SignalServiceImpl implements ISignalService {
             throw new BusinessException("无可用股票代码");
         }
         List<Strategy> selected = selectStrategies(req.getStrategyIds());
-        Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(codes);
+        Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(codes, req.getAsOfDate());
         List<StrategySignalEntity> saved = new ArrayList<>();
         // 按 code|side 各留最高分，避免卖出分更高时把买入机会挤掉
         Map<String, StrategySignalEntity> bestByCodeSide = new HashMap<>();
@@ -248,10 +248,17 @@ public class SignalServiceImpl implements ISignalService {
      */
     @Override
     public SignalConfluenceResp confluence(int days, int minStrategies) {
+        return confluence(days, minStrategies, LocalDate.now());
+    }
+
+    @Override
+    public SignalConfluenceResp confluence(int days, int minStrategies, LocalDate asOfDate) {
         int n = Math.max(1, Math.min(days, 30));
         int minS = Math.max(2, Math.min(minStrategies, 10));
+        LocalDate cutoff = Objects.nonNull(asOfDate) ? asOfDate : LocalDate.now();
         List<StrategySignalEntity> list = strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
-                .ge(StrategySignalEntity::getSignalDate, LocalDate.now().minusDays(n))
+                .ge(StrategySignalEntity::getSignalDate, cutoff.minusDays(n))
+                .le(StrategySignalEntity::getSignalDate, cutoff)
                 .orderByDesc(StrategySignalEntity::getId)
                 .last("limit 2000"));
         // key = code|side
@@ -363,7 +370,7 @@ public class SignalServiceImpl implements ISignalService {
                 codes.add(signal.getCode());
             }
         }
-        Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(new ArrayList<>(codes));
+        Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(new ArrayList<>(codes), null);
         List<BigDecimal> signedRets = new ArrayList<>();
         int hits = 0;
         int buyCnt = 0;
@@ -485,12 +492,13 @@ public class SignalServiceImpl implements ISignalService {
         return 0;
     }
 
-    private Map<String, List<BarDaily>> loadBarsGrouped(List<String> codes) {
+    private Map<String, List<BarDaily>> loadBarsGrouped(List<String> codes, LocalDate asOfDate) {
         Map<String, List<BarDaily>> map = new HashMap<>();
         if (CollUtil.isEmpty(codes)) {
             return map;
         }
-        LocalDate begin = LocalDate.now().minusDays(LOOKBACK_DAYS);
+        LocalDate cutoff = Objects.nonNull(asOfDate) ? asOfDate : LocalDate.now();
+        LocalDate begin = cutoff.minusDays(LOOKBACK_DAYS);
         // 分批 IN 查询，避免单次过大
         int batchSize = 40;
         for (int i = 0; i < codes.size(); i += batchSize) {
@@ -498,6 +506,7 @@ public class SignalServiceImpl implements ISignalService {
             List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
                     .in(BarDaily::getCode, batch)
                     .ge(BarDaily::getTradeDate, begin)
+                    .le(BarDaily::getTradeDate, cutoff)
                     .orderByAsc(BarDaily::getCode)
                     .orderByAsc(BarDaily::getTradeDate));
             for (BarDaily bar : bars) {

@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -16,6 +17,24 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DecisionTodayResp {
+
+    /** 决策运行号 */
+    private String runNo;
+
+    /** LIVE/REPLAY/SHADOW */
+    private String runMode;
+
+    /** 本次决策可见数据截止时间 */
+    private LocalDateTime asOfTime;
+
+    /** 规则版本 */
+    private String ruleVersion;
+
+    /** 模型版本 */
+    private String modelVersion;
+
+    /** 特征版本 */
+    private String featureVersion;
 
     /**
      * 决策日

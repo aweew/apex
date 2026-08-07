@@ -25,6 +25,8 @@ public class DailyAction implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
     /** 清单日期 */ private LocalDate actionDate;
+    /** 决策运行ID */ private Long runId;
+    /** 运行内排序 */ private Integer rankNo;
     /** 证券代码 */ private String code;
     /** 简称 */ private String name;
     /** BUY/SELL/HOLD */ private String action;
@@ -47,6 +49,9 @@ public class DailyAction implements Serializable {
     /** 估值×策略联动提示 */ private String linkHint;
     /** 风险旗标 CSV */ private String riskFlags;
     /** 是否可执行提示 1/0 */ private Integer executableHint;
+    /** 决策置信度 */ private BigDecimal confidence;
+    /** 决策不确定性 */ private BigDecimal uncertainty;
+    /** 决策状态 */ private String decisionStatus;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     @TableLogic private Integer deleted;

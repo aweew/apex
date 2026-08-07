@@ -15,6 +15,7 @@ import com.awe.apex.quant.mapper.PaperAccountMapper;
 import com.awe.apex.quant.mapper.PaperPositionMapper;
 import com.awe.apex.quant.mapper.RiskRuleMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
+import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IRiskService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
@@ -193,22 +194,34 @@ public class RiskServiceImpl implements IRiskService {
             if (totalRatio.compareTo(totalLimit) > 0) {
                 throw new BusinessException("下单后总仓位将超限");
             }
-            BigDecimal singleRatio = amount.divide(afterAsset, 4, RoundingMode.HALF_UP);
+            List<PaperPosition> positions = paperPositionMapper.selectList(Wrappers.<PaperPosition>lambdaQuery()
+                    .eq(PaperPosition::getAccountId, accountId));
+            String normalizedCode = MarketCodeUtils.normalizeHoldingCode(code);
+            BigDecimal singleStockMv = amount;
+            for (PaperPosition position : positions) {
+                if (!Objects.equals(normalizedCode, MarketCodeUtils.normalizeHoldingCode(position.getCode()))) {
+                    continue;
+                }
+                BigDecimal close = latestClose(position.getCode());
+                if (Objects.isNull(close)) {
+                    throw new BusinessException("持仓缺少最新价，无法校验单票仓位: " + position.getCode());
+                }
+                singleStockMv = singleStockMv.add(close.multiply(BigDecimal.valueOf(position.getQuantity())));
+            }
+            BigDecimal singleRatio = singleStockMv.divide(afterAsset, 4, RoundingMode.HALF_UP);
             if (singleRatio.compareTo(singleLimit) > 0) {
                 throw new BusinessException("下单后单票仓位将超限");
             }
             String industry = resolveIndustry(code);
             if (StringUtils.isNotBlank(industry) && Objects.nonNull(industryLimit)) {
                 BigDecimal sameIndustryMv = amount;
-                List<PaperPosition> positions = paperPositionMapper.selectList(Wrappers.<PaperPosition>lambdaQuery()
-                        .eq(PaperPosition::getAccountId, accountId));
                 for (PaperPosition position : positions) {
                     if (!industry.equals(resolveIndustry(position.getCode()))) {
                         continue;
                     }
                     BigDecimal close = latestClose(position.getCode());
                     if (Objects.isNull(close)) {
-                        continue;
+                        throw new BusinessException("持仓缺少最新价，无法校验行业仓位: " + position.getCode());
                     }
                     sameIndustryMv = sameIndustryMv.add(close.multiply(BigDecimal.valueOf(position.getQuantity())));
                 }

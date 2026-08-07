@@ -2,6 +2,7 @@ package com.awe.apex.quant.domain.dto;
 
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -29,4 +30,9 @@ public class UniverseRefreshReq {
      * 候选范围：WATCHLIST（默认，自选） / MARKET（有足够日线的全市场）
      */
     private String scope;
+
+    /**
+     * 日线统计截止日；空值保持原有最新数据行为
+     */
+    private LocalDate asOfDate;
 }

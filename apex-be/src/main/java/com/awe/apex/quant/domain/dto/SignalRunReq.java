@@ -2,6 +2,7 @@ package com.awe.apex.quant.domain.dto;
 
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -24,4 +25,9 @@ public class SignalRunReq {
      * 是否使用最新股票池
      */
     private Boolean useUniverse;
+
+    /**
+     * 行情截止日；空值保持原有最新行情行为
+     */
+    private LocalDate asOfDate;
 }

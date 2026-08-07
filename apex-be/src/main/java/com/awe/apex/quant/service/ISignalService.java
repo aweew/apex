@@ -7,6 +7,7 @@ import com.awe.apex.quant.domain.dto.SignalRunReq;
 import com.awe.apex.quant.domain.dto.SignalStatsResp;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -64,4 +65,14 @@ public interface ISignalService {
      * @return 共振
      */
     SignalConfluenceResp confluence(int days, int minStrategies);
+
+    /**
+     * 截止指定交易日计算同向共振
+     *
+     * @param days          回看天数
+     * @param minStrategies 最少策略数
+     * @param asOfDate      截止日
+     * @return 共振
+     */
+    SignalConfluenceResp confluence(int days, int minStrategies, LocalDate asOfDate);
 }

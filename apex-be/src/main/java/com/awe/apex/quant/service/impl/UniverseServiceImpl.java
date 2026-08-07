@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -63,6 +64,7 @@ public class UniverseServiceImpl implements IUniverseService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UniverseRefreshResp refresh(UniverseRefreshReq req) {
+        LocalDate asOfDate = Objects.nonNull(req) ? req.getAsOfDate() : null;
         List<Watchlist> candidates = resolveCandidates(req);
         if (CollUtil.isEmpty(candidates)) {
             throw new BusinessException("无候选股票，请先导入自选或传入 codes");
@@ -85,12 +87,14 @@ public class UniverseServiceImpl implements IUniverseService {
         List<Map<String, Object>> stats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
                 .select("code", "COUNT(1) AS cnt")
                 .in("code", codes)
+                .le(Objects.nonNull(asOfDate), "trade_date", asOfDate)
                 .groupBy("code"));
         for (Map<String, Object> row : stats) {
             barCountMap.put(String.valueOf(row.get("code")), Long.parseLong(String.valueOf(row.get("cnt"))));
         }
 
         List<Scored> scoredList = new ArrayList<>();
+        boolean pointInTime = Objects.nonNull(asOfDate);
         for (Watchlist item : candidates) {
             String code = MarketCodeUtils.normalizeCode(item.getCode());
             String name = item.getName();
@@ -98,7 +102,7 @@ public class UniverseServiceImpl implements IUniverseService {
             if (Objects.nonNull(basic) && StringUtils.isBlank(name)) {
                 name = basic.getName();
             }
-            if (isSt(name, basic)) {
+            if (!pointInTime && isSt(name, basic)) {
                 continue;
             }
             long barCount = barCountMap.getOrDefault(code, 0L);
@@ -108,6 +112,11 @@ public class UniverseServiceImpl implements IUniverseService {
             boolean loose = Objects.nonNull(req) && Boolean.TRUE.equals(req.getLooseFilter());
             List<String> tags = new ArrayList<>();
             tags.add("BARS_OK");
+            if (pointInTime) {
+                tags.add("POINT_IN_TIME");
+                scoredList.add(new Scored(code, name, String.join(",", tags), new BigDecimal("60")));
+                continue;
+            }
             if (loose) {
                 tags.add("LOOSE");
             }
@@ -229,7 +238,7 @@ public class UniverseServiceImpl implements IUniverseService {
         }
         String scope = Objects.nonNull(req) ? req.getScope() : null;
         if (StringUtils.isNotBlank(scope) && "MARKET".equalsIgnoreCase(scope.trim())) {
-            return loadMarketCandidatesFromBars();
+            return loadMarketCandidatesFromBars(req.getAsOfDate());
         }
         String groupName = Objects.nonNull(req) ? req.getGroupName() : null;
         return watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
@@ -239,9 +248,10 @@ public class UniverseServiceImpl implements IUniverseService {
     /**
      * 全市场候选：本地已有足够日线的标的（不依赖现价是否已刷）
      */
-    private List<Watchlist> loadMarketCandidatesFromBars() {
+    private List<Watchlist> loadMarketCandidatesFromBars(LocalDate asOfDate) {
         List<Map<String, Object>> stats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
                 .select("code", "COUNT(1) AS cnt")
+                .le(Objects.nonNull(asOfDate), "trade_date", asOfDate)
                 .groupBy("code")
                 .having("COUNT(1) >= {0}", MIN_BARS));
         if (CollUtil.isEmpty(stats)) {
