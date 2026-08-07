@@ -31,4 +31,9 @@ public class DecisionRunReq {
      * 数据可见截止时间；REPLAY 可空，默认决策日末
      */
     private LocalDateTime asOfTime;
+
+    /**
+     * 是否纳入北交所（京市）；默认 false/空=排除
+     */
+    private Boolean includeBj;
 }

@@ -76,21 +76,37 @@ public class UniverseServiceImpl implements IUniverseService {
             codes.add(MarketCodeUtils.normalizeCode(item.getCode()));
         }
         if (CollUtil.isNotEmpty(codes)) {
-            List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
-                    .in(StockBasic::getCode, codes));
-            for (StockBasic basic : basics) {
-                basicMap.put(basic.getCode(), basic);
+            int batch = 500;
+            for (int i = 0; i < codes.size(); i += batch) {
+                List<String> part = codes.subList(i, Math.min(i + batch, codes.size()));
+                List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+                        .in(StockBasic::getCode, part));
+                if (CollUtil.isEmpty(basics)) {
+                    continue;
+                }
+                for (StockBasic basic : basics) {
+                    basicMap.put(basic.getCode(), basic);
+                }
             }
         }
 
         Map<String, Long> barCountMap = new HashMap<>();
-        List<Map<String, Object>> stats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
-                .select("code", "COUNT(1) AS cnt")
-                .in("code", codes)
-                .le(Objects.nonNull(asOfDate), "trade_date", asOfDate)
-                .groupBy("code"));
-        for (Map<String, Object> row : stats) {
-            barCountMap.put(String.valueOf(row.get("code")), Long.parseLong(String.valueOf(row.get("cnt"))));
+        if (CollUtil.isNotEmpty(codes)) {
+            int batch = 500;
+            for (int i = 0; i < codes.size(); i += batch) {
+                List<String> part = codes.subList(i, Math.min(i + batch, codes.size()));
+                List<Map<String, Object>> stats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
+                        .select("code", "COUNT(1) AS cnt")
+                        .in("code", part)
+                        .le(Objects.nonNull(asOfDate), "trade_date", asOfDate)
+                        .groupBy("code"));
+                if (CollUtil.isEmpty(stats)) {
+                    continue;
+                }
+                for (Map<String, Object> row : stats) {
+                    barCountMap.put(String.valueOf(row.get("code")), Long.parseLong(String.valueOf(row.get("cnt"))));
+                }
+            }
         }
 
         List<Scored> scoredList = new ArrayList<>();
@@ -103,6 +119,10 @@ public class UniverseServiceImpl implements IUniverseService {
                 name = basic.getName();
             }
             if (!pointInTime && isSt(name, basic)) {
+                continue;
+            }
+            // 决策等场景可显式 includeBj=false 剔除北交所；未传则不过滤（避免影响信号页股票池）
+            if (Objects.nonNull(req) && Boolean.FALSE.equals(req.getIncludeBj()) && MarketCodeUtils.isBj(code)) {
                 continue;
             }
             long barCount = barCountMap.getOrDefault(code, 0L);

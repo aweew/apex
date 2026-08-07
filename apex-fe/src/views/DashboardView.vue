@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
 import { dashboardHome } from '../api/dashboard'
 import { runDecision } from '../api/decision'
 import { startSyncJob } from '../api/sync'
@@ -259,15 +259,27 @@ async function onCloseBundleSync() {
 async function onRunDecision() {
   running.value = true
   try {
-    const res = await runDecision({ groupName: '我的自选' })
-    const obs = res.data?.observeUpserted
-    ElMessage.success(
-      obs != null
-        ? `决策已生成，观察池写入 ${obs} 条剧本`
-        : res.data?.message || '决策已生成',
-    )
-    router.push('/observe')
+    let includeBj = false
+    try {
+      includeBj = JSON.parse(localStorage.getItem('apex.decision.buyFilters') || '{}').includeBj === true
+    } catch {
+      includeBj = false
+    }
+    const res = await runDecision({ includeBj })
+    ElNotification({
+      title: `决策已完成 · ${res.data?.actionDate || '-'}`,
+      message: res.data?.message || '决策已生成',
+      type: 'success',
+      duration: 8000,
+    })
+    router.push('/decision')
   } catch (e) {
+    const raw = e?.message || ''
+    if (/timeout|timed out|exceeded|Network Error|aborted/i.test(raw) || e?.code === 'ECONNABORTED') {
+      ElMessage.warning('请求超时：服务端可能已跑完，请打开「智能决策」查看今日清单')
+      router.push('/decision')
+      return
+    }
     ElMessage.error(e.message || '生成失败')
   } finally {
     running.value = false

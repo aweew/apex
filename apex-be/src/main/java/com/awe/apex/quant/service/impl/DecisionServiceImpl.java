@@ -109,10 +109,6 @@ public class DecisionServiceImpl implements IDecisionService {
     private static final BigDecimal ROE_WEAK = new BigDecimal("8");
     private static final BigDecimal DEBT_EXCLUDE = new BigDecimal("80");
     private static final BigDecimal DEBT_WEAK = new BigDecimal("70");
-    /** 买入扫描：全A有行情候选上限（再经股票池质量/日线过滤） */
-    private static final int MARKET_BUY_CANDIDATE_LIMIT = 2500;
-    /** 主线行业补充候选上限（缓解纯大市值漏扫） */
-    private static final int MAINLINE_EXTRA_CANDIDATE_LIMIT = 300;
 
     @Resource
     private IUniverseService universeService;
@@ -251,22 +247,30 @@ public class DecisionServiceImpl implements IDecisionService {
             posMap.put(holding.getCode(), holding);
         }
 
-        // 2. 刷新全A观察候选池（宽松质量：有日线即可，不因估值硬踢）；主线行业额外补扫
-        List<String> marketCodes = context.getMode() == DecisionMode.REPLAY
-                ? List.of() : loadMarketBuyCandidateCodes(MARKET_BUY_CANDIDATE_LIMIT, mainlineNames);
+        // 2. 刷新全A股票池：本地日线≥60 的全市场（不截断市值 TopN）；宽松质量不因估值硬踢
+        // 默认不含北交所（京市），仅 includeBj=true 时纳入
+        boolean includeBj = Boolean.TRUE.equals(safe.getIncludeBj());
         UniverseRefreshReq universeReq = new UniverseRefreshReq();
         universeReq.setLooseFilter(true);
+        universeReq.setScope("MARKET");
+        universeReq.setIncludeBj(includeBj);
         if (context.getMode() == DecisionMode.REPLAY) {
-            universeReq.setScope("MARKET");
             universeReq.setAsOfDate(actionDate);
         }
-        if (CollUtil.isNotEmpty(marketCodes)) {
-            universeReq.setCodes(marketCodes);
-        } else if (context.getMode() != DecisionMode.REPLAY) {
-            universeReq.setGroupName(groupName);
-            log.warn("全A买入候选为空，回退自选分组 group={}", groupName);
+        UniverseRefreshResp universeResp;
+        try {
+            universeResp = universeService.refresh(universeReq);
+        } catch (BusinessException ex) {
+            if (context.getMode() == DecisionMode.REPLAY) {
+                throw ex;
+            }
+            log.warn("全A股票池为空，回退自选分组 group={} err={}", groupName, ex.getMessage());
+            UniverseRefreshReq fallbackReq = new UniverseRefreshReq();
+            fallbackReq.setLooseFilter(true);
+            fallbackReq.setGroupName(groupName);
+            fallbackReq.setIncludeBj(includeBj);
+            universeResp = universeService.refresh(fallbackReq);
         }
-        UniverseRefreshResp universeResp = universeService.refresh(universeReq);
         int universeCount = Objects.nonNull(universeResp.getCount()) ? universeResp.getCount() : 0;
 
         // 3. 跑 S1/S2/S3：全A质量池 + 热点；持仓仅附加以便产出卖出信号（观察池不同步卖出）
@@ -284,7 +288,14 @@ public class DecisionServiceImpl implements IDecisionService {
                 ? Map.of() : hotService.confluenceMap(50);
         int hotScanCount = 0;
         for (String hotCode : hotMap.keySet()) {
-            if (StringUtils.isNotBlank(hotCode) && signalCodeSet.add(hotCode)) {
+            if (StringUtils.isBlank(hotCode)) {
+                continue;
+            }
+            // 热点里的京市：未勾选含京市则不扫买入；已持仓京市仍可走后面持仓附加
+            if (!includeBj && MarketCodeUtils.isBj(hotCode)) {
+                continue;
+            }
+            if (signalCodeSet.add(hotCode)) {
                 signalCodes.add(hotCode);
                 hotScanCount++;
             }
@@ -418,6 +429,10 @@ public class DecisionServiceImpl implements IDecisionService {
 
             // 买入：来自股票池策略机会，不要求已在「我的持仓」
             if (!"BUY".equals(side)) {
+                continue;
+            }
+            // 默认不含京市买入；持仓京市的卖出信号不受影响
+            if (!includeBj && MarketCodeUtils.isBj(code)) {
                 continue;
             }
 
@@ -833,6 +848,7 @@ public class DecisionServiceImpl implements IDecisionService {
             }
         }
 
+        String barFreshnessHint = resolveBarFreshnessHint(actionDate);
         return DecisionTodayResp.builder()
                 .runNo(decisionRun.getRunNo())
                 .runMode(decisionRun.getMode())
@@ -869,8 +885,36 @@ public class DecisionServiceImpl implements IDecisionService {
                         + " · 热点扩扫 " + hotScanCount
                         + " · 扫描 " + signalCodes.size()
                         + " · 观察池写入 " + observeUpserted
-                        + "（新" + observeCreated + "/更" + observeUpdated + "）")
+                        + "（新" + observeCreated + "/更" + observeUpdated + "）"
+                        + barFreshnessHint)
                 .build();
+    }
+
+    /**
+     * 本地日线未到决策日时提示：信号会与「截至最新K线日」的结果接近
+     */
+    private String resolveBarFreshnessHint(LocalDate actionDate) {
+        if (Objects.isNull(actionDate)) {
+            return "";
+        }
+        List<Map<String, Object>> rows = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
+                .select("MAX(trade_date) AS max_dt"));
+        if (CollUtil.isEmpty(rows) || Objects.isNull(rows.get(0)) || Objects.isNull(rows.get(0).get("max_dt"))) {
+            return " · 本地无日线";
+        }
+        LocalDate maxBarDate;
+        Object raw = rows.get(0).get("max_dt");
+        if (raw instanceof LocalDate localDate) {
+            maxBarDate = localDate;
+        } else if (raw instanceof java.sql.Date sqlDate) {
+            maxBarDate = sqlDate.toLocalDate();
+        } else {
+            maxBarDate = LocalDate.parse(String.valueOf(raw).substring(0, 10));
+        }
+        if (maxBarDate.isBefore(actionDate)) {
+            return " · 日线截至 " + maxBarDate + "（今日K线未同步，名单易与该日相同）";
+        }
+        return " · 日线截至 " + maxBarDate;
     }
 
     private int toInt(Object v) {
@@ -1836,147 +1880,6 @@ public class DecisionServiceImpl implements IDecisionService {
             return false;
         }
         return Objects.isNull(basic.getStFlag()) || basic.getStFlag() != 1;
-    }
-
-    /**
-     * 全A买入候选：流通市值优先 + 主线行业补扫（再交股票池做日线/估值过滤）
-     *
-     * @param limit          市值池上限
-     * @param mainlineNames  当日主线题材名
-     * @return 候选代码
-     */
-    private List<String> loadMarketBuyCandidateCodes(int limit, List<String> mainlineNames) {
-        int cap = Math.max(200, Math.min(limit, 4000));
-        // 有足够日线的标的优先（本地现价覆盖率低时，不能再靠 latest_price 筛全A）
-        List<Map<String, Object>> barStats = barDailyMapper.selectMaps(Wrappers.<BarDaily>query()
-                .select("code", "COUNT(1) AS cnt")
-                .groupBy("code")
-                .having("COUNT(1) >= {0}", 60));
-        Set<String> barOk = new HashSet<>();
-        if (CollUtil.isNotEmpty(barStats)) {
-            for (Map<String, Object> row : barStats) {
-                if (Objects.nonNull(row) && Objects.nonNull(row.get("code"))) {
-                    barOk.add(String.valueOf(row.get("code")));
-                }
-            }
-        }
-        List<String> codes = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
-        if (CollUtil.isNotEmpty(barOk)) {
-            List<String> barCodes = new ArrayList<>(barOk);
-            // 分批取 basic，按流通市值排序补齐
-            List<StockBasic> allBasics = new ArrayList<>();
-            int batch = 500;
-            for (int i = 0; i < barCodes.size(); i += batch) {
-                List<String> part = barCodes.subList(i, Math.min(i + batch, barCodes.size()));
-                List<StockBasic> partBasics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
-                        .in(StockBasic::getCode, part)
-                        .and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0)));
-                if (CollUtil.isNotEmpty(partBasics)) {
-                    allBasics.addAll(partBasics);
-                }
-            }
-            allBasics.sort((a, b) -> {
-                BigDecimal ma = Objects.nonNull(a.getCircMv()) ? a.getCircMv() : BigDecimal.ZERO;
-                BigDecimal mb = Objects.nonNull(b.getCircMv()) ? b.getCircMv() : BigDecimal.ZERO;
-                return mb.compareTo(ma);
-            });
-            for (StockBasic basic : allBasics) {
-                if (codes.size() >= cap) {
-                    break;
-                }
-                appendCandidateCode(basic, codes, seen);
-            }
-            // basic 缺失时，仍保留有日线的代码
-            if (codes.size() < Math.min(cap, barOk.size())) {
-                for (String code : barCodes) {
-                    if (codes.size() >= cap) {
-                        break;
-                    }
-                    if (seen.add(code)) {
-                        codes.add(code);
-                    }
-                }
-            }
-        }
-        int mvCount = codes.size();
-        // 兜底：仍无日线池时，退回有现价的大市值
-        if (codes.isEmpty()) {
-            List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
-                    .isNotNull(StockBasic::getLatestPrice)
-                    .gt(StockBasic::getLatestPrice, BigDecimal.ZERO)
-                    .and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0))
-                    .orderByDesc(StockBasic::getCircMv)
-                    .last("LIMIT " + cap));
-            for (StockBasic basic : basics) {
-                appendCandidateCode(basic, codes, seen);
-            }
-            mvCount = codes.size();
-        }
-        int mainlineAdded = appendMainlineIndustryCandidates(codes, seen, mainlineNames);
-        log.info("全A买入候选加载 barBased={} mainlineAdded={} total={}", mvCount, mainlineAdded, codes.size());
-        return codes;
-    }
-
-    /**
-     * 按主线题材名模糊匹配行业，补充中小市值漏扫票
-     */
-    private int appendMainlineIndustryCandidates(List<String> codes, Set<String> seen, List<String> mainlineNames) {
-        if (CollUtil.isEmpty(mainlineNames) || codes.size() >= MARKET_BUY_CANDIDATE_LIMIT + MAINLINE_EXTRA_CANDIDATE_LIMIT) {
-            return 0;
-        }
-        List<String> themes = new ArrayList<>();
-        for (String name : mainlineNames) {
-            if (StringUtils.isNotBlank(name) && name.trim().length() >= 2 && themes.size() < 6) {
-                themes.add(name.trim());
-            }
-        }
-        if (themes.isEmpty()) {
-            return 0;
-        }
-        int before = codes.size();
-        int remain = MAINLINE_EXTRA_CANDIDATE_LIMIT;
-        for (String theme : themes) {
-            if (remain <= 0) {
-                break;
-            }
-            List<StockBasic> industryRows = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
-                    .isNotNull(StockBasic::getLatestPrice)
-                    .gt(StockBasic::getLatestPrice, BigDecimal.ZERO)
-                    .isNotNull(StockBasic::getIndustry)
-                    .like(StockBasic::getIndustry, theme)
-                    .and(w -> w.isNull(StockBasic::getStFlag).or().eq(StockBasic::getStFlag, 0))
-                    .orderByDesc(StockBasic::getCircMv)
-                    .last("LIMIT " + Math.min(remain, 120)));
-            if (CollUtil.isEmpty(industryRows)) {
-                continue;
-            }
-            for (StockBasic basic : industryRows) {
-                if (remain <= 0) {
-                    break;
-                }
-                if (appendCandidateCode(basic, codes, seen)) {
-                    remain--;
-                }
-            }
-        }
-        return codes.size() - before;
-    }
-
-    private boolean appendCandidateCode(StockBasic basic, List<String> codes, Set<String> seen) {
-        if (Objects.isNull(basic) || StringUtils.isBlank(basic.getCode())) {
-            return false;
-        }
-        String name = basic.getName();
-        if (StringUtils.isNotBlank(name) && name.toUpperCase().contains("ST")) {
-            return false;
-        }
-        String code = MarketCodeUtils.normalizeCode(basic.getCode());
-        if (StringUtils.isBlank(code) || !seen.add(code)) {
-            return false;
-        }
-        codes.add(code);
-        return true;
     }
 
     private Map<String, StockBasic> loadBasics(Set<String> codes) {

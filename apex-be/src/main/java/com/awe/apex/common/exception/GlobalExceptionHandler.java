@@ -4,13 +4,16 @@ import com.awe.apex.common.api.Result;
 import com.awe.apex.common.constant.ErrorCodeEnum;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -70,11 +73,41 @@ public class GlobalExceptionHandler {
         return Result.failure(ErrorCodeEnum.FAILURE.getCode(), e.getMessage());
     }
 
+    /**
+     * 客户端主动断开（超时/刷新/取消请求）：业务可能已跑完，勿当系统故障刷 ERROR
+     */
+    @ExceptionHandler({ClientAbortException.class, AsyncRequestNotUsableException.class})
+    public void handleClientAbort(Exception e) {
+        log.warn("客户端已断开连接，响应未写完：{}", e.getMessage());
+    }
+
     // 兜底异常
     @ExceptionHandler(Exception.class)
     public Result<?> handleException(Exception e) {
+        if (isClientAbort(e)) {
+            log.warn("客户端已断开连接，响应未写完：{}", e.getMessage());
+            return null;
+        }
         log.error("系统异常：", e);
         return Result.failure(ErrorCodeEnum.ERROR.getCode(), "未知异常，请联系管理员");
+    }
+
+    private boolean isClientAbort(Throwable e) {
+        Throwable cur = e;
+        while (cur != null) {
+            if (cur instanceof ClientAbortException || cur instanceof AsyncRequestNotUsableException) {
+                return true;
+            }
+            String msg = cur.getMessage();
+            if (cur instanceof IOException && msg != null
+                    && (msg.contains("中止了一个已建立的连接")
+                    || msg.contains("Broken pipe")
+                    || msg.contains("Connection reset by peer"))) {
+                return true;
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
 }

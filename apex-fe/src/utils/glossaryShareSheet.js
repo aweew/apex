@@ -3,6 +3,7 @@
  */
 
 import { BRAND, shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
+import { getDiagramSvg } from '../glossary/diagrams.js'
 
 function esc(s) {
   return String(s ?? '')
@@ -14,7 +15,7 @@ function esc(s) {
 
 /**
  * @param {object} payload
- * @param {{id?:string,title:string,category?:string,short?:string,detail?:string,tip?:string,aliases?:string[]}} payload.term
+ * @param {{id?:string,title:string,category?:string,short?:string,detail?:string,tip?:string,aliases?:string[],diagram?:string}} payload.term
  * @param {string} [payload.titleDate]
  * @returns {HTMLElement}
  */
@@ -24,6 +25,7 @@ export function buildGlossaryShareSheet(payload) {
   const tip = term.tip ? String(term.tip).trim() : ''
   const short = term.short ? String(term.short).trim() : ''
   const detail = term.detail ? String(term.detail).trim() : ''
+  const diagramSvg = getDiagramSvg(term.diagram)
 
   const root = document.createElement('div')
   root.setAttribute('data-glossary-share-sheet', '1')
@@ -46,6 +48,9 @@ export function buildGlossaryShareSheet(payload) {
   const aliasesHtml = aliases.length
     ? `<div style="margin-top:14px;color:#8e8e93;font-size:12px;">也叫：${esc(aliases.join(' · '))}</div>`
     : ''
+  const diagramHtml = diagramSvg
+    ? `<div style="margin:12px 0 14px;border-radius:12px;overflow:hidden;border:1px solid rgba(0,0,0,.06);background:#f5f7fa;">${diagramSvg}</div>`
+    : ''
 
   root.innerHTML = `
     <div style="position:absolute;inset:0;pointer-events:none;background:
@@ -65,6 +70,7 @@ export function buildGlossaryShareSheet(payload) {
       </div>
       <h2 style="margin:0 0 12px;font-size:26px;font-weight:750;letter-spacing:-.03em;line-height:1.25;">${esc(term.title || '未命名词条')}</h2>
       ${short ? `<p style="margin:0 0 10px;font-size:15px;line-height:1.65;color:#1d1d1f;">${esc(short)}</p>` : ''}
+      ${diagramHtml}
       ${detail ? `<p style="margin:0;font-size:13px;line-height:1.7;color:#3a3a3c;">${esc(detail)}</p>` : ''}
       ${tipHtml}
       ${aliasesHtml}

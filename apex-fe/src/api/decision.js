@@ -1,7 +1,8 @@
 import http from './http'
 
 export function runDecision(payload = {}) {
-  return http.post('/api/decision/run', payload)
+  // 全市场扫描 + 策略/观察池同步可能数分钟，避免默认 60s 超时导致「跑完无提示」
+  return http.post('/api/decision/run', payload, { timeout: 600000 })
 }
 
 export function fetchDecisionToday(date, groupName = '我的自选') {

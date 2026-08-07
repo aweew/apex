@@ -1,7 +1,7 @@
 import http from './http'
 
 export function runSignals(payload = {}) {
-  return http.post('/api/signal/run', payload)
+  return http.post('/api/signal/run', payload, { timeout: 600000 })
 }
 
 export function latestSignals(limit = 50, dedupeByCode = true, minScore, side) {
@@ -21,7 +21,7 @@ export function signalConfluence(days = 5, minStrategies = 2) {
 }
 
 export function refreshUniverse(payload = {}) {
-  return http.post('/api/universe/refresh', payload)
+  return http.post('/api/universe/refresh', payload, { timeout: 300000 })
 }
 
 export function latestUniverse() {

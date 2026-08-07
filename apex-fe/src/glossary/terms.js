@@ -1,16 +1,19 @@
 /**
  * 灵枢 Apex 全局指标/名词百科词条。
- * 新增词条只需追加本文件；页面用 <TermTip term="id"> 或打开「名词」面板搜索。
+ * 新增词条只需追加本文件或 terms.extra.js；页面用 <TermTip term="id"> 或打开「名词」面板搜索。
  *
  * 字段约定：
  * - short：悬浮/列表一句摘要（宜短）
  * - detail：百科正文——是什么、怎么算/怎么看、常见误读、本系统口径（如有）
  * - tip：可选实操提示
+ * - diagram：可选图解 id，对应 glossary/diagrams.js 中的内联 SVG
  */
+import { EXTRA_TERMS } from './terms.extra.js'
+
 export const GLOSSARY_CATEGORIES = ['绩效', '风险', '技术', '基本面', '策略', '行情']
 
-/** @type {Array<{id:string,title:string,aliases:string[],category:string,short:string,detail:string,tip?:string}>} */
-export const GLOSSARY_TERMS = [
+/** @type {Array<{id:string,title:string,aliases:string[],category:string,short:string,detail:string,tip?:string,diagram?:string}>} */
+const CORE_TERMS = [
   // —— 绩效 ——
   {
     id: 'total_return',
@@ -31,6 +34,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '计算：盈利平仓笔数 ÷ 全部已平仓笔数。高胜率≠赚钱：若「赚时赚少、亏时亏多」，总体仍可能亏损。趋势跟随策略胜率常在 40%～50% 也能赚钱；高频刮头皮则可能胜率很高但单笔很薄。务必结合盈亏比、期望/笔、盈亏因子一起看，并确认样本笔数足够（样本太少数字会乱跳）。',
     tip: '常见舒适区约 40%～60%，取决于策略风格；别为了抬高胜率而砍掉合理止损。',
+    diagram: 'win_payoff',
   },
   {
     id: 'expectancy',
@@ -61,6 +65,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '衡量「赚的时候赚多大、亏的时候亏多大」。例如盈亏比 2 表示平均盈利是平均亏损的两倍。高盈亏比策略即使胜率不高也可能整体盈利（典型趋势策略）；低盈亏比则通常需要更高胜率才能覆盖。它是「平均笔」口径，极端单笔仍会拉偏均值。',
     tip: '和胜率成对看：低胜率需要更高盈亏比；高胜率可容忍更低盈亏比。',
+    diagram: 'win_payoff',
   },
   {
     id: 'paper_turnover',
@@ -81,6 +86,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '用收益相对波动（收益序列的标准差）做标准化：同样收益，波动越小夏普越高。可理解为「承担一单位波动，换来多少超额」。年化夏普常用于跨策略对比。「20日夏普」是近 20 个交易日滚动值，更敏感、噪声更大，适合看近期状态，不宜当作长期水平。无风险利率口径、是否年化会影响数值大小，横向对比时要统一。',
     tip: '长期年化夏普 >1 较好；短窗口单日波动大，勿过度解读。',
+    diagram: 'sharpe',
   },
   {
     id: 'sortino',
@@ -130,6 +136,7 @@ export const GLOSSARY_TERMS = [
     detail:
       'Beta≈1：大致与基准同涨同跌；>1：波动放大（牛市更猛、熊市更伤）；0～1：更稳健；负值：可能对冲或反向。高 Beta 本身不是好坏，关键看你是否有意承担系统风险。本系统也提供滚动 Beta 与「Beta 目标」调仓建议：通过调总仓位去靠近目标 Beta。',
     tip: '想降波动，可降仓或换低 Beta 标的，而不是只盯单个指标数字。',
+    diagram: 'beta',
   },
   {
     id: 'information_ratio',
@@ -186,6 +193,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '经典 Kelly 用胜率、赔率估算「长期财富增长最快」的下注比例。全 Kelly 往往过于激进、回撤巨大，实盘常用半 Kelly 或更保守折扣。本系统模拟盘会给出半 Kelly 与建议仓位，前提是历史胜率/盈亏比估计可靠；估计偏乐观时建议仓会偏大。',
     tip: '把 Kelly 当上限参考，不要当必须打满的目标仓。',
+    diagram: 'kelly',
   },
 
   // —— 风险 ——
@@ -198,6 +206,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '回答「历史上最惨亏过多少」：从任一历史高点一路跌到之后最低点，取跌幅最大的那一段。回撤恢复不对称：10% 回撤约需 11% 涨幅回本；30% 约需 43%；50% 需翻倍。它是风控与仓位管理的核心指标之一，也常与 Calmar 配对使用。',
     tip: '回撤曲线越浅、恢复越快通常越好；先问自己能扛住多大回撤，再选策略。',
+    diagram: 'max_drawdown',
   },
   {
     id: 'underwater_ratio',
@@ -226,6 +235,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '例如 VaR95=2% 可理解为：按历史统计，大约 20 个交易日里有 1 天，亏损可能达到或超过 2%。这是概率估计，不是保证——极端行情会突破 VaR。常见算法有历史模拟、参数法、蒙特卡洛等，口径不同数值不可直接比。',
     tip: '极端行情需配合 CVaR、压力测试，VaR 单独不够。',
+    diagram: 'var_cvar',
   },
   {
     id: 'cvar',
@@ -235,6 +245,7 @@ export const GLOSSARY_TERMS = [
     short: '一旦跌破 VaR，平均还会亏多少（尾部更狠）。',
     detail:
       'VaR 只给「门槛」，不说突破后有多惨；CVaR（也称 Expected Shortfall）看的是最坏那一截损失的平均值，对尾部风险更敏感，风控上通常更保守。监管与组合优化里常更偏好 CVaR。',
+    diagram: 'var_cvar',
   },
   {
     id: 'ulcer',
@@ -273,6 +284,7 @@ export const GLOSSARY_TERMS = [
     detail:
       'HHI（赫芬达尔指数）把各持仓权重平方后求和：越接近 1 越集中（少数票占大头），越低越分散。第一大/前五权重是更直观的补充。过度集中时，单票黑天鹅会重创净值。',
     tip: '单票与行业上限是控制 HHI 的常用手段。',
+    diagram: 'hhi',
   },
   {
     id: 'slippage',
@@ -294,6 +306,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '短均线（如 5/10）更灵敏，长均线（如 20/60）更稳、滞后更大。价格在均线上方常被解读为偏多，下方偏空。金叉/死叉指短均线向上/向下穿越长均线。均线是滞后指标：转折点往往已经走完一段。本系统 S1「均线趋势」策略以均线交叉配合放量作为趋势过滤。',
     tip: '单均线易被震荡市打脸，最好结合趋势级别与成交量。',
+    diagram: 'ma_cross',
   },
   {
     id: 'macd',
@@ -303,6 +316,7 @@ export const GLOSSARY_TERMS = [
     short: '用快慢指数均线差衡量趋势与动能。',
     detail:
       'DIF（快线）为短期与长期 EMA 之差，DEA（信号线）为 DIF 的平滑。DIF 上穿 DEA 为金叉（偏多），下穿为死叉（偏空）。柱线反映两者距离：柱由负转正常伴随动能转强。MACD 在趋势市较有用，震荡市会反复假信号；背离（价新高而 MACD 未新高）只是提示，不是必然反转。',
+    diagram: 'macd',
   },
   {
     id: 'kdj',
@@ -323,6 +337,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '数值多在 0～100：偏高（如 >70）常称超买，偏低（如 <30）常称超卖；中间区域表示动能中性。周期越短越敏感（RSI6），越长越平滑（RSI24）。强趋势中 RSI 会长期钝化。本系统 S2「RSI 回调」思路：价格仍在均线上方时，等 RSI 从超卖区回升再介入，而不是追高买强势。',
     tip: '单看 RSI 钝化很常见，最好结合均线/趋势位置。',
+    diagram: 'rsi',
   },
   {
     id: 'atr',
@@ -332,6 +347,7 @@ export const GLOSSARY_TERMS = [
     short: '一段时间内的平均真实波幅，衡量波动大小（价格单位）。',
     detail:
       'True Range 取「当日高低差、高点距昨收、低点距昨收」三者最大，再做 N 日平均（常用 14）。ATR 变大说明波动加剧，变小说明波动收敛。它不指示涨跌方向，只描述「晃多大」。模拟盘「应用 ATR 止损」常用 ATR14 的倍数估算止损/止盈距离，使风控随波动自适应。',
+    diagram: 'atr_stop',
   },
   {
     id: 'atr_pct',
@@ -370,6 +386,7 @@ export const GLOSSARY_TERMS = [
     short: '中轨均线 ± 若干倍标准差，刻画价格波动通道。',
     detail:
       '中轨多为 N 日均线，上下轨为中轨 ± k 倍标准差（常见 20,2）。价格贴近上轨偏强/可能超买，贴近下轨偏弱/可能超卖；带宽扩张=波动加大，收窄=波动收敛（常酝酿变盘）。突破上轨不一定见顶，回归中轨也不一定继续跌，需结合趋势方向。',
+    diagram: 'boll',
   },
   {
     id: 'up_days',
@@ -473,6 +490,7 @@ export const GLOSSARY_TERMS = [
     short: '当前 PE 在同行或历史样本中的相对高低位置。',
     detail:
       '例如分位 80% 表示比约 80% 的样本更贵。本系统估值页用行业相对口径（结合行业 PE 中位）帮助判断「相对贵还是相对便宜」，比单看绝对 PE 更稳妥。分位低≠一定买：可能是基本面恶化导致的低估值。',
+    diagram: 'pe_percentile',
   },
   {
     id: 'fair_value',
@@ -531,6 +549,7 @@ export const GLOSSARY_TERMS = [
     short: '同一标的、同一方向被多个策略同时点名。',
     detail:
       '共振越多，系统内一致性越强，但仍可能集体犯错（例如同质规则在震荡市一起失效）。适合提高关注优先级，而非无限加仓。决策页可按共振筛选，并与「主线」标签交叉使用。',
+    diagram: 'confluence',
   },
   {
     id: 'hot_confluence',
@@ -624,6 +643,8 @@ export const GLOSSARY_TERMS = [
     short: '把历史价格按除权除息调整，使走势可连续比较。',
     detail:
       '分红、配股等会导致价格跳空，不复权会「假跌」。前复权固定最新价、回推历史，适合看形态与均线；后复权固定更早价格、推演最新。本系统日线多为前复权；看绝对历史成交价或某些监管披露时要注意与不复权的差异。',
+    tip: '看形态、均线、指标用前复权；对账成交价时用未复权。',
+    diagram: 'qfq',
   },
   {
     id: 'limit_up',
@@ -679,6 +700,7 @@ export const GLOSSARY_TERMS = [
     detail:
       '本系统常用口径：今日 N 板家数 ÷ 昨日 (N−1) 板家数。例如「四进五」看昨日 4 板晋级到今日 5 板的效率。晋级率高=接力情绪强；过低=高潮后分歧或退潮。需结合样本家数：基数太小时比例不稳定。',
     tip: '看晋级率时同时看昨涨停家数与今日晋级成功数，避免被百分比误导。',
+    diagram: 'promote_rate',
   },
   {
     id: 'money_effect',
@@ -688,6 +710,7 @@ export const GLOSSARY_TERMS = [
     short: '市场里多数人是否容易赚钱的体感指标（涨跌结构）。',
     detail:
       '常见观察：上涨家数占比、涨停质量、晋级率、指数涨但个股跌（「赚指数不赚钱」）等。看板效应条会提示如「指数涨、个股跌（赚钱效应弱）」。赚钱效应强时追涨容错高；弱时即使指数红也可能个股难做，宜降仓或做防守。',
+    diagram: 'emotion_cycle',
   },
   {
     id: 'hot_theme',
@@ -699,3 +722,5 @@ export const GLOSSARY_TERMS = [
       '题材可以来自主线板块、涨停归因、资讯热点等。强题材常呈梯队（龙头→中军→杂毛）；退潮时高位股回撤最快。持仓与决策里展示的题材标签用于归类，不构成推荐。区分「产业主线」与「纯情绪结果板」很重要。',
   },
 ]
+
+export const GLOSSARY_TERMS = [...CORE_TERMS, ...EXTRA_TERMS]

@@ -62,28 +62,20 @@ async function load() {
   }
 }
 
-async function onRefreshUniverse() {
+async function onGenerateSignals() {
   loading.value = true
   try {
-    const res = await refreshUniverse({ scope: 'MARKET', looseFilter: true })
-    ElMessage.success(`股票池批次 ${res.data.batchNo}，入选 ${res.data.count}`)
-    await load()
-  } catch (e) {
-    ElMessage.error(e.message || '刷新失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-async function onRun() {
-  loading.value = true
-  try {
-    const res = await runSignals({ useUniverse: universeCount.value > 0 })
+    // 1. 按本地日线重建全市场可扫描池（≥60 根、剔 ST）
+    const uni = await refreshUniverse({ scope: 'MARKET', looseFilter: true })
+    const poolCount = uni.data?.count ?? 0
+    universeCount.value = poolCount
+    // 2. 对股票池跑 S1/S2/S3，写出买卖信号
+    const res = await runSignals({ useUniverse: poolCount > 0 })
     rows.value = res.data || []
-    ElMessage.success(`生成信号 ${rows.value.length} 条`)
+    ElMessage.success(`股票池 ${poolCount} 只 · 生成信号 ${rows.value.length} 条`)
     await load()
   } catch (e) {
-    ElMessage.error(e.message || '运行失败')
+    ElMessage.error(e.message || '生成失败')
   } finally {
     loading.value = false
   }
@@ -159,25 +151,6 @@ async function addObserve(row) {
   }
 }
 
-function exportCsv() {
-  const header = ['signalDate', 'code', 'name', 'strategyId', 'side', 'score', 'reasonJson']
-  const lines = [header.join(',')]
-  for (const row of filtered.value) {
-    lines.push(
-      header
-        .map((k) => `"${String(row[k] ?? '').split('"').join('""')}"`)
-        .join(','),
-    )
-  }
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `signals_${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 onMounted(load)
 </script>
 
@@ -194,21 +167,15 @@ onMounted(load)
         </p>
       </div>
       <div class="actions">
-        <el-button @click="onRefreshUniverse" :loading="loading" title="按本地日线重建可扫描股票池，不跑策略">
-          ① 重建股票池
-        </el-button>
-        <el-button type="primary" @click="onRun" :loading="loading" title="对当前股票池跑 S1/S2/S3，生成买卖信号">
-          ② 跑策略信号
-        </el-button>
-        <el-button text @click="load" title="只重新拉取已有信号/统计，不重算">重载列表</el-button>
-        <el-button text @click="exportCsv" :disabled="!filtered.length">导出本地</el-button>
-        <el-link
+        <el-button
           type="primary"
-          href="http://127.0.0.1:8080/apex/api/export/signals?limit=200"
-          target="_blank"
-        >服务端CSV</el-link>
+          @click="onGenerateSignals"
+          :loading="loading"
+          title="先按本地日线重建全市场股票池，再跑 S1/S2/S3 生成买卖信号"
+        >
+          生成策略信号
+        </el-button>
         <el-button plain @click="router.push('/decision')">智能决策</el-button>
-        <el-button plain @click="router.push('/observe')">观察池</el-button>
       </div>
     </header>
 
@@ -249,8 +216,8 @@ onMounted(load)
 
       <div v-if="!loading && !rows.length" class="page-empty">
         <h3>暂无信号</h3>
-        <p>先补日线 → ①重建股票池 → ②跑策略信号</p>
-        <el-button type="primary" :loading="loading" @click="onRun">② 跑策略信号</el-button>
+        <p>先补日线，再点「生成策略信号」（自动重建股票池并跑 S1/S2/S3）</p>
+        <el-button type="primary" :loading="loading" @click="onGenerateSignals">生成策略信号</el-button>
       </div>
 
       <el-table v-else :data="filtered" size="small" stripe height="calc(100vh - 340px)">

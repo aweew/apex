@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import {
   fetchDecisionAttribution,
   fetchDecisionBuyAiSummary,
@@ -28,7 +28,7 @@ import { normalizeHotThemes } from '../utils/hotTheme.js'
 const router = useRouter()
 const loading = ref(false)
 const ordering = ref(false)
-const groupName = ref('我的自选')
+const DEFAULT_GROUP = '我的自选'
 const data = ref(null)
 const activeTab = ref('buys')
 const history = ref([])
@@ -48,6 +48,8 @@ const buyMinScore = ref(savedFilters.minScore ?? '')
 const buyMainlineOnly = ref(!!savedFilters.mainlineOnly)
 const buyExecutableOnly = ref(!!savedFilters.executableOnly)
 const buyCheapOnly = ref(!!savedFilters.cheapOnly)
+/** 默认不含北交所（京市）；勾选后生成/展示才纳入 */
+const includeBj = ref(savedFilters.includeBj === true)
 
 /** 表格长文案悬停：加宽、可换行，避免 show-overflow-tooltip 截断 */
 const longTextTooltip = {
@@ -67,11 +69,26 @@ function persistBuyFilters() {
         mainlineOnly: buyMainlineOnly.value,
         executableOnly: buyExecutableOnly.value,
         cheapOnly: buyCheapOnly.value,
+        includeBj: includeBj.value,
       }),
     )
   } catch {
     /* ignore */
   }
+}
+
+/** 北交所代码：92/83/87/4 开头（与后端 MarketCodeUtils 一致） */
+function isBjCode(code) {
+  const digits = String(code || '')
+    .replace(/\D/g, '')
+    .slice(-6)
+  if (digits.length < 6) return false
+  return (
+    digits.startsWith('92') ||
+    digits.startsWith('83') ||
+    digits.startsWith('87') ||
+    digits.startsWith('4')
+  )
 }
 
 const buys = computed(() => data.value?.buys || [])
@@ -80,6 +97,7 @@ const holds = computed(() => data.value?.holds || [])
 const filteredBuys = computed(() => {
   const min = buyMinScore.value !== '' ? Number(buyMinScore.value) : null
   return buys.value.filter((row) => {
+    if (!includeBj.value && isBjCode(row.code)) return false
     if (buyStrategyFilter.value && row.strategyId !== buyStrategyFilter.value) return false
     if (buyMainlineOnly.value && !row.mainlineMatch) return false
     if (buyExecutableOnly.value && row.executableHint !== true) return false
@@ -189,7 +207,7 @@ async function load() {
   loading.value = true
   try {
     const [res] = await Promise.all([
-      fetchDecisionToday(undefined, groupName.value),
+      fetchDecisionToday(undefined, DEFAULT_GROUP),
       loadPlaybook(),
     ])
     data.value = res.data
@@ -206,20 +224,67 @@ async function load() {
 async function onRun() {
   loading.value = true
   try {
-    const res = await runDecision({ groupName: groupName.value })
+    const res = await runDecision({ includeBj: includeBj.value })
     data.value = res.data
     pickDefaultTab()
     await Promise.all([loadHistory(), loadAttribution()])
-    const obs = res.data?.observeUpserted
-    ElMessage.success(
-      res.data?.message ||
-        (obs != null ? `决策已生成，并写入观察池 ${obs} 条` : '决策已生成'),
-    )
+    notifyDecisionDone(res.data)
     loadBuyAi(true)
   } catch (e) {
-    ElMessage.error(e.message || '生成失败')
+    const recovered = await tryRecoverAfterRunFailure(e)
+    if (!recovered) {
+      ElMessage.error(formatRunError(e))
+    }
   } finally {
     loading.value = false
+  }
+}
+
+function notifyDecisionDone(payload) {
+  const dateText = payload?.actionDate || '-'
+  const msg = payload?.message || '决策已生成'
+  ElNotification({
+    title: `决策已完成 · ${dateText}`,
+    message: msg,
+    type: 'success',
+    duration: 8000,
+    position: 'top-right',
+  })
+}
+
+function formatRunError(e) {
+  const raw = e?.message || ''
+  if (/timeout|timed out|exceeded/i.test(raw) || e?.code === 'ECONNABORTED') {
+    return '请求超时：服务端可能仍在跑或已跑完。请点页面刷新/重进决策页查看是否已有今日清单；并确认日线已同步到最近交易日。'
+  }
+  return raw || '生成失败'
+}
+
+/** 超时/断连时尝试拉今日决策，避免「其实已落库但前端无提示」 */
+async function tryRecoverAfterRunFailure(e) {
+  const raw = e?.message || ''
+  const maybeDone = /timeout|timed out|exceeded|Network Error|aborted/i.test(raw)
+    || e?.code === 'ECONNABORTED'
+  if (!maybeDone) return false
+  try {
+    const res = await fetchDecisionToday(undefined, DEFAULT_GROUP)
+    const payload = res.data
+    if (!payload?.actionDate || (!payload.buyCount && !payload.sellCount && !payload.holdCount && !payload.items?.length)) {
+      return false
+    }
+    data.value = payload
+    pickDefaultTab()
+    await Promise.all([loadHistory(), loadAttribution()])
+    ElNotification({
+      title: `决策可能已完成 · ${payload.actionDate}`,
+      message: payload.message || '前端超时，但已从服务端读到今日决策结果',
+      type: 'warning',
+      duration: 10000,
+    })
+    loadBuyAi(true)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -227,7 +292,7 @@ async function openHistoryDay(row) {
   if (!row?.actionDate) return
   loading.value = true
   try {
-    const res = await fetchDecisionToday(row.actionDate, groupName.value)
+    const res = await fetchDecisionToday(row.actionDate, DEFAULT_GROUP)
     data.value = res.data
     pickDefaultTab()
     loadBuyAi(false)
@@ -267,7 +332,7 @@ async function loadBuyAi(force = false) {
   try {
     const res = await fetchDecisionBuyAiSummary(
       data.value?.actionDate,
-      groupName.value,
+      DEFAULT_GROUP,
       force,
     )
     buyAi.value = res.data
@@ -295,7 +360,7 @@ async function captureDecisionShare() {
   await preloadBrandAssets(['markShare'])
   const sheet = buildDecisionShareSheet({
     titleDate: data.value?.actionDate || new Date().toISOString().slice(0, 10),
-    groupName: data.value?.groupName || groupName.value,
+    groupName: data.value?.groupName || DEFAULT_GROUP,
     stance: briefing.value?.stance || '均衡',
     stanceScore: briefing.value?.stanceScore,
     stanceReason: briefing.value?.stanceReason || '',
@@ -308,7 +373,7 @@ async function captureDecisionShare() {
     aiSummary: buyAi.value?.summary || '',
     aiStance: buyAi.value?.stance || '',
     aiModel: buyAi.value?.model || '',
-    buys: filteredBuys.value.length ? filteredBuys.value : buys.value,
+    buys: filteredBuys.value,
     sells: sells.value,
   })
   const mounted = mountDecisionShareSheet(sheet)
@@ -447,7 +512,14 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <div class="actions">
-        <el-input v-model="groupName" class="group-input" placeholder="自选分组" clearable />
+        <el-checkbox
+          v-model="includeBj"
+          class="include-bj"
+          title="默认不含北交所；勾选后一键生成才会纳入京市"
+          @change="persistBuyFilters"
+        >
+          含京市
+        </el-checkbox>
         <el-button type="primary" class="cta" :loading="loading" @click="onRun">一键生成决策</el-button>
         <el-button
           type="primary"
@@ -539,7 +611,6 @@ onBeforeUnmount(() => {
           <h2>今日清单</h2>
           <p class="muted">
             {{ data?.actionDate || '-' }}
-            <template v-if="data?.groupName"> · {{ data.groupName }}</template>
             <template v-if="data?.universeCount != null"> · 池 {{ data.universeCount }}</template>
           </p>
         </div>
@@ -633,6 +704,7 @@ onBeforeUnmount(() => {
             <el-checkbox v-model="buyMainlineOnly" @change="persistBuyFilters">仅主线</el-checkbox>
             <el-checkbox v-model="buyExecutableOnly" @change="persistBuyFilters">仅可执行</el-checkbox>
             <el-checkbox v-model="buyCheapOnly" @change="persistBuyFilters">仅低估</el-checkbox>
+            <el-checkbox v-model="includeBj" @change="persistBuyFilters">含京市</el-checkbox>
             <span class="muted">显示 {{ filteredBuys.length }} / {{ buys.length }}</span>
           </div>
           <div v-if="!buys.length" class="page-empty">
@@ -988,10 +1060,6 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.group-input {
-  width: 130px;
 }
 
 .cta {

@@ -76,6 +76,16 @@ public final class MarketCodeUtils {
     }
 
     /**
+     * 是否北交所（京市）标的
+     *
+     * @param code 证券代码
+     * @return true=北交所
+     */
+    public static boolean isBj(String code) {
+        return "BJ".equals(resolveMarket(code));
+    }
+
+    /**
      * 是否港股代码（常见 4~5 位，如 1810 / 01810 / 03986）
      *
      * @param digits 纯数字代码

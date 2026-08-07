@@ -35,4 +35,10 @@ public class UniverseRefreshReq {
      * 日线统计截止日；空值保持原有最新数据行为
      */
     private LocalDate asOfDate;
+
+    /**
+     * 是否纳入北交所（京市）。
+     * null=不过滤（信号页等）；false=剔除；true=保留。智能决策默认传 false。
+     */
+    private Boolean includeBj;
 }

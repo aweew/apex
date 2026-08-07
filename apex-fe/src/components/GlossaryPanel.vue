@@ -7,6 +7,7 @@ import {
   findTerm,
   searchTerms,
 } from '../glossary/lookup.js'
+import { getDiagramSvg } from '../glossary/diagrams.js'
 import {
   buildGlossaryShareSheet,
   mountGlossaryShareSheet,
@@ -34,7 +35,7 @@ let sharePreviewObjectUrl = ''
 const categories = allCategories()
 
 const list = computed(() => {
-  let rows = searchTerms(query.value, 80)
+  let rows = searchTerms(query.value, 200)
   if (category.value) {
     rows = rows.filter((term) => term.category === category.value)
   }
@@ -48,6 +49,8 @@ const active = computed(() => {
   }
   return list.value[0] || null
 })
+
+const activeDiagram = computed(() => getDiagramSvg(active.value?.diagram))
 
 watch(list, (rows) => {
   if (!rows.length) {
@@ -230,7 +233,7 @@ defineExpose({ openGlossary, close })
           ref="inputRef"
           v-model="query"
           class="glossary-input"
-          placeholder="搜索：夏普、回撤、MACD、共振…"
+          placeholder="搜索：夏普、回撤、止损、情绪周期、MACD…"
           autocomplete="off"
           @keydown.esc.prevent="close"
         />
@@ -275,20 +278,25 @@ defineExpose({ openGlossary, close })
 
         <article v-if="active" class="glossary-detail">
           <header>
-            <div class="detail-title">
-              <h2>{{ active.title }}</h2>
+            <h2>{{ active.title }}</h2>
+            <div class="detail-actions">
               <span>{{ active.category }}</span>
+              <button
+                type="button"
+                class="detail-share"
+                :disabled="sharing"
+                @click="openShare"
+              >
+                {{ sharing ? '生成中…' : '分享截图' }}
+              </button>
             </div>
-            <button
-              type="button"
-              class="detail-share"
-              :disabled="sharing"
-              @click="openShare"
-            >
-              {{ sharing ? '生成中…' : '分享截图' }}
-            </button>
           </header>
           <p class="lead">{{ active.short }}</p>
+          <div
+            v-if="activeDiagram"
+            class="diagram"
+            v-html="activeDiagram"
+          />
           <p class="detail">{{ active.detail }}</p>
           <p v-if="active.tip" class="tip">{{ active.tip }}</p>
           <p v-if="active.aliases?.length" class="aliases">
@@ -307,6 +315,8 @@ defineExpose({ openGlossary, close })
     append-to-body
     destroy-on-close
     align-center
+    :z-index="2100"
+    modal-class="glossary-share-overlay"
     class="glossary-share-dialog"
     @closed="revokeSharePreview"
   >
@@ -336,7 +346,7 @@ defineExpose({ openGlossary, close })
 
 .glossary-panel {
   width: min(860px, 100%);
-  max-height: min(78vh, 720px);
+  max-height: min(84vh, 780px);
   display: flex;
   flex-direction: column;
   background: rgba(255, 255, 255, 0.92);
@@ -464,7 +474,7 @@ defineExpose({ openGlossary, close })
   padding: 8px;
   overflow: auto;
   border-right: 1px solid var(--line);
-  max-height: min(52vh, 480px);
+  max-height: min(56vh, 520px);
 }
 
 .glossary-item {
@@ -506,36 +516,37 @@ defineExpose({ openGlossary, close })
 .glossary-detail {
   padding: 18px 20px 22px;
   overflow: auto;
-  max-height: min(52vh, 480px);
+  max-height: min(56vh, 520px);
 }
 
 .glossary-detail header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
-.detail-title {
-  min-width: 0;
+.detail-actions {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  flex: 1;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .glossary-detail h2 {
   margin: 0;
+  min-width: 0;
   font-size: 20px;
   letter-spacing: -0.03em;
+  line-height: 1.25;
 }
 
 .glossary-detail header span {
   font-size: 12px;
   color: var(--muted);
-  flex: 0 0 auto;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .glossary-detail .lead {
@@ -543,6 +554,21 @@ defineExpose({ openGlossary, close })
   font-size: 14px;
   line-height: 1.6;
   color: var(--ink);
+}
+
+.glossary-detail .diagram {
+  margin: 0 0 14px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #f5f7fa;
+}
+
+.glossary-detail .diagram :deep(svg) {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: top;
 }
 
 .glossary-detail .detail {
@@ -574,36 +600,6 @@ defineExpose({ openGlossary, close })
   place-items: center;
 }
 
-.share-tip {
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: #86868b;
-}
-
-.share-stage {
-  /* 勿用 flex + 默认 stretch，会把预览图纵向压扁 */
-  display: block;
-  width: 100%;
-  max-height: min(62vh, 680px);
-  overflow: auto;
-  padding: 10px;
-  background: #ececec;
-  border-radius: 12px;
-  text-align: center;
-  box-sizing: border-box;
-}
-
-.share-stage img {
-  width: min(100%, 680px);
-  max-width: none;
-  height: auto;
-  display: inline-block;
-  vertical-align: top;
-  object-fit: contain;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
-  border-radius: 4px;
-}
-
 @media (max-width: 720px) {
   .glossary-body {
     grid-template-columns: 1fr;
@@ -622,5 +618,62 @@ defineExpose({ openGlossary, close })
   .glossary-title span {
     display: none;
   }
+}
+</style>
+
+<!-- append-to-body 弹窗需全局样式；勿给 .el-overlay 写 display:!important，会盖住关闭后的 display:none 导致蒙层残留 -->
+<style>
+.glossary-share-overlay .el-overlay-dialog {
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
+.glossary-share-dialog.el-dialog {
+  margin: 0 auto !important;
+  max-width: min(740px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.glossary-share-dialog .el-dialog__body {
+  padding-top: 8px;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+}
+
+.glossary-share-dialog .share-tip {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #86868b;
+}
+
+.glossary-share-dialog .share-stage {
+  display: block;
+  width: 100%;
+  max-height: min(58vh, 640px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px;
+  background: #ececec;
+  border-radius: 12px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.glossary-share-dialog .share-stage img {
+  width: min(100%, 680px);
+  max-width: none;
+  height: auto;
+  display: inline-block;
+  vertical-align: top;
+  object-fit: contain;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
 }
 </style>

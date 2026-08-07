@@ -252,40 +252,42 @@ onBeforeUnmount(() => {
         </div>
         <span class="tagline">{{ BRAND.taglineShort }}</span>
       </div>
-      <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
-        <i class="dot" />
-        {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
-      </span>
-      <button
-        type="button"
-        class="search-btn density-btn"
-        :class="{ on: denseMode }"
-        title="紧凑密度 Ctrl+Shift+D"
-        @click="toggleDense"
-      >
-        <span>{{ denseMode ? '紧凑' : '舒适' }}</span>
-      </button>
       <div class="links">
         <div v-for="group in navGroups" :key="group.label" class="nav-group">
           <span class="group-label">{{ group.label }}</span>
           <RouterLink v-for="item in group.items" :key="item.to" :to="item.to">{{ item.label }}</RouterLink>
         </div>
       </div>
-      <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="8" />
-          <path d="M12 11v5" stroke-linecap="round" />
-          <circle cx="12" cy="8" r="0.8" fill="currentColor" stroke="none" />
-        </svg>
-        <span>名词</span>
-      </button>
-      <button type="button" class="search-btn" title="搜索股票 Ctrl+K" @click="openSearch">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="7" />
-          <path d="M20 20l-3.2-3.2" stroke-linecap="round" />
-        </svg>
-        <span>搜索</span>
-      </button>
+      <div class="nav-actions">
+        <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
+          <i class="dot" />
+          {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
+        </span>
+        <button
+          type="button"
+          class="search-btn density-btn"
+          :class="{ on: denseMode }"
+          title="紧凑密度 Ctrl+Shift+D"
+          @click="toggleDense"
+        >
+          <span>{{ denseMode ? '紧凑' : '舒适' }}</span>
+        </button>
+        <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="8" />
+            <path d="M12 11v5" stroke-linecap="round" />
+            <circle cx="12" cy="8" r="0.8" fill="currentColor" stroke="none" />
+          </svg>
+          <span>名词</span>
+        </button>
+        <button type="button" class="search-btn" title="搜索股票 Ctrl+K" @click="openSearch">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.2-3.2" stroke-linecap="round" />
+          </svg>
+          <span>搜索</span>
+        </button>
+      </div>
     </nav>
 
     <GlossaryPanel ref="glossaryRef" />
@@ -356,7 +358,7 @@ onBeforeUnmount(() => {
 }
 
 .shell.dense .nav {
-  height: 48px;
+  min-height: 48px;
 }
 
 .shell.dense .nav-group .group-label {
@@ -369,9 +371,10 @@ onBeforeUnmount(() => {
   z-index: 100;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 0 18px;
-  height: 56px;
+  min-height: 56px;
+  height: auto;
   background: rgba(255, 255, 255, 0.62);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
@@ -386,6 +389,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+  max-width: 42%;
+  min-width: 0;
 }
 
 .brand-logo {
@@ -404,6 +409,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  min-width: 0;
 }
 
 .brand {
@@ -413,6 +419,7 @@ onBeforeUnmount(() => {
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .brand-en {
@@ -422,12 +429,25 @@ onBeforeUnmount(() => {
   color: var(--slate);
   text-transform: uppercase;
   font-family: var(--font-display), Arial, sans-serif;
+  white-space: nowrap;
 }
 
 .tagline {
   font-size: 11px;
   color: var(--muted);
   letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .health {
@@ -441,6 +461,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.45);
   border: 1px solid rgba(0, 0, 0, 0.05);
+  white-space: nowrap;
 }
 
 .health .dot {
@@ -473,7 +494,15 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   overflow-x: auto;
-  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+}
+
+.links:hover,
+.links:focus-within {
+  scrollbar-color: rgba(0, 0, 0, 0.35) transparent;
 }
 
 .nav-group {
@@ -500,10 +529,16 @@ onBeforeUnmount(() => {
   padding: 0 6px 0 4px;
   letter-spacing: 0.04em;
   user-select: none;
+  white-space: nowrap;
 }
 
 .links::-webkit-scrollbar {
-  display: none;
+  height: 4px;
+}
+
+.links::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 999px;
 }
 
 .links a {
@@ -547,6 +582,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  white-space: nowrap;
 }
 
 .search-btn:hover {
@@ -693,8 +729,43 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1280px) {
   .tagline,
+  .brand-en {
+    display: none;
+  }
+
+  .brand-block {
+    max-width: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .nav {
+    flex-wrap: wrap;
+    padding: 8px 14px;
+    row-gap: 6px;
+  }
+
+  .links {
+    flex: 1 1 100%;
+    order: 3;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    row-gap: 4px;
+    column-gap: 2px;
+  }
+
+  .nav-group {
+    border-right: 0;
+    margin-right: 0;
+    padding-right: 0;
+  }
+
+  .group-label {
+    padding-left: 2px;
+  }
+
   .health {
     display: none;
   }
@@ -707,6 +778,17 @@ onBeforeUnmount(() => {
     width: 30px;
     padding: 0;
     justify-content: center;
+  }
+}
+
+@media (max-width: 720px) {
+  .group-label {
+    display: none;
+  }
+
+  .links a {
+    padding: 5px 8px;
+    font-size: 12px;
   }
 }
 </style>
