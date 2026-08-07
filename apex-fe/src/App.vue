@@ -317,6 +317,7 @@ onBeforeUnmount(() => {
               <ul class="search-list">
                 <li v-for="item in recentStocks" :key="item.code">
                   <button type="button" class="search-item" @click="goStock(item.code, item.name)">
+                    <StockBoardTag :code="item.code" :market="item.market" />
                     <span class="code">{{ item.code }}</span>
                     <span class="name">{{ item.name || '-' }}</span>
                   </button>
@@ -334,6 +335,7 @@ onBeforeUnmount(() => {
           <ul v-else class="search-list">
             <li v-for="item in results" :key="item.code">
               <button type="button" class="search-item" @click="goStock(item.code, item.name)">
+                <StockBoardTag :code="item.code" :market="item.market" />
                 <span class="code" v-html="item.codeHtml" />
                 <span class="name" v-html="item.nameHtml" />
                 <span v-if="item.market" class="market">{{ item.market }}</span>
@@ -649,9 +651,8 @@ onBeforeUnmount(() => {
 
 .search-item {
   width: 100%;
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
-  gap: 10px;
+  display: flex;
+  gap: 8px;
   align-items: center;
   border: 0;
   background: transparent;
@@ -667,6 +668,7 @@ onBeforeUnmount(() => {
 }
 
 .search-item .code {
+  flex: 0 0 64px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
@@ -674,6 +676,7 @@ onBeforeUnmount(() => {
 }
 
 .search-item .name {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -683,6 +686,7 @@ onBeforeUnmount(() => {
 }
 
 .search-item .market {
+  flex-shrink: 0;
   font-size: 11px;
   color: var(--muted);
 }

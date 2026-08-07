@@ -180,7 +180,11 @@ onMounted(() => {
     <section v-if="detail" class="hero" :class="levelTone">
       <div class="hero-main">
         <div class="title-row">
-          <h2>{{ detail.name || '—' }} <span class="code">{{ detail.code }}</span></h2>
+          <h2>
+            <StockBoardTag :code="detail.code" :market="detail.market" />
+            {{ detail.name || '—' }}
+            <span class="code">{{ detail.code }}</span>
+          </h2>
           <span class="level">{{ detail.levelLabel || '—' }}</span>
         </div>
         <p class="summary">{{ detail.summary }}</p>
@@ -300,7 +304,11 @@ onMounted(() => {
         @row-click="openRow"
       >
         <el-table-column prop="code" label="代码" width="90" />
-        <el-table-column prop="name" label="名称" width="100" />
+        <el-table-column prop="name" label="名称" width="120">
+          <template #default="{ row }">
+            <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+          </template>
+        </el-table-column>
         <el-table-column prop="industry" label="行业" min-width="110" show-overflow-tooltip />
         <el-table-column prop="score" label="综合分" width="80" sortable>
           <template #default="{ row }">{{ fmt(row.score, 1) }}</template>

@@ -124,7 +124,11 @@ defineExpose({ load, onRefresh })
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="100" />
+      <el-table-column prop="name" label="名称" min-width="120">
+        <template #default="{ row }">
+          <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+        </template>
+      </el-table-column>
       <el-table-column prop="sourceCount" label="源数" width="64" />
       <el-table-column prop="pctChg" label="涨跌" width="88">
         <template #default="{ row }">
@@ -155,7 +159,11 @@ defineExpose({ load, onRefresh })
           <span v-else class="muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="120" />
+      <el-table-column prop="name" label="名称" min-width="140">
+        <template #default="{ row }">
+          <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+        </template>
+      </el-table-column>
       <el-table-column prop="rankNo" label="排名" width="72" />
     </el-table>
 

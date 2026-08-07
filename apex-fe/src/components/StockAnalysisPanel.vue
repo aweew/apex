@@ -438,7 +438,9 @@ defineExpose({ reload: () => loadRules() })
           <div class="share-head-main">
             <BrandShareLockup subtitle="个股研判" :size="44" />
             <div class="quote-id">
-              <b class="quote-name">{{ data.name || '-' }}</b>
+              <StockBoardTag :code="data.code" :market="data.market">
+                <b class="quote-name">{{ data.name || '-' }}</b>
+              </StockBoardTag>
               <span class="quote-code">{{ data.code }}</span>
               <span v-if="data.industry" class="quote-ind">{{ data.industry }}</span>
             </div>

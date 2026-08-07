@@ -652,7 +652,11 @@ onBeforeUnmount(() => {
                 <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="100" />
+            <el-table-column prop="name" label="名称" width="120">
+              <template #default="{ row }">
+                <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+              </template>
+            </el-table-column>
             <el-table-column label="策略" width="108">
               <template #default="{ row }">{{ strategyName(row.strategyId) }}</template>
             </el-table-column>
@@ -746,7 +750,11 @@ onBeforeUnmount(() => {
                 <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="100" />
+            <el-table-column prop="name" label="名称" width="120">
+              <template #default="{ row }">
+                <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+              </template>
+            </el-table-column>
             <el-table-column label="策略" width="120">
               <template #default="{ row }">{{ strategyName(row.strategyId) }}</template>
             </el-table-column>
@@ -786,7 +794,11 @@ onBeforeUnmount(() => {
                 <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="110" />
+            <el-table-column prop="name" label="名称" width="130">
+              <template #default="{ row }">
+                <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+              </template>
+            </el-table-column>
             <el-table-column
               prop="reason"
               label="理由"

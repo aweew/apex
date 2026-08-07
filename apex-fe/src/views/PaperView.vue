@@ -496,7 +496,11 @@ onMounted(load)
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" width="120" />
+      <el-table-column prop="name" label="名称" width="140">
+        <template #default="{ row }">
+          <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+        </template>
+      </el-table-column>
       <el-table-column prop="quantity" label="数量" width="90" />
       <el-table-column prop="holdDays" label="持有天" width="80" />
       <el-table-column prop="costPrice" label="成本" width="100" />
@@ -612,7 +616,11 @@ onMounted(load)
     <h3 v-if="gapRisk?.items?.length">隔夜缺口明细</h3>
     <el-table v-if="gapRisk?.items?.length" :data="gapRisk.items" size="small" style="margin-bottom: 12px">
       <el-table-column prop="code" label="代码" width="100" />
-      <el-table-column prop="name" label="名称" width="120" />
+      <el-table-column prop="name" label="名称" width="140">
+        <template #default="{ row }">
+          <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+        </template>
+      </el-table-column>
       <el-table-column prop="avgAbsGapPct" label="均|缺口|%" width="110" />
       <el-table-column prop="maxAbsGapPct" label="最大|缺口|%" width="110" />
       <el-table-column prop="lastGapPct" label="最近缺口%" width="110" />

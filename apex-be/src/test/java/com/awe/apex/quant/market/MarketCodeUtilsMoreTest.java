@@ -38,4 +38,21 @@ class MarketCodeUtilsMoreTest {
         assertTrue(MarketCodeUtils.isFundOrEtf("159952"));
         assertFalse(MarketCodeUtils.isFundOrEtf("300442"));
     }
+
+    @Test
+    void resolveBoardTag() {
+        assertEquals("科", MarketCodeUtils.resolveBoardTag("688981"));
+        assertEquals("科", MarketCodeUtils.resolveBoardTag("689009.SH"));
+        assertEquals("创", MarketCodeUtils.resolveBoardTag("300750"));
+        assertEquals("创", MarketCodeUtils.resolveBoardTag("301308"));
+        assertEquals("京", MarketCodeUtils.resolveBoardTag("830799"));
+        assertEquals("京", MarketCodeUtils.resolveBoardTag("920178"));
+        assertEquals("港", MarketCodeUtils.resolveBoardTag("01810"));
+        assertEquals("港", MarketCodeUtils.resolveBoardTag("00700.HK"));
+        assertEquals("美", MarketCodeUtils.resolveBoardTag("AAPL"));
+        assertEquals("美", MarketCodeUtils.resolveBoardTag("TSLA.US"));
+        assertNull(MarketCodeUtils.resolveBoardTag("600519"));
+        assertNull(MarketCodeUtils.resolveBoardTag("000001"));
+        assertNull(MarketCodeUtils.resolveBoardTag(" "));
+    }
 }

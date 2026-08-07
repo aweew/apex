@@ -1634,7 +1634,11 @@ function dash(v) {
     <header class="header">
       <div>
         <p class="eyebrow">灵枢 · Stock</p>
-        <h1>{{ basic?.name || '股票详情' }} <span class="code">{{ basic?.code || code }}</span></h1>
+        <h1>
+          <StockBoardTag :code="basic?.code || code" :market="basic?.market" />
+          {{ basic?.name || '股票详情' }}
+          <span class="code">{{ basic?.code || code }}</span>
+        </h1>
         <p>{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>
       <div class="actions">
@@ -2338,6 +2342,11 @@ function dash(v) {
   .profile-kv {
     grid-template-columns: 1fr;
   }
+}
+
+.header h1 :deep(.stock-board-wrap) {
+  margin-right: 6px;
+  vertical-align: 0.12em;
 }
 
 .header .code {

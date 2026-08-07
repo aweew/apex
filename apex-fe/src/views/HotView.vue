@@ -191,7 +191,11 @@ onMounted(load)
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" width="120" sortable />
+          <el-table-column prop="name" label="名称" width="140" sortable>
+            <template #default="{ row }">
+              <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+            </template>
+          </el-table-column>
           <el-table-column prop="sourceCount" label="源数" width="70" sortable />
           <el-table-column label="来源" min-width="140">
             <template #default="{ row }">
@@ -231,7 +235,11 @@ onMounted(load)
               </el-button>
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" width="120" sortable />
+          <el-table-column prop="name" label="名称" width="140" sortable>
+            <template #default="{ row }">
+              <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+            </template>
+          </el-table-column>
           <el-table-column prop="price" label="现价" width="100" sortable />
           <el-table-column label="涨跌幅" width="90" sortable prop="pctChg">
             <template #default="{ row }">
@@ -253,7 +261,11 @@ onMounted(load)
               </el-button>
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" width="120" sortable />
+          <el-table-column prop="name" label="名称" width="140" sortable>
+            <template #default="{ row }">
+              <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+            </template>
+          </el-table-column>
           <el-table-column prop="price" label="现价" width="100" sortable />
           <el-table-column prop="heatScore" label="关注数" width="110" sortable />
           <el-table-column prop="heatText" label="说明" min-width="140" />
@@ -271,7 +283,11 @@ onMounted(load)
               <span v-else class="muted">未匹配</span>
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" width="140" sortable />
+          <el-table-column prop="name" label="名称" width="160" sortable>
+            <template #default="{ row }">
+              <StockBoardTag :code="row.code" :market="row.market">{{ row.name || '-' }}</StockBoardTag>
+            </template>
+          </el-table-column>
           <el-table-column label="涨跌幅" width="90" sortable prop="pctChg">
             <template #default="{ row }">
               <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>

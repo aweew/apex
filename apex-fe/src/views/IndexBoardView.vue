@@ -703,7 +703,9 @@ onBeforeUnmount(() => {
               @click="router.push(`/stock/${row.code}`)"
             >
               <span class="rank" :class="{ top: idx < 3 }">{{ idx + 1 }}</span>
-              <span class="n">{{ row.name || row.code }}</span>
+              <span class="n">
+                <StockBoardTag :code="row.code" :market="row.market">{{ row.name || row.code }}</StockBoardTag>
+              </span>
               <b :class="pctClass(row.pctChg)">{{ fmtPct(row.pctChg) }}</b>
             </li>
           </ul>
@@ -723,7 +725,9 @@ onBeforeUnmount(() => {
               @click="router.push(`/stock/${row.code}`)"
             >
               <span class="rank">{{ idx + 1 }}</span>
-              <span class="n">{{ row.name || row.code }}</span>
+              <span class="n">
+                <StockBoardTag :code="row.code" :market="row.market">{{ row.name || row.code }}</StockBoardTag>
+              </span>
               <b :class="pctClass(row.pctChg)">{{ fmtPct(row.pctChg) }}</b>
             </li>
           </ul>
