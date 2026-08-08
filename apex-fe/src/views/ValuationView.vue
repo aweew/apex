@@ -202,7 +202,9 @@ onMounted(() => {
         <h3>关键指标</h3>
         <div class="meta">
           <div><label>行业</label><span>{{ detail.industry || '-' }}</span></div>
-          <div><label><TermTip term="pe_ttm">PE(TTM)</TermTip></label><b>{{ fmt(detail.peTtm) }}</b></div>
+          <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><b>{{ fmt(detail.peDynamic) }}</b></div>
+          <div><label><TermTip term="pe_static">市盈率（静）</TermTip></label><b>{{ fmt(detail.peStatic) }}</b></div>
+          <div><label><TermTip term="pe_ttm">市盈率（TTM）</TermTip></label><b>{{ fmt(detail.peTtm) }}</b></div>
           <div><label>行业PE中位</label><span>{{ fmt(detail.industryPeMedian) }}</span></div>
           <div><label><TermTip term="pe_percentile">PE分位</TermTip></label><span>{{ detail.pePercentile != null ? fmtPct(detail.pePercentile) : '-' }}</span></div>
           <div><label><TermTip term="pb">PB</TermTip></label><b>{{ fmt(detail.pb) }}</b></div>

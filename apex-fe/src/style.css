@@ -383,7 +383,7 @@ textarea {
   border-radius: 2px;
 }
 
-.page .el-button--primary:not(.is-plain):not(.is-link) {
+.page .el-button--primary:not(.is-plain):not(.is-link):not(.is-text) {
   --el-button-bg-color: var(--accent);
   --el-button-border-color: var(--accent);
   --el-button-hover-bg-color: var(--accent-hover);
@@ -392,7 +392,8 @@ textarea {
   --el-button-hover-text-color: #fff;
 }
 
-.page .el-button.is-link.el-button--primary {
+.page .el-button.is-link.el-button--primary,
+.page .el-button.is-text.el-button--primary {
   --el-button-text-color: var(--accent);
   --el-button-hover-text-color: var(--accent-hover);
   color: var(--accent);

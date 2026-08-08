@@ -279,6 +279,8 @@ public class ValuationServiceImpl implements IValuationService {
                 .industry(basic.getIndustry())
                 .latestPrice(price)
                 .pctChg(basic.getPctChg())
+                .peDynamic(basic.getPeDynamic())
+                .peStatic(basic.getPeStatic())
                 .peTtm(pe)
                 .pb(pb)
                 .totalMv(basic.getTotalMv())

@@ -33,6 +33,9 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "ADD COLUMN confidence DECIMAL(10, 4) NULL");
         assertContains(executed, "ADD COLUMN uncertainty DECIMAL(10, 4) NULL");
         assertContains(executed, "ADD COLUMN decision_status VARCHAR(16) NULL");
+        assertContains(executed, "ALTER TABLE stock_basic ADD COLUMN pe_dynamic");
+        assertContains(executed, "ALTER TABLE stock_basic ADD COLUMN pe_static");
+        assertContains(executed, "UPDATE stock_basic SET pe_ttm = NULL");
     }
 
     @Test

@@ -23,6 +23,8 @@ public class ValuationResp {
     private String industry;
     private BigDecimal latestPrice;
     private BigDecimal pctChg;
+    private BigDecimal peDynamic;
+    private BigDecimal peStatic;
     private BigDecimal peTtm;
     private BigDecimal pb;
     private BigDecimal totalMv;

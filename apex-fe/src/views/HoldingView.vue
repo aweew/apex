@@ -16,6 +16,8 @@ import {
   downloadBlob,
   shareFilename,
 } from '../utils/shareCapture.js'
+import { securityMarketBadge } from '../utils/securityMarket.js'
+import { availablePeMetrics } from '../utils/valuationMetrics.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -169,6 +171,38 @@ function rowWeight(row) {
   if (Number.isFinite(mv) && mv > 0) return mv
   if (Number.isFinite(costMv) && costMv > 0) return costMv
   return 0
+}
+
+function fmtPrice(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '-'
+  return Number(v).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 3,
+  })
+}
+
+function positionWeightPct(row) {
+  return totalMv.value > 0 ? (rowWeight(row) / totalMv.value) * 100 : 0
+}
+
+function positionWeightLabel(row) {
+  const pct = positionWeightPct(row)
+  if (pct >= 20) return '重仓'
+  if (pct >= 10) return '核心'
+  if (pct >= 5) return '配置'
+  return '轻仓'
+}
+
+function positionWeightTone(row) {
+  const pct = positionWeightPct(row)
+  if (pct >= 20) return 'is-heavy'
+  if (pct >= 10) return 'is-core'
+  if (pct >= 5) return 'is-normal'
+  return 'is-light'
+}
+
+function comparePositionWeight(a, b) {
+  return rowWeight(a) - rowWeight(b)
 }
 
 function toDist(map) {
@@ -760,7 +794,7 @@ onBeforeUnmount(() => {
       <div class="theme-panel-head">
         <div class="theme-panel-title">
           <h3>题材分布</h3>
-          <span class="muted">覆盖 {{ themeHitCount }} 只 · 与表格题材列一致</span>
+          <span class="muted">覆盖 {{ themeHitCount }} 只</span>
         </div>
         <label class="industry-toggle">
           <span>二级行业</span>
@@ -786,13 +820,14 @@ onBeforeUnmount(() => {
           >
             <span
               class="theme-chip"
+              :title="item.name"
               :style="{
                 color: isCoreTheme(item.name) ? themeMeta(item.name).color : '#515154',
                 background: isCoreTheme(item.name) ? themeMeta(item.name).bg : 'rgba(0,0,0,.04)',
                 borderColor: isCoreTheme(item.name) ? themeMeta(item.name).border : 'rgba(0,0,0,.08)',
               }"
             >
-              {{ themeMeta(item.name).short }}
+              <span class="theme-chip-label">{{ themeMeta(item.name).short }}</span>
             </span>
             <div class="theme-bar-track">
               <i
@@ -811,33 +846,45 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-if="rows.length" class="holding-layout">
-      <el-table class="holding-table" :data="rows" size="small" stripe>
-        <el-table-column prop="code" label="代码" width="96" fixed sortable>
+      <el-table
+        class="holding-table"
+        :data="rows"
+        :default-sort="{ prop: 'positionWeight', order: 'descending' }"
+        size="small"
+        stripe
+      >
+        <el-table-column
+          prop="name"
+          label="个股"
+          width="128"
+          align="center"
+          fixed
+          class-name="security-column"
+          label-class-name="security-column"
+          sortable
+        >
           <template #default="{ row }">
-            <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+            <button type="button" class="security-link" @click="router.push(`/stock/${row.code}`)">
+              <span class="security-name">
+                <span class="security-name-text">{{ row.name || '-' }}</span>
+                <span
+                  v-if="securityMarketBadge(row)"
+                  class="market-badge"
+                  :class="`is-${securityMarketBadge(row).tone}`"
+                  :title="securityMarketBadge(row).title"
+                >{{ securityMarketBadge(row).label }}</span>
+              </span>
+              <span class="security-code">{{ row.code }}</span>
+            </button>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" width="100" sortable />
-        <el-table-column prop="todayPnl" label="今日盈亏" width="118" sortable>
-          <template #default="{ row }">
-            <div
-              v-if="row.todayPnl != null || row.pctChg != null"
-              class="today-pnl"
-              :class="todayPnlTone(row)"
-            >
-              <b>{{ row.todayPnl != null ? fmtSignedMoney(row.todayPnl) : '-' }}</b>
-              <small v-if="row.pctChg != null">{{ fmtSignedPct(row.pctChg) }}</small>
-            </div>
-            <span v-else class="muted">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="marketPrice" label="现价" width="84" sortable />
-        <el-table-column prop="marketValue" label="市值" width="96" sortable>
-          <template #default="{ row }">
-            {{ row.marketValue != null ? fmtMoney(row.marketValue) : '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="pnl" label="持仓盈亏" width="118" sortable>
+        <el-table-column
+          prop="pnl"
+          label="持仓盈亏"
+          width="132"
+          align="center"
+          sortable
+        >
           <template #default="{ row }">
             <div
               v-if="row.pnl != null"
@@ -850,8 +897,50 @@ onBeforeUnmount(() => {
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="showIndustry" prop="industry" label="二级行业" width="100" show-overflow-tooltip sortable />
-        <el-table-column label="题材" width="96">
+        <el-table-column
+          prop="todayPnl"
+          label="当日盈亏"
+          width="132"
+          align="center"
+          sortable
+        >
+          <template #default="{ row }">
+            <div
+              v-if="row.todayPnl != null || row.pctChg != null"
+              class="today-pnl"
+              :class="todayPnlTone(row)"
+            >
+              <b>{{ row.todayPnl != null ? fmtSignedMoney(row.todayPnl) : '-' }}</b>
+              <small v-if="row.pctChg != null">{{ fmtSignedPct(row.pctChg) }}</small>
+            </div>
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="marketPrice" label="现价/成本" width="116" sortable>
+          <template #default="{ row }">
+            <div class="price-cost">
+              <b>{{ fmtPrice(row.marketPrice) }}</b>
+              <small>/ {{ fmtPrice(row.costPrice) }}</small>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="quantity" label="持仓数量" width="88" align="center" sortable />
+        <el-table-column
+          prop="positionWeight"
+          label="个股仓位"
+          width="112"
+          align="center"
+          :sort-method="comparePositionWeight"
+          sortable
+        >
+          <template #default="{ row }">
+            <span class="weight-chip" :class="positionWeightTone(row)">
+              <span>{{ positionWeightLabel(row) }}</span>
+              <b>{{ positionWeightPct(row).toFixed(1) }}%</b>
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="题材" width="96" align="center">
           <template #default="{ row }">
             <span
               v-if="displayTheme(row)"
@@ -884,34 +973,61 @@ onBeforeUnmount(() => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="估值" width="88">
+        <el-table-column label="估值" width="176" align="center">
           <template #default="{ row }">
-            <span
-              v-if="row.valuationLabel"
-              class="val-chip"
-              :class="valClass(row.valuationLevel)"
-              :title="row.valuationSummary || ''"
-            >{{ row.valuationLabel }}</span>
-            <span v-else class="muted">-</span>
+            <div class="valuation-cell">
+              <span
+                v-if="row.valuationLabel"
+                class="val-chip"
+                :class="valClass(row.valuationLevel)"
+                :title="row.valuationSummary || ''"
+              >{{ row.valuationLabel }}</span>
+              <span v-else class="muted">-</span>
+              <div
+                v-if="availablePeMetrics(row).length"
+                class="pe-variants"
+                title="市盈率（动）/ 市盈率（静）/ 市盈率（TTM）；仅显示有效口径"
+              >
+                <span v-for="metric in availablePeMetrics(row)" :key="metric.key" class="pe-metric">
+                  <i>{{ metric.label }}</i><b>{{ metric.value }}</b>
+                </span>
+              </div>
+              <span
+                v-else
+                class="valuation-missing"
+                title="当前行情源未返回有效的动态、静态或 TTM 市盈率"
+              >PE 暂缺</span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column prop="verdict" label="评价" width="96">
+        <el-table-column prop="verdict" label="评价" width="80" align="center">
           <template #default="{ row }">
             <span v-if="row.verdict" class="verdict" :class="verdictClass(row.verdict)">{{ row.verdict }}</span>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="advice" label="建议" min-width="150" show-overflow-tooltip>
+        <el-table-column prop="advice" label="建议" min-width="210" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="advice">{{ row.advice || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="quantity" label="数量" width="72" sortable />
-        <el-table-column prop="costPrice" label="成本" width="84" sortable />
-        <el-table-column prop="stopLoss" label="止损" width="84" sortable />
-        <el-table-column prop="takeProfit" label="止盈" width="84" sortable />
+        <el-table-column prop="stopLoss" label="止损" width="84" align="center" sortable />
+        <el-table-column prop="takeProfit" label="止盈" width="84" align="center" sortable />
+        <el-table-column prop="marketValue" label="市值" width="96" sortable>
+          <template #default="{ row }">
+            {{ row.marketValue != null ? fmtMoney(row.marketValue) : '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column v-if="showIndustry" prop="industry" label="二级行业" width="100" show-overflow-tooltip sortable />
         <el-table-column prop="note" label="备注" min-width="100" show-overflow-tooltip sortable />
-        <el-table-column label="操作" width="168" fixed="right">
+        <el-table-column
+          label="操作"
+          width="168"
+          fixed="right"
+          align="center"
+          class-name="ops-column"
+          label-class-name="ops-column"
+        >
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button link type="warning" @click="addObserve(row)">观察</el-button>
@@ -995,52 +1111,192 @@ onBeforeUnmount(() => {
   opacity: 0.85;
 }
 
+.security-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.security-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.security-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+}
+
+.security-link:hover .security-name-text,
+.security-link:focus-visible .security-name-text {
+  color: var(--el-color-primary);
+}
+
+.security-link:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 2px;
+}
+
+.security-code {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.market-badge.is-star {
+  color: #0a66c2;
+  background: rgba(0, 113, 227, 0.09);
+  border-color: rgba(0, 113, 227, 0.18);
+}
+
+.market-badge.is-chinext {
+  color: #16775d;
+  background: rgba(42, 157, 143, 0.1);
+  border-color: rgba(42, 157, 143, 0.2);
+}
+
+.market-badge.is-bj {
+  color: #a86400;
+  background: rgba(255, 159, 10, 0.11);
+  border-color: rgba(255, 159, 10, 0.22);
+}
+
+.market-badge.is-hk {
+  color: #6b4fbb;
+  background: rgba(107, 79, 187, 0.1);
+  border-color: rgba(107, 79, 187, 0.2);
+}
+
+.market-badge.is-us {
+  color: #515154;
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
 .holding-layout {
   margin-top: 14px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .today-pnl,
 .hold-pnl {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  min-width: 92px;
-  padding: 5px 9px;
-  border-radius: 9px;
-  line-height: 1.15;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .today-pnl b,
 .hold-pnl b {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
 }
 
 .today-pnl small,
 .hold-pnl small {
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  opacity: 0.88;
+  opacity: 0.72;
 }
 
-.today-pnl.up,
-.hold-pnl.up {
-  color: var(--up);
-  background: rgba(255, 59, 48, 0.08);
+.price-cost {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.today-pnl.down,
-.hold-pnl.down {
-  color: var(--down);
-  background: rgba(52, 199, 89, 0.08);
+.price-cost b {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink-soft);
 }
 
-.today-pnl {
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.03);
+.price-cost small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.weight-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  box-sizing: border-box;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.weight-chip b {
+  font-size: 11px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.weight-chip.is-heavy {
+  color: #c43d4a;
+  background: rgba(255, 59, 48, 0.1);
+  border-color: rgba(255, 59, 48, 0.2);
+}
+
+.weight-chip.is-core {
+  color: #a86400;
+  background: rgba(255, 159, 10, 0.11);
+  border-color: rgba(255, 159, 10, 0.22);
+}
+
+.weight-chip.is-normal {
+  color: #0a66c2;
+  background: rgba(0, 113, 227, 0.08);
+  border-color: rgba(0, 113, 227, 0.16);
+}
+
+.weight-chip.is-light {
+  color: #5f6368;
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
 }
 
 .theme-panel {
@@ -1130,7 +1386,7 @@ onBeforeUnmount(() => {
 
 .theme-bar-row {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 48px 72px;
+  grid-template-columns: 112px minmax(0, 1fr) 48px 72px;
   gap: 8px;
   align-items: center;
 }
@@ -1147,6 +1403,18 @@ onBeforeUnmount(() => {
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.theme-chip-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1227,6 +1495,47 @@ onBeforeUnmount(() => {
   background: rgba(0, 113, 227, 0.08);
   border-color: rgba(0, 113, 227, 0.16);
 }
+.valuation-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.pe-variants {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pe-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.pe-metric i {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.pe-variants b {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.valuation-missing {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
 
 .verdict {
   font-size: 12px;
@@ -1278,7 +1587,27 @@ onBeforeUnmount(() => {
 }
 
 .holding-table {
+  width: 100%;
   min-width: 0;
+}
+
+.holding-table :deep(.ops-column) {
+  background: rgba(255, 255, 255, 0.97) !important;
+  box-shadow: -10px 0 18px -18px rgba(29, 29, 31, 0.65);
+}
+
+.holding-table :deep(.security-column) {
+  background: rgba(255, 255, 255, 0.97) !important;
+  box-shadow: 10px 0 18px -18px rgba(29, 29, 31, 0.65);
+}
+
+.holding-table :deep(.ops-column .cell) {
+  white-space: nowrap;
+}
+
+.holding-table :deep(.el-table__body tr:hover > .ops-column),
+.holding-table :deep(.el-table__body tr:hover > .security-column) {
+  background: #f1f7fd !important;
 }
 
 @media (max-width: 900px) {
@@ -1287,7 +1616,7 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
   .theme-bar-row {
-    grid-template-columns: 64px minmax(0, 1fr) 48px;
+    grid-template-columns: minmax(88px, 112px) minmax(0, 1fr) 48px;
   }
   .theme-bar-mv {
     display: none;

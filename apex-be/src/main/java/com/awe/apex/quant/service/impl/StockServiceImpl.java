@@ -86,6 +86,8 @@ public class StockServiceImpl implements IStockService {
         existing.setName(fetched.getName());
         existing.setMarket(fetched.getMarket());
         existing.setStFlag(fetched.getStFlag());
+        existing.setPeDynamic(fetched.getPeDynamic());
+        existing.setPeStatic(fetched.getPeStatic());
         existing.setPeTtm(fetched.getPeTtm());
         existing.setPb(fetched.getPb());
         existing.setTotalMv(fetched.getTotalMv());

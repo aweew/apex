@@ -28,6 +28,15 @@ test('findTerm resolves strategy ids to dedicated entries', () => {
   assert.equal(findTerm('PEG')?.id, 'peg')
 })
 
+test('PE variants resolve to dedicated glossary entries', () => {
+  assert.equal(findTerm('市盈率（动）')?.id, 'pe_dynamic')
+  assert.equal(findTerm('市盈率（静）')?.id, 'pe_static')
+  assert.equal(findTerm('市盈率（TTM）')?.id, 'pe_ttm')
+  assert.equal(findTerm('动态市盈率')?.id, 'pe_dynamic')
+  assert.equal(findTerm('静态市盈率')?.id, 'pe_static')
+  assert.equal(findTerm('PE(TTM)')?.id, 'pe_ttm')
+})
+
 test('extra terms are searchable', () => {
   assert.equal(findTerm('stop_loss')?.title, '止损')
   assert.equal(findTerm('情绪周期')?.id, 'emotion_cycle')

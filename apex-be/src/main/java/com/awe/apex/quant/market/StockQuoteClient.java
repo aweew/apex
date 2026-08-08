@@ -145,7 +145,7 @@ public class StockQuoteClient {
     private void enrichFromEastMoney(StockBasic basic) {
         String secId = MarketCodeUtils.toEastMoneySecId(basic.getCode());
         String url = "https://push2.eastmoney.com/api/qt/stock/get?secid=" + secId
-                + "&fields=f57,f58,f116,f117,f162,f167,f173,f189,f127";
+                + "&fields=f57,f58,f116,f117,f162,f163,f164,f167,f173,f189,f127";
         try (HttpResponse response = httpGet(url, "https://quote.eastmoney.com/")) {
             if (!response.isOk() || StringUtils.isBlank(response.body())) {
                 markEastMoneyFail("empty/http", basic.getCode());
@@ -159,10 +159,7 @@ public class StockQuoteClient {
             if (StringUtils.isBlank(basic.getName())) {
                 basic.setName(data.path("f58").asText(null));
             }
-            // 东财估值字段常见为 *100
-            if (Objects.isNull(basic.getPeTtm())) {
-                basic.setPeTtm(scaleDiv100(data.path("f162").asText(null)));
-            }
+            applyEastMoneyValuationFields(basic, data);
             if (Objects.isNull(basic.getPb())) {
                 basic.setPb(scaleDiv100(data.path("f167").asText(null)));
             }
@@ -232,9 +229,7 @@ public class StockQuoteClient {
         if (Objects.isNull(basic.getPctChg())) {
             basic.setPctChg(toDecimal(parts[32]));
         }
-        if (Objects.isNull(basic.getPeTtm())) {
-            basic.setPeTtm(toDecimal(parts[39]));
-        }
+        applyTencentValuationFields(basic, parts);
         if (Objects.isNull(basic.getPb())) {
             basic.setPb(toDecimal(parts[46]));
         }
@@ -343,10 +338,34 @@ public class StockQuoteClient {
     }
 
     private boolean needValuationFallback(StockBasic basic) {
-        return Objects.isNull(basic.getPeTtm())
+        return Objects.isNull(basic.getPeDynamic())
+                || Objects.isNull(basic.getPeStatic())
+                || Objects.isNull(basic.getPeTtm())
                 || Objects.isNull(basic.getPb())
                 || Objects.isNull(basic.getTotalMv())
                 || Objects.isNull(basic.getCircMv());
+    }
+
+    static void applyEastMoneyValuationFields(StockBasic basic, JsonNode data) {
+        // 东财估值字段均放大 100 倍：f162 动态、f163 静态、f164 TTM。
+        BigDecimal dynamic = scaleDiv100(data.path("f162").asText(null));
+        BigDecimal statik = scaleDiv100(data.path("f163").asText(null));
+        BigDecimal ttm = scaleDiv100(data.path("f164").asText(null));
+        if (Objects.nonNull(dynamic)) {
+            basic.setPeDynamic(dynamic);
+        }
+        if (Objects.nonNull(statik)) {
+            basic.setPeStatic(statik);
+        }
+        if (Objects.nonNull(ttm)) {
+            basic.setPeTtm(ttm);
+        }
+    }
+
+    static void applyTencentValuationFields(StockBasic basic, String[] parts) {
+        if (Objects.nonNull(parts) && parts.length > 39 && Objects.isNull(basic.getPeDynamic())) {
+            basic.setPeDynamic(toDecimal(parts[39]));
+        }
     }
 
     private void appendSource(StockBasic basic, String tag) {
@@ -385,7 +404,7 @@ public class StockQuoteClient {
         return yi.multiply(YI).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal scaleDiv100(String value) {
+    private static BigDecimal scaleDiv100(String value) {
         BigDecimal num = toDecimal(value);
         if (Objects.isNull(num)) {
             return null;
@@ -393,7 +412,7 @@ public class StockQuoteClient {
         return num.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal toDecimal(String value) {
+    private static BigDecimal toDecimal(String value) {
         if (StringUtils.isBlank(value) || "-".equals(value) || "null".equalsIgnoreCase(value)) {
             return null;
         }

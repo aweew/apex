@@ -182,6 +182,18 @@ public class PortfolioHolding implements Serializable {
     @TableField(exist = false)
     private String valuationSummary;
 
+    /** 动态市盈率（非表字段） */
+    @TableField(exist = false)
+    private BigDecimal peDynamic;
+
+    /** 静态市盈率（非表字段） */
+    @TableField(exist = false)
+    private BigDecimal peStatic;
+
+    /** 滚动市盈率 TTM（非表字段） */
+    @TableField(exist = false)
+    private BigDecimal peTtm;
+
     /**
      * 评价（非表字段）
      */

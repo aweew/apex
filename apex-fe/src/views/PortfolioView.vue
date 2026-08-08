@@ -40,6 +40,8 @@ import {
 } from '../utils/shareCapture.js'
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
+import { securityMarketBadge } from '../utils/securityMarket.js'
+import { availablePeMetrics } from '../utils/valuationMetrics.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -117,32 +119,31 @@ const SHARE_TABLE_MIN_WIDTH = 1520
 const shareCol = computed(() =>
   sharingCapture.value
     ? {
-        code: 78,
-        name: 92,
+        security: 128,
         today: 88,
         price: 76,
         stop: 76,
         theme: 112,
         tech: 340,
-        val: 112,
-        verdict: 92,
+        val: 176,
+        verdict: 80,
         advice: 280,
       }
     : {
-        code: 96,
-        name: 100,
-        today: 118,
-        price: 84,
+        security: 128,
+        today: 132,
+        priceCost: 116,
         stop: 84,
         take: 84,
         mv: 96,
-        pnl: 118,
+        pnl: 132,
+        weight: 112,
         theme: 108,
         tech: 220,
-        val: 100,
-        verdict: 96,
-        advice: 150,
-        qty: 72,
+        val: 176,
+        verdict: 80,
+        advice: 210,
+        qty: 88,
         cost: 84,
         note: 100,
         ops: 168,
@@ -357,6 +358,38 @@ function rowWeight(row) {
   if (Number.isFinite(mv) && mv > 0) return mv
   if (Number.isFinite(costMv) && costMv > 0) return costMv
   return 0
+}
+
+function fmtPrice(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '-'
+  return Number(v).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 3,
+  })
+}
+
+function positionWeightPct(row) {
+  return totalMv.value > 0 ? (rowWeight(row) / totalMv.value) * 100 : 0
+}
+
+function positionWeightLabel(row) {
+  const pct = positionWeightPct(row)
+  if (pct >= 20) return '重仓'
+  if (pct >= 10) return '核心'
+  if (pct >= 5) return '配置'
+  return '轻仓'
+}
+
+function positionWeightTone(row) {
+  const pct = positionWeightPct(row)
+  if (pct >= 20) return 'is-heavy'
+  if (pct >= 10) return 'is-core'
+  if (pct >= 5) return 'is-normal'
+  return 'is-light'
+}
+
+function comparePositionWeight(a, b) {
+  return rowWeight(a) - rowWeight(b)
 }
 
 function toDist(map) {
@@ -582,12 +615,12 @@ function renderPies() {
 }
 
 function renderDailyChart() {
-  if (!chartRef.value) return
-  if (!chart) chart = echarts.init(chartRef.value)
   if (!dailyRows.value.length) {
-    chart.clear()
+    chart?.clear()
     return
   }
+  if (!chartRef.value) return
+  if (!chart) chart = echarts.init(chartRef.value)
   const dates = dailyRows.value.map((x) => x.tradeDate)
   const pcts = dailyRows.value.map((x) => (x.todayPct != null ? Number(x.todayPct) : null))
   const mvs = dailyRows.value.map((x) => (x.marketValue != null ? Number(x.marketValue) : null))
@@ -1389,7 +1422,7 @@ onBeforeUnmount(() => {
           <div class="theme-panel-head">
             <div class="theme-panel-title">
               <h3>题材分布</h3>
-              <span class="muted">覆盖 {{ themeHitCount }} 只 · 与表格题材列一致</span>
+              <span class="muted">覆盖 {{ themeHitCount }} 只</span>
             </div>
             <label class="industry-toggle">
               <span>二级行业</span>
@@ -1411,13 +1444,14 @@ onBeforeUnmount(() => {
               <div v-for="(item, idx) in themeTagBar" :key="item.name" class="theme-bar-row">
                 <span
                   class="theme-chip"
+                  :title="item.name"
                   :style="{
                     color: isCoreTheme(item.name) ? themeMeta(item.name).color : '#515154',
                     background: isCoreTheme(item.name) ? themeMeta(item.name).bg : 'rgba(0,0,0,.04)',
                     borderColor: isCoreTheme(item.name) ? themeMeta(item.name).border : 'rgba(0,0,0,.08)',
                   }"
                 >
-                  {{ themeMeta(item.name).short }}
+                  <span class="theme-chip-label">{{ themeMeta(item.name).short }}</span>
                 </span>
                 <div class="theme-bar-track">
                   <i
@@ -1436,23 +1470,64 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-if="rows.length" class="holding-layout">
-          <el-table ref="holdingTableRef" class="holding-table" :data="rows" size="small" stripe>
+          <el-table
+            ref="holdingTableRef"
+            class="holding-table"
+            :data="rows"
+            :default-sort="{ prop: 'positionWeight', order: 'descending' }"
+            size="small"
+            stripe
+          >
             <el-table-column
-              prop="code"
-              label="代码"
-              :width="shareCol.code"
+              prop="name"
+              label="个股"
+              :width="shareCol.security"
+              align="center"
               :fixed="sharingCapture ? false : 'left'"
+              :class-name="sharingCapture ? '' : 'security-column'"
+              :label-class-name="sharingCapture ? '' : 'security-column'"
               :sortable="!sharingCapture"
             >
               <template #default="{ row }">
-                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+                <button type="button" class="security-link" @click="router.push(`/stock/${row.code}`)">
+                  <span class="security-name">
+                    <span class="security-name-text">{{ row.name || '-' }}</span>
+                    <span
+                      v-if="securityMarketBadge(row)"
+                      class="market-badge"
+                      :class="`is-${securityMarketBadge(row).tone}`"
+                      :title="securityMarketBadge(row).title"
+                    >{{ securityMarketBadge(row).label }}</span>
+                  </span>
+                  <span class="security-code">{{ row.code }}</span>
+                </button>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" :width="shareCol.name" :sortable="!sharingCapture" />
+            <el-table-column
+              v-if="!sharingCapture"
+              prop="pnl"
+              label="持仓盈亏"
+              :width="shareCol.pnl"
+              align="center"
+              sortable
+            >
+              <template #default="{ row }">
+                <div
+                  v-if="row.pnl != null"
+                  class="hold-pnl"
+                  :class="Number(row.pnl) >= 0 ? 'up' : 'down'"
+                >
+                  <b>{{ fmtSignedMoney(row.pnl) }}</b>
+                  <small v-if="row.pnlPct != null">{{ fmtPct(row.pnlPct) }}</small>
+                </div>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
             <el-table-column
               prop="todayPnl"
-              :label="sharingCapture ? '今日涨跌' : '今日盈亏'"
+              :label="sharingCapture ? '今日涨跌' : '当日盈亏'"
               :width="shareCol.today"
+              align="center"
               :sortable="!sharingCapture"
             >
               <template #default="{ row }">
@@ -1472,62 +1547,45 @@ onBeforeUnmount(() => {
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="marketPrice" label="现价" :width="shareCol.price" :sortable="!sharingCapture" />
-            <el-table-column prop="stopLoss" label="止损" :width="shareCol.stop" :sortable="!sharingCapture">
-              <template #default="{ row }">
-                {{ row.stopLoss != null ? Number(row.stopLoss).toFixed(2) : '-' }}
-              </template>
-            </el-table-column>
             <el-table-column
-              v-if="!sharingCapture"
-              prop="takeProfit"
-              label="止盈"
-              :width="shareCol.take"
-              sortable
+              prop="marketPrice"
+              :label="sharingCapture ? '现价' : '现价/成本'"
+              :width="sharingCapture ? shareCol.price : shareCol.priceCost"
+              :sortable="!sharingCapture"
             >
               <template #default="{ row }">
-                {{ row.takeProfit != null ? Number(row.takeProfit).toFixed(2) : '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="!sharingCapture"
-              prop="marketValue"
-              label="市值"
-              :width="shareCol.mv"
-              sortable
-            >
-              <template #default="{ row }">
-                {{ row.marketValue != null ? fmtMoney(row.marketValue) : '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="!sharingCapture"
-              prop="pnl"
-              label="持仓盈亏"
-              :width="shareCol.pnl"
-              sortable
-            >
-              <template #default="{ row }">
-                <div
-                  v-if="row.pnl != null"
-                  class="hold-pnl"
-                  :class="Number(row.pnl) >= 0 ? 'up' : 'down'"
-                >
-                  <b>{{ fmtSignedMoney(row.pnl) }}</b>
-                  <small v-if="row.pnlPct != null">{{ fmtPct(row.pnlPct) }}</small>
+                <template v-if="sharingCapture">{{ fmtPrice(row.marketPrice) }}</template>
+                <div v-else class="price-cost">
+                  <b>{{ fmtPrice(row.marketPrice) }}</b>
+                  <small>/ {{ fmtPrice(row.costPrice) }}</small>
                 </div>
-                <span v-else class="muted">-</span>
               </template>
             </el-table-column>
             <el-table-column
-              v-if="showIndustry && !sharingCapture"
-              prop="industry"
-              label="二级行业"
-              width="100"
-              show-overflow-tooltip
+              v-if="!sharingCapture"
+              prop="quantity"
+              label="持仓数量"
+              :width="shareCol.qty"
+              align="center"
               sortable
             />
-            <el-table-column label="题材" :width="shareCol.theme">
+            <el-table-column
+              prop="positionWeight"
+              v-if="!sharingCapture"
+              label="个股仓位"
+              :width="shareCol.weight"
+              align="center"
+              :sort-method="comparePositionWeight"
+              sortable
+            >
+              <template #default="{ row }">
+                <span class="weight-chip" :class="positionWeightTone(row)">
+                  <span>{{ positionWeightLabel(row) }}</span>
+                  <b>{{ positionWeightPct(row).toFixed(1) }}%</b>
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="题材" :width="shareCol.theme" align="center">
               <template #default="{ row }">
                 <span
                   v-if="displayTheme(row)"
@@ -1560,18 +1618,34 @@ onBeforeUnmount(() => {
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="估值" :width="shareCol.val">
+            <el-table-column label="估值" :width="shareCol.val" align="center">
               <template #default="{ row }">
-                <span
-                  v-if="row.valuationLabel"
-                  class="val-chip"
-                  :class="valClass(row.valuationLevel)"
-                  :title="row.valuationSummary || ''"
-                >{{ row.valuationLabel }}</span>
-                <span v-else class="muted">-</span>
+                <div class="valuation-cell">
+                  <span
+                    v-if="row.valuationLabel"
+                    class="val-chip"
+                    :class="valClass(row.valuationLevel)"
+                    :title="row.valuationSummary || ''"
+                  >{{ row.valuationLabel }}</span>
+                  <span v-else class="muted">-</span>
+                  <div
+                    v-if="availablePeMetrics(row).length"
+                    class="pe-variants"
+                    title="市盈率（动）/ 市盈率（静）/ 市盈率（TTM）；仅显示有效口径"
+                  >
+                    <span v-for="metric in availablePeMetrics(row)" :key="metric.key" class="pe-metric">
+                      <i>{{ metric.label }}</i><b>{{ metric.value }}</b>
+                    </span>
+                  </div>
+                  <span
+                    v-else
+                    class="valuation-missing"
+                    title="当前行情源未返回有效的动态、静态或 TTM 市盈率"
+                  >PE 暂缺</span>
+                </div>
               </template>
             </el-table-column>
-            <el-table-column prop="verdict" label="评价" :width="shareCol.verdict">
+            <el-table-column prop="verdict" label="评价" :width="shareCol.verdict" align="center">
               <template #default="{ row }">
                 <span v-if="row.verdict" class="verdict" :class="verdictClass(row.verdict)">{{ row.verdict }}</span>
                 <span v-else class="muted">-</span>
@@ -1588,18 +1662,40 @@ onBeforeUnmount(() => {
                 <span class="advice">{{ row.advice || '-' }}</span>
               </template>
             </el-table-column>
+            <el-table-column prop="stopLoss" label="止损" :width="shareCol.stop" align="center" :sortable="!sharingCapture">
+              <template #default="{ row }">
+                {{ row.stopLoss != null ? Number(row.stopLoss).toFixed(2) : '-' }}
+              </template>
+            </el-table-column>
             <el-table-column
               v-if="!sharingCapture"
-              prop="quantity"
-              label="数量"
-              :width="shareCol.qty"
+              prop="takeProfit"
+              label="止盈"
+              :width="shareCol.take"
+              align="center"
               sortable
-            />
+            >
+              <template #default="{ row }">
+                {{ row.takeProfit != null ? Number(row.takeProfit).toFixed(2) : '-' }}
+              </template>
+            </el-table-column>
             <el-table-column
               v-if="!sharingCapture"
-              prop="costPrice"
-              label="成本"
-              :width="shareCol.cost"
+              prop="marketValue"
+              label="市值"
+              :width="shareCol.mv"
+              sortable
+            >
+              <template #default="{ row }">
+                {{ row.marketValue != null ? fmtMoney(row.marketValue) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="showIndustry && !sharingCapture"
+              prop="industry"
+              label="二级行业"
+              width="100"
+              show-overflow-tooltip
               sortable
             />
             <el-table-column
@@ -1615,6 +1711,9 @@ onBeforeUnmount(() => {
               label="操作"
               :width="shareCol.ops"
               fixed="right"
+              align="center"
+              class-name="ops-column"
+              label-class-name="ops-column"
             >
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -1625,15 +1724,14 @@ onBeforeUnmount(() => {
           </el-table>
         </section>
 
-        <section class="daily-panel">
+        <section v-show="dailyRows.length" class="daily-panel">
           <div class="theme-panel-head">
             <div class="theme-panel-title">
-              <h3>每日浮盈</h3>
-              <span class="muted">需「打今日快照」沉淀曲线</span>
+              <h3>收益快照</h3>
+              <span class="muted">记录每日涨跌与组合市值</span>
             </div>
           </div>
-          <div v-if="!dailyRows.length" class="chart-empty">暂无快照，点击上方按钮写入今日数据</div>
-          <div v-show="dailyRows.length" ref="chartRef" class="daily-chart" />
+          <div ref="chartRef" class="daily-chart" />
         </section>
         <BrandShareFoot
           v-show="sharingCapture"
@@ -2339,46 +2437,168 @@ onBeforeUnmount(() => {
   font-weight: 600;
   opacity: 0.85;
 }
+.security-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.security-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.security-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+}
+.security-link:hover .security-name-text,
+.security-link:focus-visible .security-name-text {
+  color: var(--el-color-primary);
+}
+.security-link:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 2px;
+}
+.security-code {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.market-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1;
+}
+.market-badge.is-star {
+  color: #0a66c2;
+  background: rgba(0, 113, 227, 0.09);
+  border-color: rgba(0, 113, 227, 0.18);
+}
+.market-badge.is-chinext {
+  color: #16775d;
+  background: rgba(42, 157, 143, 0.1);
+  border-color: rgba(42, 157, 143, 0.2);
+}
+.market-badge.is-bj {
+  color: #a86400;
+  background: rgba(255, 159, 10, 0.11);
+  border-color: rgba(255, 159, 10, 0.22);
+}
+.market-badge.is-hk {
+  color: #6b4fbb;
+  background: rgba(107, 79, 187, 0.1);
+  border-color: rgba(107, 79, 187, 0.2);
+}
+.market-badge.is-us {
+  color: #515154;
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+}
 .holding-layout {
   margin-top: 14px;
+  min-width: 0;
+  max-width: 100%;
 }
 .today-pnl,
 .hold-pnl {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  min-width: 92px;
-  padding: 5px 9px;
-  border-radius: 9px;
-  line-height: 1.15;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 .today-pnl b,
 .hold-pnl b {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
 }
 .today-pnl small,
 .hold-pnl small {
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  opacity: 0.88;
+  opacity: 0.72;
 }
-.today-pnl.up,
-.hold-pnl.up {
-  color: var(--up);
-  background: rgba(255, 59, 48, 0.08);
+.price-cost {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.today-pnl.down,
-.hold-pnl.down {
-  color: var(--down);
-  background: rgba(52, 199, 89, 0.08);
+.price-cost b {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink-soft);
 }
-.today-pnl {
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.03);
+.price-cost small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.weight-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  box-sizing: border-box;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.weight-chip b {
+  font-size: 11px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.weight-chip.is-heavy {
+  color: #c43d4a;
+  background: rgba(255, 59, 48, 0.1);
+  border-color: rgba(255, 59, 48, 0.2);
+}
+.weight-chip.is-core {
+  color: #a86400;
+  background: rgba(255, 159, 10, 0.11);
+  border-color: rgba(255, 159, 10, 0.22);
+}
+.weight-chip.is-normal {
+  color: #0a66c2;
+  background: rgba(0, 113, 227, 0.08);
+  border-color: rgba(0, 113, 227, 0.16);
+}
+.weight-chip.is-light {
+  color: #5f6368;
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
 }
 .theme-panel,
 .daily-panel {
@@ -2390,6 +2610,9 @@ onBeforeUnmount(() => {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-soft);
+}
+.daily-panel {
+  margin-top: 14px;
 }
 .theme-panel-head {
   display: flex;
@@ -2459,7 +2682,7 @@ onBeforeUnmount(() => {
 }
 .theme-bar-row {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 48px 72px;
+  grid-template-columns: 112px minmax(0, 1fr) 48px 72px;
   gap: 8px;
   align-items: center;
 }
@@ -2475,6 +2698,17 @@ onBeforeUnmount(() => {
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.theme-chip-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .theme-chip--sm {
@@ -2547,6 +2781,42 @@ onBeforeUnmount(() => {
   background: rgba(0, 113, 227, 0.08);
   border-color: rgba(0, 113, 227, 0.16);
 }
+.valuation-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.pe-variants {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pe-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.pe-metric i {
+  color: var(--muted);
+  font-style: normal;
+}
+.pe-variants b {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 650;
+}
+.valuation-missing {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
 .verdict {
   font-size: 12px;
   font-weight: 650;
@@ -2595,7 +2865,23 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 .holding-table {
+  width: 100%;
   min-width: 0;
+}
+.holding-table :deep(.ops-column) {
+  background: rgba(255, 255, 255, 0.97) !important;
+  box-shadow: -10px 0 18px -18px rgba(29, 29, 31, 0.65);
+}
+.holding-table :deep(.security-column) {
+  background: rgba(255, 255, 255, 0.97) !important;
+  box-shadow: 10px 0 18px -18px rgba(29, 29, 31, 0.65);
+}
+.holding-table :deep(.ops-column .cell) {
+  white-space: nowrap;
+}
+.holding-table :deep(.el-table__body tr:hover > .ops-column),
+.holding-table :deep(.el-table__body tr:hover > .security-column) {
+  background: #f1f7fd !important;
 }
 .daily-chart {
   height: 260px;
@@ -2667,7 +2953,7 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
   .theme-bar-row {
-    grid-template-columns: 64px minmax(0, 1fr) 48px;
+    grid-template-columns: minmax(88px, 112px) minmax(0, 1fr) 48px;
   }
   .theme-bar-mv {
     display: none;

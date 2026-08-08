@@ -152,6 +152,9 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 holding.setMarketPrice(basic.getLatestPrice());
                 holding.setPctChg(basic.getPctChg());
                 holding.setQuoteTime(basic.getQuoteTime());
+                holding.setPeDynamic(basic.getPeDynamic());
+                holding.setPeStatic(basic.getPeStatic());
+                holding.setPeTtm(basic.getPeTtm());
                 if (StringUtils.isNotBlank(basic.getIndustry())) {
                     holding.setIndustry(basic.getIndustry());
                 }
@@ -437,6 +440,12 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         }
         if (Objects.nonNull(fetched.getPctChg())) {
             existing.setPctChg(fetched.getPctChg());
+        }
+        if (Objects.nonNull(fetched.getPeDynamic())) {
+            existing.setPeDynamic(fetched.getPeDynamic());
+        }
+        if (Objects.nonNull(fetched.getPeStatic())) {
+            existing.setPeStatic(fetched.getPeStatic());
         }
         if (Objects.nonNull(fetched.getPeTtm())) {
             existing.setPeTtm(fetched.getPeTtm());
@@ -792,6 +801,9 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             holding.setMarketPrice(basic.getLatestPrice());
             holding.setPctChg(basic.getPctChg());
             holding.setQuoteTime(basic.getQuoteTime());
+            holding.setPeDynamic(basic.getPeDynamic());
+            holding.setPeStatic(basic.getPeStatic());
+            holding.setPeTtm(basic.getPeTtm());
             if (StringUtils.isNotBlank(basic.getIndustry())) {
                 holding.setIndustry(basic.getIndustry());
             }

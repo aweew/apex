@@ -1656,7 +1656,7 @@ function dash(v) {
           <span class="meta-pct" :class="basic.pctChg >= 0 ? 'up' : 'down'">
             {{ basic.pctChg != null ? (Number(basic.pctChg) > 0 ? '+' : '') + Number(basic.pctChg).toFixed(2) + '%' : '-' }}
           </span>
-          <span class="meta-chip">PE {{ basic.peTtm ?? '-' }}</span>
+          <span class="meta-chip">PE TTM {{ basic.peTtm ?? '-' }}</span>
           <span class="meta-chip">PB {{ basic.pb ?? '-' }}</span>
           <span class="meta-chip">总市值 {{ fmtMv(basic.totalMv) }}</span>
           <span class="meta-chip">{{ profile?.industryL2 || basic.industry || basic.market || '-' }}</span>
@@ -1669,7 +1669,9 @@ function dash(v) {
       <div v-show="metaExpanded" class="meta">
         <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
         <div><label>涨跌幅</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
-        <div><label><TermTip term="pe_ttm">市盈率</TermTip></label><span>{{ basic.peTtm ?? '-' }}</span></div>
+        <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><span>{{ basic.peDynamic ?? '-' }}</span></div>
+        <div><label><TermTip term="pe_static">市盈率（静）</TermTip></label><span>{{ basic.peStatic ?? '-' }}</span></div>
+        <div><label><TermTip term="pe_ttm">市盈率（TTM）</TermTip></label><span>{{ basic.peTtm ?? '-' }}</span></div>
         <div><label><TermTip term="pb">市净率</TermTip></label><span>{{ basic.pb ?? '-' }}</span></div>
         <div><label>总市值</label><span>{{ fmtMv(basic.totalMv) }}</span></div>
         <div><label>流通市值</label><span>{{ fmtMv(basic.circMv) }}</span></div>

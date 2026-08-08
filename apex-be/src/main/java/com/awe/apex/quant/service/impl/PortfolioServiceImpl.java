@@ -907,6 +907,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
             holding.setValuationLevel(src.getValuationLevel());
             holding.setValuationLabel(src.getValuationLabel());
             holding.setValuationSummary(src.getValuationSummary());
+            holding.setPeDynamic(src.getPeDynamic());
+            holding.setPeStatic(src.getPeStatic());
+            holding.setPeTtm(src.getPeTtm());
             holding.setVerdict(src.getVerdict());
             holding.setAdvice(src.getAdvice());
         }
@@ -1064,6 +1067,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
             holding.setMarketPrice(basic.getLatestPrice());
             holding.setPctChg(basic.getPctChg());
+            holding.setPeDynamic(basic.getPeDynamic());
+            holding.setPeStatic(basic.getPeStatic());
+            holding.setPeTtm(basic.getPeTtm());
         }
         BigDecimal price = holding.getMarketPrice();
         Integer qty = holding.getQuantity();

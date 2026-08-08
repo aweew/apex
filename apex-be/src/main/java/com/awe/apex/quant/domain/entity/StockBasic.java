@@ -60,7 +60,17 @@ public class StockBasic implements Serializable {
     private Integer stFlag;
 
     /**
-     * 市盈率TTM
+     * 动态市盈率（按预测全年利润）
+     */
+    private BigDecimal peDynamic;
+
+    /**
+     * 静态市盈率（按上一完整年度利润）
+     */
+    private BigDecimal peStatic;
+
+    /**
+     * 滚动市盈率（按最近四个季度利润）
      */
     private BigDecimal peTtm;
 

@@ -553,12 +553,22 @@ onBeforeUnmount(() => {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition: background 0.15s ease, color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .links a:hover {
   color: var(--ink);
   background: rgba(0, 0, 0, 0.04);
+}
+
+.links a:focus {
+  outline: none;
+}
+
+.links a:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(0, 113, 227, 0.34);
 }
 
 .links a.router-link-active {

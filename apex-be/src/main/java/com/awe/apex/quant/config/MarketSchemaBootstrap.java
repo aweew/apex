@@ -111,9 +111,25 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     "ALTER TABLE observe_pool ADD COLUMN side VARCHAR(8) NULL DEFAULT 'BUY' COMMENT '方向BUY/SELL'");
             ensurePortfolioTables();
             ensureCompanyProfileRevenueColumns();
+            ensureStockBasicPeColumns();
         } catch (Exception ex) {
             log.warn("schema bootstrap skipped: {}", ex.getMessage());
         }
+    }
+
+    /**
+     * 个股三种市盈率口径
+     */
+    private void ensureStockBasicPeColumns() {
+        boolean introduced = ensureColumn("stock_basic", "pe_dynamic",
+                "ALTER TABLE stock_basic ADD COLUMN pe_dynamic DECIMAL(16, 4) NULL COMMENT '动态市盈率' AFTER st_flag");
+        introduced |= ensureColumn("stock_basic", "pe_static",
+                "ALTER TABLE stock_basic ADD COLUMN pe_static DECIMAL(16, 4) NULL COMMENT '静态市盈率' AFTER pe_dynamic");
+        if (introduced) {
+            // 历史代码把动态 PE 写进 pe_ttm；新增口径时清空，等待 f164 正确回填。
+            jdbcTemplate.execute("UPDATE stock_basic SET pe_ttm = NULL WHERE pe_ttm IS NOT NULL");
+        }
+        log.info("schema ready: stock_basic PE variants");
     }
 
     /**
@@ -309,7 +325,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
      * @param column 列名
      * @param ddl    ALTER 语句
      */
-    private void ensureColumn(String table, String column, String ddl) {
+    private boolean ensureColumn(String table, String column, String ddl) {
         Integer cnt = jdbcTemplate.queryForObject(
                 """
                         SELECT COUNT(*) FROM information_schema.COLUMNS
@@ -318,6 +334,8 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                 Integer.class, table, column);
         if (Objects.isNull(cnt) || cnt == 0) {
             jdbcTemplate.execute(ddl);
+            return true;
         }
+        return false;
     }
 }
