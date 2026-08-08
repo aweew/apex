@@ -6,8 +6,9 @@ import { dashboardHome } from '../api/dashboard'
 import { runDecision } from '../api/decision'
 import { startSyncJob } from '../api/sync'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
+import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v12'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v13'
 const loading = ref(false)
 const refreshing = ref(false)
 const running = ref(false)
@@ -85,7 +86,7 @@ function pctDir(v) {
   return n > 0 ? 'up' : 'down'
 }
 
-/** 量能红绿：放量/正比为红，缩量/负比为绿 */
+/** 量能涨跌幅比例红绿：正比为红，负比为绿 */
 function volumeDir(trend, vsMa5Pct) {
   if (trend === '放量') return 'up'
   if (trend === '缩量') return 'down'
@@ -95,18 +96,9 @@ function volumeDir(trend, vsMa5Pct) {
   return ''
 }
 
-/** 缩量/放量 + 较前日%（优先用数值拼接，避免只显示「缩量」） */
-const volumeChangeText = computed(() => {
-  const m = market.value
-  if (!m) return ''
-  const pct = m.volumeVsMa5Pct
-  if (pct != null && pct !== '' && !Number.isNaN(Number(pct))) {
-    const n = Number(pct)
-    const trend = m.volumeTrend || (n >= 0 ? '放量' : '缩量')
-    const sign = n > 0 ? '+' : ''
-    return `${trend} ${sign}${n.toFixed(2)}%`
-  }
-  return m.volumeLabel || m.volumeTrend || ''
+/** 缩量/放量 + 较前日成交额增减值和百分比 */
+const volumeChangeParts = computed(() => {
+  return buildVolumeChangeParts(market.value)
 })
 
 const breadth = computed(() => {
@@ -453,16 +445,22 @@ onMounted(() => {
 
           <div class="stat-line">
             <span
-              class="stat"
+              class="stat volume-stat"
               :title="market?.volumeVsMa5Pct != null ? `三市成交较上一交易日 ${fmtIndexPct(market.volumeVsMa5Pct)}` : '三市成交额（上证+深成+北证）'"
             >
               <em>三市</em>
-              <b :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)">{{ market?.indexVolumeText || '--' }}</b>
+              <b>{{ market?.indexVolumeText || '--' }}</b>
               <i
-                v-if="volumeChangeText"
+                v-if="volumeChangeParts?.detailText || volumeChangeParts?.percentageText"
                 class="vol-change"
-                :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)"
-              >{{ volumeChangeText }}</i>
+              >
+                <span v-if="volumeChangeParts.detailText">{{ volumeChangeParts.detailText }}</span>
+                <span
+                  v-if="volumeChangeParts.percentageText"
+                  class="vol-percentage"
+                  :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)"
+                >{{ volumeChangeParts.percentageText }}</span>
+              </i>
               <i v-else class="miss-hint">暂无今日额</i>
             </span>
             <span class="dot" aria-hidden="true" />
@@ -520,7 +518,7 @@ onMounted(() => {
           <em>中位数</em>
           <b>{{ fmtIndexPct(effect.medianPctChg) }}</b>
         </div>
-        <div class="effect-cell" :class="pctDir(effect.equalWeightPctChg)" title="800010 全A(沪深京)等权，对齐 880008">
+        <div class="effect-cell" :class="pctDir(effect.equalWeightPctChg)" title="800010 优先；缺失时使用全A截面算术平均">
           <em>全A等权</em>
           <b>{{ fmtIndexPct(effect.equalWeightPctChg) }}</b>
         </div>
@@ -1325,6 +1323,7 @@ onMounted(() => {
 .stat b {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   color: var(--ink);
 }
 
@@ -1335,10 +1334,24 @@ onMounted(() => {
 }
 
 .stat i.vol-change {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--ink);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   letter-spacing: 0.01em;
+}
+
+.stat i.vol-change > span {
+  line-height: 1;
+}
+
+.volume-stat > b,
+.volume-stat .vol-change > span:not(.vol-percentage) {
+  font-weight: 500;
 }
 
 .stat .slash,

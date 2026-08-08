@@ -251,6 +251,23 @@ public final class MarketBriefingMath {
     }
 
     /**
+     * 较上一交易日成交额增减值（正数放量，负数缩量）。
+     */
+    public static BigDecimal volumeChange(BigDecimal current, BigDecimal previous) {
+        if (Objects.isNull(current) || Objects.isNull(previous)) {
+            return null;
+        }
+        return current.subtract(previous);
+    }
+
+    /**
+     * 全A等权涨跌幅：优先专用指数，缺失时使用全A截面算术平均。
+     */
+    public static BigDecimal equalWeightPct(BigDecimal indexPct, BigDecimal crossSectionAvgPct) {
+        return Objects.nonNull(indexPct) ? indexPct : crossSectionAvgPct;
+    }
+
+    /**
      * 上涨占比（整数百分比）
      */
     public static Integer upSharePct(int up, int down, int flat) {

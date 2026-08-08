@@ -89,6 +89,11 @@ public class MarketBriefingResp {
     private BigDecimal indexVolume;
 
     /**
+     * 较上一交易日三市成交额增减值（元，正数放量、负数缩量）
+     */
+    private BigDecimal indexVolumeChange;
+
+    /**
      * 三市成交总额展示文案
      */
     private String indexVolumeText;

@@ -74,9 +74,10 @@ public class DashboardHomeResp {
         /** 指数一行 */ private List<String> indexLines;
         /** 指数小看板 */ private List<MarketIndexItem> indexes;
         /** 量能：放量/缩量 */ private String volumeTrend;
-        /** 较5日均额% */ private BigDecimal volumeVsMa5Pct;
+        /** 较上一交易日成交额涨跌幅%（字段名历史遗留） */ private BigDecimal volumeVsMa5Pct;
         /** 量能文案如「缩量 -4.50%」 */ private String volumeLabel;
         /** 三市成交总额（元） */ private BigDecimal indexVolume;
+        /** 较上一交易日三市成交额增减值（元） */ private BigDecimal indexVolumeChange;
         /** 三市成交总额文案 */ private String indexVolumeText;
         /** 提示 Top */ private List<String> tips;
         /** 赚钱效应观测 */ private MarketEffectResp effect;

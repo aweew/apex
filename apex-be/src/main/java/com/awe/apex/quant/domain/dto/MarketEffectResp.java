@@ -34,7 +34,7 @@ public class MarketEffectResp {
     private BigDecimal medianPctChg;
 
     /**
-     * 全A等权涨跌幅%（东财 800010，对齐 880008）
+     * 全A等权涨跌幅%（东财 800010 优先，缺失时使用全A截面算术平均）
      */
     private BigDecimal equalWeightPctChg;
 

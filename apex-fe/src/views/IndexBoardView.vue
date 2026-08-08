@@ -22,6 +22,7 @@ import {
 } from '../utils/shareCapture.js'
 import HeatmapView from './HeatmapView.vue'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
+import { formatVolumeChangeText } from '../utils/marketVolume.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -75,6 +76,7 @@ const heroIndexes = computed(() => {
 
 const effect = computed(() => briefing.value?.effect || null)
 const hotThemes = computed(() => normalizeHotThemes(briefing.value))
+const volumeChangeText = computed(() => formatVolumeChangeText(briefing.value))
 
 /** 赚钱效应五指标（展示用） */
 const effectMetrics = computed(() => {
@@ -83,7 +85,7 @@ const effectMetrics = computed(() => {
   return [
     { key: 'avg', label: '平均股价', tip: '800005', value: e.avgPctChg },
     { key: 'median', label: '中位数', tip: '880009口径', value: e.medianPctChg },
-    { key: 'eq', label: '全A等权', tip: '800010≈880008', value: e.equalWeightPctChg },
+    { key: 'eq', label: '全A等权', tip: '800010 / 全A截面算术平均', value: e.equalWeightPctChg },
     { key: 'micro', label: '微盘股', tip: '800007≈880823', value: e.microPctChg ?? e.csi2000PctChg },
     { key: 'hs300', label: '沪深300', tip: '000300', value: e.hs300PctChg },
   ]
@@ -374,7 +376,7 @@ async function captureMarketShare() {
     message: briefing.value?.message || '沪深市场总览 · 赚钱效应 · 板块热力',
     stance: briefing.value?.stance || '',
     volumeText: briefing.value?.indexVolumeText || '--',
-    volumeLabel: briefing.value?.volumeLabel || '',
+    volumeLabel: volumeChangeText.value,
     breadth: breadth.value
       ? {
           up: breadth.value.up,
@@ -577,7 +579,7 @@ onBeforeUnmount(() => {
           <div class="pulse-tile vol">
             <span class="k">三市成交</span>
             <strong class="v">{{ briefing?.indexVolumeText || '--' }}</strong>
-            <span v-if="briefing?.volumeLabel" class="sub">{{ briefing.volumeLabel }}</span>
+            <span v-if="volumeChangeText" class="sub">{{ volumeChangeText }}</span>
           </div>
           <div class="pulse-tile breadth">
             <span class="k">涨跌家数</span>

@@ -85,6 +85,25 @@ class MarketBriefingMathTest {
     }
 
     @Test
+    void volumeChangeReturnsSignedAmountDifference() {
+        assertEquals(new BigDecimal("150"),
+                MarketBriefingMath.volumeChange(new BigDecimal("1150"), new BigDecimal("1000")));
+        assertEquals(new BigDecimal("-200"),
+                MarketBriefingMath.volumeChange(new BigDecimal("800"), new BigDecimal("1000")));
+        assertNull(MarketBriefingMath.volumeChange(null, new BigDecimal("1000")));
+        assertNull(MarketBriefingMath.volumeChange(new BigDecimal("1000"), null));
+    }
+
+    @Test
+    void equalWeightPctPrefersIndexAndFallsBackToCrossSectionAverage() {
+        assertEquals(new BigDecimal("1.25"),
+                MarketBriefingMath.equalWeightPct(new BigDecimal("1.25"), new BigDecimal("0.88")));
+        assertEquals(new BigDecimal("0.88"),
+                MarketBriefingMath.equalWeightPct(null, new BigDecimal("0.88")));
+        assertNull(MarketBriefingMath.equalWeightPct(null, null));
+    }
+
+    @Test
     void upSharePctRoundsDown() {
         assertEquals(74, MarketBriefingMath.upSharePct(3912, 1299, 64));
         assertNull(MarketBriefingMath.upSharePct(0, 0, 0));

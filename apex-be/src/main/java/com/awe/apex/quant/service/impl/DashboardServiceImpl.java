@@ -185,6 +185,7 @@ public class DashboardServiceImpl implements IDashboardService {
                 .volumeVsMa5Pct(Objects.nonNull(briefing) ? briefing.getVolumeVsMa5Pct() : null)
                 .volumeLabel(Objects.nonNull(briefing) ? briefing.getVolumeLabel() : null)
                 .indexVolume(Objects.nonNull(briefing) ? briefing.getIndexVolume() : null)
+                .indexVolumeChange(Objects.nonNull(briefing) ? briefing.getIndexVolumeChange() : null)
                 .indexVolumeText(Objects.nonNull(briefing) ? briefing.getIndexVolumeText() : null)
                 .tips(tips)
                 .effect(Objects.nonNull(briefing) ? briefing.getEffect() : null)

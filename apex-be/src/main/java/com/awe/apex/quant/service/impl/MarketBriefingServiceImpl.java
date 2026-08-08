@@ -633,6 +633,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             resp.setVolumeVsMa5Pct(null);
             resp.setVolumeLabel(null);
             resp.setIndexVolume(null);
+            resp.setIndexVolumeChange(null);
             resp.setIndexVolumeText(null);
             return resp;
         }
@@ -640,6 +641,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         resp.setVolumeVsMa5Pct(vol.vsMa5Pct);
         resp.setVolumeLabel(vol.label);
         resp.setIndexVolume(vol.volume);
+        resp.setIndexVolumeChange(vol.change);
         resp.setIndexVolumeText(formatAmount(vol.volume));
         return resp;
     }
@@ -735,6 +737,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
         // 2. 中位数：全A截面（880009 口径）
         BigDecimal medianPct = null;
+        BigDecimal crossSectionAvgPct = null;
         Integer sampleSize = null;
         Integer strongUp = null;
         Integer strongDown = null;
@@ -743,6 +746,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             MarketCrossSectionClient.CrossSectionStats stats = marketCrossSectionClient.fetchHsjAStats();
             if (Objects.nonNull(stats)) {
                 medianPct = stats.medianPct;
+                crossSectionAvgPct = stats.avgPct;
                 sampleSize = stats.sampleSize;
                 strongUp = stats.strongUpCount;
                 strongDown = stats.strongDownCount;
@@ -761,6 +765,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             MarketEffectResp local = effectFromStockBasic();
             if (Objects.nonNull(local)) {
                 medianPct = local.getMedianPctChg();
+                crossSectionAvgPct = local.getAvgPctChg();
                 sampleSize = local.getSampleSize();
                 strongUp = local.getStrongUpCount();
                 strongDown = local.getStrongDownCount();
@@ -773,6 +778,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 source = source + "+stock_basic";
             }
         }
+
+        equalWeightPct = MarketBriefingMath.equalWeightPct(equalWeightPct, crossSectionAvgPct);
 
         BigDecimal microVsLarge = MarketBriefingMath.microVsLarge(microPct, hsPct);
         String hint = MarketBriefingMath.effectHint(medianPct, microVsLarge, microPct);
@@ -1276,11 +1283,13 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         String volumeTrend = null;
         BigDecimal volumeVsMa5Pct = null;
         BigDecimal indexVolume = null;
+        BigDecimal indexVolumeChange = null;
         String indexVolumeText = null;
         if (Objects.nonNull(vol)) {
             volumeTrend = vol.trend;
             volumeVsMa5Pct = vol.vsMa5Pct;
             indexVolume = vol.volume;
+            indexVolumeChange = vol.change;
             if (Objects.isNull(indexVolume) || indexVolume.signum() <= 0) {
                 indexVolume = fetchLiveThreeMarketAmount();
             }
@@ -1486,6 +1495,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .volumeVsMa5Pct(volumeVsMa5Pct)
                 .volumeLabel(Objects.nonNull(vol) ? vol.label : null)
                 .indexVolume(indexVolume)
+                .indexVolumeChange(indexVolumeChange)
                 .indexVolumeText(indexVolumeText)
                 .limitUpCount(resolveLimitUpCount(lu))
                 .limitDownCount(resolveLimitDownCount())
@@ -1896,6 +1906,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
         BigDecimal vs = last.subtract(prevAmount).divide(prevAmount, 6, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP);
+        stat.change = MarketBriefingMath.volumeChange(last, prevAmount);
         stat.trend = vs.compareTo(ZERO) >= 0 ? "放量" : "缩量";
         // 字段名沿用 volumeVsMa5Pct，语义改为较上一交易日
         stat.vsMa5Pct = vs;
@@ -2382,6 +2393,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         private String label;
         /** 三市成交额（元） */
         private BigDecimal volume;
+        /** 较上一交易日成交额增减值（元） */
+        private BigDecimal change;
         private boolean usedAmount;
         private boolean usedLive;
     }
