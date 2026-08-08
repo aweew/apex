@@ -126,7 +126,7 @@ async function addObserve(stock, e) {
       code: stock.code,
       name: stock.name || '',
       status: 'WATCHING',
-      reason: `涨停复盘 ${stock.lianban || 1}板`,
+      reason: `连板天梯 ${stock.lianban || 1}板`,
       tags: 'limitup',
       priority: Math.min(5, Number(stock.lianban) || 3),
     })
@@ -406,7 +406,7 @@ onBeforeUnmount(() => {
     <header class="header">
       <div>
         <p class="eyebrow">灵枢 · Limit-Up</p>
-        <h1>涨停复盘</h1>
+        <h1>连板天梯</h1>
         <p>{{ data?.message || '连板天梯 · 东财涨停池 · 情绪与接力参考' }}</p>
       </div>
       <div class="actions">
@@ -448,17 +448,9 @@ onBeforeUnmount(() => {
     <div ref="boardRef" class="ladder-board">
       <section class="hero">
         <div class="hero-top">
-          <h2>{{ titleDate }} A股 涨停复盘</h2>
+          <h2>{{ titleDate }} A股 连板天梯</h2>
           <div class="hero-actions">
             <span class="hero-count">{{ totalShown }} 家{{ activeTheme ? ` · ${activeTheme}` : '' }}</span>
-            <button
-              type="button"
-              class="share-btn no-capture"
-              :disabled="sharing || !filteredTiers.length"
-              @click="openShare"
-            >
-              {{ sharing ? '生成中…' : '分享截图' }}
-            </button>
           </div>
         </div>
         <div v-if="themes.length" class="theme-row">
@@ -504,7 +496,7 @@ onBeforeUnmount(() => {
       </section>
 
       <div v-if="!filteredTiers.length" class="page-empty no-capture">
-        <h3>{{ activeTheme ? `「${activeTheme}」暂无涨停` : '暂无涨停复盘' }}</h3>
+        <h3>{{ activeTheme ? `「${activeTheme}」暂无涨停` : '暂无连板天梯数据' }}</h3>
         <p v-if="activeTheme">换个题材，或清除筛选后再看全市场天梯</p>
         <p v-else>刷新东财涨停池后看连板天梯与题材分布</p>
         <el-button v-if="activeTheme" @click="clearTheme">清除筛选</el-button>
@@ -567,22 +559,22 @@ onBeforeUnmount(() => {
               <div v-if="s.pctChg != null" class="card-pct" :class="pctClass(s.pctChg)">{{ fmtPctChg(s.pctChg) }}</div>
             </div>
             <div v-if="!s.failed" class="card-meta">
-              <span v-if="s.sealAmount != null">封 {{ fmtSealAmount(s.sealAmount) }}</span>
-              <span v-if="s.turnoverRate != null">换 {{ fmtRate(s.turnoverRate) }}</span>
+              <span v-if="s.sealAmount != null">封&nbsp;{{ fmtSealAmount(s.sealAmount) }}</span>
+              <span v-if="s.turnoverRate != null">换&nbsp;{{ fmtRate(s.turnoverRate) }}</span>
             </div>
           </button>
         </div>
       </section>
 
       <footer class="board-foot">
-        <span>灵枢 · 涨停复盘</span>
+        <span>灵枢 · 连板天梯</span>
         <span>{{ data?.tradeDate || tradeDate || '' }} · 仅供研究</span>
       </footer>
     </div>
 
     <el-dialog
       v-model="shareOpen"
-      :title="shareMode === 'mobile' ? '分享涨停复盘 · 手机版' : '分享涨停复盘 · 桌面版'"
+      :title="shareMode === 'mobile' ? '分享连板天梯 · 手机版' : '分享连板天梯 · 桌面版'"
       width="96vw"
       top="3vh"
       append-to-body
@@ -606,7 +598,7 @@ onBeforeUnmount(() => {
         <img
           v-if="sharePreviewUrl"
           :src="sharePreviewUrl"
-          alt="涨停复盘分享预览"
+          alt="连板天梯分享预览"
           :style="{ width: `${sharePreviewWidth}px` }"
         />
         <el-empty v-else description="预览生成中…" />
@@ -692,29 +684,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: #86868b;
   white-space: nowrap;
-}
-
-.share-btn {
-  border: 1px solid rgba(196, 86, 86, 0.35);
-  background: #fff;
-  color: var(--lu-red);
-  border-radius: 980px;
-  padding: 5px 12px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1.2;
-}
-
-.share-btn:hover:not(:disabled) {
-  background: var(--lu-red-soft);
-}
-
-.share-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .theme-row {
@@ -835,7 +804,7 @@ onBeforeUnmount(() => {
 .tier {
   display: grid;
   grid-template-columns: max-content 1fr;
-  column-gap: 6px;
+  column-gap: 12px;
   row-gap: 0;
   align-items: start;
   margin-bottom: 10px;
@@ -913,18 +882,19 @@ onBeforeUnmount(() => {
 
 .card {
   position: relative;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 2px;
   width: 108px;
+  height: 72px;
   padding: 5px 6px 4px;
   border: 1px solid #ebebef;
   border-radius: 6px;
   background: #fff;
   cursor: pointer;
   text-align: left;
-  min-height: 0;
   overflow: hidden;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
@@ -1136,11 +1106,18 @@ onBeforeUnmount(() => {
 
 .card-meta {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   font-size: 9px;
   color: #aeaeb2;
   margin-top: 0;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.card-meta span {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .board-foot {
@@ -1215,7 +1192,7 @@ onBeforeUnmount(() => {
 
   .tier {
     grid-template-columns: max-content 1fr;
-    column-gap: 5px;
+    column-gap: 8px;
     padding-left: 0;
   }
 

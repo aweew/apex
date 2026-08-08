@@ -740,7 +740,7 @@ onMounted(() => {
         </div>
         <div class="panel-links">
           <el-button link type="primary" @click="router.push('/sector')">板块</el-button>
-          <el-button link type="primary" @click="router.push('/limit-up')">涨停复盘</el-button>
+          <el-button link type="primary" @click="router.push('/limit-up')">连板天梯</el-button>
         </div>
       </div>
       <div v-if="themes.length" class="theme-row">

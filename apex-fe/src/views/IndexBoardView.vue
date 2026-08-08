@@ -735,7 +735,7 @@ onBeforeUnmount(() => {
         <section class="side-card shortcuts">
           <div class="panel-head"><h2>快捷入口</h2></div>
           <div class="shortcut-grid">
-            <button type="button" @click="router.push('/limit-up')">涨停复盘</button>
+            <button type="button" @click="router.push('/limit-up')">连板天梯</button>
             <button type="button" @click="router.push('/hot')">市场热点</button>
             <button type="button" @click="router.push('/news')">财经资讯</button>
             <button type="button" @click="router.push('/decision')">智能决策</button>
