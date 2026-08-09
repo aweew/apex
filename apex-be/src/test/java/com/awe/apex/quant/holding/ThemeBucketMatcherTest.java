@@ -81,6 +81,14 @@ class ThemeBucketMatcherTest {
     }
 
     @Test
+    void conceptOnlyCpoDoesNotOverrideSemiconductorIndustry() {
+        // 立昂微类：主营是半导体材料/功率器件，仅概念板挂 CPO，不应展示成光模块。
+        assertNull(ThemeBucketMatcher.matchPrimary(
+                List.of("半导体", "半导体硅片、功率器件芯片及化合物半导体射频芯片"),
+                List.of("CPO概念", "半导体概念", "第三代半导体")));
+    }
+
+    @Test
     void specialtyStorageStillMatchesFromStrong() {
         assertEquals("存储芯片", ThemeBucketMatcher.matchPrimary(
                 List.of("半导体", "HBM存储器研发销售"),

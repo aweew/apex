@@ -20,9 +20,13 @@ import IndexBoardView from '../views/IndexBoardView.vue'
 import SectorBoardView from '../views/SectorBoardView.vue'
 import LimitUpLadderView from '../views/LimitUpLadderView.vue'
 import SyncView from '../views/SyncView.vue'
+import { resolveScrollPosition } from './scrollBehavior.js'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior() {
+    return resolveScrollPosition()
+  },
   routes: [
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'dashboard', component: DashboardView },

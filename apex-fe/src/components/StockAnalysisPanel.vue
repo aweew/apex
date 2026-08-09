@@ -28,6 +28,7 @@ const error = ref('')
 const shareCardRef = ref(null)
 
 const sharing = ref(false)
+const capturingShare = ref(false)
 const shareOpen = ref(false)
 const sharePreviewUrl = ref('')
 const copying = ref(false)
@@ -306,33 +307,39 @@ async function refreshAi() {
 async function captureAnalysisShare() {
   const el = shareCardRef.value
   if (!el) throw new Error('研判内容未就绪')
+  capturingShare.value = true
   await nextTick()
-  const restoreScroll = resetScrollForCapture(el)
-  const restoreLong = prepareLongCapture(el)
-  const prev = {
-    padding: el.style.padding,
-    background: el.style.background,
-    boxSizing: el.style.boxSizing,
-  }
-  el.style.boxSizing = 'border-box'
-  el.style.padding = '28px 28px 24px'
-  el.style.background = '#ffffff'
   try {
-    return await captureElementBlob(el, {
-      scale: 2,
-      backgroundColor: '#ffffff',
-      style: {
-        padding: '28px 28px 24px',
+    const restoreScroll = resetScrollForCapture(el)
+    const restoreLong = prepareLongCapture(el)
+    const prev = {
+      padding: el.style.padding,
+      background: el.style.background,
+      boxSizing: el.style.boxSizing,
+    }
+    el.style.boxSizing = 'border-box'
+    el.style.padding = '28px 28px 24px'
+    el.style.background = '#ffffff'
+    try {
+      return await captureElementBlob(el, {
+        scale: 2,
         backgroundColor: '#ffffff',
-        boxSizing: 'border-box',
-      },
-    })
+        style: {
+          padding: '28px 28px 24px',
+          backgroundColor: '#ffffff',
+          boxSizing: 'border-box',
+        },
+      })
+    } finally {
+      el.style.padding = prev.padding
+      el.style.background = prev.background
+      el.style.boxSizing = prev.boxSizing
+      restoreLong()
+      restoreScroll()
+    }
   } finally {
-    el.style.padding = prev.padding
-    el.style.background = prev.background
-    el.style.boxSizing = prev.boxSizing
-    restoreLong()
-    restoreScroll()
+    capturingShare.value = false
+    await nextTick()
   }
 }
 
@@ -436,7 +443,7 @@ defineExpose({ reload: () => loadRules() })
       <header class="share-head">
         <div class="share-head-top">
           <div class="share-head-main">
-            <BrandShareLockup subtitle="个股研判" :size="44" />
+            <BrandShareLockup v-if="capturingShare" subtitle="个股研判" :size="44" />
             <div class="quote-id">
               <b class="quote-name">{{ data.name || '-' }}</b>
               <span class="quote-code">{{ data.code }}</span>
@@ -666,7 +673,10 @@ defineExpose({ reload: () => loadRules() })
         </section>
       </div>
 
-      <BrandShareFoot :note="`${BRAND.nameZh} · 仅供研究参考 · 不构成投资建议`" />
+      <BrandShareFoot
+        v-if="capturingShare"
+        :note="`${BRAND.nameZh} · 仅供研究参考 · 不构成投资建议`"
+      />
     </div>
 
     <el-dialog v-model="shareOpen" title="分享个股研判" width="720px" destroy-on-close @closed="closeShare">

@@ -197,6 +197,11 @@ public final class ThemeBucketMatcher {
      */
     private static int demoteWeakKeyword(String keyword, int weight) {
         String key = keyword.toUpperCase(Locale.ROOT);
+        if (key.contains("CPO") || key.contains("光模块") || key.contains("光通信模块")
+                || key.contains("光芯片") || key.contains("硅光") || key.contains("光互联")
+                || key.contains("光通信") || "800G".equals(key) || "1.6T".equals(key)) {
+            return Math.min(weight, 40);
+        }
         if ("存储芯片".equals(key) || "存储".equals(key)) {
             return Math.min(weight, 40);
         }
