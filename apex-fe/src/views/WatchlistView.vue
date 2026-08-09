@@ -12,6 +12,7 @@ import {
 } from '../api/watchlist'
 import { fillWatchlistBars, syncBars, syncBarsGroup, syncStaleBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
+import { buildApiUrl } from '../api/baseUrl'
 
 const router = useRouter()
 
@@ -242,7 +243,7 @@ onMounted(loadList)
         <el-button plain @click="router.push('/pipeline')">流水线</el-button>
         <el-link
           type="primary"
-          :href="`http://127.0.0.1:8080/apex/api/export/watchlist?groupName=${encodeURIComponent(groupName)}`"
+          :href="buildApiUrl(`/api/export/watchlist?groupName=${encodeURIComponent(groupName)}`)"
           target="_blank"
         >导出</el-link>
         <el-button text :loading="loading" @click="loadList">刷新</el-button>

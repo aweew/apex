@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { buildApiUrl } from '../api/baseUrl'
 import {
   applyAtrStops,
   closeAllPositions,
@@ -343,12 +344,12 @@ onMounted(load)
         <el-button type="danger" plain :loading="loading" @click="onCloseAll">一键平仓</el-button>
         <el-link
           type="primary"
-          :href="`http://127.0.0.1:8080/apex/api/export/paper/performance?accountId=${account?.id || ''}`"
+          :href="buildApiUrl(`/api/export/paper/performance?accountId=${account?.id || ''}`)"
           target="_blank"
         >导出绩效</el-link>
         <el-link
           type="primary"
-          :href="`http://127.0.0.1:8080/apex/api/export/paper/orders?accountId=${account?.id || ''}`"
+          :href="buildApiUrl(`/api/export/paper/orders?accountId=${account?.id || ''}`)"
           target="_blank"
         >导出订单CSV</el-link>
         <el-button plain @click="router.push('/decision')">决策清单</el-button>

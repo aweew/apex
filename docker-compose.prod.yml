@@ -1,0 +1,59 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: apex-be/Dockerfile
+    image: apex-backend:latest
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xms256m -Xmx1024m}
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:p6spy:mysql://${MYSQL_HOST:?Set MYSQL_HOST}:${MYSQL_PORT:-3306}/${MYSQL_DATABASE:-apex}?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_0900_ai_ci&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:?Set MYSQL_USER}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      SA_TOKEN_JWT_SECRET_KEY: ${APEX_JWT_SECRET:?Set APEX_JWT_SECRET}
+      APEX_LOCAL_USERNAME: ${APEX_LOCAL_USERNAME:-admin}
+      APEX_LOCAL_PASSWORD: ${APEX_LOCAL_PASSWORD:?Set APEX_LOCAL_PASSWORD}
+      APEX_AI_ENABLED: ${APEX_AI_ENABLED:-false}
+      APEX_AI_BASE_URL: ${APEX_AI_BASE_URL:-https://api.moonshot.cn/v1}
+      APEX_AI_API_KEY: ${APEX_AI_API_KEY:-}
+      APEX_AI_MODEL: ${APEX_AI_MODEL:-kimi-k2.6}
+      APEX_MX_OUTPUT_DIR: /app/.mx_output
+      APEX_HOT_PYTHON_CMD: python3
+      APEX_HOT_SCRIPT_PATH: /app/scripts/market_data/sync_hot.py
+      APEX_NEWS_PYTHON_CMD: python3
+      APEX_NEWS_SCRIPT_PATH: /app/scripts/market_data/sync_news.py
+      APEX_INDEX_PYTHON_CMD: python3
+      APEX_INDEX_SCRIPT_PATH: /app/scripts/market_data/sync_index.py
+      APEX_SECTOR_PYTHON_CMD: python3
+      APEX_SECTOR_SCRIPT_PATH: /app/scripts/market_data/sync_sector.py
+      APEX_SYNC_PYTHON_CMD: python3
+      APEX_SYNC_SCRIPT_DIR: /app/scripts/market_data
+    volumes:
+      - apex-output:/app/.mx_output
+      - apex-logs:/app/apex-be/logs
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/apex/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./apex-fe
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: /apex
+    image: apex-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${APEX_HTTP_PORT:-8088}:80"
+
+volumes:
+  apex-output:
+  apex-logs:

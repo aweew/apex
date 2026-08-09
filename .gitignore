@@ -25,6 +25,8 @@ logs/
 !**/.vscode/extensions.json
 
 # Env overrides (keep .env.development example values only if non-secret)
+/.env
+/.env.production
 **/.env.local
 **/.env.*.local
 scripts/market_data/.env
@@ -40,4 +42,3 @@ scripts/fix_*
 scripts/insert_*
 scripts/patch_*
 scripts/upgrade_*
-

@@ -3,6 +3,7 @@ import { nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
+import { buildApiUrl } from '../api/baseUrl'
 import {
   backtestStress,
   benchmarkCompare,
@@ -299,7 +300,7 @@ function renderOverlayChart(strategyEq, benchEq, stockEq, benchName) {
 
 function exportUrl() {
   if (!job.value?.id) return '#'
-  return `http://127.0.0.1:8080/apex/api/export/backtest/${job.value.id}`
+  return buildApiUrl(`/api/export/backtest/${job.value.id}`)
 }
 
 onMounted(loadJobs)

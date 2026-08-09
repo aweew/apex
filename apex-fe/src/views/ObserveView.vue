@@ -20,6 +20,7 @@ import {
   shareFilename,
 } from '../utils/shareCapture'
 import { buildObserveShareSheet, mountObserveShareSheet } from '../utils/observeShareSheet'
+import { buildApiUrl } from '../api/baseUrl'
 
 const router = useRouter()
 const route = useRoute()
@@ -664,7 +665,7 @@ onBeforeUnmount(() => {
         <button type="button" class="btn btn-ghost" @click="openCreate()">手动加</button>
         <a
           class="btn btn-text"
-          href="http://127.0.0.1:8080/apex/api/export/observe"
+          :href="buildApiUrl('/api/export/observe')"
           target="_blank"
           rel="noopener"
         >导出CSV</a>

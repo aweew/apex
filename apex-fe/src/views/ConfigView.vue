@@ -11,6 +11,7 @@ import {
   updateRiskRule,
 } from '../api/dashboard'
 import http from '../api/http'
+import { buildApiUrl } from '../api/baseUrl'
 
 const router = useRouter()
 const loading = ref(false)
@@ -245,13 +246,13 @@ onMounted(load)
     />
 
     <div class="exports">
-      <a :href="'http://127.0.0.1:8080/apex/api/export/decision'" target="_blank">导出决策 CSV</a>
-      <a :href="'http://127.0.0.1:8080/apex/api/export/observe'" target="_blank">导出观察池 CSV</a>
-      <a :href="'http://127.0.0.1:8080/apex/api/export/signals'" target="_blank">导出信号 CSV</a>
-      <a :href="'http://127.0.0.1:8080/apex/api/export/journal'" target="_blank">导出 journal CSV</a>
-      <a :href="'http://127.0.0.1:8080/apex/api/export/paper/orders'" target="_blank">导出模拟盘订单</a>
-      <a :href="'http://127.0.0.1:8080/apex/api/export/universe'" target="_blank">导出股票池 CSV</a>
-      <a :href="'http://127.0.0.1:8080/apex/api/export/watchlist'" target="_blank">导出自选 CSV</a>
+      <a :href="buildApiUrl('/api/export/decision')" target="_blank">导出决策 CSV</a>
+      <a :href="buildApiUrl('/api/export/observe')" target="_blank">导出观察池 CSV</a>
+      <a :href="buildApiUrl('/api/export/signals')" target="_blank">导出信号 CSV</a>
+      <a :href="buildApiUrl('/api/export/journal')" target="_blank">导出 journal CSV</a>
+      <a :href="buildApiUrl('/api/export/paper/orders')" target="_blank">导出模拟盘订单</a>
+      <a :href="buildApiUrl('/api/export/universe')" target="_blank">导出股票池 CSV</a>
+      <a :href="buildApiUrl('/api/export/watchlist')" target="_blank">导出自选 CSV</a>
       <span>回测导出：/api/export/backtest/{jobId}</span>
     </div>
   </div>

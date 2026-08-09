@@ -1,8 +1,8 @@
 import axios from 'axios'
+import { API_BASE } from './baseUrl'
 
 const http = axios.create({
-  // 开发环境直连后端，避免本机代理干扰 Vite proxy
-  baseURL: import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8080/apex',
+  baseURL: API_BASE,
   timeout: 60000,
 })
 

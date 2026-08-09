@@ -50,6 +50,9 @@ npm run dev
 # http://localhost:5173/
 ```
 
+NAS Docker 生产部署见 [`docs/NAS_DEPLOYMENT.md`](docs/NAS_DEPLOYMENT.md)。该方案
+使用 Nginx 托管前端并反向代理后端，复用 NAS 上已有的 MySQL。
+
 本地登录（可选）：用户 `admin` / 密码 `admin123`（可在 `application.yml` 的 `apex.local-*` 修改）。
 
 ## 推荐使用流
