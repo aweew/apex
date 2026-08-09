@@ -5,6 +5,7 @@ import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.LimitUpEffectResp;
 import com.awe.apex.quant.domain.dto.LimitUpLadderResp;
 import com.awe.apex.quant.domain.dto.LimitUpRefreshResp;
@@ -20,6 +21,7 @@ import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.util.ProcessIoUtils;
+import com.awe.apex.quant.util.PythonCommandResolver;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -68,6 +70,9 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
 
     @Resource
     private BarDailyMapper barDailyMapper;
+
+    @Resource
+    private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
 
     @Value("${apex.hot.python-cmd:python}")
     private String pythonCmd;
@@ -181,7 +186,7 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
             day = LocalDate.now();
         }
         List<String> command = new ArrayList<>();
-        command.add(pythonCmd);
+        command.add(PythonCommandResolver.resolve(pythonCmd));
         command.add("-u");
         command.add(script.toAbsolutePath().toString());
         command.add("--date");
@@ -731,6 +736,7 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
         log.info("执行涨停同步: {}", String.join(" ", command));
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true);
+        scriptDatabaseEnvironment.apply(pb.environment());
         Path script = Paths.get(command.get(2));
         if (Objects.nonNull(script.getParent())) {
             pb.directory(script.getParent().toFile());

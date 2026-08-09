@@ -2,12 +2,14 @@ package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.NewsItemResp;
 import com.awe.apex.quant.domain.dto.NewsOverviewResp;
 import com.awe.apex.quant.domain.dto.NewsRefreshResp;
 import com.awe.apex.quant.domain.entity.MarketNews;
 import com.awe.apex.quant.mapper.MarketNewsMapper;
 import com.awe.apex.quant.service.INewsService;
+import com.awe.apex.quant.util.PythonCommandResolver;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +44,9 @@ public class NewsServiceImpl implements INewsService {
 
     @Resource
     private MarketNewsMapper marketNewsMapper;
+
+    @Resource
+    private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
 
     @Value("${apex.news.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
@@ -145,7 +150,7 @@ public class NewsServiceImpl implements INewsService {
         String src = StringUtils.isNotBlank(sources) ? sources.trim() : "eastmoney,cls,ths,sina";
         int size = Objects.isNull(limit) || limit <= 0 ? 80 : Math.min(limit, 200);
         List<String> command = new ArrayList<>();
-        command.add(pythonCmd);
+        command.add(PythonCommandResolver.resolve(pythonCmd));
         command.add("-u");
         command.add(script.toAbsolutePath().toString());
         command.add("--sources");
@@ -159,6 +164,7 @@ public class NewsServiceImpl implements INewsService {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(script.getParent().toFile());
             pb.redirectErrorStream(true);
+            scriptDatabaseEnvironment.apply(pb.environment());
             Process process = pb.start();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), detectCharset()))) {

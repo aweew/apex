@@ -3,12 +3,14 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
 import com.awe.apex.quant.domain.dto.HotOverviewResp;
 import com.awe.apex.quant.domain.dto.HotRefreshResp;
 import com.awe.apex.quant.domain.entity.MarketHot;
 import com.awe.apex.quant.mapper.MarketHotMapper;
 import com.awe.apex.quant.service.IHotService;
+import com.awe.apex.quant.util.PythonCommandResolver;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +45,9 @@ public class HotServiceImpl implements IHotService {
 
     @Resource
     private MarketHotMapper marketHotMapper;
+
+    @Resource
+    private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
 
     @Value("${apex.hot.python-cmd:python}")
     private String pythonCmd;
@@ -111,7 +116,7 @@ public class HotServiceImpl implements IHotService {
         String src = StringUtils.isNotBlank(sources) ? sources.trim() : "eastmoney,xueqiu,baidu";
         int size = Objects.isNull(limit) || limit <= 0 ? 50 : Math.min(limit, 100);
         List<String> command = new ArrayList<>();
-        command.add(pythonCmd);
+        command.add(PythonCommandResolver.resolve(pythonCmd));
         command.add("-u");
         command.add(script.toAbsolutePath().toString());
         command.add("--sources");
@@ -125,6 +130,7 @@ public class HotServiceImpl implements IHotService {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(script.getParent().toFile());
             pb.redirectErrorStream(true);
+            scriptDatabaseEnvironment.apply(pb.environment());
             Process process = pb.start();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), detectCharset()))) {

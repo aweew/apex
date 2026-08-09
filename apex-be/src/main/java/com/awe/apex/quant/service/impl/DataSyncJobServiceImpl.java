@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.SyncJobResp;
 import com.awe.apex.quant.domain.dto.SyncOverviewResp;
@@ -20,6 +21,7 @@ import com.awe.apex.quant.sync.SyncTaskHealth;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
 import com.awe.apex.quant.sync.SyncTaskSpec;
 import com.awe.apex.quant.util.ProcessIoUtils;
+import com.awe.apex.quant.util.PythonCommandResolver;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -85,6 +87,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Resource
     private ObjectMapper objectMapper;
+
+    @Resource
+    private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
 
     @Value("${apex.sync.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
@@ -342,7 +347,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             return;
         }
         List<String> command = new ArrayList<>();
-        command.add(pythonCmd);
+        command.add(PythonCommandResolver.resolve(pythonCmd));
         command.add("-u");
         command.add(script.toAbsolutePath().toString());
         command.addAll(scriptArgs);
@@ -360,6 +365,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             pb.directory(script.getParent().toFile());
             pb.redirectErrorStream(true);
             Map<String, String> env = pb.environment();
+            scriptDatabaseEnvironment.apply(env);
             env.put("PYTHONUNBUFFERED", "1");
             env.put("PYTHONIOENCODING", "utf-8");
             env.put("PYTHONUTF8", "1");

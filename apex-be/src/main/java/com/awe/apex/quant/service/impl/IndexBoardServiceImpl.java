@@ -2,6 +2,7 @@ package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.IndexBoardResp;
 import com.awe.apex.quant.domain.dto.IndexQuoteItem;
 import com.awe.apex.quant.domain.dto.IndexRefreshResp;
@@ -10,6 +11,7 @@ import com.awe.apex.quant.mapper.IndexBarMapper;
 import com.awe.apex.quant.service.IIndexBoardService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.util.ProcessIoUtils;
+import com.awe.apex.quant.util.PythonCommandResolver;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +47,9 @@ public class IndexBoardServiceImpl implements IIndexBoardService {
 
     @Resource
     private IMarketBriefingService marketBriefingService;
+
+    @Resource
+    private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
 
     @Value("${apex.index.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
@@ -113,7 +118,7 @@ public class IndexBoardServiceImpl implements IIndexBoardService {
         }
         String begin = StringUtils.isNotBlank(start) ? start.trim() : "20180101";
         List<String> command = new ArrayList<>();
-        command.add(pythonCmd);
+        command.add(PythonCommandResolver.resolve(pythonCmd));
         command.add("-u");
         command.add(script.toAbsolutePath().toString());
         command.add("--start");
@@ -125,6 +130,7 @@ public class IndexBoardServiceImpl implements IIndexBoardService {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(script.getParent().toFile());
             pb.redirectErrorStream(true);
+            scriptDatabaseEnvironment.apply(pb.environment());
             Process process = pb.start();
             outputText = ProcessIoUtils.readAndDrain(process.getInputStream(), detectCharset(), 10000);
             boolean finished = ProcessIoUtils.waitOrKill(process, 600);

@@ -447,6 +447,10 @@ FETCHERS = {
 }
 
 
+def source_result_exit_code(success_count: int) -> int:
+    return 0 if success_count > 0 else 1
+
+
 def cleanup_old(conn, keep_days: int = 14) -> int:
     with conn.cursor() as cur:
         cur.execute(
@@ -506,7 +510,7 @@ def main() -> int:
             f"done sources_ok={ok} fail={fail} fetched={before} unique_title={len(all_rows)} "
             f"upsert={total} title_dup_soft_del={dup_removed} cleaned={cleaned} snapshot={snapshot_time}"
         )
-        return 0 if fail == 0 else 1
+        return source_result_exit_code(ok)
     finally:
         conn.close()
 

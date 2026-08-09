@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.dto.SectorBoardResp;
 import com.awe.apex.quant.domain.dto.SectorConstituentItem;
@@ -20,6 +21,7 @@ import com.awe.apex.quant.decision.MainlineBoardRules;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.util.ProcessIoUtils;
+import com.awe.apex.quant.util.PythonCommandResolver;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
@@ -72,6 +74,9 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
 
     @Resource
     private SectorBasicMapper sectorBasicMapper;
+
+    @Resource
+    private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
 
     @Value("${apex.sector.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
@@ -741,7 +746,7 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
             throw new BusinessException("未找到板块同步脚本 sync_sector.py，请配置 apex.sector.script-path");
         }
         List<String> command = new ArrayList<>();
-        command.add(pythonCmd);
+        command.add(PythonCommandResolver.resolve(pythonCmd));
         command.add("-u");
         command.add(script.toAbsolutePath().toString());
         if (CollUtil.isNotEmpty(args)) {
@@ -754,6 +759,7 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(script.getParent().toFile());
             pb.redirectErrorStream(true);
+            scriptDatabaseEnvironment.apply(pb.environment());
             Process process = pb.start();
             outputText = ProcessIoUtils.readAndDrain(process.getInputStream(), detectCharset(), 10000);
             boolean finished = ProcessIoUtils.waitOrKill(process, timeoutSec);
