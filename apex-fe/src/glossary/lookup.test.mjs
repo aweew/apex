@@ -42,6 +42,7 @@ test('extra terms are searchable', () => {
   assert.equal(findTerm('情绪周期')?.id, 'emotion_cycle')
   assert.equal(findTerm('安全边际')?.id, 'safety_margin')
   assert.equal(findTerm('智能决策')?.id, 'decision')
+  assert.equal(findTerm('筹码峰')?.id, 'chip_distribution')
 })
 
 test('glossary term ids are unique', () => {

@@ -14,7 +14,9 @@ import {
 import { syncBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
 import { aggregateBars, tdSequential } from '../utils/kline'
+import { analyzePriceStructure } from '../utils/priceStructure'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
+import ChipDistributionPanel from '../components/ChipDistributionPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -80,6 +82,9 @@ const intradayPoints = computed(() => intraday.value?.points || [])
 const showChartShell = computed(() => bars.value.length > 0 || isIntraday.value)
 const chartBars = computed(() =>
   isIntraday.value ? [] : aggregateBars(bars.value, klinePeriod.value),
+)
+const priceStructure = computed(() =>
+  analyzePriceStructure(bars.value, basic.value?.latestPrice),
 )
 const periodLabel = computed(() => {
   if (klinePeriod.value === 'intraday') return '分时'
@@ -851,6 +856,21 @@ async function renderChart(list) {
   resetZoomNext = false
   const extremeMarkPoint = buildVisibleExtremeMarkPoint(dates, highs, lows, zoomStart, zoomEnd)
   const priceExtent = calcVisiblePriceExtent(highs, lows, zoomStart, zoomEnd)
+  const structureMarkLines = []
+  if (priceStructure.value.ready && priceStructure.value.support) {
+    structureMarkLines.push({
+      yAxis: priceStructure.value.support.price,
+      label: { formatter: `支撑 ${fmtNum(priceStructure.value.support.price)}`, position: 'insideEndBottom', color: '#1f8f48', fontSize: 10 },
+      lineStyle: { color: 'rgba(52,199,89,0.88)', type: 'dashed', width: 1.2 },
+    })
+  }
+  if (priceStructure.value.ready && priceStructure.value.resistance) {
+    structureMarkLines.push({
+      yAxis: priceStructure.value.resistance.price,
+      label: { formatter: `压力 ${fmtNum(priceStructure.value.resistance.price)}`, position: 'insideEndTop', color: '#d92d20', fontSize: 10 },
+      lineStyle: { color: 'rgba(255,59,48,0.88)', type: 'dashed', width: 1.2 },
+    })
+  }
 
   chart.setOption({
     backgroundColor: 'transparent',
@@ -1144,6 +1164,11 @@ async function renderChart(list) {
         itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' },
         // 阶段高低钉在当日影线最高/最低
         markPoint: extremeMarkPoint,
+        markLine: {
+          silent: true,
+          symbol: 'none',
+          data: structureMarkLines,
+        },
       },
       {
         name: maLegend.MA5,
@@ -1801,6 +1826,18 @@ function dash(v) {
           v-if="(bars.length && !isIntraday) || (isIntraday && intradayPoints.length)"
           ref="chartRef"
           class="chart"
+        />
+        <ChipDistributionPanel
+          v-if="!isIntraday && priceStructure.ready"
+          :analysis="priceStructure"
+        />
+        <el-alert
+          v-else-if="!isIntraday && bars.length"
+          class="structure-insufficient"
+          type="info"
+          :closable="false"
+          show-icon
+          :title="`支撑压力与筹码分布至少需要 ${priceStructure.minimumSampleSize || 20} 根有效日线，当前 ${priceStructure.sampleSize || 0} 根`"
         />
       </el-tab-pane>
 
@@ -2555,6 +2592,10 @@ function dash(v) {
   border-radius: var(--radius);
   box-shadow: var(--shadow-soft);
   overflow: hidden;
+}
+
+.structure-insufficient {
+  margin-top: 14px;
 }
 
 .tabs {
