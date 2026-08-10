@@ -21,6 +21,12 @@ One integration issue was found and fixed: the generic static-asset regex in
 Nginx could take precedence over `/apex` for Swagger CSS/JS. The proxy location
 now uses `^~`, so all backend paths remain routed to Spring Boot.
 
+NAS runtime validation found a second deployment issue: the existing MySQL
+container is attached only to `mysql_default`, while the backend initially used
+only `apex_default` and attempted to reach the NAS Tailscale address. The
+backend now joins both networks and resolves MySQL through container DNS. The
+external network name remains configurable.
+
 No remaining critical or major findings were identified. The main residual
 risk is environmental: the local Docker daemon is stopped, so image builds and
 live container health could not be executed on this workstation.
@@ -32,5 +38,6 @@ live container health could not be executed on this workstation.
 - Backend Maven tests: 107 passed.
 - Backend Maven package: passed; executable JAR generated.
 - `docker compose ... config`: passed.
+- Rendered datasource host and external network assertions: passed.
 - `git diff --check`: passed.
 - Docker image build: not run because the Docker daemon is unavailable.

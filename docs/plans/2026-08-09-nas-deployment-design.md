@@ -12,8 +12,9 @@ backend and database remain private to the NAS or Docker network.
   proxy `/apex` to the backend service.
 - `backend`: build Spring Boot with Maven and Java 17; the runtime also contains
   Python 3, the market-data scripts, and their dependencies.
-- `mysql`: existing NAS service or container, configured through environment
-  variables. It is deliberately not managed by the production Compose file.
+- `mysql`: existing NAS container, reached by container DNS over its external
+  Docker network. It is deliberately not managed by the production Compose
+  file.
 
 Only the frontend publishes a host port. Browser API and export requests use
 the same-origin `/apex` prefix, avoiding CORS and client-side localhost URLs.
@@ -31,9 +32,8 @@ data stays in the existing MySQL deployment.
 
 - Do not use NAS management port `5000`; default application port is `8088`.
 - Do not publish backend `8080` or MySQL `3306` unless diagnostics require it.
-- If MySQL is a container, join its external Docker network and use its
-  container DNS name. Otherwise, use the NAS host address and grant access from
-  the Docker subnet.
+- Join the existing MySQL external Docker network and use its container DNS
+  name; both values remain configurable for different NAS installations.
 - Use a dedicated database user and replace default login/JWT credentials.
 
 ## Verification

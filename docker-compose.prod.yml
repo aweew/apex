@@ -33,6 +33,9 @@ services:
     volumes:
       - apex-output:/app/.mx_output
       - apex-logs:/app/apex-be/logs
+    networks:
+      - default
+      - mysql
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/apex/api/health"]
       interval: 15s
@@ -57,3 +60,9 @@ services:
 volumes:
   apex-output:
   apex-logs:
+
+networks:
+  default:
+  mysql:
+    external: true
+    name: ${MYSQL_DOCKER_NETWORK:-mysql_default}

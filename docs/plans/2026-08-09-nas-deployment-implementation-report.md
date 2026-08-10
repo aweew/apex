@@ -5,6 +5,8 @@
 - Multi-stage Java 17/Python backend image.
 - Node 20/Nginx frontend image with `/apex` reverse proxy.
 - Production Compose that reuses the NAS MySQL and exposes port `8088` only.
+- Direct container networking to the existing MySQL network, avoiding NAS
+  Tailscale hairpin routing.
 - Secret-free production environment template and ignored local environment.
 - Persistent output and log volumes plus backend health-gated frontend startup.
 - Shared frontend API URL builder and removal of client-side localhost export

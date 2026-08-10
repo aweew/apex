@@ -25,9 +25,17 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
 FLUSH PRIVILEGES;
 ```
 
-如果 MySQL 是 NAS 上的 Docker 容器，需要确认它已发布 `3306`，或者把 Apex
-后端加入该容器所在网络并将 `MYSQL_HOST` 改成 MySQL 容器名。如果 MySQL 是 NAS
-套件，则确认它监听 NAS/Docker 可访问的地址，并允许 Docker 网段登录。
+默认配置按照 MySQL Docker 容器部署：数据库容器名为 `mysql`，Docker 网络名为
+`mysql_default`。生产 Compose 会让后端同时加入 Apex 网络和这个外部数据库网络，
+数据库无需向 Apex 发布宿主机端口。可通过下面的命令确认实际名称：
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Networks}}'
+```
+
+如果名称不同，在 `.env.production` 中修改 `MYSQL_HOST` 和
+`MYSQL_DOCKER_NETWORK`。如果 MySQL 是 NAS 套件而非容器，则需要移除 Compose
+中的外部 `mysql` 网络，并将 `MYSQL_HOST` 设置为容器可访问的 NAS 地址。
 
 首次部署或升级前先备份 `apex` 数据库。数据库不在本项目的生产 Compose 生命周期
 内，执行 `docker compose down` 不会删除数据库。
@@ -62,7 +70,8 @@ chmod 600 .env.production
 编辑 `.env.production`，至少替换以下字段：
 
 ```dotenv
-MYSQL_HOST=100.71.129.75
+MYSQL_HOST=mysql
+MYSQL_DOCKER_NETWORK=mysql_default
 MYSQL_USER=apex_app
 MYSQL_PASSWORD=数据库强密码
 APEX_LOCAL_PASSWORD=应用登录强密码
@@ -145,8 +154,16 @@ docker compose --env-file .env.production -f docker-compose.prod.yml down
 
 ### 后端一直 unhealthy
 
-先检查后端日志。常见原因是 MySQL 没有监听 Docker 可访问的地址、账号只允许
-`localhost` 登录、NAS 防火墙拦截 Docker 网段，或者数据库字符集/表结构尚未升级。
+先检查后端日志和网络。确认后端与 MySQL 共享 `mysql_default`，并且容器内能解析
+数据库名：
+
+```bash
+docker inspect apex-backend-1 --format '{{json .NetworkSettings.Networks}}'
+docker exec apex-backend-1 getent hosts mysql
+```
+
+其他常见原因是数据库账号只允许 `localhost` 登录、密码错误，或者数据库字符集/
+表结构尚未升级。
 
 ### 页面能打开但接口返回 502
 
