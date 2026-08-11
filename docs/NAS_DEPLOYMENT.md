@@ -78,6 +78,9 @@ APEX_LOCAL_PASSWORD=应用登录强密码
 APEX_JWT_SECRET=至少32位随机字符串
 ```
 
+`MYSQL_DOCKER_NETWORK` 可省略，默认使用 `mysql_default`。只有 MySQL 容器所在
+网络名称不同时才需要配置该项。
+
 可使用下面的命令生成 JWT 密钥：
 
 ```bash
@@ -89,11 +92,48 @@ openssl rand -hex 32
 
 ## 4. 构建和启动
 
+部署脚本只读取已有的 `.env.production`，不会从模板复制，也不会创建或覆盖生产
+配置。完成首次配置后执行：
+
 ```bash
-docker compose \
-  --env-file .env.production \
-  -f docker-compose.prod.yml \
-  up -d --build
+sh scripts/deploy-nas.sh
+```
+
+默认会先执行 `git pull --ff-only` 拉取最新代码，再构建、启动并验证服务。
+
+按服务部署：
+
+```bash
+sh scripts/deploy-nas.sh --be  # 只部署后端
+sh scripts/deploy-nas.sh --fe  # 只部署前端
+```
+
+单服务部署使用 Compose 的 `--no-deps`，不会连带重建或重启另一个服务。无参数时
+仍会部署前后端全部服务。
+
+脚本也支持复制到仓库根目录后执行 `./deploy-nas.sh`，会自动识别同级的生产
+Compose 文件。
+
+脚本会依次检查 Docker、Compose、生产配置和 MySQL Docker 网络，构建并启动容器，
+等待后端健康检查，然后从 NAS 宿主机验证 `127.0.0.1:8088`。失败时会自动输出
+前后端最近 120 行日志，不会停止数据库或删除任何数据卷。
+
+只检查配置，不启动容器：
+
+```bash
+sh scripts/deploy-nas.sh --check
+```
+
+也可以继续使用兼容参数执行同样的更新部署：
+
+```bash
+sh scripts/deploy-nas.sh --update
+```
+
+手工启动命令保留用于排障：
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 ```
 
 首次构建会下载 Maven、npm、Java、Python 和行情依赖，耗时取决于 NAS 性能和
@@ -131,8 +171,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml logs -f
 拉取代码并升级：
 
 ```bash
-git pull --ff-only
-docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+sh scripts/deploy-nas.sh --update
 ```
 
 只重启应用：

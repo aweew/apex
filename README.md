@@ -53,6 +53,14 @@ npm run dev
 NAS Docker 生产部署见 [`docs/NAS_DEPLOYMENT.md`](docs/NAS_DEPLOYMENT.md)。该方案
 使用 Nginx 托管前端并反向代理后端，复用 NAS 上已有的 MySQL。
 
+```bash
+sh scripts/deploy-nas.sh       # 部署前后端
+sh scripts/deploy-nas.sh --be  # 只部署后端
+sh scripts/deploy-nas.sh --fe  # 只部署前端
+```
+
+脚本默认先拉取最新代码，再构建、启动并验证服务。
+
 本地登录（可选）：用户 `admin` / 密码 `admin123`（可在 `application.yml` 的 `apex.local-*` 修改）。
 
 ## 推荐使用流
