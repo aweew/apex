@@ -1,19 +1,24 @@
 <script setup>
-import { nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
-import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { searchStock } from './api/stock'
 import http from './api/http'
 import GlossaryPanel from './components/GlossaryPanel.vue'
 import { BRAND } from './brand/identity.js'
 
 const router = useRouter()
+const route = useRoute()
 const healthOk = ref(null)
 const searchOpen = ref(false)
+const mobileMenuOpen = ref(false)
 const query = ref('')
 const loading = ref(false)
 const results = ref([])
 const inputRef = ref(null)
 const glossaryRef = ref(null)
+const mobileMenuRef = ref(null)
+const mobileMenuButtonRef = ref(null)
+const mobileMenuCloseRef = ref(null)
 /** 终端紧凑密度：缩小表格与页边距 */
 const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 let healthTimer
@@ -23,6 +28,14 @@ let debounceTimer
 function toggleDense() {
   denseMode.value = !denseMode.value
   localStorage.setItem('apex.ui.dense', denseMode.value ? '1' : '0')
+}
+
+function setMobileMenu(open) {
+  mobileMenuOpen.value = open
+}
+
+function closeMobileMenuOnDesktop() {
+  if (window.innerWidth > 900 && mobileMenuOpen.value) setMobileMenu(false)
 }
 
 /** 对齐终端工作流：看板→研判→交易→市场→工具 */
@@ -113,6 +126,7 @@ function markHtml(text, keyword) {
 }
 
 async function openSearch() {
+  setMobileMenu(false)
   searchOpen.value = true
   loadRecentStocks()
   await nextTick()
@@ -200,6 +214,11 @@ function onEnter() {
 }
 
 function onGlobalKeydown(e) {
+  if (e.key === 'Escape' && mobileMenuOpen.value) {
+    e.preventDefault()
+    setMobileMenu(false)
+    return
+  }
   if (e.key === 'Escape' && searchOpen.value) {
     e.preventDefault()
     closeSearch()
@@ -229,21 +248,42 @@ function onGlobalKeydown(e) {
   }
 }
 
+watch(
+  () => route.fullPath,
+  () => setMobileMenu(false),
+)
+
+watch(mobileMenuOpen, async (open) => {
+  document.documentElement.classList.toggle('mobile-menu-open', open)
+  await nextTick()
+  if (open) {
+    const activeLink = mobileMenuRef.value?.querySelector?.('.router-link-active')
+    activeLink?.scrollIntoView?.({ block: 'center' })
+    if (activeLink) activeLink.focus()
+    else mobileMenuCloseRef.value?.focus?.()
+    return
+  }
+  mobileMenuButtonRef.value?.focus?.()
+})
+
 onMounted(() => {
   pingHealth()
   healthTimer = setInterval(pingHealth, 30000)
   window.addEventListener('keydown', onGlobalKeydown)
+  window.addEventListener('resize', closeMobileMenuOnDesktop)
 })
 onBeforeUnmount(() => {
   if (healthTimer) clearInterval(healthTimer)
   clearTimeout(debounceTimer)
   window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('resize', closeMobileMenuOnDesktop)
+  document.documentElement.classList.remove('mobile-menu-open')
 })
 </script>
 
 <template>
   <div class="shell" :class="{ dense: denseMode }">
-    <nav class="nav">
+    <nav class="nav" aria-label="主导航">
       <div class="brand-block" :title="BRAND.slogan">
         <img class="brand-logo" :src="BRAND.assets.mark" :alt="`${BRAND.nameZh} ${BRAND.nameEn}`" />
         <div class="brand-text">
@@ -252,13 +292,81 @@ onBeforeUnmount(() => {
         </div>
         <span class="tagline">{{ BRAND.taglineShort }}</span>
       </div>
-      <div class="links">
+      <div class="mobile-top-actions">
+        <button type="button" class="nav-icon-btn" aria-label="搜索股票" title="搜索股票" @click="openSearch">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.2-3.2" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button
+          ref="mobileMenuButtonRef"
+          type="button"
+          class="nav-icon-btn menu-toggle"
+          aria-label="打开菜单"
+          aria-controls="mobile-navigation"
+          :aria-expanded="mobileMenuOpen"
+          @click="setMobileMenu(true)"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <button
+        v-if="mobileMenuOpen"
+        type="button"
+        class="nav-scrim"
+        aria-label="关闭菜单"
+        @click="setMobileMenu(false)"
+      />
+      <div
+        id="mobile-navigation"
+        ref="mobileMenuRef"
+        class="links"
+        :class="{ open: mobileMenuOpen }"
+        aria-label="移动端功能菜单"
+      >
+        <div class="mobile-menu-head">
+          <div>
+            <strong>功能菜单</strong>
+            <span>快速进入投研工作区</span>
+          </div>
+          <button
+            ref="mobileMenuCloseRef"
+            type="button"
+            class="nav-icon-btn"
+            aria-label="关闭菜单"
+            @click="setMobileMenu(false)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
         <div v-for="group in navGroups" :key="group.label" class="nav-group">
           <span class="group-label">{{ group.label }}</span>
-          <RouterLink v-for="item in group.items" :key="item.to" :to="item.to">{{ item.label }}</RouterLink>
+          <div class="nav-group-links">
+            <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" @click="setMobileMenu(false)">
+              {{ item.label }}
+              <svg class="mobile-link-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </RouterLink>
+          </div>
+        </div>
+        <div class="mobile-menu-actions">
+          <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
+            <i class="dot" />
+            {{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '检测中…' }}
+          </span>
+          <button type="button" class="mobile-action-btn" :class="{ on: denseMode }" @click="toggleDense">
+            <span>{{ denseMode ? '紧凑密度' : '舒适密度' }}</span>
+          </button>
+          <button type="button" class="mobile-action-btn" @click="openGlossary(); setMobileMenu(false)">名词百科</button>
         </div>
       </div>
-      <div class="nav-actions">
+      <div class="nav-actions desktop-nav-actions">
         <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
           <i class="dot" />
           {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
@@ -346,7 +454,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <main class="main">
+    <main class="main" :inert="mobileMenuOpen" :aria-hidden="mobileMenuOpen ? 'true' : undefined">
       <RouterView />
     </main>
   </div>
@@ -382,6 +490,37 @@ onBeforeUnmount(() => {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
   user-select: none;
   -webkit-user-select: none;
+}
+
+.mobile-top-actions,
+.mobile-menu-head,
+.mobile-menu-actions,
+.mobile-link-arrow,
+.nav-scrim {
+  display: none;
+}
+
+.nav-icon-btn {
+  width: 44px;
+  height: 44px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-icon-btn svg,
+.mobile-link-arrow {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .brand-block {
@@ -513,6 +652,10 @@ onBeforeUnmount(() => {
   padding-right: 6px;
   margin-right: 4px;
   border-right: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.nav-group-links {
+  display: contents;
 }
 
 .nav-group:last-child {
@@ -751,35 +894,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1100px) {
-  .nav {
-    flex-wrap: wrap;
-    padding: 8px 14px;
-    row-gap: 6px;
-  }
-
-  .links {
-    flex: 1 1 100%;
-    order: 3;
-    flex-wrap: wrap;
-    overflow-x: visible;
-    row-gap: 4px;
-    column-gap: 2px;
-  }
-
-  .nav-group {
-    border-right: 0;
-    margin-right: 0;
-    padding-right: 0;
-  }
-
-  .group-label {
-    padding-left: 2px;
-  }
-
-  .health {
-    display: none;
-  }
-
   .search-btn span {
     display: none;
   }
@@ -791,14 +905,200 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 720px) {
-  .group-label {
+@media (max-width: 900px) {
+  .nav,
+  .shell.dense .nav {
+    min-height: calc(56px + env(safe-area-inset-top));
+    height: calc(56px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 10px 0 14px;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .brand-block {
+    max-width: calc(100% - 104px);
+  }
+
+  .brand-logo {
+    width: 30px;
+    height: 30px;
+  }
+
+  .brand {
+    font-size: 16px;
+  }
+
+  .mobile-top-actions {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .desktop-nav-actions {
     display: none;
   }
 
-  .links a {
-    padding: 5px 8px;
+  .nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 101;
+    padding: 0;
+    border: 0;
+    background: rgba(15, 23, 42, 0.46);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
+  .links {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 102;
+    width: min(86vw, 360px);
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: env(safe-area-inset-top) 12px calc(16px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: rgba(250, 250, 252, 0.96);
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 18px 0 54px rgba(15, 23, 42, 0.16);
+    transform: translateX(-104%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0.22s step-end;
+  }
+
+  .links.open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.22s ease, visibility 0s step-start;
+  }
+
+  .mobile-menu-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 64px;
+    padding: 6px 2px 8px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .mobile-menu-head > div {
+    display: grid;
+    gap: 3px;
+  }
+
+  .mobile-menu-head strong {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .mobile-menu-head span {
     font-size: 12px;
+    color: var(--muted);
+  }
+
+  .nav-group {
+    display: block;
+    padding: 14px 4px 12px;
+    margin: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .group-label {
+    display: block;
+    padding: 0 8px 7px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .nav-group-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .links a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .links a.router-link-active {
+    font-weight: 650;
+  }
+
+  .mobile-link-arrow {
+    display: block;
+    width: 16px;
+    height: 16px;
+    color: var(--muted);
+  }
+
+  .mobile-menu-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 14px 4px 0;
+  }
+
+  .mobile-menu-actions .health {
+    grid-column: 1 / -1;
+    justify-content: center;
+    min-height: 36px;
+  }
+
+  .mobile-action-btn {
+    min-height: 44px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 13px;
+  }
+
+  .mobile-action-btn.on {
+    color: var(--accent);
+    border-color: rgba(0, 113, 227, 0.28);
+    background: var(--accent-soft);
+  }
+
+  .main {
+    min-width: 0;
+  }
+
+  .search-close {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 8px;
+  }
+
+  .search-head {
+    padding: 8px 10px;
+  }
+
+  .search-item {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 380px) {
+  .brand-en,
+  .tagline {
+    display: none;
   }
 }
 </style>

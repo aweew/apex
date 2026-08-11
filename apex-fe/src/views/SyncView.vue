@@ -715,11 +715,26 @@ span.health-unknown {
 
 @media (max-width: 1100px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .layout > *,
+  .side {
+    min-width: 0;
   }
 
   .side {
     position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .task-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .custom-form > * {
+    width: 100% !important;
   }
 }
 </style>

@@ -1628,6 +1628,29 @@ onBeforeUnmount(() => {
     align-items: flex-start;
   }
 }
+
+@media (max-width: 560px) {
+  .action-panel {
+    padding: 14px 10px 10px;
+  }
+
+  .metric-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .metric-row .metric {
+    min-width: 0;
+    padding: 8px 4px;
+    text-align: center;
+  }
+
+  .metric-row .metric b {
+    font-size: 18px;
+  }
+}
 </style>
 
 <style>
