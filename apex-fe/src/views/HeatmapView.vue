@@ -14,6 +14,7 @@ import {
 } from '../utils/shareCapture'
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
+import { snapshotStamp } from '../utils/snapshotDate'
 
 const props = defineProps({
   /** 嵌入行情页时为 true，不展示独立页头 */
@@ -495,7 +496,7 @@ async function onDownloadShare() {
   downloading.value = true
   try {
     const blob = await captureHeatmapShare()
-    const stamp = data.value?.tradeDate || new Date().toISOString().slice(0, 10)
+    const stamp = snapshotStamp(data.value) || 'date-unknown'
     downloadBlob(blob, shareFilename('apex_heatmap', `${boardType.value}_${stamp}`))
     ElMessage.success('已下载分享图')
   } catch (e) {

@@ -675,8 +675,12 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
 
     private LocalDate resolveTradeDate(String tradeDate, List<LocalDate> available) {
         LocalDate parsed = parseDateOrNull(tradeDate);
-        if (Objects.nonNull(parsed)) {
-            return parsed;
+        if (Objects.nonNull(parsed) && CollUtil.isNotEmpty(available)) {
+            for (LocalDate availableDate : available) {
+                if (!availableDate.isAfter(parsed)) {
+                    return availableDate;
+                }
+            }
         }
         if (CollUtil.isNotEmpty(available)) {
             return available.get(0);

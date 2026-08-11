@@ -24,6 +24,7 @@ import {
 } from '../utils/shareCapture.js'
 import { preloadBrandAssets } from '../brand/identity.js'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
+import { snapshotStamp } from '../utils/snapshotDate.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -357,9 +358,11 @@ function revokeSharePreview() {
 }
 
 async function captureDecisionShare() {
+  const titleDate = snapshotStamp(data.value, 'actionDate')
+  if (!titleDate) throw new Error('决策日期缺失，请刷新后再分享')
   await preloadBrandAssets(['markShare'])
   const sheet = buildDecisionShareSheet({
-    titleDate: data.value?.actionDate || new Date().toISOString().slice(0, 10),
+    titleDate,
     groupName: data.value?.groupName || DEFAULT_GROUP,
     stance: briefing.value?.stance || '均衡',
     stanceScore: briefing.value?.stanceScore,
@@ -432,7 +435,7 @@ async function onDownloadShare() {
   downloading.value = true
   try {
     const blob = await captureDecisionShare()
-    const stamp = data.value?.actionDate || new Date().toISOString().slice(0, 10)
+    const stamp = snapshotStamp(data.value, 'actionDate') || 'date-unknown'
     downloadBlob(blob, shareFilename('apex_decision', stamp))
     ElMessage.success('已下载分享图')
   } catch (e) {

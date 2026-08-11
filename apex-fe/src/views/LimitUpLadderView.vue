@@ -14,6 +14,7 @@ import {
   shareFilename,
 } from '../utils/shareCapture'
 import { buildLimitUpShareSheet, mountShareSheet, LIMIT_UP_SHARE_WIDTH } from '../utils/limitUpShareSheet'
+import { snapshotFallbackText, snapshotStamp } from '../utils/snapshotDate'
 
 const router = useRouter()
 const tradeDateStore = useTradeDateStore()
@@ -29,6 +30,7 @@ const sharePreviewUrl = ref('')
 const shareMode = ref('desktop')
 const sharePreviewWidth = ref(LIMIT_UP_SHARE_WIDTH.desktop)
 const data = ref(null)
+const snapshotNotice = ref('')
 const availableDateSet = ref(new Set())
 const activeTheme = ref('')
 const boardRef = ref(null)
@@ -41,7 +43,7 @@ const themes = computed(() => data.value?.themes || [])
 const tiers = computed(() => data.value?.tiers || [])
 const effect = computed(() => data.value?.effect || null)
 const titleDate = computed(() => {
-  const d = data.value?.tradeDate || tradeDate.value
+  const d = snapshotStamp(data.value)
   if (!d) return ''
   const s = String(d).slice(0, 10)
   const [y, m, day] = s.split('-')
@@ -203,9 +205,12 @@ function pctClass(v) {
 
 async function load() {
   loading.value = true
+  const requestedDate = tradeDate.value
   try {
-    const res = await fetchLimitUpLadder(tradeDate.value || undefined)
+    const res = await fetchLimitUpLadder(requestedDate || undefined)
     data.value = res.data
+    const actualDate = snapshotStamp(res.data)
+    snapshotNotice.value = snapshotFallbackText(requestedDate, actualDate)
     syncAvailableDates(res.data?.availableDates)
     if (res.data?.tradeDate) {
       const next = String(res.data.tradeDate).slice(0, 10)
@@ -255,8 +260,10 @@ async function onRefresh() {
       ElMessage.success('涨停池已通过同步中心刷新')
     } catch (e) {
       if (syncPollCancelled || e?.message === '已取消') return
-      const res = await refreshLimitUpLadder(tradeDate.value || undefined)
+      const requestedDate = tradeDate.value
+      const res = await refreshLimitUpLadder(requestedDate || undefined)
       data.value = res.data?.ladder || data.value
+      snapshotNotice.value = snapshotFallbackText(requestedDate, snapshotStamp(data.value))
       syncAvailableDates(data.value?.availableDates)
       if (data.value?.tradeDate) {
         tradeDateStore.setTradeDate(data.value.tradeDate)
@@ -289,7 +296,7 @@ async function captureBoard(mode = shareMode.value) {
   const width = LIMIT_UP_SHARE_WIDTH[layout]
   const sheet = buildLimitUpShareSheet({
     titleDate: titleDate.value,
-    tradeDate: String(data.value?.tradeDate || tradeDate.value || '').slice(0, 10),
+    tradeDate: snapshotStamp(data.value),
     activeTheme: activeTheme.value,
     themes: themes.value,
     tiers: filteredTiers.value,
@@ -407,7 +414,7 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">灵枢 · Limit-Up</p>
         <h1>连板天梯</h1>
-        <p>{{ data?.message || '连板天梯 · 东财涨停池 · 情绪与接力参考' }}</p>
+        <p>{{ snapshotNotice || data?.message || '连板天梯 · 东财涨停池 · 情绪与接力参考' }}</p>
       </div>
       <div class="actions">
         <el-date-picker
@@ -448,7 +455,7 @@ onBeforeUnmount(() => {
     <div ref="boardRef" class="ladder-board">
       <section class="hero">
         <div class="hero-top">
-          <h2>{{ titleDate }} A股 连板天梯</h2>
+          <h2>{{ titleDate ? `${titleDate} A股 连板天梯` : 'A股 连板天梯' }}</h2>
           <div class="hero-actions">
             <span class="hero-count">{{ totalShown }} 家{{ activeTheme ? ` · ${activeTheme}` : '' }}</span>
           </div>
@@ -568,7 +575,7 @@ onBeforeUnmount(() => {
 
       <footer class="board-foot">
         <span>灵枢 · 连板天梯</span>
-        <span>{{ data?.tradeDate || tradeDate || '' }} · 仅供研究</span>
+        <span>{{ snapshotStamp(data) || '日期待同步' }} · 仅供研究</span>
       </footer>
     </div>
 

@@ -14,6 +14,7 @@ import {
 import { saveObserve } from '../api/observe'
 import { getSyncJob, startSyncJob } from '../api/sync'
 import { useTradeDateStore } from '../stores/tradeDate'
+import { snapshotFallbackText, snapshotStamp } from '../utils/snapshotDate'
 
 const router = useRouter()
 const route = useRoute()
@@ -25,6 +26,7 @@ const activeTab = ref('INDUSTRY')
 const sortBy = ref('pctChg')
 const order = ref('desc')
 const board = ref(null)
+const snapshotNotice = ref('')
 const mainline = ref([])
 const rotation = ref(null)
 const rotationLoading = ref(false)
@@ -128,15 +130,18 @@ async function loadRotation() {
 
 async function load() {
   loading.value = true
+  const requestedDate = tradeDate.value
   try {
     const res = await fetchSectorBoard({
       type: activeTab.value,
       sortBy: sortBy.value,
       order: order.value,
       limit: 200,
-      tradeDate: tradeDate.value || undefined,
+      tradeDate: requestedDate || undefined,
     })
     board.value = res.data
+    const actualDate = snapshotStamp(res.data)
+    snapshotNotice.value = snapshotFallbackText(requestedDate, actualDate)
     syncAvailableDates(res.data?.availableDates)
     if (res.data?.tradeDate) {
       const next = String(res.data.tradeDate).slice(0, 10)
@@ -148,7 +153,7 @@ async function load() {
         })
       }
     }
-    await loadMainline(tradeDate.value || res.data?.tradeDate)
+    await loadMainline(actualDate || undefined)
     await loadRotation()
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
@@ -234,7 +239,7 @@ async function loadConstituents() {
       type: activeTab.value,
       sortBy: drawerSortBy.value,
       order: drawerOrder.value,
-      tradeDate: tradeDate.value || undefined,
+      tradeDate: snapshotStamp(board.value) || undefined,
     })
     constituents.value = res.data
     return res.data
@@ -338,7 +343,7 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">灵枢 · Sector</p>
         <h1>板块行情</h1>
-        <p>主线强弱 · 涨停家数 · 联动决策候选</p>
+        <p>{{ snapshotNotice || board?.message || '主线强弱 · 涨停家数 · 联动决策候选' }}</p>
       </div>
       <div class="actions">
         <el-date-picker

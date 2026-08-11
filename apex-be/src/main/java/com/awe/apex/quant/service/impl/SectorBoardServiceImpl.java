@@ -671,7 +671,14 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
 
     private LocalDate resolveTradeDate(String tradeDate, List<LocalDate> availableDates, LocalDate latest) {
         LocalDate parsed = parseTradeDate(tradeDate);
-        if (Objects.nonNull(parsed)) {
+        if (Objects.nonNull(parsed) && CollUtil.isNotEmpty(availableDates)) {
+            for (LocalDate availableDate : availableDates) {
+                if (!availableDate.isAfter(parsed)) {
+                    return availableDate;
+                }
+            }
+        }
+        if (Objects.nonNull(parsed) && CollUtil.isEmpty(availableDates)) {
             return parsed;
         }
         if (CollUtil.isNotEmpty(availableDates)) {

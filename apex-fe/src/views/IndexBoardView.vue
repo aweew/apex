@@ -23,6 +23,7 @@ import {
 import HeatmapView from './HeatmapView.vue'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { formatVolumeChangeText } from '../utils/marketVolume.js'
+import { snapshotStamp } from '../utils/snapshotDate.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -34,6 +35,8 @@ const briefing = ref(null)
 const marketBoard = ref(null)
 const industryRows = ref([])
 const conceptRows = ref([])
+const industryTradeDate = ref('')
+const conceptTradeDate = ref('')
 const lastLog = ref('')
 const activeCode = ref('')
 const detailBars = ref([])
@@ -219,6 +222,8 @@ async function load(forceBriefing = false) {
     marketBoard.value = board.data
     industryRows.value = Array.isArray(industry.data?.items) ? industry.data.items : []
     conceptRows.value = Array.isArray(concept.data?.items) ? concept.data.items : []
+    industryTradeDate.value = snapshotStamp(industry.data)
+    conceptTradeDate.value = snapshotStamp(concept.data)
 
     if (!activeCode.value) {
       const first = heroIndexes.value.find((i) => i.code) || cnIndexes.value[0]
@@ -370,7 +375,10 @@ function revokeSharePreview() {
 }
 
 async function captureMarketShare() {
-  const titleDate = briefing.value?.asOf || new Date().toISOString().slice(0, 10)
+  const titleDate = snapshotStamp(briefing.value, 'asOf')
+  if (!titleDate) throw new Error('市场快照日期缺失，请刷新后再分享')
+  const shareIndustryRows = industryTradeDate.value === titleDate ? industryRows.value : []
+  const shareConceptRows = conceptTradeDate.value === titleDate ? conceptRows.value : []
   const sheet = buildMarketShareSheet({
     titleDate,
     message: briefing.value?.message || '沪深市场总览 · 赚钱效应 · 板块热力',
@@ -388,11 +396,11 @@ async function captureMarketShare() {
     indexes: heroIndexes.value,
     effectMetrics: effectMetrics.value,
     hint: effect.value?.hint || '',
-    industries: industryRows.value.map((row) => ({
+    industries: shareIndustryRows.map((row) => ({
       name: row.name,
       pctChg: row.pctChg ?? row.avgPctChg,
     })),
-    concepts: conceptRows.value.map((row) => ({
+    concepts: shareConceptRows.map((row) => ({
       name: row.name,
       pctChg: row.pctChg ?? row.avgPctChg,
     })),
@@ -458,7 +466,7 @@ async function onDownloadShare() {
   downloading.value = true
   try {
     const blob = await captureMarketShare()
-    const date = briefing.value?.asOf || new Date().toISOString().slice(0, 10)
+    const date = snapshotStamp(briefing.value, 'asOf') || 'date-unknown'
     downloadBlob(blob, shareFilename('apex_market', date))
     ElMessage.success('已下载分享图')
   } catch (e) {
@@ -660,7 +668,7 @@ onBeforeUnmount(() => {
         <aside class="side-panels">
           <section class="side-card">
             <div class="panel-head">
-              <h2>行业涨幅</h2>
+              <h2>行业涨幅 <small v-if="industryTradeDate">{{ industryTradeDate }}</small></h2>
               <button type="button" class="link" @click="router.push('/sector')">更多</button>
             </div>
             <ul v-if="industryRows.length" class="rank-list">
@@ -675,7 +683,7 @@ onBeforeUnmount(() => {
 
           <section class="side-card">
             <div class="panel-head">
-              <h2>概念涨幅</h2>
+              <h2>概念涨幅 <small v-if="conceptTradeDate">{{ conceptTradeDate }}</small></h2>
               <button type="button" class="link" @click="router.push({ path: '/sector', query: { type: 'CONCEPT' } })">更多</button>
             </div>
             <ul v-if="conceptRows.length" class="rank-list">
@@ -1178,6 +1186,14 @@ onBeforeUnmount(() => {
   font-size: 14px;
   font-weight: 700;
   color: var(--mc-ink);
+}
+
+.panel-head h2 small {
+  margin-left: 5px;
+  color: var(--mc-muted);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .link {
