@@ -30,7 +30,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -54,6 +54,7 @@ public class SignalServiceImpl implements ISignalService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int LOOKBACK_DAYS = 400;
+    private static final int BAR_QUERY_BATCH_SIZE = 40;
 
     @Resource
     private List<Strategy> strategies;
@@ -73,6 +74,9 @@ public class SignalServiceImpl implements ISignalService {
     @Resource
     private IUniverseService universeService;
 
+    @Resource
+    private TransactionTemplate transactionTemplate;
+
     /**
      * 运行信号
      *
@@ -80,48 +84,53 @@ public class SignalServiceImpl implements ISignalService {
      * @return 信号列表
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public List<StrategySignalEntity> run(SignalRunReq req) {
         List<String> codes = resolveCodes(req);
         if (CollUtil.isEmpty(codes)) {
             throw new BusinessException("无可用股票代码");
         }
         List<Strategy> selected = selectStrategies(req.getStrategyIds());
-        Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(codes, req.getAsOfDate());
         List<StrategySignalEntity> saved = new ArrayList<>();
         // 按 code|side 各留最高分，避免卖出分更高时把买入机会挤掉
         Map<String, StrategySignalEntity> bestByCodeSide = new HashMap<>();
 
-        for (String code : codes) {
-            List<BarDaily> bars = barsByCode.get(code);
-            if (Objects.isNull(bars) || bars.size() < 60) {
-                continue;
-            }
-            BarSeries series = BarSeries.from(bars);
-            for (Strategy strategy : selected) {
-                StrategySignalResult result = strategy.evaluate(code, series);
-                if (Objects.isNull(result)) {
+        // 全市场扫描逐批完成查询与评估，避免百万级日线实体同时驻留 JVM 堆。
+        for (int start = 0; start < codes.size(); start += BAR_QUERY_BATCH_SIZE) {
+            List<String> codeBatch = codes.subList(start, Math.min(start + BAR_QUERY_BATCH_SIZE, codes.size()));
+            Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(codeBatch, req.getAsOfDate());
+            for (String code : codeBatch) {
+                List<BarDaily> bars = barsByCode.get(code);
+                if (Objects.isNull(bars) || bars.size() < 60) {
                     continue;
                 }
-                StrategySignalEntity entity = toEntity(result);
-                String side = StringUtils.isNotBlank(entity.getSide()) ? entity.getSide().toUpperCase() : "NA";
-                String key = code + "|" + side;
-                StrategySignalEntity existBest = bestByCodeSide.get(key);
-                if (Objects.isNull(existBest) || entity.getScore().compareTo(existBest.getScore()) > 0) {
-                    bestByCodeSide.put(key, entity);
+                BarSeries series = BarSeries.from(bars);
+                for (Strategy strategy : selected) {
+                    StrategySignalResult result = strategy.evaluate(code, series);
+                    if (Objects.isNull(result)) {
+                        continue;
+                    }
+                    StrategySignalEntity entity = toEntity(result);
+                    String side = StringUtils.isNotBlank(entity.getSide()) ? entity.getSide().toUpperCase() : "NA";
+                    String key = code + "|" + side;
+                    StrategySignalEntity existBest = bestByCodeSide.get(key);
+                    if (Objects.isNull(existBest) || entity.getScore().compareTo(existBest.getScore()) > 0) {
+                        bestByCodeSide.put(key, entity);
+                    }
                 }
             }
         }
 
-        for (StrategySignalEntity entity : bestByCodeSide.values()) {
-            // 同代码+策略+信号日去重，避免重复堆积
-            strategySignalMapper.delete(Wrappers.<StrategySignalEntity>lambdaQuery()
-                    .eq(StrategySignalEntity::getCode, entity.getCode())
-                    .eq(StrategySignalEntity::getStrategyId, entity.getStrategyId())
-                    .eq(StrategySignalEntity::getSignalDate, entity.getSignalDate()));
-            strategySignalMapper.insert(entity);
-            saved.add(entity);
-        }
+        transactionTemplate.executeWithoutResult(status -> {
+            for (StrategySignalEntity entity : bestByCodeSide.values()) {
+                // 同代码+策略+信号日去重，避免重复堆积
+                strategySignalMapper.delete(Wrappers.<StrategySignalEntity>lambdaQuery()
+                        .eq(StrategySignalEntity::getCode, entity.getCode())
+                        .eq(StrategySignalEntity::getStrategyId, entity.getStrategyId())
+                        .eq(StrategySignalEntity::getSignalDate, entity.getSignalDate()));
+                strategySignalMapper.insert(entity);
+                saved.add(entity);
+            }
+        });
         saved.sort(Comparator.comparing(StrategySignalEntity::getScore).reversed());
         return saved;
     }
@@ -500,9 +509,8 @@ public class SignalServiceImpl implements ISignalService {
         LocalDate cutoff = Objects.nonNull(asOfDate) ? asOfDate : LocalDate.now();
         LocalDate begin = cutoff.minusDays(LOOKBACK_DAYS);
         // 分批 IN 查询，避免单次过大
-        int batchSize = 40;
-        for (int i = 0; i < codes.size(); i += batchSize) {
-            List<String> batch = codes.subList(i, Math.min(i + batchSize, codes.size()));
+        for (int i = 0; i < codes.size(); i += BAR_QUERY_BATCH_SIZE) {
+            List<String> batch = codes.subList(i, Math.min(i + BAR_QUERY_BATCH_SIZE, codes.size()));
             List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
                     .in(BarDaily::getCode, batch)
                     .ge(BarDaily::getTradeDate, begin)
