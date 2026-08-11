@@ -9,6 +9,7 @@ import NewsShareDialog from '../components/share/NewsShareDialog.vue'
 import TodayNewsPulse from '../components/news/TodayNewsPulse.vue'
 import HotBriefPanel from '../components/news/HotBriefPanel.vue'
 import MarketBriefPanel from '../components/news/MarketBriefPanel.vue'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -23,6 +24,13 @@ const limit = ref(80)
 const mainTab = ref('news')
 const shareOpen = ref(false)
 const shareItem = ref(null)
+
+useSessionViewState('news', {
+  activeSource,
+  keyword,
+  limit,
+  mainTab,
+})
 
 const items = computed(() => data.value?.items || [])
 const counts = computed(() => data.value?.sourceCounts || {})

@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { fetchHotOverview, refreshHot } from '../api/hot'
 import { saveObserve } from '../api/observe'
 import { addWatchlistCodes } from '../api/watchlist'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -12,6 +13,8 @@ const refreshing = ref(false)
 const data = ref(null)
 const lastLog = ref('')
 const activeTab = ref('confluence')
+
+useSessionViewState('hot', { activeTab })
 
 const eastmoney = computed(() => data.value?.eastmoney || [])
 const xueqiu = computed(() => data.value?.xueqiu || [])

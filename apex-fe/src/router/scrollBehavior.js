@@ -1,3 +1,3 @@
-export function resolveScrollPosition() {
-  return { left: 0, top: 0 }
+export function resolveScrollPosition(savedPosition) {
+  return savedPosition || { left: 0, top: 0 }
 }

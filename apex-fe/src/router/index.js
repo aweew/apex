@@ -26,8 +26,12 @@ const SyncView = () => import('../views/SyncView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior() {
-    return resolveScrollPosition()
+  scrollBehavior(_to, _from, savedPosition) {
+    const position = resolveScrollPosition(savedPosition)
+    if (!savedPosition) return position
+    return new Promise((resolve) => {
+      window.setTimeout(() => resolve(position), 120)
+    })
   },
   routes: [
     { path: '/', redirect: '/dashboard' },

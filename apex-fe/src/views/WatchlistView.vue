@@ -13,6 +13,7 @@ import {
 import { fillWatchlistBars, syncBars, syncBarsGroup, syncStaleBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
 import { buildApiUrl } from '../api/baseUrl'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 
@@ -30,6 +31,15 @@ const filePath = ref('mx_zixuan_我的自选股列表.csv')
 const groupName = ref('我的自选')
 const movers = ref(null)
 const corr = ref(null)
+
+useSessionViewState('watchlist', {
+  keyword,
+  statusFilter,
+  peMax,
+  onlyHasBars,
+  sortByPct,
+  industryFilter,
+})
 
 const industries = computed(() => {
   const set = new Set()

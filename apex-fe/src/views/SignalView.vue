@@ -15,6 +15,7 @@ import { saveObserve } from '../api/observe'
 import { getAccount, orderFromSignal, placeOrder } from '../api/paper'
 import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
 import { resolveActionColumnFixed } from '../utils/responsiveTable.js'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -31,6 +32,13 @@ const confluence = ref(null)
 const morePanels = ref([])
 const viewportWidth = ref(window.innerWidth)
 const actionColumnFixed = computed(() => resolveActionColumnFixed(viewportWidth.value))
+
+useSessionViewState('signals', {
+  sideFilter,
+  strategyFilter,
+  minScore,
+  dedupeByCode,
+})
 
 function syncViewportWidth() {
   viewportWidth.value = window.innerWidth

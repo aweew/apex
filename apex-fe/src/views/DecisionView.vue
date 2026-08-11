@@ -27,6 +27,7 @@ import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -53,6 +54,8 @@ const buyExecutableOnly = ref(!!savedFilters.executableOnly)
 const buyCheapOnly = ref(!!savedFilters.cheapOnly)
 /** 默认不含北交所（京市）；勾选后生成/展示才纳入 */
 const includeBj = ref(savedFilters.includeBj === true)
+
+useSessionViewState('decision', { activeTab })
 
 /** 表格长文案悬停：加宽、可换行，避免 show-overflow-tooltip 截断 */
 const longTextTooltip = {

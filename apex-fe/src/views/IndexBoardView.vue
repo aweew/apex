@@ -26,6 +26,7 @@ import { isConceptBoard, normalizeHotThemes } from '../utils/hotTheme.js'
 import { formatVolumeChangeText } from '../utils/marketVolume.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -44,6 +45,8 @@ const activeCode = ref('')
 const detailBars = ref([])
 const chartRef = ref(null)
 let chart
+
+useSessionViewState('market', { marketTab })
 
 const sharing = ref(false)
 const shareOpen = ref(false)

@@ -22,6 +22,7 @@ import {
 import { buildObserveShareSheet, mountObserveShareSheet } from '../utils/observeShareSheet'
 import { buildApiUrl } from '../api/baseUrl'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -45,6 +46,12 @@ const sharePreviewUrl = ref('')
 const copying = ref(false)
 const downloading = ref(false)
 let sharePreviewObjectUrl = ''
+
+useSessionViewState('observe', {
+  sideTab,
+  statusFilter,
+  keyword,
+})
 
 const form = reactive({
   id: null,

@@ -15,6 +15,7 @@ import { saveObserve } from '../api/observe'
 import { getSyncJob, startSyncJob } from '../api/sync'
 import { useTradeDateStore } from '../stores/tradeDate'
 import { snapshotFallbackText, snapshotStamp } from '../utils/snapshotDate'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -41,6 +42,13 @@ const drawerOrder = ref('desc')
 const currentSector = ref(null)
 const constituents = ref(null)
 
+useSessionViewState('sector', {
+  activeTab,
+  sortBy,
+  order,
+  nameFilter,
+})
+
 const TAB_META = {
   INDUSTRY: { label: '行业', defaultSort: 'pctChg' },
   CONCEPT: { label: '概念', defaultSort: 'pctChg' },
@@ -58,8 +66,12 @@ const items = computed(() => {
 
 function applyRouteQuery() {
   const q = String(route.query.q || '').trim()
-  nameFilter.value = q
+  const type = String(route.query.type || '').toUpperCase()
+  if (TAB_META[type]) {
+    activeTab.value = type
+  }
   if (q) {
+    nameFilter.value = q
     activeTab.value = 'THEME'
   }
 }
