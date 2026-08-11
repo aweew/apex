@@ -149,21 +149,14 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
 
         boolean quoteRefreshed = false;
         boolean barsSynced = false;
-        // 规则研判也会尽量补日线；AI 路径额外刷现价
-        barsSynced = ensureRecentBars(pure, expectedTradeDate);
+        // 基础研判只读本地数据快速返回；行情刷新与补日线放到独立的 AI 请求中
         if (withAi) {
+            barsSynced = ensureRecentBars(pure, expectedTradeDate);
             try {
                 stockService.syncBasic(pure);
                 quoteRefreshed = true;
             } catch (Exception ex) {
                 log.debug("综合研判刷新行情失败 code={}: {}", pure, ex.getMessage());
-            }
-        } else {
-            try {
-                stockService.syncBasic(pure);
-                quoteRefreshed = true;
-            } catch (Exception ex) {
-                log.debug("综合研判轻量刷价失败 code={}: {}", pure, ex.getMessage());
             }
         }
 

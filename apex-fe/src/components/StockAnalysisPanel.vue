@@ -244,10 +244,8 @@ async function loadRules() {
   try {
     const res = await fetchStockAnalysis(props.code, side.value, 120, false, false)
     data.value = await enrichQuotePeriods(res.data)
-    // 规则先出，再异步挂 AI
-    if (res.data?.ai?.configured !== false) {
-      loadAi(false)
-    }
+    // 规则先出，再独立刷新行情、补日线并生成 AI 解读
+    loadAi(false)
   } catch (e) {
     data.value = null
     error.value = e.message || '加载失败'
@@ -413,7 +411,7 @@ defineExpose({ reload: () => loadRules() })
 </script>
 
 <template>
-  <div class="analysis" v-loading="loading">
+  <div class="analysis" v-loading="loading && !data">
     <div class="analysis-toolbar no-capture">
       <el-radio-group v-model="side" size="small">
         <el-radio-button value="BUY">偏多雷达</el-radio-button>
