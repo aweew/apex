@@ -79,6 +79,7 @@ defineProps({
 
 .pill {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   padding: 3px 10px;
   border-radius: 999px;
@@ -86,6 +87,7 @@ defineProps({
   font-weight: 600;
   background: rgba(29, 29, 31, 0.08);
   color: #3a3a3c;
+  white-space: nowrap;
 }
 
 .pill.tone[data-tone='利好'] {
@@ -99,10 +101,12 @@ defineProps({
 }
 
 .time {
+  flex-shrink: 0;
   margin-left: auto;
   font-size: 12px;
   color: #86868b;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .share-title {
