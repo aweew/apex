@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, EditPen, MoreFilled, View } from '@element-plus/icons-vue'
 import { listHoldings, refreshHoldingQuotes, removeHolding, saveHolding } from '../api/holding'
 import { saveObserve } from '../api/observe'
 import {
@@ -23,6 +24,7 @@ const router = useRouter()
 const loading = ref(false)
 const refreshing = ref(false)
 const rows = ref([])
+const mobileRowActions = ref(window.innerWidth <= 900)
 const industryPieRef = ref(null)
 const themePieRef = ref(null)
 let industryChart = null
@@ -469,8 +471,21 @@ function renderPies() {
 }
 
 function onResize() {
+  mobileRowActions.value = window.innerWidth <= 900
   industryChart?.resize()
   themeChart?.resize()
+}
+
+function handleRowAction(command, row) {
+  if (command === 'edit') {
+    openEdit(row)
+    return
+  }
+  if (command === 'observe') {
+    addObserve(row)
+    return
+  }
+  if (command === 'remove') onRemove(row)
 }
 
 function openCreate() {
@@ -549,6 +564,8 @@ async function onRemove(row) {
   try {
     await ElMessageBox.confirm(`确认删除持仓 ${row.code} ${row.name || ''}？`, '删除持仓', {
       type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
     })
     await removeHolding(row.id)
     ElMessage.success('已删除')
@@ -1021,6 +1038,43 @@ onBeforeUnmount(() => {
         <el-table-column v-if="showIndustry" prop="industry" label="二级行业" width="100" show-overflow-tooltip sortable />
         <el-table-column prop="note" label="备注" min-width="100" show-overflow-tooltip sortable />
         <el-table-column
+          v-if="mobileRowActions"
+          width="56"
+          fixed="right"
+          align="center"
+          class-name="ops-column mobile-ops-column"
+          label-class-name="ops-column mobile-ops-column"
+        >
+          <template #default="{ row }">
+            <el-dropdown
+              trigger="click"
+              placement="bottom-end"
+              popper-class="holding-actions-menu"
+              @command="handleRowAction($event, row)"
+            >
+              <button
+                type="button"
+                class="row-actions-trigger"
+                :aria-label="`${row.name || row.code}更多操作`"
+                title="更多操作"
+                @click.stop
+              >
+                <el-icon><MoreFilled /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit" :icon="EditPen">编辑持仓</el-dropdown-item>
+                  <el-dropdown-item command="observe" :icon="View">加入观察池</el-dropdown-item>
+                  <el-dropdown-item command="remove" :icon="Delete" divided class="holding-action-danger">
+                    删除持仓
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+        </el-table-column>
+        <el-table-column
+          v-else
           label="操作"
           width="168"
           fixed="right"
@@ -1603,6 +1657,55 @@ onBeforeUnmount(() => {
 
 .holding-table :deep(.ops-column .cell) {
   white-space: nowrap;
+}
+
+.row-actions-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--slate);
+  font-size: 20px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.row-actions-trigger:hover,
+.row-actions-trigger:focus-visible,
+.row-actions-trigger[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
+}
+
+:global(.holding-actions-menu) {
+  min-width: 156px;
+  border-radius: 8px;
+}
+
+:global(.holding-actions-menu .el-dropdown-menu) {
+  padding: 4px;
+}
+
+:global(.holding-actions-menu .el-dropdown-menu__item) {
+  min-height: 44px;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+:global(.holding-actions-menu .holding-action-danger) {
+  color: var(--el-color-danger);
+}
+
+:global(.holding-actions-menu .holding-action-danger.el-dropdown-menu__item--divided) {
+  margin-top: 4px;
 }
 
 .holding-table :deep(.el-table__body tr:hover > .ops-column),
