@@ -18,11 +18,21 @@ export function resolveVolumeChangeAmount(market, pct) {
 }
 
 export function buildVolumeChangeParts(market) {
-  if (!market) return { detailText: '', percentageText: '' }
+  if (!market) {
+    return {
+      trendText: '',
+      amountText: '',
+      detailText: '',
+      percentageText: '',
+    }
+  }
   const pct = market.volumeVsMa5Pct
   if (pct == null || pct === '' || !Number.isFinite(Number(pct))) {
+    const trendText = market.volumeLabel || market.volumeTrend || ''
     return {
-      detailText: market.volumeLabel || market.volumeTrend || '',
+      trendText,
+      amountText: '',
+      detailText: trendText,
       percentageText: '',
     }
   }
@@ -31,6 +41,8 @@ export function buildVolumeChangeParts(market) {
   const amount = formatVolumeChangeAmount(resolveVolumeChangeAmount(market, rate))
   const sign = rate > 0 ? '+' : ''
   return {
+    trendText: trend,
+    amountText: amount,
     detailText: `${trend}${amount ? ` ${amount}` : ''}`,
     percentageText: `${sign}${rate.toFixed(2)}%`,
   }

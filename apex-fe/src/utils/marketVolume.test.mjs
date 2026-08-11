@@ -41,10 +41,14 @@ test('buildVolumeChangeParts separates neutral detail from colored percentage', 
     volumeVsMa5Pct: 5.33,
     indexVolumeChange: 135884002291,
   }), {
+    trendText: '放量',
+    amountText: '1359亿',
     detailText: '放量 1359亿',
     percentageText: '+5.33%',
   })
   assert.deepEqual(buildVolumeChangeParts({ volumeLabel: '今日' }), {
+    trendText: '今日',
+    amountText: '',
     detailText: '今日',
     percentageText: '',
   })

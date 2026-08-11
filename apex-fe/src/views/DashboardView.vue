@@ -475,7 +475,12 @@ onMounted(() => {
                 v-if="volumeChangeParts?.detailText || volumeChangeParts?.percentageText"
                 class="vol-change"
               >
-                <span v-if="volumeChangeParts.detailText">{{ volumeChangeParts.detailText }}</span>
+                <span
+                  v-if="volumeChangeParts.trendText"
+                  class="vol-trend"
+                  :class="{ 'is-contraction': volumeChangeParts.trendText === '缩量' }"
+                >{{ volumeChangeParts.trendText }}</span>
+                <span v-if="volumeChangeParts.amountText" class="vol-amount">{{ volumeChangeParts.amountText }}</span>
                 <span
                   v-if="volumeChangeParts.percentageText"
                   class="vol-percentage"
@@ -1392,6 +1397,10 @@ onMounted(() => {
 .volume-stat > b,
 .volume-stat .vol-change > span:not(.vol-percentage) {
   font-weight: 500;
+}
+
+.volume-stat .vol-change > .vol-trend.is-contraction {
+  font-weight: 400;
 }
 
 .stat .slash,
