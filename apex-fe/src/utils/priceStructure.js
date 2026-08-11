@@ -118,6 +118,7 @@ export function buildPriceLevelMarkLines(structure, compact = false) {
     rows.push({
       yAxis: price,
       label: {
+        show: !compact,
         formatter: `${label} ${price.toFixed(2)}`,
         position: 'end',
         distance: compact ? 4 : 7,

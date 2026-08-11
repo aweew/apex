@@ -15,6 +15,7 @@ import { syncBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
 import { aggregateBars, tdSequential } from '../utils/kline'
 import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceStructure'
+import { bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
 import ChipDistributionPanel from '../components/ChipDistributionPanel.vue'
 
@@ -53,6 +54,8 @@ const selectedMas = ref(['MA5', 'MA20'])
 const showTd9 = ref(true)
 /** key=仅显示 8/9，all=显示 1–9 */
 const tdShowMode = ref('key')
+const isMobileChart = ref(window.matchMedia('(max-width: 820px)').matches)
+const chartParamsExpanded = ref(!isMobileChart.value)
 const BAR_LIMIT = 500
 const CHART_PREF_KEY = 'apex.stock.chartPrefs'
 const META_EXPAND_KEY = 'apex.stock.metaExpanded'
@@ -77,6 +80,7 @@ let intradayPollTimer = null
 /** 当前图数据，供可视区高低点随缩放更新 */
 let chartPayload = null
 let compactPriceLabelsMode = null
+let chartPressCleanup = null
 
 const isIntraday = computed(() => klinePeriod.value === 'intraday')
 const intradayPoints = computed(() => intraday.value?.points || [])
@@ -109,6 +113,49 @@ const periodMeta = computed(() => {
 function maDisplayName(name) {
   const n = String(name).replace(/^MA/i, '')
   return `MA${n}${periodUnit.value}`
+}
+
+function toggleChartParams() {
+  chartParamsExpanded.value = !chartParamsExpanded.value
+}
+
+function unbindChartPress() {
+  if (chartPressCleanup) {
+    chartPressCleanup()
+    chartPressCleanup = null
+  }
+}
+
+function bindMobileChartPress() {
+  unbindChartPress()
+  if (!chart || !isMobileChart.value) return
+
+  const chartDom = chart.getDom()
+  const showTip = (event) => {
+    const rect = chartDom.getBoundingClientRect()
+    chart.dispatchAction({
+      type: 'showTip',
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    })
+  }
+  chartPressCleanup = bindLongPress({
+    element: chartDom,
+    onActivate: showTip,
+    onUpdate: showTip,
+    onDeactivate: () => chart?.dispatchAction({ type: 'hideTip' }),
+  })
+}
+
+function mobileTooltipPosition(point, params, tooltipDom, rect, size) {
+  const chartRect = chartRef.value?.getBoundingClientRect()
+  return resolveMobileTooltipPosition({
+    point,
+    contentSize: size.contentSize,
+    viewSize: size.viewSize,
+    chartTop: chartRect?.top || 0,
+    viewportHeight: window.innerHeight,
+  })
 }
 
 function loadChartPrefs() {
@@ -373,7 +420,7 @@ async function renderIntradayChart() {
       backgroundColor: 'transparent',
       animation: false,
       legend: {
-        show: true,
+        show: !isMobileChart.value,
         top: 0,
         left: 'center',
         itemWidth: 14,
@@ -382,7 +429,12 @@ async function renderIntradayChart() {
       },
       tooltip: {
         trigger: 'axis',
+        triggerOn: isMobileChart.value ? 'none' : 'mousemove|click',
         axisPointer: { type: 'cross' },
+        confine: true,
+        appendToBody: !isMobileChart.value,
+        position: isMobileChart.value ? mobileTooltipPosition : undefined,
+        transitionDuration: 0,
         formatter(params) {
           const rows = Array.isArray(params) ? params : [params]
           const idx = rows[0]?.dataIndex ?? 0
@@ -403,7 +455,7 @@ async function renderIntradayChart() {
       },
       axisPointer: { link: [{ xAxisIndex: 'all' }] },
       grid: [
-        { left: 56, right: 56, top: 36, height: '58%' },
+        { left: 56, right: 56, top: isMobileChart.value ? 16 : 36, height: '58%' },
         { left: 56, right: 56, top: '76%', height: '16%' },
       ],
       xAxis: [
@@ -498,6 +550,7 @@ async function renderIntradayChart() {
     true,
   )
   chart.resize()
+  bindMobileChartPress()
 }
 
 function refreshChart() {
@@ -649,6 +702,7 @@ function fmtVol(v) {
 }
 
 function disposeChart() {
+  unbindChartPress()
   if (chart) {
     chart.off('datazoom')
     chart.off('legendselectchanged')
@@ -857,16 +911,16 @@ async function renderChart(list) {
   resetZoomNext = false
   const extremeMarkPoint = buildVisibleExtremeMarkPoint(dates, highs, lows, zoomStart, zoomEnd)
   const priceExtent = calcVisiblePriceExtent(highs, lows, zoomStart, zoomEnd)
-  const compactPriceLabels = chartRef.value?.clientWidth < 680
+  const compactPriceLabels = isMobileChart.value || chartRef.value?.clientWidth < 680
   compactPriceLabelsMode = compactPriceLabels
-  const chartGridRight = compactPriceLabels ? 72 : 96
+  const chartGridRight = isMobileChart.value ? 18 : compactPriceLabels ? 72 : 96
   const structureMarkLines = buildPriceLevelMarkLines(priceStructure.value, compactPriceLabels)
 
   chart.setOption({
     backgroundColor: 'transparent',
     animation: false,
     legend: {
-      show: true,
+      show: !isMobileChart.value,
       top: 0,
       left: 'center',
       itemWidth: 14,
@@ -919,6 +973,7 @@ async function renderChart(list) {
     ],
     tooltip: {
       trigger: 'axis',
+      triggerOn: isMobileChart.value ? 'none' : 'mousemove|click',
       axisPointer: {
         type: 'cross',
         snap: true,
@@ -936,7 +991,9 @@ async function renderChart(list) {
       },
       confine: true,
       enterable: false,
-      appendToBody: true,
+      appendToBody: !isMobileChart.value,
+      position: isMobileChart.value ? mobileTooltipPosition : undefined,
+      transitionDuration: 0,
       className: 'kline-tip',
       borderWidth: 0,
       backgroundColor: 'transparent',
@@ -1061,8 +1118,8 @@ async function renderChart(list) {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      // 四个子图保持同宽，右侧独立留给支撑/压力价格牌。
-      { left: 56, right: chartGridRight, top: 36, height: '38%' },
+      // 四个子图保持同宽；移动端隐藏图内价格牌，释放右侧绘图区。
+      { left: 56, right: chartGridRight, top: isMobileChart.value ? 12 : 36, height: '38%' },
       { left: 56, right: chartGridRight, top: '47%', height: '9%' },
       { left: 56, right: chartGridRight, top: '60%', height: '11%' },
       { left: 56, right: chartGridRight, top: '75%', height: '10%' },
@@ -1347,6 +1404,7 @@ async function renderChart(list) {
     ],
   }, true)
   chart.resize()
+  bindMobileChartPress()
 }
 
 async function load(refreshQuote = false) {
@@ -1501,8 +1559,15 @@ async function quickAddObserve() {
 
 function onResize() {
   chart?.resize()
+  const nextMobileChart = window.matchMedia('(max-width: 820px)').matches
+  if (nextMobileChart !== isMobileChart.value) {
+    isMobileChart.value = nextMobileChart
+    chartParamsExpanded.value = !nextMobileChart
+    if (activeTab.value === 'chart') refreshChart()
+    return
+  }
   if (isIntraday.value || activeTab.value !== 'chart' || !bars.value.length || !chartRef.value) return
-  const nextCompactMode = chartRef.value.clientWidth < 680
+  const nextCompactMode = isMobileChart.value || chartRef.value.clientWidth < 680
   if (nextCompactMode !== compactPriceLabelsMode) refreshChart()
 }
 
@@ -1733,53 +1798,67 @@ function dash(v) {
           <el-button @click="klinePeriod = 'intraday'">看分时</el-button>
         </el-empty>
         <div v-if="showChartShell" class="chart-toolbar" v-loading="intradayLoading && isIntraday">
-          <div class="chart-controls">
-            <el-radio-group v-model="klinePeriod" size="small">
+          <div class="chart-primary-controls">
+            <el-radio-group v-model="klinePeriod" size="small" class="period-mode">
               <el-radio-button value="intraday">分时</el-radio-button>
               <el-radio-button value="day">日K</el-radio-button>
               <el-radio-button value="week">周K</el-radio-button>
               <el-radio-button value="month">月K</el-radio-button>
             </el-radio-group>
-            <template v-if="!isIntraday">
-              <el-checkbox-group v-model="selectedMas" size="small" class="ma-checks">
-                <el-checkbox
-                  v-for="item in MA_META"
-                  :key="item.name"
-                  :value="item.name"
-                  :style="{ '--ma-color': item.color }"
-                >
-                  {{ maDisplayName(item.name) }}
-                </el-checkbox>
-              </el-checkbox-group>
-              <label class="ctrl-label">
-                <TermTip term="td9">神奇九转</TermTip>
-                <el-switch v-model="showTd9" size="small" />
-              </label>
-              <el-radio-group
-                v-if="showTd9"
-                v-model="tdShowMode"
+            <div class="chart-primary-actions">
+              <el-button
+                v-if="isIntraday"
                 size="small"
-                class="td-mode"
+                text
+                type="primary"
+                :loading="intradayLoading"
+                @click="loadIntraday"
               >
-                <el-radio-button value="key">仅8/9</el-radio-button>
-                <el-radio-button value="all">全部</el-radio-button>
-              </el-radio-group>
-            </template>
-            <el-button
-              v-if="isIntraday"
-              size="small"
-              text
-              type="primary"
-              :loading="intradayLoading"
-              @click="loadIntraday"
-            >
-              刷新分时
-            </el-button>
-            <el-button size="small" text type="primary" class="reset-view" @click="resetChartView">
-              重置视野
-            </el-button>
+                刷新分时
+              </el-button>
+              <button
+                v-if="isMobileChart && !isIntraday"
+                type="button"
+                class="chart-params-toggle"
+                :aria-expanded="chartParamsExpanded"
+                @click="toggleChartParams"
+              >
+                <span>图表参数</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <el-button size="small" text type="primary" class="reset-view" @click="resetChartView">
+                重置视野
+              </el-button>
+            </div>
             <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
             <span v-if="isIntraday && intradayAsOf" class="intraday-asof">数据截至 {{ intradayAsOf }}</span>
+          </div>
+          <div v-if="!isIntraday" v-show="!isMobileChart || chartParamsExpanded" class="chart-advanced-controls">
+            <el-checkbox-group v-model="selectedMas" size="small" class="ma-checks">
+              <el-checkbox
+                v-for="item in MA_META"
+                :key="item.name"
+                :value="item.name"
+                :style="{ '--ma-color': item.color }"
+              >
+                {{ maDisplayName(item.name) }}
+              </el-checkbox>
+            </el-checkbox-group>
+            <label class="ctrl-label">
+              <TermTip term="td9">神奇九转</TermTip>
+              <el-switch v-model="showTd9" size="small" />
+            </label>
+            <el-radio-group
+              v-if="showTd9"
+              v-model="tdShowMode"
+              size="small"
+              class="td-mode"
+            >
+              <el-radio-button value="key">仅8/9</el-radio-button>
+              <el-radio-button value="all">全部</el-radio-button>
+            </el-radio-group>
           </div>
           <el-alert
             v-if="!isIntraday && klinePeriod !== 'day' && bars.length < 120"
@@ -1808,6 +1887,15 @@ function dash(v) {
           </p>
           <p v-if="!isIntraday && tdTip && showTd9" class="macd-tip">{{ tdTip }}</p>
           <p v-if="!isIntraday && macdTip" class="macd-tip macd-tip--sub">{{ macdTip }}</p>
+          <div v-if="isMobileChart && !isIntraday && priceStructure.ready" class="chart-price-levels">
+            <span v-if="priceStructure.support" class="support">
+              支撑 {{ fmtNum(priceStructure.support.price) }}
+            </span>
+            <span v-if="priceStructure.resistance" class="resistance">
+              压力 {{ fmtNum(priceStructure.resistance.price) }}
+            </span>
+            <small>长按图表查看详情</small>
+          </div>
         </div>
         <el-empty
           v-if="isIntraday && !intradayLoading && !intradayPoints.length"
@@ -2491,11 +2579,47 @@ function dash(v) {
   margin: 0 0 10px;
 }
 
-.chart-controls {
+.chart-primary-controls,
+.chart-advanced-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 16px;
+}
+
+.chart-primary-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chart-params-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chart-params-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 160ms ease;
+}
+
+.chart-params-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
 }
 
 .ma-checks {
@@ -2543,6 +2667,41 @@ function dash(v) {
   font-size: 11px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+.chart-price-levels {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chart-price-levels span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-price-levels .support {
+  color: #1f8f48;
+  background: rgba(52, 199, 89, 0.07);
+}
+
+.chart-price-levels .resistance {
+  color: #d92d20;
+  background: rgba(255, 59, 48, 0.07);
+}
+
+.chart-price-levels small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .chart-alert {
@@ -2621,6 +2780,114 @@ function dash(v) {
 
   .chart {
     height: 560px;
+  }
+}
+
+@media (max-width: 820px) {
+  .chart-toolbar {
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .chart-primary-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .period-mode {
+    display: flex;
+    width: 100%;
+  }
+
+  .period-mode :deep(.el-radio-button) {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .period-mode :deep(.el-radio-button__inner),
+  .td-mode :deep(.el-radio-button__inner) {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .chart-primary-actions {
+    justify-content: flex-end;
+  }
+
+  .chart-primary-actions :deep(.el-button),
+  .chart-params-toggle {
+    min-height: 44px;
+    margin: 0;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .chart-advanced-controls {
+    gap: 4px 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.58);
+  }
+
+  .ma-checks {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  .ma-checks :deep(.el-checkbox) {
+    min-width: 0;
+    min-height: 44px;
+    margin-right: 0;
+  }
+
+  .ma-checks :deep(.el-checkbox__label) {
+    padding-left: 4px;
+    font-size: 11px;
+  }
+
+  .ctrl-label {
+    min-height: 44px;
+  }
+
+  .td-mode {
+    display: flex;
+    min-width: 152px;
+    margin-left: auto;
+  }
+
+  .td-mode :deep(.el-radio-button) {
+    flex: 1;
+  }
+
+  .period-meta {
+    margin-left: 0;
+    font-size: 11px;
+  }
+
+  .chart-hint {
+    display: none;
+  }
+
+  .macd-tip {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .chart {
+    height: 520px;
+    border-radius: 8px;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
   }
 }
 </style>
@@ -2834,5 +3101,20 @@ function dash(v) {
 .kline-tip__chip b {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 820px) {
+  .kline-tip__card {
+    width: min(280px, calc(100vw - 32px));
+    max-height: min(420px, calc(100dvh - 32px));
+    overflow-y: auto;
+    padding: 10px 12px 9px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  }
 }
 </style>

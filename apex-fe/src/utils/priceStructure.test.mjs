@@ -79,4 +79,5 @@ test('price level labels render in the reserved right gutter', () => {
   }, true)
   assert.equal(compact[0].label.formatter, '支 10.12')
   assert.equal(compact[1].label.formatter, '压 12.34')
+  assert.ok(compact.every((line) => line.label.show === false))
 })
