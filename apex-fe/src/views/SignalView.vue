@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -14,6 +14,7 @@ import {
 import { saveObserve } from '../api/observe'
 import { getAccount, orderFromSignal, placeOrder } from '../api/paper'
 import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
+import { resolveActionColumnFixed } from '../utils/responsiveTable.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -28,6 +29,12 @@ const stats = ref(null)
 const forward = ref(null)
 const confluence = ref(null)
 const morePanels = ref([])
+const viewportWidth = ref(window.innerWidth)
+const actionColumnFixed = computed(() => resolveActionColumnFixed(viewportWidth.value))
+
+function syncViewportWidth() {
+  viewportWidth.value = window.innerWidth
+}
 
 const filtered = computed(() => {
   return rows.value.filter((r) => {
@@ -152,7 +159,14 @@ async function addObserve(row) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  window.addEventListener('resize', syncViewportWidth)
+  load()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncViewportWidth)
+})
 </script>
 
 <template>
@@ -239,7 +253,7 @@ onMounted(load)
           <template #default="{ row }"><ScoreBar :score="row.score" /></template>
         </el-table-column>
         <el-table-column prop="reasonJson" label="理由" min-width="200" show-overflow-tooltip />
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="220" :fixed="actionColumnFixed">
           <template #default="{ row }">
             <el-button link type="success" @click="onQuickFromSignal(row)">一键</el-button>
             <el-button link type="primary" @click="onPaperOrder(row)">
