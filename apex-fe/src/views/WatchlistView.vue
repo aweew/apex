@@ -327,7 +327,8 @@ onMounted(loadList)
         </template>
       </el-table-column>
       <el-table-column prop="latestPrice" label="最新价" width="100" sortable />
-      <el-table-column prop="pctChg" label="今日%" width="90" sortable>
+      <el-table-column prop="pctChg" width="90" sortable>
+        <template #header><TermTip term="pct_chg">今日%</TermTip></template>
         <template #default="{ row }">
           <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">
             {{ row.pctChg != null ? Number(row.pctChg).toFixed(2) + '%' : '-' }}
@@ -363,16 +364,27 @@ onMounted(loadList)
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="peTtm" label="PE" width="80" sortable />
-      <el-table-column prop="pb" label="PB" width="80" sortable />
-      <el-table-column prop="circMv" label="流通市值(亿)" width="110" sortable>
+      <el-table-column prop="peTtm" width="80" sortable>
+        <template #header><TermTip term="pe_ttm">PE</TermTip></template>
+      </el-table-column>
+      <el-table-column prop="pb" width="80" sortable>
+        <template #header><TermTip term="pb">PB</TermTip></template>
+      </el-table-column>
+      <el-table-column prop="circMv" width="110" sortable>
+        <template #header><TermTip term="circ_mv">流通市值(亿)</TermTip></template>
         <template #default="{ row }">
           {{ row.circMv != null ? (Number(row.circMv) / 1e8).toFixed(1) : '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="industry" label="行业" width="120" show-overflow-tooltip />
-      <el-table-column prop="lastBarDate" label="最后K线" width="120" sortable />
-      <el-table-column prop="barCount" label="K线条数" width="100" sortable />
+      <el-table-column prop="industry" width="120" show-overflow-tooltip>
+        <template #header><TermTip term="sector">行业</TermTip></template>
+      </el-table-column>
+      <el-table-column prop="lastBarDate" width="120" sortable>
+        <template #header><TermTip term="ohlc">最后K线</TermTip></template>
+      </el-table-column>
+      <el-table-column prop="barCount" width="100" sortable>
+        <template #header><TermTip term="ohlc">K线条数</TermTip></template>
+      </el-table-column>
       <el-table-column prop="syncStatus" label="状态" width="90">
         <template #default="{ row }">
           <el-tag size="small" :type="statusTag(row.syncStatus)">{{ row.syncStatus }}</el-tag>

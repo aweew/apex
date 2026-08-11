@@ -381,7 +381,7 @@ onBeforeUnmount(() => {
 
     <section v-loading="rotationLoading" class="rotation">
       <div class="rotation-head">
-        <h3>轮动时间轴</h3>
+        <h3><TermTip term="theme_rotation">轮动时间轴</TermTip></h3>
         <span class="muted">{{ rotation?.message || '近10日行业涨幅 Top' }}</span>
       </div>
       <div v-if="rotation?.days?.length" class="rotation-track">
@@ -437,7 +437,8 @@ onBeforeUnmount(() => {
         </template>
       </el-table-column>
       <el-table-column prop="name" label="名称" min-width="110" sortable />
-      <el-table-column label="涨跌幅" width="90" sortable prop="pctChg">
+      <el-table-column width="90" sortable prop="pctChg">
+        <template #header><TermTip term="pct_chg">涨跌幅</TermTip></template>
         <template #default="{ row }">
           <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
         </template>
@@ -452,17 +453,20 @@ onBeforeUnmount(() => {
           <span :class="Number(row.pctChg5d) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg5d) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="净流入" width="100" sortable prop="netInflow">
+      <el-table-column width="100" sortable prop="netInflow">
+        <template #header><TermTip term="main_fund_flow">净流入</TermTip></template>
         <template #default="{ row }">
           <span :class="Number(row.netInflow) >= 0 ? 'up' : 'down'">{{ fmtInflowYi(row.netInflow) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="涨停" width="70" sortable prop="limitUpCount" align="center">
+      <el-table-column width="70" sortable prop="limitUpCount" align="center">
+        <template #header><TermTip term="limit_up">涨停</TermTip></template>
         <template #default="{ row }">
           <span :class="Number(row.limitUpCount) > 0 ? 'up' : ''">{{ row.limitUpCount ?? '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="连板" width="70" sortable prop="maxLianban" align="center">
+      <el-table-column width="70" sortable prop="maxLianban" align="center">
+        <template #header><TermTip term="lianban">连板</TermTip></template>
         <template #default="{ row }">
           <span :class="Number(row.maxLianban) > 1 ? 'up' : ''">{{ row.maxLianban ?? '-' }}</span>
         </template>
@@ -538,7 +542,8 @@ onBeforeUnmount(() => {
         </el-table-column>
         <el-table-column prop="name" label="名称" min-width="100" sortable />
         <el-table-column prop="latestPrice" label="最新价" width="90" sortable />
-        <el-table-column label="涨跌幅" width="90" sortable prop="pctChg">
+        <el-table-column width="90" sortable prop="pctChg">
+          <template #header><TermTip term="pct_chg">涨跌幅</TermTip></template>
           <template #default="{ row }">
             <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
           </template>

@@ -45,11 +45,42 @@ test('extra terms are searchable', () => {
   assert.equal(findTerm('筹码峰')?.id, 'chip_distribution')
 })
 
+test('common stock terms stay available even when they are basic', () => {
+  const expectedTerms = {
+    总市值: 'total_mv',
+    市值: 'total_mv',
+    换手率: 'stock_turnover',
+    振幅: 'amplitude',
+    指数: 'market_index',
+    板块: 'sector',
+    'T+1': 't_plus_one',
+    ST股: 'st_stock',
+    除权除息: 'ex_right_dividend',
+    后复权: 'hfq',
+    盘口: 'order_book',
+    委比: 'order_ratio',
+    内盘: 'inner_outer_volume',
+    主力净流入: 'main_fund_flow',
+    融资融券: 'margin_trading',
+    龙虎榜: 'dragon_tiger_list',
+    大宗交易: 'block_trade',
+    限售解禁: 'lockup_expiry',
+    股票质押: 'share_pledge',
+    营业收入: 'revenue',
+    净利润: 'net_profit',
+    经营现金流: 'operating_cash_flow',
+  }
+
+  for (const [alias, expectedId] of Object.entries(expectedTerms)) {
+    assert.equal(findTerm(alias)?.id, expectedId, `${alias} should resolve to ${expectedId}`)
+  }
+})
+
 test('glossary term ids are unique', () => {
   const terms = allTerms()
   const ids = terms.map((t) => t.id)
   assert.equal(ids.length, new Set(ids).size)
-  assert.ok(terms.length >= 110)
+  assert.ok(terms.length >= 145)
 })
 
 test('diagram builders return svg for keyed terms', () => {

@@ -70,7 +70,7 @@ const CORE_TERMS = [
   {
     id: 'paper_turnover',
     title: '纸面换手率',
-    aliases: ['换手率', 'turnover'],
+    aliases: ['模拟盘换手率', '账户换手率', 'paper turnover'],
     category: '绩效',
     short: '本系统模拟盘：累计成交额相对初始资金的比例。',
     detail:
@@ -418,7 +418,7 @@ const CORE_TERMS = [
   {
     id: 'stock_turnover',
     title: '换手率(个股)',
-    aliases: ['个股换手', 'turnover_rate'],
+    aliases: ['换手率', '个股换手', 'turnover', 'turnover_rate'],
     category: '技术',
     short: '当日成交量 ÷ 流通股本，衡量交易活跃度。',
     detail:
@@ -486,7 +486,7 @@ const CORE_TERMS = [
   {
     id: 'circ_mv',
     title: '流通市值',
-    aliases: ['市值', '流通盘'],
+    aliases: ['流通盘', '流通盘市值'],
     category: '基本面',
     short: '可交易股份的总市值。',
     detail:

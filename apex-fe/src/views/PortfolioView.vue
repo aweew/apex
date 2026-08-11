@@ -1354,7 +1354,7 @@ onBeforeUnmount(() => {
             <b>{{ rows.length }}</b>
           </div>
           <div v-if="!sharingCapture" class="stat-card">
-            <label>总市值</label>
+            <label><TermTip term="total_mv">总市值</TermTip></label>
             <b>{{ fmtMoney(totalMv) }}</b>
           </div>
           <div class="stat-card">
@@ -1371,7 +1371,7 @@ onBeforeUnmount(() => {
             </b>
           </div>
           <div v-if="!sharingCapture" class="stat-card">
-            <label>持仓盈亏</label>
+            <label><TermTip term="unrealized_pnl">持仓盈亏</TermTip></label>
             <b :class="totalPnl >= 0 ? 'up' : 'down'">{{ fmtSignedMoney(totalPnl) }}</b>
           </div>
         </div>
@@ -1431,7 +1431,7 @@ onBeforeUnmount(() => {
         <section v-if="rows.length" class="theme-panel">
           <div class="theme-panel-head">
             <div class="theme-panel-title">
-              <h3>题材分布</h3>
+              <h3><TermTip term="hot_theme">题材分布</TermTip></h3>
               <span class="muted">覆盖 {{ themeHitCount }} 只</span>
             </div>
             <label class="industry-toggle">

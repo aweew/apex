@@ -112,7 +112,7 @@ onMounted(load)
     <header class="header">
       <div>
         <p class="eyebrow">灵枢 · Hot</p>
-        <h1>市场热点</h1>
+        <h1><TermTip term="hot_theme">市场热点</TermTip></h1>
         <p>
           {{ data?.message || '聚合东财人气 / 雪球关注 / 百度热搜，多源共振优先看' }}
         </p>
@@ -153,7 +153,7 @@ onMounted(load)
         <span>{{ fmtTime(data.snapshotTimes?.baidu) }}</span>
       </div>
       <div>
-        <label>共振标的</label>
+        <label><TermTip term="hot_confluence">共振标的</TermTip></label>
         <b>{{ confluence.length }}</b>
       </div>
     </div>

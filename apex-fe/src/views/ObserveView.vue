@@ -645,7 +645,7 @@ onBeforeUnmount(() => {
     <header class="header">
       <div>
         <p class="eyebrow">灵枢 · Observe</p>
-        <h1>观察池</h1>
+        <h1><TermTip term="watchlist">观察池</TermTip></h1>
         <p>买入机会 + 情绪风向标；优先处理「接近 / 可执行」</p>
       </div>
       <div class="actions">

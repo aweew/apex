@@ -330,6 +330,11 @@ onBeforeUnmount(() => {
         <span class="tagline">{{ BRAND.taglineShort }}</span>
       </RouterLink>
       <div class="mobile-top-actions">
+        <button type="button" class="nav-icon-btn" aria-label="打开名词百科" title="名词百科" @click="openGlossary()">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5zM20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z" stroke-linejoin="round" />
+          </svg>
+        </button>
         <button type="button" class="nav-icon-btn" aria-label="搜索股票" title="搜索股票" @click="openSearch">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
@@ -438,7 +443,7 @@ onBeforeUnmount(() => {
             <path d="M12 11v5" stroke-linecap="round" />
             <circle cx="12" cy="8" r="0.8" fill="currentColor" stroke="none" />
           </svg>
-          <span>名词</span>
+          <span>百科</span>
         </button>
         <button type="button" class="search-btn" title="搜索股票 Ctrl+K" @click="openSearch">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -1084,7 +1089,7 @@ onBeforeUnmount(() => {
   }
 
   .brand-block {
-    max-width: calc(100% - 104px);
+    max-width: calc(100% - 148px);
   }
 
   .brand-logo {

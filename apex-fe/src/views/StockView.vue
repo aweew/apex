@@ -1762,13 +1762,13 @@ function dash(v) {
       </div>
       <div v-show="metaExpanded" class="meta">
         <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
-        <div><label>涨跌幅</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
+        <div><label><TermTip term="pct_chg">涨跌幅</TermTip></label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
         <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><span>{{ basic.peDynamic ?? '-' }}</span></div>
         <div><label><TermTip term="pe_static">市盈率（静）</TermTip></label><span>{{ basic.peStatic ?? '-' }}</span></div>
         <div><label><TermTip term="pe_ttm">市盈率（TTM）</TermTip></label><span>{{ basic.peTtm ?? '-' }}</span></div>
         <div><label><TermTip term="pb">市净率</TermTip></label><span>{{ basic.pb ?? '-' }}</span></div>
-        <div><label>总市值</label><span>{{ fmtMv(basic.totalMv) }}</span></div>
-        <div><label>流通市值</label><span>{{ fmtMv(basic.circMv) }}</span></div>
+        <div><label><TermTip term="total_mv">总市值</TermTip></label><span>{{ fmtMv(basic.totalMv) }}</span></div>
+        <div><label><TermTip term="circ_mv">流通市值</TermTip></label><span>{{ fmtMv(basic.circMv) }}</span></div>
         <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
         <div><label>行业</label><span>{{ profile?.industryL2 || basic.industry || '-' }}</span></div>
         <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>

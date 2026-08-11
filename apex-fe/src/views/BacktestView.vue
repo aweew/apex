@@ -479,33 +479,33 @@ onMounted(loadJobs)
 
     <div v-if="job" class="stat-cards" style="grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px">
       <div class="stat-card">
-        <label>累计收益</label>
+        <label><TermTip term="total_return">累计收益</TermTip></label>
         <b :class="Number(job.totalReturn) >= 0 ? 'up' : 'down'">
           {{ job.totalReturn != null ? (Number(job.totalReturn) * 100).toFixed(2) + '%' : '-' }}
         </b>
       </div>
       <div class="stat-card">
-        <label>年化</label>
+        <label><TermTip term="annualized_return">年化</TermTip></label>
         <b>{{ job.annualReturn != null ? (Number(job.annualReturn) * 100).toFixed(2) + '%' : '-' }}</b>
       </div>
       <div class="stat-card">
-        <label>最大回撤</label>
+        <label><TermTip term="max_drawdown">最大回撤</TermTip></label>
         <b class="down">{{ job.maxDrawdown != null ? (Number(job.maxDrawdown) * 100).toFixed(2) + '%' : '-' }}</b>
       </div>
       <div class="stat-card">
-        <label>夏普</label>
+        <label><TermTip term="sharpe">夏普</TermTip></label>
         <b>{{ job.sharpe != null ? Number(job.sharpe).toFixed(2) : '-' }}</b>
       </div>
       <div class="stat-card">
-        <label>Sortino</label>
+        <label><TermTip term="sortino">Sortino</TermTip></label>
         <b>{{ job.sortino != null ? Number(job.sortino).toFixed(2) : '-' }}</b>
       </div>
       <div class="stat-card">
-        <label>胜率</label>
+        <label><TermTip term="win_rate">胜率</TermTip></label>
         <b>{{ job.winRate != null ? (Number(job.winRate) * 100).toFixed(1) + '%' : '-' }}</b>
       </div>
       <div class="stat-card">
-        <label>期望/笔</label>
+        <label><TermTip term="expectancy">期望/笔</TermTip></label>
         <b>{{ expectancy != null ? expectancy : '-' }}</b>
       </div>
       <div class="stat-card">

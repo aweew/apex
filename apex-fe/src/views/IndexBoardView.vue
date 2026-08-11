@@ -605,12 +605,12 @@ onBeforeUnmount(() => {
       <section class="pulse" aria-label="市场脉搏">
         <div class="pulse-width">
           <div class="pulse-tile vol">
-            <span class="k">三市成交</span>
+            <span class="k"><TermTip term="amount">三市成交</TermTip></span>
             <strong class="v">{{ briefing?.indexVolumeText || '--' }}</strong>
             <span v-if="volumeChangeText" class="sub">{{ volumeChangeText }}</span>
           </div>
           <div class="pulse-tile breadth">
-            <span class="k">涨跌家数</span>
+            <span class="k"><TermTip term="market_breadth">涨跌家数</TermTip></span>
             <template v-if="breadth">
               <div class="pair">
                 <strong class="up">{{ breadth.up }}</strong>
@@ -628,7 +628,7 @@ onBeforeUnmount(() => {
             <strong v-else class="v miss">--</strong>
           </div>
           <div class="pulse-tile limit">
-            <span class="k">涨跌停</span>
+            <span class="k"><TermTip term="price_limit_system">涨跌停</TermTip></span>
             <template v-if="limitPair">
               <div class="pair">
                 <strong class="up">{{ limitPair.up ?? '--' }}</strong>
@@ -646,7 +646,7 @@ onBeforeUnmount(() => {
 
         <div v-if="effectMetrics.length" class="pulse-effect">
           <div class="pulse-effect-head">
-            <span class="pulse-effect-title">赚钱效应</span>
+            <span class="pulse-effect-title"><TermTip term="money_effect">赚钱效应</TermTip></span>
             <span v-if="effect?.hint" class="pulse-effect-hint">{{ effect.hint }}</span>
           </div>
           <div class="pulse-effect-grid">
@@ -668,7 +668,7 @@ onBeforeUnmount(() => {
       <div class="main-grid">
         <section class="chart-panel">
           <div class="panel-head">
-            <h2>指数走势</h2>
+            <h2><TermTip term="market_index">指数走势</TermTip></h2>
             <div class="mini-tabs">
               <button
                 v-for="item in cnIndexes.slice(0, 6)"
@@ -688,7 +688,7 @@ onBeforeUnmount(() => {
         <aside class="side-panels">
           <section class="side-card">
             <div class="panel-head">
-              <h2>行业涨幅 <small v-if="industryTradeDate">{{ industryTradeDate }}</small></h2>
+              <h2><TermTip term="sector">行业涨幅</TermTip> <small v-if="industryTradeDate">{{ industryTradeDate }}</small></h2>
               <button type="button" class="link" @click="router.push('/sector')">更多</button>
             </div>
             <ul v-if="industryRows.length" class="rank-list">
@@ -703,7 +703,7 @@ onBeforeUnmount(() => {
 
           <section class="side-card">
             <div class="panel-head">
-              <h2>概念涨幅 <small v-if="conceptTradeDate">{{ conceptTradeDate }}</small></h2>
+              <h2><TermTip term="concept_board">概念涨幅</TermTip> <small v-if="conceptTradeDate">{{ conceptTradeDate }}</small></h2>
               <button type="button" class="link" @click="router.push({ path: '/sector', query: { type: 'CONCEPT' } })">更多</button>
             </div>
             <ul v-if="conceptRows.length" class="rank-list">

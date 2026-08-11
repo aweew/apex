@@ -549,7 +549,7 @@ onBeforeUnmount(() => {
     <header v-if="!embedded" class="header">
       <div>
         <p class="eyebrow">灵枢 · Heatmap</p>
-        <h1>大盘云图</h1>
+        <h1><TermTip term="sector">大盘云图</TermTip></h1>
         <p>{{ subtitle }}</p>
       </div>
       <div class="actions">
@@ -581,7 +581,7 @@ onBeforeUnmount(() => {
 
     <section v-else id="heatmap" class="embed-head">
       <div class="embed-title">
-        <h2>大盘云图</h2>
+        <h2><TermTip term="sector">大盘云图</TermTip></h2>
         <p>{{ subtitle }}</p>
       </div>
       <div class="actions">
@@ -643,7 +643,8 @@ onBeforeUnmount(() => {
           </el-table-column>
           <el-table-column prop="name" label="名称" min-width="96" />
           <el-table-column prop="latestPrice" label="现价" width="72" />
-          <el-table-column prop="pctChg" label="涨跌%" width="80">
+          <el-table-column prop="pctChg" width="80">
+            <template #header><TermTip term="pct_chg">涨跌%</TermTip></template>
             <template #default="{ row }">
               <span :style="{ color: pctColor(row.pctChg) }">{{ fmtPct(row.pctChg) }}</span>
             </template>
