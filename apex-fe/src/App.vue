@@ -296,6 +296,7 @@ onBeforeUnmount(() => {
   <div class="shell" :class="{ dense: denseMode }">
     <nav
       class="nav"
+      :class="{ 'nav--opaque': route.path.startsWith('/portfolio') }"
       aria-label="主导航"
       :inert="searchOpen"
       :aria-hidden="searchOpen ? 'true' : undefined"
@@ -559,6 +560,12 @@ onBeforeUnmount(() => {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
   user-select: none;
   -webkit-user-select: none;
+}
+
+.nav.nav--opaque {
+  background: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .app-activity {

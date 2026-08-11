@@ -2002,7 +2002,7 @@ onBeforeUnmount(() => {
   padding: 12px;
   min-height: 420px;
   position: sticky;
-  top: 12px;
+  top: 68px;
   transition: padding 0.2s ease;
 }
 .side.collapsed {
