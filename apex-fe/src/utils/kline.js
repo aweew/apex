@@ -1,3 +1,10 @@
+/** 默认展示最近约三个月的日 K；数据不足时展示全部 */
+export function defaultVisibleStart(barCount, visibleBars = 60) {
+  const count = Number(barCount)
+  if (!Number.isFinite(count) || count <= visibleBars) return 0
+  return Number((((count - visibleBars) / count) * 100).toFixed(2))
+}
+
 /** 交易日归属桶：日 / 自然周(周一) / 月 */
 export function periodBucket(tradeDate, period) {
   const text = String(tradeDate || '')

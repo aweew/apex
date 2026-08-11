@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { aggregateBars, periodBucket, tdSequential } from './kline.js'
+import { aggregateBars, defaultVisibleStart, periodBucket, tdSequential } from './kline.js'
+
+test('defaultVisibleStart keeps roughly three months of daily bars visible', () => {
+  assert.equal(defaultVisibleStart(40), 0)
+  assert.equal(defaultVisibleStart(60), 0)
+  assert.equal(defaultVisibleStart(120), 50)
+  assert.equal(defaultVisibleStart(500), 88)
+})
 
 test('periodBucket week uses Monday', () => {
   // 2026-03-13 Friday -> week of 2026-03-09 Monday

@@ -13,7 +13,7 @@ import {
 } from '../api/stock'
 import { syncBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
-import { aggregateBars, tdSequential } from '../utils/kline'
+import { aggregateBars, defaultVisibleStart, tdSequential } from '../utils/kline'
 import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceStructure'
 import { bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
@@ -75,7 +75,7 @@ const MA_NAMES = MA_META.map((item) => item.name)
 let chart
 let syncingFromLegend = false
 let resetZoomNext = true
-let savedZoom = { start: 45, end: 100 }
+let savedZoom = { start: 0, end: 100 }
 let intradayPollTimer = null
 /** 当前图数据，供可视区高低点随缩放更新 */
 let chartPayload = null
@@ -574,7 +574,7 @@ function resetChartView() {
     return
   }
   resetZoomNext = true
-  savedZoom = { start: chartBars.value.length <= 80 ? 0 : 45, end: 100 }
+  savedZoom = { start: defaultVisibleStart(chartBars.value.length), end: 100 }
   if (bars.value.length && activeTab.value === 'chart') refreshChart()
 }
 
@@ -902,7 +902,7 @@ async function renderChart(list) {
   // 保证 20/50/80 虚线标尺落在可视范围内
   kdjMin = Math.min(Math.floor(kdjMin - kdjPad), 15)
   kdjMax = Math.max(Math.ceil(kdjMax + kdjPad), 85)
-  let zoomStart = list.length <= 80 ? 0 : 45
+  let zoomStart = defaultVisibleStart(list.length)
   let zoomEnd = 100
   if (!resetZoomNext && list.length > 0) {
     zoomStart = savedZoom.start
@@ -1715,10 +1715,13 @@ function dash(v) {
 <template>
   <div class="page" v-loading="loading">
     <header class="header">
-      <div>
+      <div class="stock-heading">
         <p class="eyebrow">灵枢 · Stock</p>
-        <h1>{{ basic?.name || '股票详情' }} <span class="code">{{ basic?.code || code }}</span></h1>
-        <p>{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
+        <h1>
+          <span class="stock-name">{{ basic?.name || '股票详情' }}</span>
+          <span class="code">{{ basic?.code || code }}</span>
+        </h1>
+        <p class="stock-note">{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>
       <div class="actions">
         <el-button type="primary" :loading="syncingBars" @click="syncStockData">同步数据</el-button>
@@ -2784,6 +2787,84 @@ function dash(v) {
 }
 
 @media (max-width: 820px) {
+  .header {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .stock-heading {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .header .eyebrow {
+    margin-bottom: 2px;
+    font-size: 11px;
+  }
+
+  .header h1,
+  :global(.shell.dense) .header h1 {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 24px;
+    line-height: 1.2;
+  }
+
+  .stock-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header .code {
+    flex: 0 0 auto;
+    margin-left: 0;
+    font-size: 14px;
+  }
+
+  .header .stock-note,
+  :global(.shell.dense) .header .stock-note {
+    display: block;
+    max-width: 100%;
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header .actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .header .actions :deep(.el-button) {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 4px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  .header .actions :deep(.el-button:not(.el-button--primary)) {
+    border-color: var(--line);
+    background: rgba(255, 255, 255, 0.62);
+    color: var(--ink-soft);
+  }
+
+  .header .actions :deep(.el-button:not(.el-button--primary):active) {
+    background: rgba(0, 113, 227, 0.08);
+    color: var(--accent);
+  }
+
   .chart-toolbar {
     gap: 6px;
     margin-bottom: 8px;
@@ -2802,12 +2883,16 @@ function dash(v) {
 
   .period-mode :deep(.el-radio-button) {
     min-width: 0;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
     flex: 1;
   }
 
   .period-mode :deep(.el-radio-button__inner),
   .td-mode :deep(.el-radio-button__inner) {
-    min-height: 44px;
+    height: 36px;
+    min-height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2865,6 +2950,9 @@ function dash(v) {
   }
 
   .td-mode :deep(.el-radio-button) {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
     flex: 1;
   }
 
@@ -2888,6 +2976,16 @@ function dash(v) {
     touch-action: manipulation;
     user-select: none;
     -webkit-user-select: none;
+  }
+}
+
+@media (max-width: 820px) and (orientation: landscape) {
+  .header .actions {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+
+  .header .actions :deep(.el-button) {
+    font-size: 12px;
   }
 }
 </style>
