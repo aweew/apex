@@ -28,6 +28,19 @@ export function isOutcomeBoard(name) {
   return keywords.some((k) => n.includes(k))
 }
 
+export function isConceptBoard(name, boardType = 'CONCEPT') {
+  if (boardType !== 'CONCEPT' || isOutcomeBoard(name)) return false
+  const n = String(name).trim()
+  const styleKeywords = [
+    '风格', 'ST股', '重仓', '成份', '成分', '新高', '新低', '低价股', '高价股',
+    '百元股', '超跌股', '热股', '密集调研', '摘帽', '融资融券', '沪股通', '深股通',
+    '北向资金', '机构持股', '社保持股', '养老金', 'QFII', 'MSCI', '富时罗素',
+    '破净股', '高股息', '绩优股', '蓝筹股', '大盘股', '中盘股', '小盘股',
+    '预增', '预亏', '高送转', '股权激励', 'AH股',
+  ]
+  return !styleKeywords.some((keyword) => n.includes(keyword))
+}
+
 /**
  * @param {number|string|null|undefined} pctChg
  * @returns {{ sign: string, abs: string, text: string, dir: ''|'up'|'down' }|null}
@@ -64,7 +77,7 @@ export function normalizeHotThemes(source) {
   const items = source?.hotThemeItems
   if (Array.isArray(items) && items.length) {
     return items
-      .filter((it) => it && it.name && !isOutcomeBoard(it.name))
+      .filter((it) => it && isConceptBoard(it.name, it.boardType || 'CONCEPT'))
       .map((it) => {
         const pct = formatHotThemePct(it.pctChg)
         return {
@@ -81,7 +94,7 @@ export function normalizeHotThemes(source) {
   }
   const names = source?.hotThemes || []
   return names
-    .filter((name) => name && !isOutcomeBoard(name))
+    .filter((name) => isConceptBoard(name))
     .map((name) => ({
       name,
       pctChg: null,

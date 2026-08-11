@@ -22,7 +22,7 @@ import {
   shareFilename,
 } from '../utils/shareCapture.js'
 import HeatmapView from './HeatmapView.vue'
-import { normalizeHotThemes } from '../utils/hotTheme.js'
+import { isConceptBoard, normalizeHotThemes } from '../utils/hotTheme.js'
 import { formatVolumeChangeText } from '../utils/marketVolume.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
@@ -223,7 +223,9 @@ async function load(forceBriefing = false) {
     briefing.value = brief.data
     marketBoard.value = board.data
     industryRows.value = Array.isArray(industry.data?.items) ? industry.data.items : []
-    conceptRows.value = Array.isArray(concept.data?.items) ? concept.data.items : []
+    conceptRows.value = Array.isArray(concept.data?.items)
+      ? concept.data.items.filter((row) => isConceptBoard(row?.name, row?.boardType || 'CONCEPT'))
+      : []
     industryTradeDate.value = snapshotStamp(industry.data)
     conceptTradeDate.value = snapshotStamp(concept.data)
 

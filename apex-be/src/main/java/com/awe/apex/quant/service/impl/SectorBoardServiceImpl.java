@@ -155,12 +155,17 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
                 query.orderByDesc(SectorQuote::getPctChg);
             }
         }
-        query.last("LIMIT " + size);
+        int querySize = "CONCEPT".equals(type) ? Math.min(size * 3, 500) : size;
+        query.last("LIMIT " + querySize);
         List<SectorQuote> quotes = sectorQuoteMapper.selectList(query);
 
         List<SectorBoardItem> items = new ArrayList<>();
         LocalDateTime syncedAt = null;
         for (SectorQuote quote : quotes) {
+            if ("CONCEPT".equals(type)
+                    && !MainlineBoardRules.isConceptBoard(quote.getBoardType(), quote.getName())) {
+                continue;
+            }
             if (Objects.isNull(syncedAt) && Objects.nonNull(quote.getSyncedAt())) {
                 syncedAt = quote.getSyncedAt();
             }
@@ -185,6 +190,9 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
                     .moveReason(quote.getMoveReason())
                     .syncedAt(quote.getSyncedAt())
                     .build());
+            if (items.size() >= size) {
+                break;
+            }
         }
 
         String message = items.isEmpty()
@@ -321,12 +329,10 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
         }
 
         List<SectorBoardItem> pool = new ArrayList<>();
-        for (String type : List.of("INDUSTRY", "CONCEPT", "THEME")) {
-            LocalDate resolvedDate = resolveTradeDate(tradeDate, null, latestTradeDate(type));
-            if (Objects.isNull(resolvedDate)) {
-                continue;
-            }
-            // 多取一些再过滤结果型板；排序用净流入优先，避免纯涨幅刷榜
+        String type = "CONCEPT";
+        LocalDate resolvedDate = resolveTradeDate(tradeDate, null, latestTradeDate(type));
+        if (Objects.nonNull(resolvedDate)) {
+            // 多取一些再过滤风格和统计标签；排序用净流入优先，避免纯涨幅刷榜
             List<SectorQuote> quotes = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
                     .eq(SectorQuote::getBoardType, type)
                     .eq(SectorQuote::getTradeDate, resolvedDate)
@@ -334,20 +340,19 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
                     .orderByDesc(SectorQuote::getPctChg3d)
                     .orderByDesc(SectorQuote::getPctChg)
                     .last("LIMIT 60"));
-            if (CollUtil.isEmpty(quotes)) {
-                continue;
-            }
-            for (SectorQuote quote : quotes) {
-                if (MainlineBoardRules.isOutcomeBoard(quote.getName())) {
-                    continue;
+            if (CollUtil.isNotEmpty(quotes)) {
+                for (SectorQuote quote : quotes) {
+                    if (!MainlineBoardRules.isConceptBoard(quote.getBoardType(), quote.getName())) {
+                        continue;
+                    }
+                    pool.add(toBoardItem(quote));
                 }
-                pool.add(toBoardItem(quote));
             }
         }
         if (CollUtil.isEmpty(pool)) {
             return List.of();
         }
-        // 资金+持续性为主，当日涨幅降权；排除结果型板后按综合分取 Top
+        // 资金+持续性为主，当日涨幅降权；纯概念板块按综合分取 Top
         BigDecimal maxPct = absMax(pool, SectorBoardItem::getPctChg);
         BigDecimal max3 = absMax(pool, SectorBoardItem::getPctChg3d);
         BigDecimal max5 = absMax(pool, SectorBoardItem::getPctChg5d);

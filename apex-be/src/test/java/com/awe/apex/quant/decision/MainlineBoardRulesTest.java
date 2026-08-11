@@ -34,6 +34,19 @@ class MainlineBoardRulesTest {
     }
 
     @Test
+    void keepOnlyPureConceptBoards() {
+        assertTrue(MainlineBoardRules.isConceptBoard("CONCEPT", "机器人执行器"));
+        assertTrue(MainlineBoardRules.isConceptBoard("CONCEPT", "创新药"));
+        assertTrue(MainlineBoardRules.isConceptBoard("CONCEPT", "商业航天"));
+        assertFalse(MainlineBoardRules.isConceptBoard("CONCEPT", "昨日打二板以上表现"));
+        assertFalse(MainlineBoardRules.isConceptBoard("CONCEPT", "昨日连板_含一字"));
+        assertFalse(MainlineBoardRules.isConceptBoard("CONCEPT", "基金重仓"));
+        assertFalse(MainlineBoardRules.isConceptBoard("CONCEPT", "医药医疗风格"));
+        assertFalse(MainlineBoardRules.isConceptBoard("INDUSTRY", "创新药"));
+        assertFalse(MainlineBoardRules.isConceptBoard("THEME", "机器人执行器"));
+    }
+
+    @Test
     void blankNameExcluded() {
         assertTrue(MainlineBoardRules.isOutcomeBoard(null));
         assertTrue(MainlineBoardRules.isOutcomeBoard("  "));

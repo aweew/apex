@@ -32,6 +32,7 @@ import com.awe.apex.quant.domain.dto.LimitUpLadderResp;
 import com.awe.apex.quant.domain.dto.LimitUpStockItem;
 import com.awe.apex.quant.domain.dto.LimitUpTier;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
 import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceItem;
@@ -2375,10 +2376,17 @@ public class DecisionServiceImpl implements IDecisionService {
 
     private List<String> resolveMainlineNames(MarketBriefingResp briefing, boolean allowCurrentFallback) {
         List<String> names = new ArrayList<>();
-        if (Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getHotThemes())) {
+        if (Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getHotThemeItems())) {
+            for (MarketHotThemeItem item : briefing.getHotThemeItems()) {
+                if (Objects.nonNull(item)
+                        && MainlineBoardRules.isConceptBoard(item.getBoardType(), item.getName())
+                        && names.size() < 8) {
+                    names.add(item.getName().trim());
+                }
+            }
+        } else if (Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getHotThemes())) {
             for (String theme : briefing.getHotThemes()) {
-                if (StringUtils.isNotBlank(theme)
-                        && !MainlineBoardRules.isOutcomeBoard(theme)
+                if (MainlineBoardRules.isConceptBoard("CONCEPT", theme)
                         && names.size() < 8) {
                     names.add(theme.trim());
                 }
@@ -2389,8 +2397,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 List<SectorBoardItem> mainline = sectorBoardService.mainline(null, 8);
                 for (SectorBoardItem item : mainline) {
                     if (Objects.nonNull(item)
-                            && StringUtils.isNotBlank(item.getName())
-                            && !MainlineBoardRules.isOutcomeBoard(item.getName())
+                            && MainlineBoardRules.isConceptBoard(item.getBoardType(), item.getName())
                             && names.size() < 8) {
                         names.add(item.getName().trim());
                     }

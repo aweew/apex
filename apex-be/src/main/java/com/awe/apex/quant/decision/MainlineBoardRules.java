@@ -3,7 +3,7 @@ package com.awe.apex.quant.decision;
 import com.awe.apex.common.util.StringUtils;
 
 /**
- * 主线板块规则：排除结果型情绪板，并给出类型偏好
+ * 主线板块规则：识别纯概念板块，并提供板块评分规则
  */
 public final class MainlineBoardRules {
 
@@ -51,6 +51,18 @@ public final class MainlineBoardRules {
             "打板",
     };
 
+    /**
+     * 风格、持仓与统计标签，不属于产业概念板块
+     */
+    private static final String[] STYLE_KEYWORDS = {
+            "风格", "ST股", "重仓", "成份", "成分", "新高", "新低",
+            "低价股", "高价股", "百元股", "超跌股", "热股", "密集调研", "摘帽",
+            "融资融券", "沪股通", "深股通", "北向资金", "机构持股", "社保持股",
+            "养老金", "QFII", "MSCI", "富时罗素", "破净股", "高股息", "绩优股",
+            "蓝筹股", "大盘股", "中盘股", "小盘股", "预增", "预亏", "高送转",
+            "股权激励", "AH股",
+    };
+
     private MainlineBoardRules() {
     }
 
@@ -84,6 +96,26 @@ public final class MainlineBoardRules {
             }
         }
         return false;
+    }
+
+    /**
+     * 是否为可用于概念涨幅和主线识别的纯概念板块
+     *
+     * @param boardType 板块类型
+     * @param boardName 板块名称
+     * @return true=纯概念板块
+     */
+    public static boolean isConceptBoard(String boardType, String boardName) {
+        if (!"CONCEPT".equals(boardType) || isOutcomeBoard(boardName)) {
+            return false;
+        }
+        String name = boardName.trim();
+        for (String keyword : STYLE_KEYWORDS) {
+            if (name.contains(keyword)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean containsEmotionToken(String name) {

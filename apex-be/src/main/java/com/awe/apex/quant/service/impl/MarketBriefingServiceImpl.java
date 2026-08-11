@@ -2256,7 +2256,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             List<SectorBoardItem> mainline = sectorBoardService.mainline(null, 6);
             if (CollUtil.isNotEmpty(mainline)) {
                 for (SectorBoardItem item : mainline) {
-                    if (StringUtils.isNotBlank(item.getName()) && !MainlineBoardRules.isOutcomeBoard(item.getName())) {
+                    if (MainlineBoardRules.isConceptBoard(item.getBoardType(), item.getName())) {
                         themes.add(MarketHotThemeItem.builder()
                                 .name(item.getName())
                                 .pctChg(scalePct(item.getPctChg()))
@@ -2271,9 +2271,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (CollUtil.isNotEmpty(themes)) {
             return themes;
         }
-        // 退化：题材/概念按净流入+3日涨幅，排除结果型板
+        // 退化：纯概念板块按净流入+3日涨幅排序
         SectorQuote latest = sectorQuoteMapper.selectOne(Wrappers.<SectorQuote>lambdaQuery()
-                .in(SectorQuote::getBoardType, List.of("THEME", "CONCEPT", "INDUSTRY"))
+                .eq(SectorQuote::getBoardType, "CONCEPT")
                 .orderByDesc(SectorQuote::getTradeDate)
                 .last("LIMIT 1"));
         if (Objects.isNull(latest) || Objects.isNull(latest.getTradeDate())) {
@@ -2281,7 +2281,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
         List<SectorQuote> tops = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
                 .eq(SectorQuote::getTradeDate, latest.getTradeDate())
-                .in(SectorQuote::getBoardType, List.of("INDUSTRY", "CONCEPT", "THEME"))
+                .eq(SectorQuote::getBoardType, "CONCEPT")
                 .orderByDesc(SectorQuote::getNetInflow)
                 .orderByDesc(SectorQuote::getPctChg3d)
                 .orderByDesc(SectorQuote::getPctChg)
@@ -2289,7 +2289,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         Map<String, Boolean> seen = new HashMap<>();
         for (SectorQuote q : tops) {
             if (StringUtils.isBlank(q.getName())
-                    || MainlineBoardRules.isOutcomeBoard(q.getName())
+                    || !MainlineBoardRules.isConceptBoard(q.getBoardType(), q.getName())
                     || seen.containsKey(q.getName())) {
                 continue;
             }
