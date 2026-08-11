@@ -19,6 +19,7 @@ import {
 } from '../utils/shareCapture.js'
 import { securityMarketBadge } from '../utils/securityMarket.js'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
+import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -757,9 +758,6 @@ onBeforeUnmount(() => {
         <p>手动维护；决策卖出/持有读这里。日常点「刷新行情+日线」更新价格与 K 线。亦可在「组合」中查看默认仓。</p>
       </div>
       <div class="actions">
-        <el-button type="primary" plain :loading="sharing" :disabled="!rows.length" @click="openShare">
-          {{ sharing ? '生成中…' : '分享截图' }}
-        </el-button>
         <el-button type="primary" @click="openCreate">添加持仓</el-button>
         <el-button
           plain
@@ -775,6 +773,13 @@ onBeforeUnmount(() => {
         <el-button text :loading="loading" @click="load()">重载列表</el-button>
       </div>
     </header>
+
+    <FloatingShareButton
+      v-if="!shareOpen"
+      :loading="sharing"
+      :disabled="!rows.length"
+      @click="openShare"
+    />
 
     <div v-if="rows.length" class="stat-cards">
       <div class="stat-card">

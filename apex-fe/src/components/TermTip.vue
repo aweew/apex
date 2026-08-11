@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { findTerm, GLOSSARY_EVENT } from '../glossary/lookup.js'
 
 const props = defineProps({
@@ -10,6 +10,12 @@ const props = defineProps({
 })
 
 const entry = computed(() => findTerm(props.term))
+const isMobile = ref(false)
+let mobileMediaQuery
+
+function syncMobile() {
+  isMobile.value = mobileMediaQuery?.matches ?? false
+}
 
 function openFull() {
   if (!entry.value) return
@@ -17,11 +23,29 @@ function openFull() {
     new CustomEvent(GLOSSARY_EVENT, { detail: { termId: entry.value.id } }),
   )
 }
+
+onMounted(() => {
+  mobileMediaQuery = window.matchMedia('(max-width: 820px), (hover: none)')
+  syncMobile()
+  mobileMediaQuery.addEventListener?.('change', syncMobile)
+})
+
+onBeforeUnmount(() => {
+  mobileMediaQuery?.removeEventListener?.('change', syncMobile)
+})
 </script>
 
 <template>
+  <button
+    v-if="entry && isMobile"
+    type="button"
+    class="term-tip"
+    @click.stop.prevent="openFull"
+  >
+    <slot>{{ entry.title }}</slot>
+  </button>
   <el-popover
-    v-if="entry"
+    v-else-if="entry"
     :placement="placement"
     :width="320"
     trigger="hover"

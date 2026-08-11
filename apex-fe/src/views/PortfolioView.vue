@@ -42,6 +42,7 @@ import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 import { securityMarketBadge } from '../utils/securityMarket.js'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
+import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -1314,20 +1315,6 @@ onBeforeUnmount(() => {
             </p>
           </div>
           <div class="actions">
-            <el-dropdown trigger="click" :disabled="sharing" @command="openShare">
-              <el-button type="primary" plain :loading="sharing">
-                {{ sharing ? '生成中…' : '分享截图' }}
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="today" :disabled="!selectedIds.length">
-                    今日战绩拼图{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
-                  </el-dropdown-item>
-                  <el-dropdown-item command="card" :disabled="!rows.length">卡片海报</el-dropdown-item>
-                  <el-dropdown-item command="page" :disabled="!rows.length">右侧原样长图</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
             <el-button type="primary" @click="openCreate">添加持仓</el-button>
             <el-button plain :loading="refreshing" :disabled="!rows.length" @click="onRefreshQuotes">
               刷新当前行情+日线
@@ -1337,6 +1324,29 @@ onBeforeUnmount(() => {
             <el-button v-if="detail.isDefault" plain @click="router.push('/holding')">打开持仓页</el-button>
           </div>
         </header>
+
+        <el-dropdown
+          v-if="!shareOpen"
+          class="floating-share-dropdown"
+          trigger="click"
+          :disabled="sharing"
+          @command="openShare"
+        >
+          <FloatingShareButton
+            :loading="sharing"
+            :disabled="!rows.length && !selectedIds.length"
+            label="选择分享方式"
+          />
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="today" :disabled="!selectedIds.length">
+                今日战绩拼图{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
+              </el-dropdown-item>
+              <el-dropdown-item command="card" :disabled="!rows.length">卡片海报</el-dropdown-item>
+              <el-dropdown-item command="page" :disabled="!rows.length">右侧原样长图</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
 
         <div v-if="rows.length" class="stat-cards" :class="{ 'stat-cards--share': sharingCapture }">
           <div class="stat-card">
@@ -1898,6 +1908,24 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.floating-share-dropdown {
+  position: fixed;
+  right: max(18px, calc((100vw - 1240px) / 2));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  z-index: 850;
+}
+
+.floating-share-dropdown :deep(.floating-share-button) {
+  position: static;
+}
+
+@media (max-width: 820px) {
+  .floating-share-dropdown {
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+}
+
 .eyebrow {
   margin: 0 0 4px;
   font-size: 12px;

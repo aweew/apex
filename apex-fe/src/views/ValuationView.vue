@@ -5,10 +5,15 @@ import { ElMessage } from 'element-plus'
 import { saveObserve } from '../api/observe'
 import { fetchValuation, fetchValuationScreen } from '../api/valuation'
 
+const props = defineProps({
+  embedded: { type: Boolean, default: false },
+  stockCode: { type: String, default: '' },
+})
+
 const route = useRoute()
 const router = useRouter()
 
-const code = ref(String(route.query.code || '600519'))
+const code = ref(String(props.stockCode || route.query.code || '600519'))
 const loading = ref(false)
 const screenLoading = ref(false)
 const detail = ref(null)
@@ -34,7 +39,9 @@ async function loadDetail() {
   try {
     const res = await fetchValuation(c)
     detail.value = res.data || null
-    router.replace({ query: { ...route.query, code: c } })
+    if (!props.embedded) {
+      router.replace({ query: { ...route.query, code: c } })
+    }
   } catch (e) {
     detail.value = null
     ElMessage.error(e.message || '估值加载失败')
@@ -141,8 +148,18 @@ function dimBarColor(score) {
 watch(
   () => route.query.code,
   (v) => {
-    if (v && String(v) !== code.value) {
+    if (!props.embedded && v && String(v) !== code.value) {
       code.value = String(v)
+      loadDetail()
+    }
+  },
+)
+
+watch(
+  () => props.stockCode,
+  (value) => {
+    if (props.embedded && value && String(value) !== code.value) {
+      code.value = String(value)
       loadDetail()
     }
   },
@@ -150,13 +167,13 @@ watch(
 
 onMounted(() => {
   loadDetail()
-  loadScreen()
+  if (!props.embedded) loadScreen()
 })
 </script>
 
 <template>
-  <div class="page" v-loading="loading">
-    <header class="header">
+  <div class="page" :class="{ 'is-embedded': props.embedded }" v-loading="loading">
+    <header v-if="!props.embedded" class="header">
       <div>
         <p class="eyebrow">灵枢 · Valuation</p>
         <h1>估值系统</h1>
@@ -274,7 +291,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="card-block screen">
+    <section v-if="!props.embedded" class="card-block screen">
       <div class="screen-head">
         <h3>估值筛选</h3>
         <div class="screen-actions">
@@ -339,6 +356,10 @@ onMounted(() => {
 .page {
   padding: 20px 24px 40px;
   max-width: 1200px;
+}
+.page.is-embedded {
+  max-width: none;
+  padding: 4px 0 24px;
 }
 .eyebrow {
   margin: 0 0 4px;

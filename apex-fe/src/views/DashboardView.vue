@@ -704,7 +704,7 @@ onMounted(() => {
             <h3>持仓行动</h3>
             <p class="panel-desc">止损止盈与策略卖出优先</p>
           </div>
-          <el-button link type="primary" @click="router.push('/holding')">我的持仓</el-button>
+          <el-button link type="primary" @click="router.push('/portfolio')">我的组合</el-button>
         </div>
 
         <div class="panel-meta">

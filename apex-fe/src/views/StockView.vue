@@ -18,6 +18,7 @@ import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceS
 import { bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
 import ChipDistributionPanel from '../components/ChipDistributionPanel.vue'
+import ValuationView from './ValuationView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,7 +40,7 @@ const rs20 = ref(null)
 const rs60 = ref(null)
 const volumeRatio = ref(null)
 const chartRef = ref(null)
-const activeTab = ref('chart')
+const activeTab = ref(route.query.tab === 'valuation' ? 'valuation' : 'chart')
 const fund = ref(null)
 const profile = ref(null)
 const macdTip = ref('')
@@ -1592,6 +1593,13 @@ watch(
   },
 )
 
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (tab === 'valuation') activeTab.value = 'valuation'
+  },
+)
+
 watch(klinePeriod, () => {
   resetZoomNext = true
   saveChartPrefs()
@@ -1727,7 +1735,7 @@ function dash(v) {
         <el-button type="primary" :loading="syncingBars" @click="syncStockData">同步数据</el-button>
         <el-button type="warning" plain @click="activeTab = 'analysis'">综合研判</el-button>
         <el-button plain @click="router.push('/decision')">决策</el-button>
-        <el-button plain @click="router.push({ path: '/valuation', query: { code: code.trim() } })">估值</el-button>
+        <el-button plain @click="activeTab = 'valuation'">估值</el-button>
         <el-button plain @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
         <el-button plain @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">模拟买</el-button>
         <el-button type="warning" plain :loading="observeSaving" @click="quickAddObserve">加入观察池</el-button>
@@ -1790,6 +1798,12 @@ function dash(v) {
     <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">
       <el-tab-pane label="综合研判" name="analysis" lazy>
         <StockAnalysisPanel v-if="basic?.code || code" :code="String(basic?.code || code).trim()" />
+      </el-tab-pane>
+      <el-tab-pane label="估值" name="valuation" lazy>
+        <ValuationView
+          embedded
+          :stock-code="String(basic?.code || code).trim()"
+        />
       </el-tab-pane>
       <el-tab-pane label="行情图表" name="chart">
         <el-empty

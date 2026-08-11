@@ -25,6 +25,8 @@ import {
 import { preloadBrandAssets } from '../brand/identity.js'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
+import FloatingShareButton from '../components/FloatingShareButton.vue'
+import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -506,6 +508,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page decision" v-loading="loading">
+    <DecisionWorkspaceTabs />
     <header class="header dec-header">
       <div>
         <p class="eyebrow">灵枢 · Decision</p>
@@ -524,17 +527,15 @@ onBeforeUnmount(() => {
           含京市
         </el-checkbox>
         <el-button type="primary" class="cta" :loading="loading" @click="onRun">一键生成决策</el-button>
-        <el-button
-          type="primary"
-          plain
-          :loading="sharing"
-          :disabled="!buys.length && !sells.length && !holds.length"
-          @click="openShare"
-        >
-          {{ sharing ? '生成中…' : '分享截图' }}
-        </el-button>
       </div>
     </header>
+
+    <FloatingShareButton
+      v-if="!shareOpen"
+      :loading="sharing"
+      :disabled="!buys.length && !sells.length && !holds.length"
+      @click="openShare"
+    />
 
     <!-- ① 市场立场 -->
     <section
@@ -758,7 +759,7 @@ onBeforeUnmount(() => {
                   v-if="row.valuationLabel"
                   link
                   type="primary"
-                  @click="router.push({ path: '/valuation', query: { code: row.code } })"
+                  @click="router.push({ path: `/stock/${row.code}`, query: { tab: 'valuation' } })"
                 >{{ row.valuationLabel }}</el-button>
                 <span v-else class="muted">-</span>
               </template>

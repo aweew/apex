@@ -14,6 +14,7 @@ import {
 import BrandShareLockup from './share/BrandShareLockup.vue'
 import BrandShareFoot from './share/BrandShareFoot.vue'
 import { BRAND } from '../brand/identity.js'
+import FloatingShareButton from './FloatingShareButton.vue'
 
 const props = defineProps({
   code: { type: String, required: true },
@@ -423,17 +424,19 @@ defineExpose({ reload: () => loadRules() })
       <el-button size="small" type="warning" plain :loading="aiLoading" @click="refreshAi">AI 实时解读</el-button>
       <el-button
         size="small"
-        type="primary"
-        class="share-action-btn"
-        :loading="sharing"
-        :disabled="!data"
-        @click="openShare"
-      >
-        分享图片
-      </el-button>
-      <el-button size="small" plain @click="router.push({ path: '/valuation', query: { code } })">完整估值</el-button>
+        plain
+        @click="router.push({ path: `/stock/${code}`, query: { tab: 'valuation' } })"
+      >完整估值</el-button>
       <el-button size="small" plain @click="router.push({ path: '/backtest', query: { code } })">回测</el-button>
     </div>
+
+    <FloatingShareButton
+      v-if="!shareOpen"
+      :loading="sharing"
+      :disabled="!data"
+      label="分享个股研判"
+      @click="openShare"
+    />
 
     <el-empty v-if="!loading && error" :description="error">
       <el-button type="primary" @click="loadRules">重试</el-button>

@@ -9,7 +9,7 @@ import { saveObserve } from '../api/observe'
 const router = useRouter()
 const loading = ref(false)
 const marketLoading = ref(false)
-const activeTab = ref('screen')
+const activeTab = ref('market')
 
 const meta = ref({
   marketCount: null,
@@ -204,6 +204,7 @@ watch(activeTab, (tab) => {
 
 onMounted(() => {
   loadMeta()
+  loadMarket(true)
 })
 </script>
 
@@ -212,7 +213,7 @@ onMounted(() => {
     <header class="header">
       <div>
         <p class="eyebrow">灵枢 · Screener</p>
-        <h1>条件选股</h1>
+        <h1>股票</h1>
         <p class="meta-line">
           <span class="chip">全市场 <b>{{ meta.marketCount ?? '—' }}</b></span>
           <span class="chip pool">股票池 <b>{{ meta.universeCount ?? '—' }}</b></span>
@@ -222,14 +223,12 @@ onMounted(() => {
       </div>
       <div class="actions">
         <el-button @click="loadMeta">刷新数量</el-button>
-        <el-button plain @click="router.push('/signals')">信号 / 重建池</el-button>
-        <el-button plain @click="router.push('/decision')">智能决策</el-button>
       </div>
     </header>
 
     <el-tabs v-model="activeTab" class="tabs">
-      <el-tab-pane label="条件选股" name="screen" />
-      <el-tab-pane :label="`全市场股票${meta.marketCount != null ? ' (' + meta.marketCount + ')' : ''}`" name="market" />
+      <el-tab-pane :label="`股票列表${meta.marketCount != null ? ' (' + meta.marketCount + ')' : ''}`" name="market" />
+      <el-tab-pane label="筛选条件" name="screen" />
     </el-tabs>
 
     <template v-if="activeTab === 'screen'">
@@ -298,7 +297,6 @@ onMounted(() => {
         </p>
         <el-button type="primary" :loading="loading" @click="onRun">运行选股</el-button>
         <el-button plain @click="activeTab = 'market'">浏览全市场</el-button>
-        <el-button plain @click="router.push('/valuation')">估值筛选</el-button>
       </div>
 
       <el-table

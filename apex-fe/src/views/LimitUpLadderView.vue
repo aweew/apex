@@ -15,6 +15,7 @@ import {
 } from '../utils/shareCapture'
 import { buildLimitUpShareSheet, mountShareSheet, LIMIT_UP_SHARE_WIDTH } from '../utils/limitUpShareSheet'
 import { snapshotFallbackText, snapshotStamp } from '../utils/snapshotDate'
+import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
 const tradeDateStore = useTradeDateStore()
@@ -427,18 +428,17 @@ onBeforeUnmount(() => {
           :disabled-date="disableUnavailableDate"
         />
         <el-button type="primary" :loading="refreshing" @click="onRefresh">刷新</el-button>
-        <el-button
-          class="share-action-btn"
-          :loading="sharing"
-          :disabled="!filteredTiers.length"
-          @click="openShare"
-        >
-          分享截图
-        </el-button>
         <el-button plain @click="router.push('/sector')">板块</el-button>
         <el-button plain @click="router.push('/hot')">热点</el-button>
       </div>
     </header>
+
+    <FloatingShareButton
+      v-if="!shareOpen"
+      :loading="sharing"
+      :disabled="!filteredTiers.length"
+      @click="openShare"
+    />
 
     <section v-if="effect" class="effect-bar">
       <span>昨涨停 <b>{{ effect.prevCount ?? '-' }}</b> 家</span>

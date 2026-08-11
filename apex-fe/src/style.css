@@ -730,9 +730,9 @@ textarea {
 
   .page .header > .actions,
   .page .header > .header-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     width: 100%;
   }
 
@@ -750,7 +750,7 @@ textarea {
   .page .header > .header-actions > .el-link,
   .page .header > .actions > .btn,
   .page .header > .header-actions > .btn {
-    width: 100%;
+    width: auto;
   }
 
   .page .header > .actions > .el-dropdown .el-button,
@@ -765,7 +765,8 @@ textarea {
   .page .header > .header-actions > .el-select,
   .page .header > .actions > .el-date-editor,
   .page .header > .header-actions > .el-date-editor {
-    width: 100% !important;
+    flex: 1 1 140px;
+    width: auto !important;
     min-height: 44px;
   }
 
@@ -782,7 +783,7 @@ textarea {
   .page .header > .header-actions > .tabs,
   .page .header > .actions > .el-radio-group,
   .page .header > .header-actions > .el-radio-group {
-    grid-column: 1 / -1;
+    flex: 1 0 100%;
     width: 100%;
   }
 
@@ -795,11 +796,6 @@ textarea {
   .page .header > .header-actions > .tabs > button {
     flex: 1;
     min-height: 38px;
-  }
-
-  .page .header > .actions > :last-child:nth-child(odd),
-  .page .header > .header-actions > :last-child:nth-child(odd) {
-    grid-column: 1 / -1;
   }
 
   .page .header > .actions > .el-button,
@@ -949,9 +945,9 @@ textarea {
 @media (min-width: 561px) and (max-width: 900px) and (orientation: landscape) {
   .page .header > .actions,
   .page .header > .header-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-    align-items: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     width: 100%;
     gap: 8px;
   }
@@ -959,7 +955,6 @@ textarea {
   .page .header > .actions > *,
   .page .header > .header-actions > * {
     min-width: 0;
-    width: 100% !important;
     min-height: 44px;
     margin: 0;
   }
@@ -970,7 +965,7 @@ textarea {
   .page .header > .header-actions > .el-dropdown .el-button,
   .page .header > .actions > .btn,
   .page .header > .header-actions > .btn {
-    width: 100%;
+    width: auto;
     min-height: 44px;
     margin: 0;
     padding-right: 8px;

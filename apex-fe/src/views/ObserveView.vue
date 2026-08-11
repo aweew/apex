@@ -21,6 +21,7 @@ import {
 } from '../utils/shareCapture'
 import { buildObserveShareSheet, mountObserveShareSheet } from '../utils/observeShareSheet'
 import { buildApiUrl } from '../api/baseUrl'
+import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -654,14 +655,6 @@ onBeforeUnmount(() => {
         <button type="button" class="btn btn-ghost" :disabled="refreshing" @click="onRefresh">
           {{ refreshing ? '评估中…' : '重估' }}
         </button>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          :disabled="sharing || !visibleRows.length"
-          @click="openShare"
-        >
-          {{ sharing ? '生成中…' : '分享截图' }}
-        </button>
         <button type="button" class="btn btn-ghost" @click="openCreate()">手动加</button>
         <a
           class="btn btn-text"
@@ -672,6 +665,13 @@ onBeforeUnmount(() => {
         <button type="button" class="btn btn-text" @click="router.push('/decision')">决策明细</button>
       </div>
     </header>
+
+    <FloatingShareButton
+      v-if="!shareOpen"
+      :loading="sharing"
+      :disabled="!visibleRows.length"
+      @click="openShare"
+    />
 
     <div class="summary">
       <button type="button" class="sum buy" :class="{ on: sideTab === 'BUY' }" @click="sideTab = sideTab === 'BUY' ? 'ALL' : 'BUY'">
@@ -774,7 +774,7 @@ onBeforeUnmount(() => {
                   cheap: row.valuationLevel === 'UNDERVALUED' || row.valuationLevel === 'SLIGHTLY_CHEAP',
                   rich: row.valuationLevel === 'OVERVALUED' || row.valuationLevel === 'SLIGHTLY_EXPENSIVE',
                 }"
-                @click.stop="router.push({ path: '/valuation', query: { code: row.code } })"
+                @click.stop="router.push({ path: `/stock/${row.code}`, query: { tab: 'valuation' } })"
               >估·{{ row.valuationLabel }}</span>
               <span
                 v-if="linkHintOf(row)"

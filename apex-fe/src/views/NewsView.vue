@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Link, Share } from '@element-plus/icons-vue'
 import { fetchNewsOverview, fetchNewsPulse, refreshNews } from '../api/news'
 import { saveObserve } from '../api/observe'
 import NewsShareDialog from '../components/share/NewsShareDialog.vue'
@@ -237,8 +238,25 @@ onMounted(async () => {
               <el-button link type="warning" @click="addRelatedObserve(row)">相关进观察</el-button>
             </div>
             <div class="news-ops">
-              <button type="button" class="op-btn" :disabled="!row.url" @click="openUrl(row, $event)">看原文</button>
-              <button type="button" class="op-btn primary" @click="openShare(row, $event)">截图分享</button>
+              <button
+                type="button"
+                class="op-btn"
+                :disabled="!row.url"
+                aria-label="查看新闻原文"
+                title="看原文"
+                @click="openUrl(row, $event)"
+              >
+                <el-icon><Link /></el-icon>
+              </button>
+              <button
+                type="button"
+                class="op-btn primary"
+                aria-label="分享这条新闻"
+                title="分享新闻"
+                @click="openShare(row, $event)"
+              >
+                <el-icon><Share /></el-icon>
+              </button>
             </div>
           </article>
         </div>
@@ -338,6 +356,10 @@ onMounted(async () => {
 }
 .op-btn {
   appearance: none;
+  width: 40px;
+  height: 40px;
+  display: inline-grid;
+  place-items: center;
   border: 1px solid rgba(0, 0, 0, 0.12);
   background: rgba(255, 255, 255, 0.85);
   color: var(--ink, #1d1d1f);
@@ -345,9 +367,12 @@ onMounted(async () => {
   font-size: 13px;
   font-weight: 600;
   line-height: 1;
-  padding: 8px 14px;
+  padding: 0;
   border-radius: 10px;
   cursor: pointer;
+}
+.op-btn .el-icon {
+  font-size: 17px;
 }
 .op-btn:hover:not(:disabled) {
   border-color: rgba(0, 113, 227, 0.35);

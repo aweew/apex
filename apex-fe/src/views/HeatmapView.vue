@@ -15,6 +15,7 @@ import {
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 import { snapshotStamp } from '../utils/snapshotDate'
+import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const props = defineProps({
   /** 嵌入行情页时为 true，不展示独立页头 */
@@ -574,9 +575,6 @@ onBeforeUnmount(() => {
           />
         </el-select>
         <el-button :loading="loading" @click="load">刷新</el-button>
-        <el-button class="share-action-btn" type="primary" :loading="sharing" :disabled="!nodeCount" @click="openShare">
-          分享图片
-        </el-button>
         <el-button plain @click="router.push('/sector')">板块榜</el-button>
       </div>
     </header>
@@ -609,9 +607,16 @@ onBeforeUnmount(() => {
           />
         </el-select>
         <el-button :loading="loading" @click="load">刷新</el-button>
-        <el-button type="primary" :loading="sharing" :disabled="!nodeCount" @click="openShare">分享</el-button>
       </div>
     </section>
+
+    <FloatingShareButton
+      v-if="!embedded && !shareOpen"
+      :loading="sharing"
+      :disabled="!nodeCount"
+      label="分享大盘云图"
+      @click="openShare"
+    />
 
     <div ref="shareCardRef" class="share-card">
       <div class="share-head">

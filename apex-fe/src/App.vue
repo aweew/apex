@@ -6,6 +6,7 @@ import http from './api/http'
 import GlossaryPanel from './components/GlossaryPanel.vue'
 import { BRAND } from './brand/identity.js'
 import { isNavigating, requestCount } from './utils/appActivity'
+import { MAIN_NAV_GROUPS, PRIMARY_SHORTCUTS } from './navigation/menu.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -22,6 +23,7 @@ const mobileMenuButtonRef = ref(null)
 const mobileMenuCloseRef = ref(null)
 const appActivityVisible = ref(false)
 const appActivityFinishing = ref(false)
+const searchViewportStyle = ref({})
 /** 终端紧凑密度：缩小表格与页边距 */
 const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 let healthTimer
@@ -30,6 +32,14 @@ let debounceTimer
 let searchReturnFocus
 let activityShowTimer
 let activityHideTimer
+
+function updateSearchViewport() {
+  const viewport = window.visualViewport
+  searchViewportStyle.value = {
+    '--search-viewport-height': `${Math.round(viewport?.height || window.innerHeight)}px`,
+    '--search-viewport-top': `${Math.round(viewport?.offsetTop || 0)}px`,
+  }
+}
 
 function toggleDense() {
   denseMode.value = !denseMode.value
@@ -45,52 +55,13 @@ function closeMobileMenuOnDesktop() {
 }
 
 function isNavGroupActive(group) {
-  return group.items.some((item) => route.path === item.to || route.path.startsWith(`${item.to}/`))
+  return group.items.some((item) => {
+    const activePaths = item.activePaths || [item.to]
+    return activePaths.some((path) => route.path === path || route.path.startsWith(`${path}/`))
+  })
 }
 
-/** 对齐终端工作流：看板→研判→交易→市场→工具 */
-const navGroups = [
-  {
-    label: '主线',
-    items: [
-      { to: '/dashboard', label: '看板' },
-      { to: '/decision', label: '决策' },
-      { to: '/observe', label: '观察池' },
-      { to: '/holding', label: '持仓' },
-      { to: '/portfolio', label: '组合' },
-      { to: '/paper', label: '模拟盘' },
-    ],
-  },
-  {
-    label: '研究',
-    items: [
-      { to: '/signals', label: '信号' },
-      { to: '/valuation', label: '估值' },
-      { to: '/screener', label: '选股' },
-      { to: '/pipeline', label: '流水线' },
-      { to: '/backtest', label: '回测' },
-    ],
-  },
-  {
-    label: '市场',
-    items: [
-      { to: '/market', label: '行情' },
-      { to: '/sector', label: '板块' },
-      { to: '/limit-up', label: '涨停' },
-      { to: '/hot', label: '热点' },
-      { to: '/news', label: '消息/资讯' },
-    ],
-  },
-  {
-    label: '数据',
-    items: [
-      { to: '/watchlist', label: '自选' },
-      { to: '/sync', label: '同步' },
-      { to: '/daily', label: '日终' },
-      { to: '/config', label: '参数' },
-    ],
-  },
-]
+const navGroups = MAIN_NAV_GROUPS
 
 function openGlossary(termId) {
   glossaryRef.value?.openGlossary?.(termId)
@@ -138,6 +109,7 @@ function markHtml(text, keyword) {
 async function openSearch() {
   setMobileMenu(false)
   searchReturnFocus = document.activeElement
+  updateSearchViewport()
   searchOpen.value = true
   loadRecentStocks()
   await nextTick()
@@ -253,8 +225,7 @@ function onGlobalKeydown(e) {
   }
   // Ctrl+1..4 主线快捷跳转（终端习惯）
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
-    const map = { '1': '/dashboard', '2': '/decision', '3': '/observe', '4': '/holding' }
-    const path = map[e.key]
+    const path = PRIMARY_SHORTCUTS[e.key]
     if (path) {
       e.preventDefault()
       router.push(path)
@@ -311,6 +282,7 @@ watch(mobileMenuOpen, async (open) => {
 
 watch(searchOpen, (open) => {
   document.documentElement.classList.toggle('search-open', open)
+  if (open) updateSearchViewport()
 })
 
 onMounted(() => {
@@ -318,6 +290,8 @@ onMounted(() => {
   healthTimer = setInterval(pingHealth, 30000)
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('resize', closeMobileMenuOnDesktop)
+  window.visualViewport?.addEventListener('resize', updateSearchViewport)
+  window.visualViewport?.addEventListener('scroll', updateSearchViewport)
 })
 onBeforeUnmount(() => {
   if (healthTimer) clearInterval(healthTimer)
@@ -326,6 +300,8 @@ onBeforeUnmount(() => {
   clearTimeout(activityHideTimer)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', closeMobileMenuOnDesktop)
+  window.visualViewport?.removeEventListener('resize', updateSearchViewport)
+  window.visualViewport?.removeEventListener('scroll', updateSearchViewport)
   document.documentElement.classList.remove('mobile-menu-open')
   document.documentElement.classList.remove('search-open')
 })
@@ -339,14 +315,20 @@ onBeforeUnmount(() => {
       :inert="searchOpen"
       :aria-hidden="searchOpen ? 'true' : undefined"
     >
-      <div class="brand-block" :title="BRAND.slogan">
+      <RouterLink
+        class="brand-block"
+        to="/dashboard"
+        aria-label="返回首页"
+        :title="`${BRAND.slogan} · 返回首页`"
+        @click="setMobileMenu(false)"
+      >
         <img class="brand-logo" :src="BRAND.assets.mark" :alt="`${BRAND.nameZh} ${BRAND.nameEn}`" />
         <div class="brand-text">
           <strong class="brand">{{ BRAND.nameZh }}</strong>
           <span class="brand-en">{{ BRAND.nameEn }}</span>
         </div>
         <span class="tagline">{{ BRAND.taglineShort }}</span>
-      </div>
+      </RouterLink>
       <div class="mobile-top-actions">
         <button type="button" class="nav-icon-btn" aria-label="搜索股票" title="搜索股票" @click="openSearch">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -411,7 +393,13 @@ onBeforeUnmount(() => {
             <span v-if="isNavGroupActive(group)" class="group-current">当前</span>
           </span>
           <div class="nav-group-links">
-            <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" @click="setMobileMenu(false)">
+            <RouterLink
+              v-for="item in group.items"
+              :key="item.to"
+              :to="item.to"
+              :class="{ 'router-link-active': item.activePaths?.includes(route.path) }"
+              @click="setMobileMenu(false)"
+            >
               {{ item.label }}
               <svg class="mobile-link-arrow" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
@@ -475,7 +463,12 @@ onBeforeUnmount(() => {
 
     <GlossaryPanel ref="glossaryRef" />
 
-    <div v-if="searchOpen" class="search-layer" @click.self="closeSearch">
+    <div
+      v-if="searchOpen"
+      class="search-layer"
+      :style="searchViewportStyle"
+      @click.self="closeSearch"
+    >
       <div class="search-panel" role="dialog" aria-label="搜索股票" aria-modal="true">
         <div class="search-head">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -681,6 +674,19 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   max-width: 42%;
   min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.brand-block:focus-visible {
+  outline: 3px solid rgba(0, 113, 227, 0.22);
+  outline-offset: 4px;
+}
+
+.brand-block:active {
+  opacity: 0.72;
 }
 
 .brand-logo {
@@ -1307,20 +1313,28 @@ onBeforeUnmount(() => {
   }
 
   .search-layer {
+    top: var(--search-viewport-top, 0);
+    right: 0;
+    bottom: auto;
+    left: 0;
+    box-sizing: border-box;
+    height: var(--search-viewport-height, 100dvh);
     align-items: flex-start;
-    padding: calc(64px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom));
-    background: rgba(15, 23, 42, 0.42);
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
+    padding: max(8px, env(safe-area-inset-top)) 0 0;
+    background: #fff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .search-panel {
+    flex: 1;
     width: 100%;
-    max-height: calc(100dvh - 72px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    border: 1px solid rgba(15, 23, 42, 0.1);
-    border-radius: 14px;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
     background: #fff;
-    box-shadow: 0 16px 44px rgba(15, 23, 42, 0.2);
+    box-shadow: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -1370,6 +1384,7 @@ onBeforeUnmount(() => {
   }
 
   .search-body {
+    flex: 1;
     min-height: 104px;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1394,12 +1409,12 @@ onBeforeUnmount(() => {
   }
 
   .search-list {
-    padding: 6px 8px 10px;
+    padding: 4px 8px calc(10px + env(safe-area-inset-bottom));
   }
 
   .search-item {
     grid-template-columns: 72px minmax(0, 1fr) auto;
-    min-height: 56px;
+    min-height: 52px;
     gap: 10px;
     padding: 8px 10px;
     border-radius: 8px;

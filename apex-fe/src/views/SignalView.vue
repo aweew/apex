@@ -13,6 +13,7 @@ import {
 } from '../api/signal'
 import { saveObserve } from '../api/observe'
 import { getAccount, orderFromSignal, placeOrder } from '../api/paper'
+import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -156,6 +157,7 @@ onMounted(load)
 
 <template>
   <div class="page signal-page" v-loading="loading || ordering">
+    <DecisionWorkspaceTabs />
     <header class="header">
       <div>
         <p class="eyebrow">灵枢 · Signals</p>
@@ -175,7 +177,6 @@ onMounted(load)
         >
           生成策略信号
         </el-button>
-        <el-button plain @click="router.push('/decision')">智能决策</el-button>
       </div>
     </header>
 

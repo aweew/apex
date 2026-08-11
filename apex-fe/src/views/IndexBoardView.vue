@@ -7,6 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
+import { Download, Grid, Histogram, Refresh } from '@element-plus/icons-vue'
 import { fetchIndexBars, fetchIndexBoard, refreshIndexBoard } from '../api/indexBoard'
 import { fetchMarketBriefing, getMarketBoard } from '../api/market'
 import { fetchSectorBoard } from '../api/sector'
@@ -24,6 +25,7 @@ import HeatmapView from './HeatmapView.vue'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { formatVolumeChangeText } from '../utils/marketVolume.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
+import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -524,15 +526,33 @@ onBeforeUnmount(() => {
             @click="marketTab = 'global'"
           >全球指数</button>
         </div>
-        <el-button type="primary" plain :loading="sharing" @click="openShare">
-          {{ sharing ? '生成中…' : '分享截图' }}
+        <el-button class="market-action" type="primary" :loading="refreshing" aria-label="刷新行情" @click="onRefreshQuotes">
+          <el-icon v-if="!refreshing"><Refresh /></el-icon>
+          <span class="desktop-action-label">刷新行情</span>
+          <span class="mobile-action-label">刷新</span>
         </el-button>
-        <el-button type="primary" :loading="refreshing" @click="onRefreshQuotes">刷新行情</el-button>
-        <el-button :loading="refreshing" @click="onSyncIndex('20240101')">同步指数</el-button>
-        <el-button plain @click="router.push('/sector')">板块</el-button>
-        <el-button plain @click="router.push('/limit-up')">涨停</el-button>
+        <el-button class="market-action" :loading="refreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
+          <el-icon v-if="!refreshing"><Download /></el-icon>
+          <span class="desktop-action-label">同步指数</span>
+          <span class="mobile-action-label">同步</span>
+        </el-button>
+        <el-button class="market-action mobile-icon-action" plain aria-label="打开板块行情" title="板块" @click="router.push('/sector')">
+          <el-icon><Grid /></el-icon>
+          <span class="desktop-action-label">板块</span>
+        </el-button>
+        <el-button class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
+          <el-icon><Histogram /></el-icon>
+          <span class="desktop-action-label">涨停</span>
+        </el-button>
       </div>
     </header>
+
+    <FloatingShareButton
+      v-if="!shareOpen"
+      :loading="sharing"
+      label="分享行情截图"
+      @click="openShare"
+    />
 
     <el-alert
       v-if="cnStaleHint"
@@ -876,6 +896,10 @@ onBeforeUnmount(() => {
   background: #fff;
   color: var(--mc-ink);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.mobile-action-label {
+  display: none;
 }
 
 .hero-indexes {
@@ -1497,6 +1521,27 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 720px) {
+  .header .actions :deep(.market-action) {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 12px;
+  }
+
+  .header .actions :deep(.mobile-icon-action) {
+    width: 44px;
+    padding: 0;
+  }
+
+  .desktop-action-label {
+    display: none;
+  }
+
+  .mobile-action-label {
+    display: inline;
+  }
+
   .cards {
     grid-template-columns: 1fr 1fr;
   }
