@@ -1,7 +1,6 @@
 package com.awe.apex.common.config;
 
 import com.awe.apex.common.config.properties.ThreadPoolProperties;
-import com.awe.apex.common.constant.Constants;
 import com.awe.apex.common.util.ThreadUtils;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.slf4j.MDC;
@@ -93,18 +92,21 @@ public class ThreadPoolConfig {
 
         @Override
         public void run() {
-            MDC.setContextMap(this.logContextMap);
-            String traceId = MDC.get(Constants.TRACE_ID);
-            if (traceId != null) {
-                MDC.put(Constants.TRACE_ID, traceId);
+            Map<String, String> previousContextMap = MDC.getCopyOfContextMap();
+            if (this.logContextMap != null) {
+                MDC.setContextMap(this.logContextMap);
+            } else {
+                MDC.clear();
             }
 
             try {
                 delegate.run();
             } finally {
-                // 清理MDC，避免内存泄漏
-                this.delegate.run();
-                MDC.clear();
+                if (previousContextMap != null) {
+                    MDC.setContextMap(previousContextMap);
+                } else {
+                    MDC.clear();
+                }
             }
         }
 

@@ -33,9 +33,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -47,7 +48,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
 
     /** 降低并发，减轻行情源限流 */
     private static final int MAX_PARALLEL = 2;
-    private static final int MAX_GROUP_CODES = 80;
+    private static final int MAX_SYNC_CODES = 80;
 
     @Resource
     private DailyBarClient dailyBarClient;
@@ -82,6 +83,9 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         if (codes.isEmpty()) {
             throw new BusinessException("无有效代码");
         }
+        if (codes.size() > MAX_SYNC_CODES) {
+            throw new BusinessException("单次最多同步 " + MAX_SYNC_CODES + " 个证券代码，全 A 日线请使用同步中心任务");
+        }
         return doSync(new ArrayList<>(codes), req.getBeginDate(), req.getEndDate(), "codes=" + codes);
     }
 
@@ -104,12 +108,12 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         Set<String> codes = new LinkedHashSet<>();
         for (Watchlist item : list) {
             codes.add(item.getCode());
-            if (codes.size() >= MAX_GROUP_CODES) {
+            if (codes.size() >= MAX_SYNC_CODES) {
                 break;
             }
         }
         String scope = "group=" + groupName + ", codes=" + codes.size()
-                + (list.size() > MAX_GROUP_CODES ? ("(cap " + MAX_GROUP_CODES + ")") : "");
+                + (list.size() > MAX_SYNC_CODES ? ("(cap " + MAX_SYNC_CODES + ")") : "");
         return doSync(new ArrayList<>(codes), beginDate, endDate, scope);
     }
 
@@ -122,7 +126,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
      */
     @Override
     public BarSyncResp syncStaleWatchlist(String groupName, Integer limit) {
-        int max = Objects.isNull(limit) ? 40 : Math.max(1, Math.min(limit, MAX_GROUP_CODES));
+        int max = Objects.isNull(limit) ? 40 : Math.max(1, Math.min(limit, MAX_SYNC_CODES));
         List<Watchlist> list = watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
                 .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName)
                 .orderByAsc(Watchlist::getCode));
@@ -190,7 +194,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     @Override
     public FillBarsResp fillWatchlist(String groupName, Integer rounds, Integer limit) {
         int maxRounds = Objects.isNull(rounds) ? 3 : Math.max(1, Math.min(rounds, 8));
-        int perRound = Objects.isNull(limit) ? 40 : Math.max(1, Math.min(limit, MAX_GROUP_CODES));
+        int perRound = Objects.isNull(limit) ? 40 : Math.max(1, Math.min(limit, MAX_SYNC_CODES));
         int totalSuccess = 0;
         int totalFail = 0;
         int totalBars = 0;
@@ -226,19 +230,36 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         LocalDateTime fetchedAt = LocalDateTime.now();
 
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(MAX_PARALLEL, codes.size()));
-        List<CompletableFuture<SyncItem>> futures = new ArrayList<>();
-        for (String code : codes) {
-            futures.add(CompletableFuture.supplyAsync(() -> syncOne(code, beginDate, endDate), pool));
-        }
         List<SyncItem> items = new ArrayList<>();
-        for (CompletableFuture<SyncItem> future : futures) {
-            try {
-                items.add(future.get(90, TimeUnit.SECONDS));
-            } catch (Exception ex) {
-                items.add(new SyncItem(null, false, 0, "TIMEOUT/FAIL: " + ex.getMessage()));
+        try {
+            for (int start = 0; start < codes.size(); start += MAX_PARALLEL) {
+                int endIndex = Math.min(start + MAX_PARALLEL, codes.size());
+                List<Callable<SyncItem>> tasks = new ArrayList<>();
+                for (int index = start; index < endIndex; index++) {
+                    String code = codes.get(index);
+                    tasks.add(() -> syncOne(code, beginDate, endDate));
+                }
+                List<Future<SyncItem>> futures = pool.invokeAll(tasks, 90, TimeUnit.SECONDS);
+                for (int index = 0; index < futures.size(); index++) {
+                    Future<SyncItem> future = futures.get(index);
+                    String code = codes.get(start + index);
+                    if (future.isCancelled()) {
+                        items.add(new SyncItem(code, false, 0, code + " TIMEOUT"));
+                        continue;
+                    }
+                    try {
+                        items.add(future.get());
+                    } catch (Exception ex) {
+                        items.add(new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage()));
+                    }
+                }
             }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("日线同步被中断", ex);
+        } finally {
+            pool.shutdownNow();
         }
-        pool.shutdown();
 
         int successCount = 0;
         int failCount = 0;
