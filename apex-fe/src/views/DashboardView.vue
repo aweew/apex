@@ -14,6 +14,7 @@ const refreshing = ref(false)
 const running = ref(false)
 const home = ref(null)
 const loadError = ref('')
+const marketDetailOpen = ref(false)
 
 function readHomeCache() {
   try {
@@ -416,31 +417,52 @@ onMounted(() => {
       <div class="stance-side">
         <div class="market-block">
           <div class="market-top">
-            <span class="market-title">大盘</span>
+            <span class="market-title">市场概览</span>
             <div class="market-links">
-              <button type="button" class="text-link" @click="router.push('/market')">详情</button>
+              <button
+                type="button"
+                class="market-toggle"
+                :aria-expanded="marketDetailOpen"
+                aria-controls="dashboard-index-detail"
+                @click="marketDetailOpen = !marketDetailOpen"
+              >
+                <span>{{ marketDetailOpen ? '收起指数' : '指数明细' }}</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 10l5 5 5-5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <button type="button" class="text-link" @click="router.push('/market')">
+                <span class="desktop-link-label">详情</span>
+                <span class="mobile-link-label">行情页</span>
+              </button>
             </div>
           </div>
 
-          <div class="index-lines">
-            <template v-if="indexCards.length">
-              <div
-                v-for="idx in indexCards.slice(0, 4)"
-                :key="idx.name"
-                class="index-line"
-              >
-                <span class="n">{{ idx.name }}</span>
-                <span class="c" :class="idx.direction">{{ idx.close != null ? Number(idx.close).toFixed(2) : '-' }}</span>
-                <span class="p" :class="idx.direction">{{ fmtIndexPct(idx.pctChg) }}</span>
-              </div>
-            </template>
-            <template v-else>
-              <div v-for="name in ['上证指数', '深证成指', '创业板指', '科创50']" :key="name" class="index-line muted">
-                <span class="n">{{ name }}</span>
-                <span class="c">--</span>
-                <span class="p">--</span>
-              </div>
-            </template>
+          <div
+            id="dashboard-index-detail"
+            class="market-detail"
+            :class="{ open: marketDetailOpen }"
+          >
+            <div class="index-lines">
+              <template v-if="indexCards.length">
+                <div
+                  v-for="idx in indexCards.slice(0, 4)"
+                  :key="idx.name"
+                  class="index-line"
+                >
+                  <span class="n">{{ idx.name }}</span>
+                  <span class="c" :class="idx.direction">{{ idx.close != null ? Number(idx.close).toFixed(2) : '-' }}</span>
+                  <span class="p" :class="idx.direction">{{ fmtIndexPct(idx.pctChg) }}</span>
+                </div>
+              </template>
+              <template v-else>
+                <div v-for="name in ['上证指数', '深证成指', '创业板指', '科创50']" :key="name" class="index-line muted">
+                  <span class="n">{{ name }}</span>
+                  <span class="c">--</span>
+                  <span class="p">--</span>
+                </div>
+              </template>
+            </div>
           </div>
 
           <div class="stat-line">
@@ -1229,7 +1251,26 @@ onMounted(() => {
 
 .market-links {
   display: flex;
+  align-items: center;
   gap: 10px;
+}
+
+.market-toggle,
+.mobile-link-label {
+  display: none;
+}
+
+.market-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform 0.18s ease;
+}
+
+.market-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
 }
 
 .text-link {
@@ -1910,18 +1951,211 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 560px), (min-width: 561px) and (max-width: 900px) and (orientation: landscape) {
+  .stance-panel {
+    gap: 12px;
+    margin-bottom: 10px;
+    padding: 14px 12px 12px;
+    border-radius: 12px;
+  }
+
+  .stance-glow {
+    display: none;
+  }
+
+  .kicker {
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 10px;
+    font-size: 11px;
+  }
+
   .stance-title-row {
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .score-ring {
+    flex-basis: 72px;
+    width: 72px;
+    height: 72px;
+  }
+
+  .score-ring-inner {
+    width: 58px;
+    height: 58px;
+  }
+
+  .score-ring-inner strong {
+    font-size: 20px;
+    letter-spacing: 0;
+  }
+
+  .stance-copy {
+    min-width: 0;
+  }
+
+  .stance-copy h2 {
+    margin-bottom: 5px;
+  }
+
+  .pill {
+    padding: 3px 10px;
+    font-size: 16px;
+    letter-spacing: 0;
+  }
+
+  .reason {
+    margin-bottom: 3px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .advice {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .stance-side {
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+
+  .market-top {
+    min-height: 44px;
+    margin: -8px 0 4px;
+  }
+
+  .market-title {
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .market-links {
+    gap: 2px;
+  }
+
+  .market-toggle,
+  .text-link {
+    min-height: 44px;
+    padding: 0 8px;
+    border-radius: 8px;
+    touch-action: manipulation;
+  }
+
+  .market-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .market-toggle:active,
+  .text-link:active {
+    background: rgba(0, 113, 227, 0.08);
+  }
+
+  .desktop-link-label {
+    display: none;
+  }
+
+  .mobile-link-label {
+    display: inline;
+  }
+
+  .market-detail {
+    display: none;
+  }
+
+  .market-detail.open {
+    display: block;
   }
 
   .index-lines {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0 0 8px;
+  }
+
+  .index-line {
+    padding: 7px 9px;
+  }
+
+  .stat-line {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 6px;
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .stat-line > .dot {
+    display: none;
+  }
+
+  .stat-line .stat {
+    display: block;
+    min-width: 0;
+    padding: 8px 9px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.54);
+    line-height: 1.25;
+  }
+
+  .stat-line .stat > em {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 10px;
+  }
+
+  .stat-line .volume-stat {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 5px;
+  }
+
+  .stat-line .volume-stat > em {
+    display: inline;
+    margin: 0;
+  }
+
+  .stat i.vol-change {
+    min-width: 0;
+    margin-left: auto;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .breadth-track {
+    height: 4px;
+    margin-top: 8px;
+  }
+
+  .breadth-hint {
+    margin-top: 5px;
+    font-size: 10px;
   }
 
   .kpi-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 561px) and (max-width: 900px) and (orientation: landscape) {
+  .stance-panel {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  }
+
+  .kpi-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
