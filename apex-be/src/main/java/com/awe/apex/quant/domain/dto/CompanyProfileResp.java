@@ -1,5 +1,6 @@
 package com.awe.apex.quant.domain.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -42,11 +43,13 @@ public class CompanyProfileResp {
     /**
      * A股代码
      */
+    @JsonProperty("aCode")
     private String aCode;
 
     /**
      * A股简称
      */
+    @JsonProperty("aName")
     private String aName;
 
     /**
