@@ -7,7 +7,9 @@ import {
   GLOSSARY_EVENT,
   allCategories,
   findTerm,
+  getRelatedTerms,
   searchTerms,
+  splitHighlightedText,
 } from '../glossary/lookup.js'
 import { getDiagramSvg } from '../glossary/diagrams.js'
 import {
@@ -26,6 +28,7 @@ const query = ref('')
 const category = ref('')
 const activeId = ref('')
 const inputRef = ref(null)
+const detailRef = ref(null)
 const mobileDetailOpen = ref(false)
 
 const sharing = ref(false)
@@ -54,6 +57,13 @@ const active = computed(() => {
 })
 
 const activeDiagram = computed(() => getDiagramSvg(active.value?.diagram))
+const activePlainSegments = computed(() => (
+  splitHighlightedText(active.value?.plain, active.value?.highlights)
+))
+const activeDetailSegments = computed(() => (
+  splitHighlightedText(active.value?.detail, active.value?.highlights)
+))
+const activeRelated = computed(() => getRelatedTerms(active.value))
 
 watch(list, (rows) => {
   if (!rows.length) {
@@ -107,6 +117,14 @@ function select(term) {
   if (isMobileViewport()) {
     mobileDetailOpen.value = true
   }
+}
+
+async function selectRelated(term) {
+  query.value = ''
+  category.value = ''
+  select(term)
+  await nextTick()
+  detailRef.value?.scrollTo?.({ top: 0, behavior: 'smooth' })
 }
 
 function backToList() {
@@ -332,7 +350,7 @@ defineExpose({ openGlossary, close })
           <li v-if="!list.length" class="glossary-empty">无匹配词条</li>
         </ul>
 
-        <article v-if="active" class="glossary-detail">
+        <article v-if="active" ref="detailRef" class="glossary-detail">
           <header>
             <h2>{{ active.title }}</h2>
             <div class="detail-actions">
@@ -340,13 +358,40 @@ defineExpose({ openGlossary, close })
             </div>
           </header>
           <p class="lead">{{ active.short }}</p>
+          <div v-if="active.plain" class="plain-language">
+            <span class="plain-label">通俗理解</span>
+            <p>
+              <template v-for="(segment, index) in activePlainSegments" :key="index">
+                <mark v-if="segment.highlighted" class="key-point">{{ segment.text }}</mark>
+                <span v-else>{{ segment.text }}</span>
+              </template>
+            </p>
+          </div>
           <div
             v-if="activeDiagram"
             class="diagram"
             v-html="activeDiagram"
           />
-          <p class="detail">{{ active.detail }}</p>
+          <p class="detail">
+            <template v-for="(segment, index) in activeDetailSegments" :key="index">
+              <mark v-if="segment.highlighted" class="key-point">{{ segment.text }}</mark>
+              <span v-else>{{ segment.text }}</span>
+            </template>
+          </p>
           <p v-if="active.tip" class="tip">{{ active.tip }}</p>
+          <section v-if="activeRelated.length" class="related-terms" aria-label="相关词条">
+            <span>继续了解</span>
+            <div>
+              <button
+                v-for="term in activeRelated"
+                :key="term.id"
+                type="button"
+                @click="selectRelated(term)"
+              >
+                {{ term.title }}
+              </button>
+            </div>
+          </section>
           <p v-if="active.aliases?.length" class="aliases">
             也叫：{{ active.aliases.join(' · ') }}
           </p>
@@ -646,6 +691,39 @@ defineExpose({ openGlossary, close })
   color: var(--ink);
 }
 
+.plain-language {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(0, 113, 227, 0.055);
+}
+
+.plain-label {
+  padding-top: 2px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.plain-language p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.key-point {
+  padding: 0;
+  background: transparent;
+  color: #0066cc;
+  font-weight: 700;
+}
+
 .glossary-detail .diagram {
   margin: 0 0 14px;
   border-radius: 12px;
@@ -682,6 +760,43 @@ defineExpose({ openGlossary, close })
   margin: 0;
   font-size: 12px;
   color: var(--muted);
+}
+
+.related-terms {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 12px;
+}
+
+.related-terms > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.related-terms > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.related-terms button {
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid rgba(0, 113, 227, 0.18);
+  border-radius: 6px;
+  background: #fff;
+  color: #0066cc;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.related-terms button:hover,
+.related-terms button:focus-visible {
+  border-color: rgba(0, 113, 227, 0.42);
+  background: rgba(0, 113, 227, 0.06);
+  outline: none;
 }
 
 .glossary-detail--empty {
@@ -908,6 +1023,23 @@ defineExpose({ openGlossary, close })
   .glossary-detail .detail {
     font-size: 14px;
     line-height: 1.75;
+  }
+
+  .plain-language {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 11px 12px;
+  }
+
+  .plain-language p {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .related-terms button {
+    min-height: 40px;
+    padding: 7px 10px;
+    font-size: 13px;
   }
 
   .glossary-title span {

@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
         <strong>{{ entry.title }}</strong>
         <span class="term-tip__cat">{{ entry.category }}</span>
       </div>
-      <p class="term-tip__short">{{ entry.short }}</p>
+      <p class="term-tip__short">{{ entry.plain || entry.short }}</p>
       <p v-if="entry.tip" class="term-tip__hint">{{ entry.tip }}</p>
       <button type="button" class="term-tip__more" @click="openFull">打开名词百科</button>
     </div>

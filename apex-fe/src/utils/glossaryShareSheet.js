@@ -4,6 +4,7 @@
 
 import { BRAND, shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'
 import { getDiagramSvg } from '../glossary/diagrams.js'
+import { getRelatedTerms, splitHighlightedText } from '../glossary/lookup.js'
 
 function esc(s) {
   return String(s ?? '')
@@ -13,9 +14,19 @@ function esc(s) {
     .replace(/"/g, '&quot;')
 }
 
+function highlightedHtml(text, highlights) {
+  return splitHighlightedText(text, highlights)
+    .map((segment) => (
+      segment.highlighted
+        ? `<strong style="color:#0066cc;font-weight:750;">${esc(segment.text)}</strong>`
+        : esc(segment.text)
+    ))
+    .join('')
+}
+
 /**
  * @param {object} payload
- * @param {{id?:string,title:string,category?:string,short?:string,detail?:string,tip?:string,aliases?:string[],diagram?:string}} payload.term
+ * @param {{id?:string,title:string,category?:string,short?:string,plain?:string,detail?:string,tip?:string,aliases?:string[],highlights?:string[],related?:string[],diagram?:string}} payload.term
  * @param {string} [payload.titleDate]
  * @returns {HTMLElement}
  */
@@ -24,7 +35,10 @@ export function buildGlossaryShareSheet(payload) {
   const aliases = Array.isArray(term.aliases) ? term.aliases.filter(Boolean) : []
   const tip = term.tip ? String(term.tip).trim() : ''
   const short = term.short ? String(term.short).trim() : ''
+  const plain = term.plain ? String(term.plain).trim() : ''
   const detail = term.detail ? String(term.detail).trim() : ''
+  const highlights = Array.isArray(term.highlights) ? term.highlights : []
+  const related = getRelatedTerms(term)
   const diagramSvg = getDiagramSvg(term.diagram)
 
   const root = document.createElement('div')
@@ -51,6 +65,15 @@ export function buildGlossaryShareSheet(payload) {
   const diagramHtml = diagramSvg
     ? `<div style="margin:12px 0 14px;border-radius:12px;overflow:hidden;border:1px solid rgba(0,0,0,.06);background:#f5f7fa;">${diagramSvg}</div>`
     : ''
+  const plainHtml = plain
+    ? `<div style="display:grid;grid-template-columns:auto 1fr;gap:10px;margin:0 0 14px;padding:10px 12px;border-left:3px solid #0071e3;background:rgba(0,113,227,.055);">
+        <span style="padding-top:2px;color:#0071e3;font-size:11px;font-weight:750;white-space:nowrap;">通俗理解</span>
+        <p style="margin:0;color:#1d1d1f;font-size:13px;line-height:1.65;">${highlightedHtml(plain, highlights)}</p>
+      </div>`
+    : ''
+  const relatedHtml = related.length
+    ? `<div style="margin-top:14px;color:#8e8e93;font-size:12px;">继续了解：${esc(related.map((item) => item.title).join(' · '))}</div>`
+    : ''
 
   root.innerHTML = `
     <div style="position:absolute;inset:0;pointer-events:none;background:
@@ -70,9 +93,11 @@ export function buildGlossaryShareSheet(payload) {
       </div>
       <h2 style="margin:0 0 12px;font-size:26px;font-weight:750;letter-spacing:-.03em;line-height:1.25;">${esc(term.title || '未命名词条')}</h2>
       ${short ? `<p style="margin:0 0 10px;font-size:15px;line-height:1.65;color:#1d1d1f;">${esc(short)}</p>` : ''}
+      ${plainHtml}
       ${diagramHtml}
-      ${detail ? `<p style="margin:0;font-size:13px;line-height:1.7;color:#3a3a3c;">${esc(detail)}</p>` : ''}
+      ${detail ? `<p style="margin:0;font-size:13px;line-height:1.7;color:#3a3a3c;">${highlightedHtml(detail, highlights)}</p>` : ''}
       ${tipHtml}
+      ${relatedHtml}
       ${aliasesHtml}
       ${shareBrandFooterHtml({ note: `来自 ${BRAND.nameZh} ${BRAND.product} · 仅供研究参考 · 不构成投资建议` })}
     </div>

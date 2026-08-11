@@ -198,8 +198,11 @@ export const EXTRA_TERMS = [
     aliases: ['Trailing Twelve Months', '近十二个月'],
     category: '基本面',
     short: '滚动近四个季度的财务口径，比单季或去年同期更贴近「最近一年」。',
+    plain: '不等自然年结束，随每份季报更新，始终拼出最近连续 12 个月。',
     detail:
       'PE(TTM)、营收 TTM 等用最近已披露四季度加总。比静态年报更新，但仍滞后于实时经营。业绩预告/快报阶段要用估计值并标注不确定性。',
+    highlights: ['随每份季报更新', '最近连续 12 个月'],
+    related: ['pe_ttm', 'eps', 'financial_report'],
   },
   {
     id: 'ps',
@@ -596,8 +599,11 @@ export const EXTRA_TERMS = [
     aliases: ['后复权价', 'hfq'],
     category: '行情',
     short: '以历史起点为基准，把后续分红送转累积到当前价格序列。',
+    plain: '保留早期价格不动，把后面的分红送转收益一路加到今天。',
     detail:
       '后复权保留早期价格、向后调整后续价格，适合观察长期持有的累计回报；前复权则保持当前价格附近连续。复权价是计算序列，不是当时真实成交价。',
+    highlights: ['保留早期价格不动', '一路加到今天'],
+    related: ['qfq', 'ex_right_dividend', 'dividend'],
   },
   {
     id: 'order_book',
@@ -614,8 +620,11 @@ export const EXTRA_TERMS = [
     aliases: ['委差', '委托比'],
     category: '行情',
     short: '比较一定档位内买入委托与卖出委托强弱的比例。',
+    plain: '它看的是“现在挂着多少想买、多少想卖”，不是已经成交的钱。',
     detail:
       '常见公式：(委买手数−委卖手数)÷(委买手数+委卖手数)。正值表示挂买更多，负值表示挂卖更多。委托可快速撤销，委比很容易瞬时变化，不能等同于真实资金流入。',
+    highlights: ['挂着多少想买', '多少想卖', '不是已经成交的钱'],
+    related: ['order_book', 'inner_outer_volume', 'main_fund_flow'],
   },
   {
     id: 'inner_outer_volume',
@@ -623,8 +632,11 @@ export const EXTRA_TERMS = [
     aliases: ['内盘', '外盘', '主动买盘', '主动卖盘'],
     category: '行情',
     short: '按成交靠近买价或卖价，近似区分主动卖出与主动买入。',
+    plain: '外盘近似“主动追价买”，内盘近似“主动压价卖”，但只是算法推断。',
     detail:
       '外盘通常记作主动买入成交，内盘通常记作主动卖出成交，但撮合和行情推送会造成误差。外盘大不保证上涨，内盘大也不必然下跌，应结合价格位置、成交量和盘口变化判断。',
+    highlights: ['主动追价买', '主动压价卖', '只是算法推断'],
+    related: ['order_book', 'order_ratio', 'volume'],
   },
   {
     id: 'main_fund_flow',
@@ -632,8 +644,11 @@ export const EXTRA_TERMS = [
     aliases: ['主力净流入', '净流入', '资金流向'],
     category: '行情',
     short: '数据平台按大额成交等规则估算的资金净流入或净流出。',
+    plain: '平台把大额成交贴上“主力”标签后做加减，并不知道账户真实身份。',
     detail:
       '它不是交易所公布的真实账户身份，而是按成交金额、主动方向等算法分类。不同平台阈值和算法不同，数值可能相反。适合观察变化和板块比较，不宜把单日净流入当作买入证据。',
+    highlights: ['贴上“主力”标签', '并不知道账户真实身份'],
+    related: ['amount', 'volume', 'order_book'],
   },
   {
     id: 'northbound_fund',
@@ -650,8 +665,11 @@ export const EXTRA_TERMS = [
     aliases: ['两融', '融资余额', '融券余额'],
     category: '行情',
     short: '向券商借钱买证券或借证券卖出的信用交易机制。',
+    plain: '融资是借钱买，融券是借股票卖；两者都会把判断错误的代价放大。',
     detail:
       '融资余额增加常被视作杠杆做多活跃，融券用于卖出或对冲，但变化还受偿还、标的范围和制度影响。两融会放大收益与亏损，并带来利息、保证金和强制平仓风险。',
+    highlights: ['融资是借钱买', '融券是借股票卖', '代价放大'],
+    related: ['position_ratio', 'liquidity_risk', 'risk_action'],
   },
   {
     id: 'dragon_tiger_list',
@@ -731,8 +749,11 @@ export const EXTRA_TERMS = [
     aliases: ['FCF', 'Free Cash Flow'],
     category: '基本面',
     short: '经营产生现金扣除维持和扩张所需资本开支后的剩余现金。',
+    plain: '公司做完生意、买完必要设备后，真正还能自由安排的钱。',
     detail:
       '自由现金流可用于分红、回购、还债或再投资，是估值和盈利质量的重要指标。不同行业资本开支差异很大，单年为负不一定差，需判断是在高回报扩张还是被动烧钱。',
+    highlights: ['买完必要设备后', '真正还能自由安排的钱'],
+    related: ['operating_cash_flow', 'net_profit', 'dividend'],
   },
   {
     id: 'correlation',
@@ -740,8 +761,11 @@ export const EXTRA_TERMS = [
     aliases: ['相关系数', 'Correlation'],
     category: '风险',
     short: '衡量两个收益序列同向或反向变化的程度。',
+    plain: '两只股票经常一起涨跌，相关性就高；同时持有也未必真分散。',
     detail:
       '相关系数接近1表示常同向，接近-1表示常反向，接近0表示线性关系弱。相关不等于因果，而且市场剧烈波动时相关性常一起升高，历史分散效果可能失效。',
+    highlights: ['一起涨跌', '未必真分散'],
+    related: ['hhi', 'industry_limit', 'volatility'],
   },
   {
     id: 'volatility',
@@ -749,8 +773,11 @@ export const EXTRA_TERMS = [
     aliases: ['年化波动率', 'Volatility', '标准差'],
     category: '风险',
     short: '用收益率波动大小衡量价格不确定性。',
+    plain: '它只看价格晃得有多厉害，不区分这段晃动是在上涨还是下跌。',
     detail:
       '常用日收益标准差再年化。波动率不区分上涨和下跌，数值高表示价格变化更剧烈，不等于一定亏损。比较不同股票或策略时要统一窗口、频率和年化口径。',
+    highlights: ['晃得有多厉害', '不区分', '上涨还是下跌'],
+    related: ['atr', 'max_drawdown', 'sharpe'],
   },
   {
     id: 'average_price',

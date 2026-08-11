@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { findTerm, searchTerms, allTerms } from './lookup.js'
+import {
+  allTerms,
+  findTerm,
+  getRelatedTerms,
+  searchTerms,
+  splitHighlightedText,
+} from './lookup.js'
 import { getDiagramSvg, listDiagramIds } from './diagrams.js'
 
 test('findTerm by id and alias', () => {
@@ -74,6 +80,45 @@ test('common stock terms stay available even when they are basic', () => {
   for (const [alias, expectedId] of Object.entries(expectedTerms)) {
     assert.equal(findTerm(alias)?.id, expectedId, `${alias} should resolve to ${expectedId}`)
   }
+})
+
+test('difficult terms provide plain explanations with valid highlights and related terms', () => {
+  const terms = allTerms()
+  const explainedTerms = terms.filter((term) => term.plain)
+
+  assert.ok(explainedTerms.length >= 20)
+  for (const term of explainedTerms) {
+    assert.ok(term.highlights?.length, `${term.id} should define highlights`)
+    const searchableText = [term.short, term.plain, term.detail, term.tip].filter(Boolean).join(' ')
+    for (const highlight of term.highlights) {
+      assert.ok(searchableText.includes(highlight), `${term.id} highlight should exist in its content: ${highlight}`)
+    }
+    for (const relatedId of term.related || []) {
+      assert.notEqual(relatedId, term.id, `${term.id} should not relate to itself`)
+      assert.ok(findTerm(relatedId), `${term.id} has an invalid related term: ${relatedId}`)
+    }
+  }
+})
+
+test('highlight segments prefer longer phrases and keep plain text intact', () => {
+  assert.deepEqual(splitHighlightedText('Beta≈1，Beta>1 时波动放大', ['Beta', 'Beta≈1', '波动放大']), [
+    { text: 'Beta≈1', highlighted: true },
+    { text: '，', highlighted: false },
+    { text: 'Beta', highlighted: true },
+    { text: '>1 时', highlighted: false },
+    { text: '波动放大', highlighted: true },
+  ])
+})
+
+test('related terms resolve in configured order', () => {
+  assert.deepEqual(
+    getRelatedTerms(findTerm('sharpe')).map((term) => term.id),
+    ['sortino', 'volatility', 'max_drawdown'],
+  )
+})
+
+test('search includes plain explanations', () => {
+  assert.equal(searchTerms('赚钱效率')[0]?.id, 'sharpe')
 })
 
 test('glossary term ids are unique', () => {

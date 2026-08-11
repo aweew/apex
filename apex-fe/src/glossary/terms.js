@@ -4,15 +4,18 @@
  *
  * 字段约定：
  * - short：悬浮/列表一句摘要（宜短）
+ * - plain：可选通俗解释，帮助理解高认知成本概念
  * - detail：百科正文——是什么、怎么算/怎么看、常见误读、本系统口径（如有）
  * - tip：可选实操提示
+ * - highlights：可选重点短语，必须出现在 short/plain/detail/tip 中
+ * - related：可选相关词条 id，按学习顺序展示
  * - diagram：可选图解 id，对应 glossary/diagrams.js 中的内联 SVG
  */
 import { EXTRA_TERMS } from './terms.extra.js'
 
 export const GLOSSARY_CATEGORIES = ['绩效', '风险', '技术', '基本面', '策略', '行情']
 
-/** @type {Array<{id:string,title:string,aliases:string[],category:string,short:string,detail:string,tip?:string,diagram?:string}>} */
+/** @type {Array<{id:string,title:string,aliases:string[],category:string,short:string,plain?:string,detail:string,tip?:string,highlights?:string[],related?:string[],diagram?:string}>} */
 const CORE_TERMS = [
   // —— 绩效 ——
   {
@@ -83,9 +86,12 @@ const CORE_TERMS = [
     aliases: ['Sharpe', '夏普', 'rollingSharpe'],
     category: '绩效',
     short: '单位波动换来多少超额收益，衡量收益「性价比」。',
+    plain: '把它当成“赚钱效率”：收益相同，过程越稳，夏普越高。',
     detail:
       '用收益相对波动（收益序列的标准差）做标准化：同样收益，波动越小夏普越高。可理解为「承担一单位波动，换来多少超额」。年化夏普常用于跨策略对比。「20日夏普」是近 20 个交易日滚动值，更敏感、噪声更大，适合看近期状态，不宜当作长期水平。无风险利率口径、是否年化会影响数值大小，横向对比时要统一。',
     tip: '长期年化夏普 >1 较好；短窗口单日波动大，勿过度解读。',
+    highlights: ['赚钱效率', '过程越稳', '夏普越高'],
+    related: ['sortino', 'volatility', 'max_drawdown'],
     diagram: 'sharpe',
   },
   {
@@ -94,9 +100,12 @@ const CORE_TERMS = [
     aliases: ['索提诺', 'Sortino'],
     category: '绩效',
     short: '类似夏普，但只惩罚下行波动。',
+    plain: '只把下跌的颠簸算作坏波动；上涨时的大幅波动不会被同样扣分。',
     detail:
       '夏普把上涨波动和下跌波动一视同仁；Sortino 主要惩罚「亏的时候晃得多厉害」（下行偏离）。对更在意回撤、能接受盈利期波动的投资者更贴切。若策略上涨段波动很大但很少大亏，Sortino 往往会明显好于夏普。',
     tip: '厌恶回撤时优先看 Sortino + 最大回撤，而不是只看夏普。',
+    highlights: ['下跌的颠簸', '坏波动', '不会被同样扣分'],
+    related: ['sharpe', 'max_drawdown', 'cvar'],
   },
   {
     id: 'calmar',
@@ -123,9 +132,12 @@ const CORE_TERMS = [
     aliases: ['超额收益', '阿尔法'],
     category: '绩效',
     short: '相对基准（如沪深300）多赚或少赚的部分。',
+    plain: '把大盘本来会带来的收益先扣掉，剩下的才更接近策略自己的本事。',
     detail:
       '正 Alpha 表示跑赢基准，负 Alpha 表示跑输。本系统模拟盘常相对沪深300计算，并提供滚动 20 日 Alpha 看近期是否仍有超额。注意：简单「组合收益−基准收益」与回归模型里的 Alpha 略有差别；高 Beta 牛市里「看起来多赚」不一定是真超额。评估主动管理能力时，更应结合信息比率 IR。',
     tip: '滚动 Alpha 变负，往往比累计 Alpha 更能提示近期失效。',
+    highlights: ['先扣掉', '策略自己的本事'],
+    related: ['benchmark', 'beta', 'information_ratio'],
   },
   {
     id: 'beta',
@@ -133,9 +145,12 @@ const CORE_TERMS = [
     aliases: ['贝塔'],
     category: '绩效',
     short: '组合相对基准的敏感度（跟涨跟跌的放大倍数）。',
+    plain: 'Beta≈1 像跟着大盘同速跑；Beta>1 通常涨跌都更猛。',
     detail:
       'Beta≈1：大致与基准同涨同跌；>1：波动放大（牛市更猛、熊市更伤）；0～1：更稳健；负值：可能对冲或反向。高 Beta 本身不是好坏，关键看你是否有意承担系统风险。本系统也提供滚动 Beta 与「Beta 目标」调仓建议：通过调总仓位去靠近目标 Beta。',
     tip: '想降波动，可降仓或换低 Beta 标的，而不是只盯单个指标数字。',
+    highlights: ['Beta≈1', 'Beta>1', '涨跌都更猛'],
+    related: ['benchmark', 'alpha', 'volatility'],
     diagram: 'beta',
   },
   {
@@ -144,8 +159,11 @@ const CORE_TERMS = [
     aliases: ['IR', 'Information Ratio'],
     category: '绩效',
     short: '超额收益 ÷ 跟踪误差，衡量跑赢是否稳定。',
+    plain: '不只看有没有跑赢，还看是不是经常、稳定地跑赢。',
     detail:
       'IR = 超额收益 / 跟踪误差（TE）。Alpha 偶发很高但忽上忽下时，IR 不会好看。希望「稳定跑赢基准」时重点看 IR；指数增强类策略尤其关心它。样本期短、调仓极少时 TE 可能很小，IR 会被放大，需谨慎。',
+    highlights: ['经常', '稳定地跑赢'],
+    related: ['alpha', 'tracking_error', 'benchmark'],
   },
   {
     id: 'tracking_error',
@@ -153,8 +171,11 @@ const CORE_TERMS = [
     aliases: ['TE', 'Tracking Error'],
     category: '绩效',
     short: '组合收益与基准收益之差的波动。',
+    plain: '可以理解为“离基准有多远”：越大，组合越不像基准。',
     detail:
       'TE 大说明走势与基准偏离大，主动程度高；TE 小说明更贴基准。指数增强通常希望在可控 TE 内博取 Alpha。TE 不是风险「越小越好」——过小可能几乎没主动、也难有超额；过大则相对基准的不确定性上升。',
+    highlights: ['离基准有多远', '越大', '越不像基准'],
+    related: ['information_ratio', 'alpha', 'benchmark'],
   },
   {
     id: 'twr',
@@ -162,8 +183,11 @@ const CORE_TERMS = [
     aliases: ['TWR', '时间加权', 'timeWeightedReturn'],
     category: '绩效',
     short: '剔除资金进出干扰后，衡量投资过程本身的收益率。',
+    plain: '把中途加钱、取钱的影响拿掉，只看投资操作本身考得怎么样。',
     detail:
       '若中途追加/取出资金，简单「期末−期初」会被扭曲。时间加权收益把区间拆成多段、按几何方式链接，更公平地反映策略表现。本系统模拟盘相对基准对比里会同时给出纸面收益与 TWR：看策略好坏优先看 TWR；看账户财富变化可看含资金流的简单收益。',
+    highlights: ['加钱、取钱的影响拿掉', '投资操作本身'],
+    related: ['total_return', 'benchmark', 'fee_drag'],
   },
   {
     id: 'unrealized_pnl',
@@ -190,9 +214,12 @@ const CORE_TERMS = [
     aliases: ['凯利公式', '半Kelly', 'Kelly'],
     category: '绩效',
     short: '按胜率与盈亏比估算的理论最优仓位比例。',
+    plain: '根据胜率和赚亏比例估算仓位上限；历史数据稍有偏差，建议仓位就可能偏大。',
     detail:
       '经典 Kelly 用胜率、赔率估算「长期财富增长最快」的下注比例。全 Kelly 往往过于激进、回撤巨大，实盘常用半 Kelly 或更保守折扣。本系统模拟盘会给出半 Kelly 与建议仓位，前提是历史胜率/盈亏比估计可靠；估计偏乐观时建议仓会偏大。',
     tip: '把 Kelly 当上限参考，不要当必须打满的目标仓。',
+    highlights: ['仓位上限', '历史数据稍有偏差', '建议仓位就可能偏大'],
+    related: ['win_rate', 'payoff_ratio', 'position_ratio'],
     diagram: 'kelly',
   },
 
@@ -203,9 +230,12 @@ const CORE_TERMS = [
     aliases: ['MDD', '回撤', 'Max Drawdown'],
     category: '风险',
     short: '净值从高点到低点的最大跌幅。',
+    plain: '从账户曾经的最高点往下看，最深掉进过多大的坑。',
     detail:
       '回答「历史上最惨亏过多少」：从任一历史高点一路跌到之后最低点，取跌幅最大的那一段。回撤恢复不对称：10% 回撤约需 11% 涨幅回本；30% 约需 43%；50% 需翻倍。它是风控与仓位管理的核心指标之一，也常与 Calmar 配对使用。',
     tip: '回撤曲线越浅、恢复越快通常越好；先问自己能扛住多大回撤，再选策略。',
+    highlights: ['最高点', '最深', '多大的坑'],
+    related: ['calmar', 'underwater_ratio', 'drawdown_recovery'],
     diagram: 'max_drawdown',
   },
   {
@@ -232,9 +262,12 @@ const CORE_TERMS = [
     aliases: ['VaR', '在险价值'],
     category: '风险',
     short: '在 95% 置信下，单日可能亏损的大致上限估计。',
+    plain: '不是“最多只亏这么多”，而是正常情况下大多数日子的风险门槛。',
     detail:
       '例如 VaR95=2% 可理解为：按历史统计，大约 20 个交易日里有 1 天，亏损可能达到或超过 2%。这是概率估计，不是保证——极端行情会突破 VaR。常见算法有历史模拟、参数法、蒙特卡洛等，口径不同数值不可直接比。',
     tip: '极端行情需配合 CVaR、压力测试，VaR 单独不够。',
+    highlights: ['不是“最多只亏这么多”', '大多数日子', '风险门槛'],
+    related: ['cvar', 'volatility', 'max_drawdown'],
     diagram: 'var_cvar',
   },
   {
@@ -243,8 +276,11 @@ const CORE_TERMS = [
     aliases: ['ES', '条件在险价值', 'Expected Shortfall'],
     category: '风险',
     short: '一旦跌破 VaR，平均还会亏多少（尾部更狠）。',
+    plain: 'VaR 告诉你坏事从哪里开始，CVaR 告诉你真出大事后平均有多惨。',
     detail:
       'VaR 只给「门槛」，不说突破后有多惨；CVaR（也称 Expected Shortfall）看的是最坏那一截损失的平均值，对尾部风险更敏感，风控上通常更保守。监管与组合优化里常更偏好 CVaR。',
+    highlights: ['坏事从哪里开始', '真出大事后', '平均有多惨'],
+    related: ['var95', 'max_drawdown', 'volatility'],
     diagram: 'var_cvar',
   },
   {
@@ -281,9 +317,12 @@ const CORE_TERMS = [
     aliases: ['HHI', 'Herfindahl', '赫芬达尔'],
     category: '风险',
     short: '用权重平方和衡量仓位是否过度集中。',
+    plain: '把大仓位放大计算：一两只股票占得越多，HHI 越高。',
     detail:
       'HHI（赫芬达尔指数）把各持仓权重平方后求和：越接近 1 越集中（少数票占大头），越低越分散。第一大/前五权重是更直观的补充。过度集中时，单票黑天鹅会重创净值。',
     tip: '单票与行业上限是控制 HHI 的常用手段。',
+    highlights: ['大仓位放大计算', '占得越多', 'HHI 越高'],
+    related: ['position_ratio', 'position_limit', 'industry_limit'],
     diagram: 'hhi',
   },
   {
@@ -314,8 +353,11 @@ const CORE_TERMS = [
     aliases: ['DIF', 'DEA', '柱状图'],
     category: '技术',
     short: '用快慢指数均线差衡量趋势与动能。',
+    plain: '把短期趋势和长期趋势做差，观察趋势是在加速还是减速。',
     detail:
       'DIF（快线）为短期与长期 EMA 之差，DEA（信号线）为 DIF 的平滑。DIF 上穿 DEA 为金叉（偏多），下穿为死叉（偏空）。柱线反映两者距离：柱由负转正常伴随动能转强。MACD 在趋势市较有用，震荡市会反复假信号；背离（价新高而 MACD 未新高）只是提示，不是必然反转。',
+    highlights: ['短期趋势', '长期趋势', '加速还是减速'],
+    related: ['ema', 'golden_cross', 'divergence'],
     diagram: 'macd',
   },
   {
@@ -345,8 +387,11 @@ const CORE_TERMS = [
     aliases: ['ATR14', '真实波幅', 'Average True Range'],
     category: '技术',
     short: '一段时间内的平均真实波幅，衡量波动大小（价格单位）。',
+    plain: '只回答“每天大概晃多远”，不回答涨还是跌。',
     detail:
       'True Range 取「当日高低差、高点距昨收、低点距昨收」三者最大，再做 N 日平均（常用 14）。ATR 变大说明波动加剧，变小说明波动收敛。它不指示涨跌方向，只描述「晃多大」。模拟盘「应用 ATR 止损」常用 ATR14 的倍数估算止损/止盈距离，使风控随波动自适应。',
+    highlights: ['每天大概晃多远', '不回答涨还是跌'],
+    related: ['atr_pct', 'stop_loss', 'volatility'],
     diagram: 'atr_stop',
   },
   {
@@ -498,9 +543,12 @@ const CORE_TERMS = [
     aliases: ['市盈增长比', 'PEG比率'],
     category: '基本面',
     short: 'PE ÷ 盈利增速，把估值放进增长上下文。',
+    plain: 'PE 看贵不贵，PEG 再问一句：这样的价格有没有增长速度支撑。',
     detail:
       '常见口径：PE(TTM) ÷ 盈利增速（%）。经验上 PEG<1 偏便宜，约 1 合理，明显>1 偏贵——但这高度依赖增速是否可持续。低增速时 PEG 容易失真，本系统估值引擎会弱化该维并提示「低增速·PEG 参考弱」。增速为负或缺失时 PEG 不可用。',
     tip: 'PEG 适合成长股粗筛，不适合强周期、亏损或增速剧烈波动的公司单独决策。',
+    highlights: ['PE 看贵不贵', '有没有增长速度支撑'],
+    related: ['pe_ttm', 'yoy', 'fair_value'],
   },
   {
     id: 'pe_percentile',
@@ -661,9 +709,12 @@ const CORE_TERMS = [
     aliases: ['复权', 'qfq'],
     category: '行情',
     short: '把历史价格按除权除息调整，使走势可连续比较。',
+    plain: '把分红送转造成的价格断层抹平，让历史 K 线更像一条连续走势。',
     detail:
       '分红、配股等会导致价格跳空，不复权会「假跌」。前复权固定最新价、回推历史，适合看形态与均线；后复权固定更早价格、推演最新。本系统日线多为前复权；看绝对历史成交价或某些监管披露时要注意与不复权的差异。',
     tip: '看形态、均线、指标用前复权；对账成交价时用未复权。',
+    highlights: ['价格断层抹平', '连续走势'],
+    related: ['hfq', 'ex_right_dividend', 'ohlc'],
     diagram: 'qfq',
   },
   {

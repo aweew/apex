@@ -9,6 +9,10 @@ function normalize(text) {
     .replace(/\s+/g, '')
 }
 
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** 按 id 或别名精确查找 */
 export function findTerm(key) {
   if (!key) return null
@@ -41,6 +45,7 @@ export function searchTerms(keyword, limit = 30) {
     else if (title.startsWith(needle) || id.startsWith(needle)) score = 80
     else if (aliases.some((a) => a.startsWith(needle))) score = 70
     else if (title.includes(needle) || id.includes(needle) || aliases.some((a) => a.includes(needle))) score = 50
+    else if (normalize(term.plain).includes(needle)) score = 30
     else if (normalize(term.short).includes(needle) || normalize(term.detail).includes(needle)) score = 20
     if (score > 0) scored.push({ term, score })
   }
@@ -59,6 +64,33 @@ export function allCategories() {
 
 export function allTerms() {
   return [...GLOSSARY_TERMS]
+}
+
+/** 将词条正文拆成普通文本与重点文本，供页面和分享图统一渲染 */
+export function splitHighlightedText(text, highlights = []) {
+  const source = String(text ?? '')
+  const phrases = [...new Set((highlights || []).map((item) => String(item).trim()).filter(Boolean))]
+    .sort((a, b) => b.length - a.length)
+  if (!source || !phrases.length) {
+    return source ? [{ text: source, highlighted: false }] : []
+  }
+
+  const highlightedPhrases = new Set(phrases.map((item) => item.toLowerCase()))
+  const pattern = new RegExp(`(${phrases.map(escapeRegExp).join('|')})`, 'gi')
+  return source
+    .split(pattern)
+    .filter(Boolean)
+    .map((part) => ({
+      text: part,
+      highlighted: highlightedPhrases.has(part.toLowerCase()),
+    }))
+}
+
+/** 按配置顺序返回有效的相关词条 */
+export function getRelatedTerms(termOrKey) {
+  const term = typeof termOrKey === 'string' ? findTerm(termOrKey) : termOrKey
+  if (!term) return []
+  return (term.related || []).map((id) => byId.get(id)).filter(Boolean)
 }
 
 export const GLOSSARY_EVENT = 'apex:glossary-open'
