@@ -14,7 +14,7 @@ import {
 import { syncBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
 import { aggregateBars, tdSequential } from '../utils/kline'
-import { analyzePriceStructure } from '../utils/priceStructure'
+import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceStructure'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
 import ChipDistributionPanel from '../components/ChipDistributionPanel.vue'
 
@@ -76,6 +76,7 @@ let savedZoom = { start: 45, end: 100 }
 let intradayPollTimer = null
 /** 当前图数据，供可视区高低点随缩放更新 */
 let chartPayload = null
+let compactPriceLabelsMode = null
 
 const isIntraday = computed(() => klinePeriod.value === 'intraday')
 const intradayPoints = computed(() => intraday.value?.points || [])
@@ -856,21 +857,10 @@ async function renderChart(list) {
   resetZoomNext = false
   const extremeMarkPoint = buildVisibleExtremeMarkPoint(dates, highs, lows, zoomStart, zoomEnd)
   const priceExtent = calcVisiblePriceExtent(highs, lows, zoomStart, zoomEnd)
-  const structureMarkLines = []
-  if (priceStructure.value.ready && priceStructure.value.support) {
-    structureMarkLines.push({
-      yAxis: priceStructure.value.support.price,
-      label: { formatter: `支撑 ${fmtNum(priceStructure.value.support.price)}`, position: 'insideEndBottom', color: '#1f8f48', fontSize: 10 },
-      lineStyle: { color: 'rgba(52,199,89,0.88)', type: 'dashed', width: 1.2 },
-    })
-  }
-  if (priceStructure.value.ready && priceStructure.value.resistance) {
-    structureMarkLines.push({
-      yAxis: priceStructure.value.resistance.price,
-      label: { formatter: `压力 ${fmtNum(priceStructure.value.resistance.price)}`, position: 'insideEndTop', color: '#d92d20', fontSize: 10 },
-      lineStyle: { color: 'rgba(255,59,48,0.88)', type: 'dashed', width: 1.2 },
-    })
-  }
+  const compactPriceLabels = chartRef.value?.clientWidth < 680
+  compactPriceLabelsMode = compactPriceLabels
+  const chartGridRight = compactPriceLabels ? 72 : 96
+  const structureMarkLines = buildPriceLevelMarkLines(priceStructure.value, compactPriceLabels)
 
   chart.setOption({
     backgroundColor: 'transparent',
@@ -1071,11 +1061,11 @@ async function renderChart(list) {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      // 主图 → 窄缝放日期 → 成交量；右侧略留白给 KDJ 标尺数字
-      { left: 56, right: 28, top: 36, height: '38%' },
-      { left: 56, right: 28, top: '47%', height: '9%' },
-      { left: 56, right: 28, top: '60%', height: '11%' },
-      { left: 56, right: 28, top: '75%', height: '10%' },
+      // 四个子图保持同宽，右侧独立留给支撑/压力价格牌。
+      { left: 56, right: chartGridRight, top: 36, height: '38%' },
+      { left: 56, right: chartGridRight, top: '47%', height: '9%' },
+      { left: 56, right: chartGridRight, top: '60%', height: '11%' },
+      { left: 56, right: chartGridRight, top: '75%', height: '10%' },
     ],
     xAxis: [
       {
@@ -1511,6 +1501,9 @@ async function quickAddObserve() {
 
 function onResize() {
   chart?.resize()
+  if (isIntraday.value || activeTab.value !== 'chart' || !bars.value.length || !chartRef.value) return
+  const nextCompactMode = chartRef.value.clientWidth < 680
+  if (nextCompactMode !== compactPriceLabelsMode) refreshChart()
 }
 
 watch(

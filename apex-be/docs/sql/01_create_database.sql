@@ -1,3 +1,5 @@
 CREATE DATABASE IF NOT EXISTS apex
     DEFAULT CHARACTER SET utf8mb4
-    DEFAULT COLLATE utf8mb4_general_ci;
+    DEFAULT COLLATE utf8mb4_0900_ai_ci;
+
+SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;

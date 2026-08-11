@@ -106,6 +106,43 @@ function buildTrend(closes, movingAverages) {
   return { key: 'sideways', label: '震荡', description: '均线未形成一致方向，支撑压力均需确认', ma20SlopePct: Number(ma20SlopePct.toFixed(2)) }
 }
 
+export function buildPriceLevelMarkLines(structure, compact = false) {
+  if (!structure?.ready) return []
+  const rows = []
+  const addLevel = (level, type) => {
+    if (!level || !Number.isFinite(Number(level.price))) return
+    const support = type === 'support'
+    const price = Number(level.price)
+    const label = compact ? (support ? '支' : '压') : (support ? '支撑' : '压力')
+    const color = support ? '#1f8f48' : '#d92d20'
+    rows.push({
+      yAxis: price,
+      label: {
+        formatter: `${label} ${price.toFixed(2)}`,
+        position: 'end',
+        distance: compact ? 4 : 7,
+        offset: [0, support ? 8 : -8],
+        color,
+        fontSize: compact ? 9 : 10,
+        fontWeight: 600,
+        backgroundColor: 'rgba(255,255,255,0.94)',
+        borderColor: support ? 'rgba(52,199,89,0.28)' : 'rgba(255,59,48,0.28)',
+        borderWidth: 1,
+        borderRadius: 3,
+        padding: [2, 4],
+      },
+      lineStyle: {
+        color: support ? 'rgba(52,199,89,0.88)' : 'rgba(255,59,48,0.88)',
+        type: 'dashed',
+        width: 1.2,
+      },
+    })
+  }
+  addLevel(structure.support, 'support')
+  addLevel(structure.resistance, 'resistance')
+  return rows
+}
+
 export function analyzePriceStructure(inputBars, latestPrice, options = {}) {
   const bars = (inputBars || [])
     .map((bar) => ({

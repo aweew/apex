@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { analyzePriceStructure } from './priceStructure.js'
+import { analyzePriceStructure, buildPriceLevelMarkLines } from './priceStructure.js'
 
 function makeBars(prices, turnoverRate = 8) {
   return prices.map((close, index) => ({
@@ -58,4 +58,25 @@ test('zero-turnover bars do not move the existing chip distribution', () => {
   const suspended = makeBars(new Array(10).fill(20), 0)
   const result = analyzePriceStructure([...traded, ...suspended], 20)
   assert.ok(result.averageCost < 12)
+})
+
+test('price level labels render in the reserved right gutter', () => {
+  const lines = buildPriceLevelMarkLines({
+    ready: true,
+    support: { price: 10.12 },
+    resistance: { price: 12.34 },
+  })
+  assert.equal(lines.length, 2)
+  assert.ok(lines.every((line) => line.label.position === 'end'))
+  assert.ok(lines.every((line) => line.label.backgroundColor))
+  assert.equal(lines[0].label.formatter, '支撑 10.12')
+  assert.equal(lines[1].label.formatter, '压力 12.34')
+
+  const compact = buildPriceLevelMarkLines({
+    ready: true,
+    support: { price: 10.12 },
+    resistance: { price: 12.34 },
+  }, true)
+  assert.equal(compact[0].label.formatter, '支 10.12')
+  assert.equal(compact[1].label.formatter, '压 12.34')
 })
