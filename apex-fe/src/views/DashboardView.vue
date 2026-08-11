@@ -305,12 +305,11 @@ onMounted(() => {
       </div>
       <div class="actions">
         <el-button type="primary" class="cta" :loading="running" @click="onRunDecision">
-          一键生成决策
+          生成今日决策
         </el-button>
         <el-button type="success" plain :loading="syncingClose" @click="onCloseBundleSync">
           一键收盘同步
         </el-button>
-        <el-button @click="router.push('/decision')">智能决策</el-button>
         <el-button plain @click="router.push('/sync')">同步中心</el-button>
         <el-button plain :loading="refreshing" @click="load({ forceRefresh: true })">刷新行情</el-button>
       </div>
