@@ -13,6 +13,8 @@
 - Repository discovery supports both root-level and `scripts/` placement.
 - `--be` and `--fe` use `--no-deps`, so each option updates only its selected
   service; no argument continues to deploy both services.
+- `--install-command` refuses to replace unrelated commands and installs an
+  executable wrapper that delegates to the repository script.
 
 Result: compliant with the requested NAS deployment workflow.
 

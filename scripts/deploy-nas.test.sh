@@ -19,6 +19,32 @@ trap cleanup EXIT INT TERM
 
 sh "$DEPLOY_SCRIPT" --help | grep -q -- '--be' || fail "backend option is missing from help"
 sh "$DEPLOY_SCRIPT" --help | grep -q -- '--fe' || fail "frontend option is missing from help"
+sh "$DEPLOY_SCRIPT" --help | grep -q -- '--install-command' || fail "global command installer is missing from help"
+
+GLOBAL_BIN="$TEST_DIR/global-bin"
+GLOBAL_COMMAND="$GLOBAL_BIN/deploy-nas.sh"
+mkdir -p "$GLOBAL_BIN"
+APEX_COMMAND_PATH="$GLOBAL_COMMAND" sh "$DEPLOY_SCRIPT" --install-command \
+    >"$TEST_DIR/install-command.log" 2>&1 \
+    || fail "global command installation failed"
+test -x "$GLOBAL_COMMAND" || fail "global command is not executable"
+grep -q "$SCRIPT_DIR/deploy-nas.sh" "$GLOBAL_COMMAND" || fail "global command does not use the repository script"
+APEX_COMMAND_PATH="$GLOBAL_COMMAND" sh "$DEPLOY_SCRIPT" --install-command \
+    >"$TEST_DIR/reinstall-command.log" 2>&1 \
+    || fail "global command cannot be updated idempotently"
+
+FOREIGN_COMMAND="$GLOBAL_BIN/foreign-command"
+echo '# foreign command' >"$FOREIGN_COMMAND"
+if APEX_COMMAND_PATH="$FOREIGN_COMMAND" sh "$DEPLOY_SCRIPT" --install-command \
+    >"$TEST_DIR/foreign-command.log" 2>&1; then
+    fail "global command installer overwrote an unrelated command"
+fi
+grep -q '^# foreign command$' "$FOREIGN_COMMAND" || fail "unrelated command content was changed"
+
+(
+    cd "$TEST_DIR"
+    PATH="$GLOBAL_BIN:$PATH" deploy-nas.sh --help | grep -q -- '--be'
+) || fail "global command cannot run outside the repository"
 
 GIT_MOCK_BIN="$TEST_DIR/git-bin"
 GIT_PULL_MARKER="$TEST_DIR/git-pull.marker"

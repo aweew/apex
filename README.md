@@ -61,6 +61,13 @@ sh scripts/deploy-nas.sh --fe  # 只部署前端
 
 脚本默认先拉取最新代码，再构建、启动并验证服务。
 
+NAS 上可安装全局命令，之后能在任意目录执行：
+
+```bash
+sh scripts/deploy-nas.sh --install-command
+deploy-nas.sh --be
+```
+
 本地登录（可选）：用户 `admin` / 密码 `admin123`（可在 `application.yml` 的 `apex.local-*` 修改）。
 
 ## 推荐使用流

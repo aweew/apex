@@ -11,6 +11,7 @@
 - Default fast-forward-only Git update before deployment, plus compatible
   `--update`, `--check`, and `--help` modes.
 - Default full deployment and isolated `--be`/`--fe` service deployment.
+- Guarded global-command installation through `--install-command`.
 - Shell behavior tests and updated NAS deployment documentation.
 
 ## Commands
@@ -19,4 +20,5 @@
 sh scripts/deploy-nas.sh
 sh scripts/deploy-nas.sh --check
 sh scripts/deploy-nas.sh --update
+sh scripts/deploy-nas.sh --install-command
 ```

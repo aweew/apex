@@ -33,6 +33,8 @@ usage() {
   sh scripts/deploy-nas.sh --fe       只部署前端
   sh scripts/deploy-nas.sh --update   拉取最新代码后部署（兼容参数）
   sh scripts/deploy-nas.sh --check    仅检查配置和依赖
+  sh scripts/deploy-nas.sh --install-command
+                                      安装全局 deploy-nas.sh 命令
   sh scripts/deploy-nas.sh --help     显示帮助
 EOF
 }
@@ -122,6 +124,35 @@ wait_for_frontend() {
     fail "等待前端容器启动超时 (${timeout}s)"
 }
 
+install_global_command() {
+    command_path=${APEX_COMMAND_PATH:-/usr/local/bin/deploy-nas.sh}
+    command_dir=$(dirname "$command_path")
+    [ -d "$command_dir" ] || fail "全局命令目录不存在: $command_dir"
+    [ -w "$command_dir" ] || fail "全局命令目录不可写，请使用 root 执行: $command_dir"
+
+    if [ -e "$command_path" ] && ! grep -q '^# Apex NAS deployment command$' "$command_path"; then
+        fail "全局命令已存在且不属于 Apex: $command_path"
+    fi
+
+    deploy_script="$PROJECT_DIR/scripts/deploy-nas.sh"
+    if [ ! -f "$deploy_script" ]; then
+        deploy_script="$SCRIPT_DIR/deploy-nas.sh"
+    fi
+
+    command_tmp="${command_path}.tmp.$$"
+    trap 'rm -f "$command_tmp"' 0 1 2 15
+    cat >"$command_tmp" <<EOF
+#!/bin/sh
+# Apex NAS deployment command
+exec /bin/sh "$deploy_script" "\$@"
+EOF
+    chmod 755 "$command_tmp"
+    mv "$command_tmp" "$command_path"
+    trap - 0 1 2 15
+
+    log "全局命令安装成功: $command_path"
+}
+
 case "${1:-}" in
     "")
         ;;
@@ -137,6 +168,9 @@ case "${1:-}" in
     --check)
         MODE=check
         ;;
+    --install-command)
+        MODE=install
+        ;;
     --help|-h)
         usage
         exit 0
@@ -149,6 +183,11 @@ esac
 
 [ "$#" -le 1 ] || fail "只能指定一个参数"
 [ -f "$COMPOSE_FILE" ] || fail "未找到 $COMPOSE_FILE"
+
+if [ "$MODE" = "install" ]; then
+    install_global_command
+    exit 0
+fi
 
 if [ "$MODE" = "update" ]; then
     command -v git >/dev/null 2>&1 || fail "未安装 git"

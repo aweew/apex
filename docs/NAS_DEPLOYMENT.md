@@ -111,6 +111,26 @@ sh scripts/deploy-nas.sh --fe  # 只部署前端
 单服务部署使用 Compose 的 `--no-deps`，不会连带重建或重启另一个服务。无参数时
 仍会部署前后端全部服务。
 
+### 安装全局命令
+
+使用 root 用户在仓库中执行一次：
+
+```bash
+sh scripts/deploy-nas.sh --install-command
+```
+
+该命令会安装 `/usr/local/bin/deploy-nas.sh` 入口，入口始终调用当前仓库中的部署
+脚本，不会复制或修改 `.env.production`。之后可以在任意目录执行：
+
+```bash
+deploy-nas.sh       # 部署前后端
+deploy-nas.sh --be  # 只部署后端
+deploy-nas.sh --fe  # 只部署前端
+```
+
+可使用 `command -v deploy-nas.sh` 确认全局命令已加入当前 PATH。仓库路径发生变化
+后，在新仓库目录重新执行一次安装命令即可更新入口。
+
 脚本也支持复制到仓库根目录后执行 `./deploy-nas.sh`，会自动识别同级的生产
 Compose 文件。
 

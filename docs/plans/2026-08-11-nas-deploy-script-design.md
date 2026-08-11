@@ -17,6 +17,8 @@ port used by DSM reverse proxy.
 - Build and start the production services without stopping or deleting volumes.
 - Deploy all services by default, or only backend/frontend with `--be`/`--fe`
   and Compose dependency startup disabled.
+- Install a guarded `/usr/local/bin/deploy-nas.sh` wrapper that delegates to the
+  repository script and works from any current directory.
 - Wait for backend health and verify the public host port through Nginx.
 - Print backend/frontend logs automatically when startup or HTTP verification
   fails.
