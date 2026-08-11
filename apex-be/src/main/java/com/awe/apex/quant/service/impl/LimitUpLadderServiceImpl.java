@@ -12,6 +12,7 @@ import com.awe.apex.quant.domain.dto.LimitUpRefreshResp;
 import com.awe.apex.quant.domain.dto.LimitUpStockItem;
 import com.awe.apex.quant.domain.dto.LimitUpThemeStat;
 import com.awe.apex.quant.domain.dto.LimitUpTier;
+import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.LimitUpPool;
 import com.awe.apex.quant.domain.entity.StockBasic;
@@ -20,6 +21,7 @@ import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.ILimitUpLadderService;
+import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.util.ProcessIoUtils;
 import com.awe.apex.quant.util.PythonCommandResolver;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -70,6 +72,9 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
 
     @Resource
     private BarDailyMapper barDailyMapper;
+
+    @Resource
+    private IMarketBriefingService marketBriefingService;
 
     @Resource
     private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
@@ -147,9 +152,13 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                     .build());
         }
 
+        int totalCount = resolveTotalCount(resolved, today.size());
         List<LimitUpThemeStat> themes = buildThemes(today);
         LimitUpEffectResp effect = buildEffect(prevDate, prevLianban, today);
-        String msg = resolved + " 涨停 " + today.size() + " 家 · 最高 " + maxLb + " 板";
+        String msg = resolved + " 涨停 " + totalCount + " 家 · 最高 " + maxLb + " 板";
+        if (totalCount != today.size()) {
+            msg = msg + " · 天梯收录 " + today.size() + " 家";
+        }
         if (failCount > 0) {
             msg = msg + " · 断板 " + failCount + " 家";
         }
@@ -159,7 +168,7 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
         return LimitUpLadderResp.builder()
                 .tradeDate(resolved)
                 .availableDates(available)
-                .totalCount(today.size())
+                .totalCount(totalCount)
                 .maxLianban(maxLb)
                 .themes(themes)
                 .tiers(tiers)
@@ -167,6 +176,20 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                 .effect(effect)
                 .message(msg)
                 .build();
+    }
+
+    private int resolveTotalCount(LocalDate tradeDate, int poolCount) {
+        try {
+            MarketBriefingResp briefing = marketBriefingService.briefing(false);
+            if (Objects.nonNull(briefing)
+                    && tradeDate.equals(briefing.getAsOf())
+                    && Objects.nonNull(briefing.getLimitUpCount())) {
+                return Math.max(poolCount, briefing.getLimitUpCount());
+            }
+        } catch (Exception ex) {
+            log.debug("连板天梯读取全市场涨停数失败 tradeDate={}: {}", tradeDate, ex.getMessage());
+        }
+        return poolCount;
     }
 
     /**

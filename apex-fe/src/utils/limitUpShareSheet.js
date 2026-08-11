@@ -75,6 +75,7 @@ function badgeHtml(text, bg, mobile) {
  * @param {string} payload.titleDate
  * @param {string} [payload.tradeDate]
  * @param {string} [payload.activeTheme]
+ * @param {number} [payload.totalCount]
  * @param {Array<{theme:string,count:number}>} payload.themes
  * @param {Array} payload.tiers
  * @param {'desktop'|'mobile'} [payload.layout]
@@ -85,6 +86,7 @@ export function buildLimitUpShareSheet(payload) {
     titleDate = '',
     tradeDate = '',
     activeTheme = '',
+    totalCount = null,
     themes = [],
     tiers = [],
     layout = 'desktop',
@@ -111,6 +113,9 @@ export function buildLimitUpShareSheet(payload) {
     for (const s of tier.stocks || []) {
       if (!s.failed) total += 1
     }
+  }
+  if (!activeTheme && totalCount != null && Number.isFinite(Number(totalCount))) {
+    total = Number(totalCount)
   }
 
   const root = document.createElement('div')

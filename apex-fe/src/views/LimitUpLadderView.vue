@@ -64,6 +64,9 @@ const filteredTiers = computed(() => {
 })
 
 const totalShown = computed(() => {
+  if (!activeTheme.value && data.value?.totalCount != null) {
+    return Number(data.value.totalCount)
+  }
   let n = 0
   for (const tier of filteredTiers.value) {
     for (const s of tier.stocks || []) {
@@ -299,6 +302,7 @@ async function captureBoard(mode = shareMode.value) {
     titleDate: titleDate.value,
     tradeDate: snapshotStamp(data.value),
     activeTheme: activeTheme.value,
+    totalCount: data.value?.totalCount,
     themes: themes.value,
     tiers: filteredTiers.value,
     layout,

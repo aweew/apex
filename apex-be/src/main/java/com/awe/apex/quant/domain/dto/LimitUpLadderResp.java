@@ -29,7 +29,7 @@ public class LimitUpLadderResp {
     private List<LocalDate> availableDates;
 
     /**
-     * 涨停总数
+     * 全市场涨停总数，可能高于天梯收录卡片数
      */
     private Integer totalCount;
 
