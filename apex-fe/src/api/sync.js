@@ -1,7 +1,7 @@
 import http from './http'
 
 export function fetchSyncOverview() {
-  return http.get('/api/sync/overview')
+  return http.get('/api/sync/overview', { activity: false })
 }
 
 export function startSyncJob(body) {
@@ -9,7 +9,7 @@ export function startSyncJob(body) {
 }
 
 export function fetchSyncJob(id) {
-  return http.get(`/api/sync/jobs/${id}`)
+  return http.get(`/api/sync/jobs/${id}`, { activity: false })
 }
 
 /** 兼容旧命名 */
@@ -22,5 +22,5 @@ export function stopSyncJob(id) {
 }
 
 export function fetchRecentSyncJobs(limit = 20) {
-  return http.get('/api/sync/jobs', { params: { limit } })
+  return http.get('/api/sync/jobs', { params: { limit }, activity: false })
 }

@@ -1,26 +1,28 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import DashboardView from '../views/DashboardView.vue'
-import WatchlistView from '../views/WatchlistView.vue'
-import SignalView from '../views/SignalView.vue'
-import BacktestView from '../views/BacktestView.vue'
-import PaperView from '../views/PaperView.vue'
-import DailyView from '../views/DailyView.vue'
-import ConfigView from '../views/ConfigView.vue'
-import StockView from '../views/StockView.vue'
-import PipelineView from '../views/PipelineView.vue'
-import ScreenerView from '../views/ScreenerView.vue'
-import ValuationView from '../views/ValuationView.vue'
-import DecisionView from '../views/DecisionView.vue'
-import HoldingView from '../views/HoldingView.vue'
-import PortfolioView from '../views/PortfolioView.vue'
-import ObserveView from '../views/ObserveView.vue'
-import HotView from '../views/HotView.vue'
-import NewsView from '../views/NewsView.vue'
-import IndexBoardView from '../views/IndexBoardView.vue'
-import SectorBoardView from '../views/SectorBoardView.vue'
-import LimitUpLadderView from '../views/LimitUpLadderView.vue'
-import SyncView from '../views/SyncView.vue'
 import { resolveScrollPosition } from './scrollBehavior.js'
+import { beginNavigationActivity } from '../utils/appActivity'
+
+const DashboardView = () => import('../views/DashboardView.vue')
+const WatchlistView = () => import('../views/WatchlistView.vue')
+const SignalView = () => import('../views/SignalView.vue')
+const BacktestView = () => import('../views/BacktestView.vue')
+const PaperView = () => import('../views/PaperView.vue')
+const DailyView = () => import('../views/DailyView.vue')
+const ConfigView = () => import('../views/ConfigView.vue')
+const StockView = () => import('../views/StockView.vue')
+const PipelineView = () => import('../views/PipelineView.vue')
+const ScreenerView = () => import('../views/ScreenerView.vue')
+const ValuationView = () => import('../views/ValuationView.vue')
+const DecisionView = () => import('../views/DecisionView.vue')
+const HoldingView = () => import('../views/HoldingView.vue')
+const PortfolioView = () => import('../views/PortfolioView.vue')
+const ObserveView = () => import('../views/ObserveView.vue')
+const HotView = () => import('../views/HotView.vue')
+const NewsView = () => import('../views/NewsView.vue')
+const IndexBoardView = () => import('../views/IndexBoardView.vue')
+const SectorBoardView = () => import('../views/SectorBoardView.vue')
+const LimitUpLadderView = () => import('../views/LimitUpLadderView.vue')
+const SyncView = () => import('../views/SyncView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -53,5 +55,19 @@ const router = createRouter({
     { path: '/config', name: 'config', component: ConfigView },
   ],
 })
+
+const navigationFinishes = new WeakMap()
+
+router.beforeEach((to) => {
+  navigationFinishes.set(to, beginNavigationActivity())
+})
+
+function finishNavigation(to) {
+  navigationFinishes.get(to)?.()
+  navigationFinishes.delete(to)
+}
+
+router.afterEach((to) => finishNavigation(to))
+router.onError((_error, to) => finishNavigation(to))
 
 export default router

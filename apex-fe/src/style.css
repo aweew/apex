@@ -57,7 +57,9 @@ body,
 }
 
 html.mobile-menu-open,
-html.mobile-menu-open body {
+html.mobile-menu-open body,
+html.search-open,
+html.search-open body {
   overflow: hidden;
 }
 
@@ -328,6 +330,45 @@ textarea {
 }
 
 /* —— Element overrides —— */
+.page > .el-loading-mask {
+  background: rgba(245, 245, 247, 0.46);
+  transition: opacity 0.16s ease;
+}
+
+.page > .el-loading-mask .el-loading-spinner {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: auto;
+  margin: 0;
+  padding: 7px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  transform: translateX(-50%);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+}
+
+.page > .el-loading-mask .el-loading-spinner::after {
+  content: "正在更新";
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.page > .el-loading-mask .el-loading-spinner .circular {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
 .page .el-alert {
   border-radius: var(--radius-sm);
   border: 1px solid var(--glass-border);
@@ -644,6 +685,10 @@ textarea {
     padding: 12px 10px calc(28px + env(safe-area-inset-bottom));
   }
 
+  .page > .el-loading-mask .el-loading-spinner {
+    top: 64px;
+  }
+
   .header {
     gap: 12px;
     margin-bottom: 14px;
@@ -681,6 +726,116 @@ textarea {
   .toolbar,
   .toolbar-bar {
     gap: 8px;
+  }
+
+  .page .header > .actions,
+  .page .header > .header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .page .header > .actions > *,
+  .page .header > .header-actions > * {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .page .header > .actions > .el-button,
+  .page .header > .header-actions > .el-button,
+  .page .header > .actions > .el-dropdown,
+  .page .header > .header-actions > .el-dropdown,
+  .page .header > .actions > .el-link,
+  .page .header > .header-actions > .el-link,
+  .page .header > .actions > .btn,
+  .page .header > .header-actions > .btn {
+    width: 100%;
+  }
+
+  .page .header > .actions > .el-dropdown .el-button,
+  .page .header > .header-actions > .el-dropdown .el-button {
+    width: 100%;
+    margin: 0;
+  }
+
+  .page .header > .actions > .el-input,
+  .page .header > .header-actions > .el-input,
+  .page .header > .actions > .el-select,
+  .page .header > .header-actions > .el-select,
+  .page .header > .actions > .el-date-editor,
+  .page .header > .header-actions > .el-date-editor {
+    width: 100% !important;
+    min-height: 44px;
+  }
+
+  .page .header > .actions > .el-input .el-input__wrapper,
+  .page .header > .header-actions > .el-input .el-input__wrapper,
+  .page .header > .actions > .el-select .el-select__wrapper,
+  .page .header > .header-actions > .el-select .el-select__wrapper,
+  .page .header > .actions > .el-date-editor .el-input__wrapper,
+  .page .header > .header-actions > .el-date-editor .el-input__wrapper {
+    min-height: 44px;
+  }
+
+  .page .header > .actions > .tabs,
+  .page .header > .header-actions > .tabs,
+  .page .header > .actions > .el-radio-group,
+  .page .header > .header-actions > .el-radio-group {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .page .header > .actions > .tabs,
+  .page .header > .header-actions > .tabs {
+    min-height: 44px;
+  }
+
+  .page .header > .actions > .tabs > button,
+  .page .header > .header-actions > .tabs > button {
+    flex: 1;
+    min-height: 38px;
+  }
+
+  .page .header > .actions > :last-child:nth-child(odd),
+  .page .header > .header-actions > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .page .header > .actions > .el-button,
+  .page .header > .header-actions > .el-button,
+  .page .header > .actions > .el-dropdown .el-button,
+  .page .header > .header-actions > .el-dropdown .el-button {
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  .page .header > .actions > .el-link,
+  .page .header > .header-actions > .el-link,
+  .page .header > .actions > .btn,
+  .page .header > .header-actions > .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 10px;
+    border-radius: 8px;
+    line-height: 1.25;
+    text-align: center;
+  }
+
+  .page .toolbar > .el-button,
+  .page .toolbar-bar > .el-button,
+  .page .row-actions > .el-button {
+    flex: 1 1 120px;
+    min-width: 0;
+    margin: 0;
+    padding-right: 10px;
+    padding-left: 10px;
+    white-space: normal;
   }
 
   .page .el-button,
@@ -753,7 +908,22 @@ textarea {
   }
 
   .el-dialog__footer {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 8px;
     padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .el-dialog__footer > .el-button,
+  .el-dialog__footer > .btn {
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+  }
+
+  .page-empty > .el-button {
+    width: 100%;
+    margin: 6px 0 0;
   }
 
   .el-drawer {
@@ -773,5 +943,46 @@ textarea {
 
   .stat-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 561px) and (max-width: 900px) and (orientation: landscape) {
+  .page .header > .actions,
+  .page .header > .header-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    align-items: stretch;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .page .header > .actions > *,
+  .page .header > .header-actions > * {
+    min-width: 0;
+    width: 100% !important;
+    min-height: 44px;
+    margin: 0;
+  }
+
+  .page .header > .actions > .el-button,
+  .page .header > .header-actions > .el-button,
+  .page .header > .actions > .el-dropdown .el-button,
+  .page .header > .header-actions > .el-dropdown .el-button,
+  .page .header > .actions > .btn,
+  .page .header > .header-actions > .btn {
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding-right: 8px;
+    padding-left: 8px;
+    border-radius: 8px;
+    white-space: normal;
+  }
+
+  .page .header > .actions .el-input__wrapper,
+  .page .header > .header-actions .el-input__wrapper,
+  .page .header > .actions .el-select__wrapper,
+  .page .header > .header-actions .el-select__wrapper {
+    min-height: 44px;
   }
 }

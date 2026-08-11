@@ -5,7 +5,10 @@ export function fetchStockDetail(code, barLimit = 120, refresh = false) {
 }
 
 export function fetchStockIntraday(code) {
-  return http.get(`/api/stock/${encodeURIComponent(code)}/intraday`, { timeout: 20000 })
+  return http.get(`/api/stock/${encodeURIComponent(code)}/intraday`, {
+    timeout: 20000,
+    activity: false,
+  })
 }
 
 export function syncStockBasic(code) {
@@ -13,7 +16,7 @@ export function syncStockBasic(code) {
 }
 
 export function searchStock(q, limit = 15) {
-  return http.get('/api/stock/search', { params: { q, limit } })
+  return http.get('/api/stock/search', { params: { q, limit }, activity: false })
 }
 
 export function fetchStockFundamental(code, periodLimit = 40, reportPeriodLimit = 12) {

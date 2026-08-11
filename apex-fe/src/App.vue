@@ -5,6 +5,7 @@ import { searchStock } from './api/stock'
 import http from './api/http'
 import GlossaryPanel from './components/GlossaryPanel.vue'
 import { BRAND } from './brand/identity.js'
+import { isNavigating, requestCount } from './utils/appActivity'
 
 const router = useRouter()
 const route = useRoute()
@@ -19,11 +20,16 @@ const glossaryRef = ref(null)
 const mobileMenuRef = ref(null)
 const mobileMenuButtonRef = ref(null)
 const mobileMenuCloseRef = ref(null)
+const appActivityVisible = ref(false)
+const appActivityFinishing = ref(false)
 /** 终端紧凑密度：缩小表格与页边距 */
 const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 let healthTimer
 let searchSeq = 0
 let debounceTimer
+let searchReturnFocus
+let activityShowTimer
+let activityHideTimer
 
 function toggleDense() {
   denseMode.value = !denseMode.value
@@ -92,7 +98,7 @@ function openGlossary(termId) {
 
 async function pingHealth() {
   try {
-    const res = await http.get('/api/health', { timeout: 4000 })
+    const res = await http.get('/api/health', { timeout: 4000, activity: false })
     healthOk.value = res?.data?.status === 'UP'
   } catch {
     healthOk.value = false
@@ -131,17 +137,21 @@ function markHtml(text, keyword) {
 
 async function openSearch() {
   setMobileMenu(false)
+  searchReturnFocus = document.activeElement
   searchOpen.value = true
   loadRecentStocks()
   await nextTick()
   inputRef.value?.focus?.()
 }
 
-function closeSearch() {
+function closeSearch(restoreFocus = true) {
+  clearTimeout(debounceTimer)
+  searchSeq += 1
   searchOpen.value = false
   query.value = ''
   results.value = []
   loading.value = false
+  if (restoreFocus) nextTick(() => searchReturnFocus?.focus?.())
 }
 
 function onQueryInput() {
@@ -204,7 +214,7 @@ function goStock(code, name = '') {
   if (!code) return
   rememberStock(code, name)
   router.push(`/stock/${code}`)
-  closeSearch()
+  closeSearch(false)
 }
 
 function onEnter() {
@@ -257,6 +267,35 @@ watch(
   () => setMobileMenu(false),
 )
 
+watch(
+  [isNavigating, requestCount],
+  ([navigating, requests]) => {
+    const busy = navigating || requests > 0
+    clearTimeout(activityShowTimer)
+
+    if (busy) {
+      clearTimeout(activityHideTimer)
+      appActivityFinishing.value = false
+      if (appActivityVisible.value) return
+
+      const show = () => {
+        appActivityVisible.value = true
+      }
+      if (navigating) show()
+      else activityShowTimer = setTimeout(show, 240)
+      return
+    }
+
+    if (!appActivityVisible.value) return
+    appActivityFinishing.value = true
+    activityHideTimer = setTimeout(() => {
+      appActivityVisible.value = false
+      appActivityFinishing.value = false
+    }, 180)
+  },
+  { immediate: true, flush: 'sync' },
+)
+
 watch(mobileMenuOpen, async (open) => {
   document.documentElement.classList.toggle('mobile-menu-open', open)
   await nextTick()
@@ -270,6 +309,10 @@ watch(mobileMenuOpen, async (open) => {
   mobileMenuButtonRef.value?.focus?.()
 })
 
+watch(searchOpen, (open) => {
+  document.documentElement.classList.toggle('search-open', open)
+})
+
 onMounted(() => {
   pingHealth()
   healthTimer = setInterval(pingHealth, 30000)
@@ -279,15 +322,23 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (healthTimer) clearInterval(healthTimer)
   clearTimeout(debounceTimer)
+  clearTimeout(activityShowTimer)
+  clearTimeout(activityHideTimer)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', closeMobileMenuOnDesktop)
   document.documentElement.classList.remove('mobile-menu-open')
+  document.documentElement.classList.remove('search-open')
 })
 </script>
 
 <template>
   <div class="shell" :class="{ dense: denseMode }">
-    <nav class="nav" aria-label="主导航">
+    <nav
+      class="nav"
+      aria-label="主导航"
+      :inert="searchOpen"
+      :aria-hidden="searchOpen ? 'true' : undefined"
+    >
       <div class="brand-block" :title="BRAND.slogan">
         <img class="brand-logo" :src="BRAND.assets.mark" :alt="`${BRAND.nameZh} ${BRAND.nameEn}`" />
         <div class="brand-text">
@@ -409,12 +460,23 @@ onBeforeUnmount(() => {
           <span>搜索</span>
         </button>
       </div>
+      <div
+        class="app-activity"
+        :class="{ visible: appActivityVisible, finishing: appActivityFinishing }"
+        aria-hidden="true"
+      >
+        <span />
+      </div>
     </nav>
+
+    <span class="sr-only" role="status" aria-live="polite">
+      {{ appActivityVisible ? '正在更新数据' : '' }}
+    </span>
 
     <GlossaryPanel ref="glossaryRef" />
 
     <div v-if="searchOpen" class="search-layer" @click.self="closeSearch">
-      <div class="search-panel" role="dialog" aria-label="搜索股票">
+      <div class="search-panel" role="dialog" aria-label="搜索股票" aria-modal="true">
         <div class="search-head">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="7" />
@@ -426,14 +488,21 @@ onBeforeUnmount(() => {
             class="search-input"
             placeholder="代码或名称"
             autocomplete="off"
+            autocapitalize="none"
+            enterkeyhint="search"
+            inputmode="search"
+            :spellcheck="false"
             @input="onQueryInput"
             @keydown.enter.prevent="onEnter"
             @keydown.esc.prevent="closeSearch"
           />
-          <button type="button" class="search-close" @click="closeSearch">esc</button>
+          <button type="button" class="search-close" aria-label="关闭搜索" @click="closeSearch">
+            <span class="desktop-label">esc</span>
+            <span class="mobile-label">取消</span>
+          </button>
         </div>
         <div class="search-body">
-          <div v-if="loading" class="search-tip">搜索中…</div>
+          <div v-if="loading" class="search-tip" role="status">搜索中…</div>
           <template v-else-if="!query.trim()">
             <div v-if="recentStocks.length" class="search-recent">
               <div class="search-tip">最近浏览</div>
@@ -453,7 +522,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </template>
-          <div v-else-if="!results.length" class="search-tip">无匹配</div>
+          <div v-else-if="!results.length" class="search-tip">没有找到匹配股票，请尝试完整代码或名称</div>
           <ul v-else class="search-list">
             <li v-for="item in results" :key="item.code">
               <button type="button" class="search-item" @click="goStock(item.code, item.name)">
@@ -467,7 +536,12 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <main class="main" :inert="mobileMenuOpen" :aria-hidden="mobileMenuOpen ? 'true' : undefined">
+    <main
+      class="main"
+      :inert="mobileMenuOpen || searchOpen"
+      :aria-hidden="mobileMenuOpen || searchOpen ? 'true' : undefined"
+      :aria-busy="appActivityVisible ? 'true' : 'false'"
+    >
       <RouterView />
     </main>
   </div>
@@ -503,6 +577,70 @@ onBeforeUnmount(() => {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
   user-select: none;
   -webkit-user-select: none;
+}
+
+.app-activity {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.app-activity span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(0, 113, 227, 0.28);
+  transform: scaleX(0.08);
+  transform-origin: left center;
+}
+
+.app-activity.visible {
+  opacity: 1;
+}
+
+.app-activity.visible span {
+  animation: appActivityProgress 8s cubic-bezier(0.1, 0.65, 0.25, 1) forwards;
+}
+
+.app-activity.finishing span {
+  animation: none;
+  transform: scaleX(1);
+  transition: transform 0.16s ease-out;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes appActivityProgress {
+  0% {
+    transform: scaleX(0.08);
+  }
+  18% {
+    transform: scaleX(0.34);
+  }
+  55% {
+    transform: scaleX(0.68);
+  }
+  100% {
+    transform: scaleX(0.88);
+  }
 }
 
 .mobile-top-actions,
@@ -827,6 +965,10 @@ onBeforeUnmount(() => {
   padding: 4px 8px;
   cursor: pointer;
   text-transform: lowercase;
+}
+
+.mobile-label {
+  display: none;
 }
 
 .search-body {
@@ -1164,18 +1306,112 @@ onBeforeUnmount(() => {
     min-width: 0;
   }
 
-  .search-close {
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0 8px;
+  .search-layer {
+    align-items: flex-start;
+    padding: calc(64px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom));
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
+  .search-panel {
+    width: 100%;
+    max-height: calc(100dvh - 72px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 16px 44px rgba(15, 23, 42, 0.2);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .search-head {
-    padding: 8px 10px;
+    flex: 0 0 auto;
+    min-height: 60px;
+    padding: 8px 10px 8px 14px;
+    background: #fff;
+    color: #6e7785;
+  }
+
+  .search-head > svg {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+  }
+
+  .search-input {
+    min-height: 44px;
+    padding: 0;
+    font-size: 16px;
+    letter-spacing: 0;
+  }
+
+  .search-close {
+    min-width: 52px;
+    min-height: 44px;
+    padding: 0 10px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: none;
+  }
+
+  .search-close:active {
+    background: rgba(0, 113, 227, 0.08);
+  }
+
+  .desktop-label {
+    display: none;
+  }
+
+  .mobile-label {
+    display: inline;
+  }
+
+  .search-body {
+    min-height: 104px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .search-tip {
+    padding: 28px 18px;
+    line-height: 1.6;
+  }
+
+  .search-recent > .search-tip {
+    padding: 16px 16px 6px;
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 650;
+    text-align: left;
+  }
+
+  .search-keys {
+    display: none;
+  }
+
+  .search-list {
+    padding: 6px 8px 10px;
   }
 
   .search-item {
-    min-height: 44px;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    min-height: 56px;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+
+  .search-item:active {
+    background: rgba(0, 113, 227, 0.1);
+  }
+
+  .search-item .code,
+  .search-item .name {
+    font-size: 14px;
   }
 }
 
