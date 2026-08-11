@@ -698,8 +698,7 @@ async function openShare() {
 async function onCopyShare() {
   copying.value = true
   try {
-    const blob = await captureHoldingShare()
-    await copyImageBlob(blob)
+    await copyImageBlob(captureHoldingShare())
     ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
   } catch (e) {
     console.error(e)

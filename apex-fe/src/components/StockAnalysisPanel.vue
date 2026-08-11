@@ -370,8 +370,7 @@ async function openShare() {
 async function onCopyShare() {
   copying.value = true
   try {
-    const blob = await captureAnalysisShare()
-    await copyImageBlob(blob)
+    await copyImageBlob(captureAnalysisShare())
     ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
   } catch (e) {
     console.error(e)
@@ -705,37 +704,6 @@ defineExpose({ reload: () => loadRules() })
   gap: 8px;
   align-items: center;
   margin-bottom: 14px;
-}
-
-@media (max-width: 560px) {
-  .analysis-toolbar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: stretch;
-  }
-
-  .analysis-toolbar :deep(.el-radio-group) {
-    display: flex;
-    grid-column: 1 / -1;
-    width: 100%;
-  }
-
-  .analysis-toolbar :deep(.el-radio-button) {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .analysis-toolbar :deep(.el-radio-button__inner),
-  .analysis-toolbar > :deep(.el-button) {
-    width: 100%;
-    height: 44px;
-    min-height: 44px;
-  }
-
-  .analysis-toolbar > :deep(.el-button) {
-    margin: 0;
-    border-radius: 8px;
-  }
 }
 
 .share-card {

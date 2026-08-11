@@ -23,7 +23,6 @@ const mobileMenuButtonRef = ref(null)
 const mobileMenuCloseRef = ref(null)
 const appActivityVisible = ref(false)
 const appActivityFinishing = ref(false)
-const searchViewportStyle = ref({})
 /** 终端紧凑密度：缩小表格与页边距 */
 const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 let healthTimer
@@ -32,14 +31,6 @@ let debounceTimer
 let searchReturnFocus
 let activityShowTimer
 let activityHideTimer
-
-function updateSearchViewport() {
-  const viewport = window.visualViewport
-  searchViewportStyle.value = {
-    '--search-viewport-height': `${Math.round(viewport?.height || window.innerHeight)}px`,
-    '--search-viewport-top': `${Math.round(viewport?.offsetTop || 0)}px`,
-  }
-}
 
 function toggleDense() {
   denseMode.value = !denseMode.value
@@ -109,7 +100,6 @@ function markHtml(text, keyword) {
 async function openSearch() {
   setMobileMenu(false)
   searchReturnFocus = document.activeElement
-  updateSearchViewport()
   searchOpen.value = true
   loadRecentStocks()
   await nextTick()
@@ -282,7 +272,6 @@ watch(mobileMenuOpen, async (open) => {
 
 watch(searchOpen, (open) => {
   document.documentElement.classList.toggle('search-open', open)
-  if (open) updateSearchViewport()
 })
 
 onMounted(() => {
@@ -290,8 +279,6 @@ onMounted(() => {
   healthTimer = setInterval(pingHealth, 30000)
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('resize', closeMobileMenuOnDesktop)
-  window.visualViewport?.addEventListener('resize', updateSearchViewport)
-  window.visualViewport?.addEventListener('scroll', updateSearchViewport)
 })
 onBeforeUnmount(() => {
   if (healthTimer) clearInterval(healthTimer)
@@ -300,8 +287,6 @@ onBeforeUnmount(() => {
   clearTimeout(activityHideTimer)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', closeMobileMenuOnDesktop)
-  window.visualViewport?.removeEventListener('resize', updateSearchViewport)
-  window.visualViewport?.removeEventListener('scroll', updateSearchViewport)
   document.documentElement.classList.remove('mobile-menu-open')
   document.documentElement.classList.remove('search-open')
 })
@@ -471,7 +456,6 @@ onBeforeUnmount(() => {
     <div
       v-if="searchOpen"
       class="search-layer"
-      :style="searchViewportStyle"
       @click.self="closeSearch"
     >
       <div class="search-panel" role="dialog" aria-label="搜索股票" aria-modal="true">
@@ -1318,17 +1302,15 @@ onBeforeUnmount(() => {
   }
 
   .search-layer {
-    top: var(--search-viewport-top, 0);
-    right: 0;
-    bottom: auto;
-    left: 0;
+    inset: 0;
     box-sizing: border-box;
-    height: var(--search-viewport-height, 100dvh);
+    height: 100dvh;
     align-items: flex-start;
     padding: max(8px, env(safe-area-inset-top)) 0 0;
     background: #fff;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    overscroll-behavior: none;
   }
 
   .search-panel {

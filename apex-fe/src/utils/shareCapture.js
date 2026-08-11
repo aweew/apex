@@ -256,16 +256,19 @@ export function downloadBlob(blob, filename) {
 
 /**
  * 复制图片到剪贴板（不支持时抛错）
- * @param {Blob} blob
+ * Safari 要求 write() 在用户点击的同步阶段发起，因此允许传入异步截图结果。
+ * @param {Blob | Promise<Blob>} blob
+ * @returns {Promise<void>}
  */
-export async function copyImageBlob(blob) {
+export function copyImageBlob(blob) {
   if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
-    throw new Error('当前浏览器不支持复制图片，请改用下载')
+    return Promise.reject(new Error('当前浏览器不支持复制图片，请改用下载'))
   }
-  const pngBlob = blob.type === 'image/png'
-    ? blob
-    : new Blob([await blob.arrayBuffer()], { type: 'image/png' })
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
+  const pngBlob = Promise.resolve(blob).then(async (imageBlob) => {
+    if (imageBlob.type === 'image/png') return imageBlob
+    return new Blob([await imageBlob.arrayBuffer()], { type: 'image/png' })
+  })
+  return navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
 }
 
 /**

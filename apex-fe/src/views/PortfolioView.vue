@@ -1148,8 +1148,7 @@ async function onCopyShare() {
   if (!sharePreviewObjectUrl) return
   copying.value = true
   try {
-    const blob = await fetch(sharePreviewObjectUrl).then((r) => r.blob())
-    await copyImageBlob(blob)
+    await copyImageBlob(fetch(sharePreviewObjectUrl).then((r) => r.blob()))
     ElMessage.success('已复制到剪贴板')
   } catch (e) {
     ElMessage.error(e.message || '复制失败')
