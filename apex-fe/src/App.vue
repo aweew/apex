@@ -38,6 +38,10 @@ function closeMobileMenuOnDesktop() {
   if (window.innerWidth > 900 && mobileMenuOpen.value) setMobileMenu(false)
 }
 
+function isNavGroupActive(group) {
+  return group.items.some((item) => route.path === item.to || route.path.startsWith(`${item.to}/`))
+}
+
 /** 对齐终端工作流：看板→研判→交易→市场→工具 */
 const navGroups = [
   {
@@ -344,8 +348,17 @@ onBeforeUnmount(() => {
             </svg>
           </button>
         </div>
-        <div v-for="group in navGroups" :key="group.label" class="nav-group">
-          <span class="group-label">{{ group.label }}</span>
+        <div
+          v-for="(group, groupIndex) in navGroups"
+          :key="group.label"
+          class="nav-group"
+          :class="{ 'has-active': isNavGroupActive(group) }"
+        >
+          <span class="group-label">
+            <span class="group-number">{{ String(groupIndex + 1).padStart(2, '0') }}</span>
+            <span class="group-name">{{ group.label }}</span>
+            <span v-if="isNavGroupActive(group)" class="group-current">当前</span>
+          </span>
           <div class="nav-group-links">
             <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" @click="setMobileMenu(false)">
               {{ item.label }}
@@ -675,6 +688,11 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.group-number,
+.group-current {
+  display: none;
+}
+
 .links::-webkit-scrollbar {
   height: 4px;
 }
@@ -961,12 +979,12 @@ onBeforeUnmount(() => {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 0;
+    gap: 10px;
     padding: env(safe-area-inset-top) 12px calc(16px + env(safe-area-inset-bottom));
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    background: rgba(250, 250, 252, 0.96);
+    background: #f2f4f7;
     border-right: 1px solid rgba(0, 0, 0, 0.08);
     box-shadow: 18px 0 54px rgba(15, 23, 42, 0.16);
     transform: translateX(-104%);
@@ -982,11 +1000,16 @@ onBeforeUnmount(() => {
 
   .mobile-menu-head {
     display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 2;
     align-items: center;
     justify-content: space-between;
-    min-height: 64px;
-    padding: 6px 2px 8px 8px;
-    border-bottom: 1px solid var(--line);
+    min-height: 68px;
+    margin: 0 -12px 2px;
+    padding: 8px 14px 10px 20px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+    background: #fff;
   }
 
   .mobile-menu-head > div {
@@ -1006,23 +1029,74 @@ onBeforeUnmount(() => {
 
   .nav-group {
     display: block;
-    padding: 14px 4px 12px;
+    padding: 0;
     margin: 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  }
+
+  .nav-group.has-active {
+    border-color: rgba(0, 113, 227, 0.28);
+    box-shadow: 0 0 0 1px rgba(0, 113, 227, 0.06);
   }
 
   .group-label {
-    display: block;
-    padding: 0 8px 7px;
-    font-size: 11px;
-    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 12px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    background: #f8fafc;
+    color: #273142;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .nav-group.has-active .group-label {
+    background: rgba(0, 113, 227, 0.08);
+    color: #0058b0;
+  }
+
+  .group-number {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 22px;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.06);
+    color: var(--slate);
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .nav-group.has-active .group-number {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .group-current {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    margin-left: auto;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: rgba(0, 113, 227, 0.12);
+    color: #0058b0;
+    font-size: 10px;
+    font-weight: 650;
   }
 
   .nav-group-links {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
+    gap: 2px;
+    padding: 6px;
   }
 
   .links a {
@@ -1031,20 +1105,30 @@ onBeforeUnmount(() => {
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    padding: 0 10px;
-    border-radius: 8px;
-    font-size: 14px;
+    padding: 0 9px;
+    border-left: 3px solid transparent;
+    border-radius: 6px;
+    color: #424b5a;
+    font-size: 13px;
+    font-weight: 550;
   }
 
   .links a.router-link-active {
-    font-weight: 650;
+    border-left-color: var(--accent);
+    background: rgba(0, 113, 227, 0.11);
+    color: #0058b0;
+    font-weight: 700;
   }
 
   .mobile-link-arrow {
     display: block;
     width: 16px;
     height: 16px;
-    color: var(--muted);
+    color: #8a93a1;
+  }
+
+  .links a.router-link-active .mobile-link-arrow {
+    color: var(--accent);
   }
 
   .mobile-menu-actions {
