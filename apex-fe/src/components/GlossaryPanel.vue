@@ -24,6 +24,7 @@ const query = ref('')
 const category = ref('')
 const activeId = ref('')
 const inputRef = ref(null)
+const mobileDetailOpen = ref(false)
 
 const sharing = ref(false)
 const shareOpen = ref(false)
@@ -62,6 +63,20 @@ watch(list, (rows) => {
   }
 })
 
+watch([query, category], () => {
+  if (isMobileViewport()) {
+    mobileDetailOpen.value = false
+  }
+})
+
+watch(visible, (isVisible) => {
+  document.documentElement.classList.toggle('glossary-open', isVisible)
+})
+
+function isMobileViewport() {
+  return window.matchMedia('(max-width: 820px)').matches
+}
+
 async function openGlossary(termKey) {
   visible.value = true
   const hit = termKey ? findTerm(termKey) : null
@@ -71,18 +86,37 @@ async function openGlossary(termKey) {
     query.value = ''
   }
   await nextTick()
-  inputRef.value?.focus?.()
+  mobileDetailOpen.value = Boolean(hit && isMobileViewport())
+  if (!isMobileViewport()) {
+    inputRef.value?.focus?.()
+  }
 }
 
 function close() {
   visible.value = false
   query.value = ''
+  mobileDetailOpen.value = false
   closeShare()
 }
 
 function select(term) {
   if (!term) return
   activeId.value = term.id
+  if (isMobileViewport()) {
+    mobileDetailOpen.value = true
+  }
+}
+
+function backToList() {
+  mobileDetailOpen.value = false
+}
+
+function handleEscape() {
+  if (mobileDetailOpen.value && isMobileViewport()) {
+    backToList()
+    return
+  }
+  close()
 }
 
 function onEvent(e) {
@@ -94,7 +128,7 @@ function onKeydown(e) {
   if (shareOpen.value) return
   if (e.key === 'Escape') {
     e.preventDefault()
-    close()
+    handleEscape()
   }
 }
 
@@ -202,6 +236,7 @@ onBeforeUnmount(() => {
   window.removeEventListener(GLOSSARY_EVENT, onEvent)
   window.removeEventListener('keydown', onKeydown)
   revokeSharePreview()
+  document.documentElement.classList.remove('glossary-open')
 })
 
 defineExpose({ openGlossary, close })
@@ -209,7 +244,13 @@ defineExpose({ openGlossary, close })
 
 <template>
   <div v-if="visible" class="glossary-layer" @click.self="close">
-    <div class="glossary-panel" role="dialog" aria-label="名词百科">
+    <div
+      class="glossary-panel"
+      :class="{ 'is-mobile-detail': mobileDetailOpen }"
+      role="dialog"
+      aria-modal="true"
+      aria-label="名词百科"
+    >
       <div class="glossary-head">
         <div class="glossary-title">
           <strong>名词百科</strong>
@@ -220,11 +261,16 @@ defineExpose({ openGlossary, close })
             type="button"
             class="glossary-share"
             :disabled="!active || sharing"
+            aria-label="分享当前词条"
             @click="openShare"
           >
             {{ sharing ? '生成中…' : '分享' }}
           </button>
-          <button type="button" class="glossary-esc" @click="close">esc</button>
+          <button type="button" class="glossary-close" aria-label="关闭名词百科" @click="close">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -235,7 +281,7 @@ defineExpose({ openGlossary, close })
           class="glossary-input"
           placeholder="搜索：夏普、回撤、止损、情绪周期、MACD…"
           autocomplete="off"
-          @keydown.esc.prevent="close"
+          @keydown.esc.prevent="handleEscape"
         />
       </div>
 
@@ -260,6 +306,8 @@ defineExpose({ openGlossary, close })
         </button>
       </div>
 
+      <div class="glossary-result-count">共 {{ list.length }} 个词条</div>
+
       <div class="glossary-body">
         <ul class="glossary-list">
           <li v-for="term in list" :key="term.id">
@@ -269,14 +317,25 @@ defineExpose({ openGlossary, close })
               :class="{ on: active?.id === term.id }"
               @click="select(term)"
             >
-              <span class="name">{{ term.title }}</span>
-              <span class="cat-tag">{{ term.category }}</span>
+              <span class="item-copy">
+                <span class="name">{{ term.title }}</span>
+                <span class="cat-tag">{{ term.category }}</span>
+              </span>
+              <svg class="item-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
             </button>
           </li>
           <li v-if="!list.length" class="glossary-empty">无匹配词条</li>
         </ul>
 
         <article v-if="active" class="glossary-detail">
+          <button type="button" class="glossary-back" aria-label="返回词条列表" @click="backToList">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            <span>返回词条</span>
+          </button>
           <header>
             <h2>{{ active.title }}</h2>
             <div class="detail-actions">
@@ -393,7 +452,7 @@ defineExpose({ openGlossary, close })
 }
 
 .glossary-share,
-.glossary-esc,
+.glossary-close,
 .detail-share {
   border: 0;
   background: var(--paper-deep);
@@ -402,6 +461,26 @@ defineExpose({ openGlossary, close })
   padding: 4px 8px;
   border-radius: 8px;
   cursor: pointer;
+}
+
+.glossary-close {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.glossary-close svg,
+.glossary-back svg,
+.item-chevron {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .glossary-share,
@@ -459,6 +538,10 @@ defineExpose({ openGlossary, close })
   color: var(--accent);
 }
 
+.glossary-result-count {
+  display: none;
+}
+
 .glossary-body {
   display: grid;
   grid-template-columns: minmax(200px, 240px) 1fr;
@@ -500,6 +583,19 @@ defineExpose({ openGlossary, close })
 
 .glossary-item .name {
   font-size: 13px;
+}
+
+.item-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+}
+
+.item-chevron {
+  display: none;
 }
 
 .glossary-item .cat-tag {
@@ -600,19 +696,220 @@ defineExpose({ openGlossary, close })
   place-items: center;
 }
 
-@media (max-width: 720px) {
-  .glossary-body {
-    grid-template-columns: 1fr;
+.glossary-back {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .glossary-layer {
+    place-items: stretch;
+    padding: 0;
+    background: #fff;
+    backdrop-filter: none;
+    overscroll-behavior: none;
   }
 
-  .glossary-list {
-    max-height: 160px;
-    border-right: 0;
+  .glossary-panel {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #fff;
+  }
+
+  .glossary-head {
+    min-height: 58px;
+    padding: max(8px, env(safe-area-inset-top)) 12px 6px 16px;
     border-bottom: 1px solid var(--line);
   }
 
-  .glossary-detail {
+  .glossary-title strong {
+    font-size: 18px;
+    letter-spacing: 0;
+  }
+
+  .glossary-actions {
+    gap: 4px;
+  }
+
+  .glossary-share,
+  .glossary-close,
+  .detail-share {
+    min-width: 44px;
+    height: 44px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .glossary-close {
+    padding: 0;
+  }
+
+  .glossary-search {
+    padding: 10px 16px 8px;
+  }
+
+  .glossary-input {
+    height: 44px;
+    border-radius: 10px;
+    font-size: 16px;
+  }
+
+  .glossary-cats {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 0 16px 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .glossary-cats::-webkit-scrollbar {
+    display: none;
+  }
+
+  .cat {
+    min-height: 44px;
+    flex: 0 0 auto;
+    padding: 0 14px;
+    font-size: 13px;
+    border: 1px solid transparent;
+  }
+
+  .cat.on {
+    border-color: rgba(0, 113, 227, 0.18);
+  }
+
+  .glossary-result-count {
+    display: block;
+    padding: 3px 16px 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .glossary-body {
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .glossary-list {
+    width: 100%;
     max-height: none;
+    padding: 6px 10px max(16px, env(safe-area-inset-bottom));
+    border-right: 0;
+    border-bottom: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .glossary-item {
+    min-height: 54px;
+    padding: 8px 10px 8px 12px;
+    border-radius: 8px;
+  }
+
+  .glossary-item:hover {
+    background: transparent;
+  }
+
+  .glossary-item:active,
+  .glossary-item.on {
+    background: rgba(0, 113, 227, 0.09);
+  }
+
+  .item-copy {
+    display: block;
+  }
+
+  .glossary-item .name,
+  .glossary-item .cat-tag {
+    display: block;
+  }
+
+  .glossary-item .name {
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .glossary-item .cat-tag {
+    margin-top: 3px;
+    font-size: 11px;
+  }
+
+  .item-chevron {
+    display: block;
+    flex: 0 0 auto;
+    color: var(--muted);
+  }
+
+  .glossary-detail {
+    display: none;
+    width: 100%;
+    max-height: none;
+    padding: 0 16px max(24px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .is-mobile-detail .glossary-search,
+  .is-mobile-detail .glossary-cats,
+  .is-mobile-detail .glossary-result-count,
+  .is-mobile-detail .glossary-list {
+    display: none;
+  }
+
+  .is-mobile-detail .glossary-detail {
+    display: block;
+  }
+
+  .glossary-back {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+    color: var(--accent);
+    font: inherit;
+    font-size: 14px;
+  }
+
+  .glossary-detail header {
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+
+  .glossary-detail h2 {
+    font-size: 22px;
+    letter-spacing: 0;
+  }
+
+  .detail-actions {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .glossary-detail .lead {
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .glossary-detail .detail {
+    font-size: 14px;
+    line-height: 1.75;
   }
 
   .glossary-title span {
@@ -623,6 +920,12 @@ defineExpose({ openGlossary, close })
 
 <!-- append-to-body 弹窗需全局样式；勿给 .el-overlay 写 display:!important，会盖住关闭后的 display:none 导致蒙层残留 -->
 <style>
+html.glossary-open,
+html.glossary-open body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .glossary-share-overlay .el-overlay-dialog {
   align-items: center;
   justify-content: center;
@@ -675,5 +978,35 @@ defineExpose({ openGlossary, close })
   object-fit: contain;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
   border-radius: 4px;
+}
+
+@media (max-width: 820px) {
+  .glossary-share-overlay .el-overlay-dialog {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .glossary-share-dialog.el-dialog {
+    width: 100% !important;
+    max-width: none;
+    max-height: 90dvh;
+    margin: 0 !important;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .glossary-share-dialog .el-dialog__header,
+  .glossary-share-dialog .el-dialog__body,
+  .glossary-share-dialog .el-dialog__footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .glossary-share-dialog .el-dialog__footer {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .glossary-share-dialog .el-dialog__footer .el-button {
+    min-height: 44px;
+  }
 }
 </style>
