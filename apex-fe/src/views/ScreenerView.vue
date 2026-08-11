@@ -1,15 +1,22 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchScreenerMarket, fetchScreenerMeta, runScreener } from '../api/screener'
 import { batchBacktest } from '../api/backtest'
 import { saveObserve } from '../api/observe'
+import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 
 const router = useRouter()
 const loading = ref(false)
 const marketLoading = ref(false)
 const activeTab = ref('market')
+const viewportWidth = ref(window.innerWidth)
+const showActionColumn = computed(() => resolveActionColumnVisible(viewportWidth.value))
+
+function syncViewportWidth() {
+  viewportWidth.value = window.innerWidth
+}
 
 const meta = ref({
   marketCount: null,
@@ -205,6 +212,11 @@ watch(activeTab, (tab) => {
 onMounted(() => {
   loadMeta()
   loadMarket(true)
+  window.addEventListener('resize', syncViewportWidth)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncViewportWidth)
 })
 </script>
 
@@ -354,7 +366,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column prop="industry" label="行业" min-width="110" show-overflow-tooltip />
         <el-table-column prop="barCount" label="K线" min-width="72" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column v-if="showActionColumn" label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link @click="router.push({ path: '/backtest', query: { code: row.code } })">回测</el-button>
             <el-button link type="warning" @click="addObserve(row)">观察</el-button>
@@ -438,7 +450,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column prop="industry" label="行业" min-width="110" show-overflow-tooltip />
         <el-table-column prop="barCount" label="K线" min-width="72" />
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column v-if="showActionColumn" label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button link type="warning" @click="addObserve(row)">观察</el-button>
             <el-button link @click="router.push({ path: '/paper', query: { code: row.code, side: 'BUY' } })">模拟</el-button>

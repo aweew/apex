@@ -42,6 +42,7 @@ import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 import { securityMarketBadge } from '../utils/securityMarket.js'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
+import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
@@ -56,6 +57,8 @@ const dailyRows = ref([])
 const chartRef = ref(null)
 const industryPieRef = ref(null)
 const themePieRef = ref(null)
+const viewportWidth = ref(window.innerWidth)
+const showActionColumn = computed(() => resolveActionColumnVisible(viewportWidth.value))
 let chart = null
 let industryChart = null
 let themeChart = null
@@ -1176,6 +1179,7 @@ async function onDownloadShare() {
 }
 
 function onResize() {
+  viewportWidth.value = window.innerWidth
   chart?.resize()
   industryChart?.resize()
   themeChart?.resize()
@@ -1717,7 +1721,7 @@ onBeforeUnmount(() => {
               sortable
             />
             <el-table-column
-              v-if="!sharingCapture"
+              v-if="!sharingCapture && showActionColumn"
               label="操作"
               :width="shareCol.ops"
               fixed="right"
