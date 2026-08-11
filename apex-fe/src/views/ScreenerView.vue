@@ -1,16 +1,18 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchScreenerMarket, fetchScreenerMeta, runScreener } from '../api/screener'
 import { batchBacktest } from '../api/backtest'
 import { saveObserve } from '../api/observe'
 import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
+import { securityMarketBadge } from '../utils/securityMarket.js'
+import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const loading = ref(false)
 const marketLoading = ref(false)
-const activeTab = ref('market')
+const screeningActive = ref(false)
 const viewportWidth = ref(window.innerWidth)
 const showActionColumn = computed(() => resolveActionColumnVisible(viewportWidth.value))
 
@@ -58,11 +60,51 @@ const rows = ref([])
 const batchRows = ref([])
 
 const marketKeyword = ref('')
-const marketExcludeSt = ref(true)
 const marketPage = ref(1)
 const marketSize = ref(50)
 const marketTotal = ref(0)
 const marketRows = ref([])
+
+useSessionViewState('screener', {
+  form,
+  marketKeyword,
+  marketPage,
+  marketSize,
+})
+
+const displayRows = computed(() => {
+  const sourceRows = screeningActive.value ? rows.value : marketRows.value
+  const keyword = String(marketKeyword.value || '').trim().toLowerCase()
+  if (!screeningActive.value || !keyword) return sourceRows
+  return sourceRows.filter((row) =>
+    String(row.code || '').toLowerCase().includes(keyword)
+      || String(row.name || '').toLowerCase().includes(keyword),
+  )
+})
+
+function hasAdvancedFilters() {
+  if (form.value.scope !== '__MARKET__') return true
+  if (form.value.excludeLimitUp || form.value.excludeLimitDown) return true
+  return [
+    form.value.peMin,
+    form.value.peMax,
+    form.value.pbMin,
+    form.value.pbMax,
+    form.value.industry,
+    form.value.pctChgMin,
+    form.value.pctChgMax,
+    form.value.pctChg20Min,
+    form.value.pctChg20Max,
+    form.value.minCircMvYi,
+    form.value.maxCircMvYi,
+    form.value.minBars,
+    form.value.minVolumeRatio,
+    form.value.minUpDays,
+    form.value.rs20Min,
+    form.value.maxAtrPct,
+    form.value.minAtrPct,
+  ].some((value) => value !== '' && value != null)
+}
 
 function numOrNull(v) {
   if (v === '' || v == null) return null
@@ -112,6 +154,7 @@ async function onRun() {
       limit: Number(form.value.limit || 50),
     })
     rows.value = res.data || []
+    screeningActive.value = true
     const scopeLabel = form.value.scope === '__MARKET__' ? '全市场' : `自选「${resolveGroupName()}」`
     ElMessage.success(`${scopeLabel}选出 ${rows.value.length} 只`)
     loadMeta()
@@ -124,9 +167,21 @@ async function onRun() {
 
 function onReset() {
   form.value = emptyForm()
+  marketKeyword.value = ''
+  screeningActive.value = false
   rows.value = []
   batchRows.value = []
   ElMessage.info('已清空条件，默认全市场')
+  loadMarket(true)
+}
+
+function onQuery() {
+  if (hasAdvancedFilters()) {
+    onRun()
+    return
+  }
+  screeningActive.value = false
+  loadMarket(true)
 }
 
 async function loadMarket(resetPage = false) {
@@ -137,7 +192,7 @@ async function loadMarket(resetPage = false) {
       keyword: marketKeyword.value || undefined,
       page: marketPage.value,
       size: marketSize.value,
-      excludeSt: marketExcludeSt.value,
+      excludeSt: form.value.excludeSt,
     })
     const page = res.data || {}
     marketRows.value = page.records || []
@@ -170,8 +225,8 @@ async function addObserve(row) {
       code: row.code,
       name: row.name || '',
       status: 'WATCHING',
-      reason: activeTab.value === 'market' ? '全市场浏览' : '条件选股',
-      tags: activeTab.value === 'market' ? 'market' : 'screener',
+      reason: screeningActive.value ? '条件选股' : '全市场浏览',
+      tags: screeningActive.value ? 'screener' : 'market',
     })
     ElMessage.success(`${row.code} 已进观察池`)
   } catch (e) {
@@ -180,13 +235,13 @@ async function addObserve(row) {
 }
 
 async function onBatchBacktest() {
-  if (!rows.value.length) {
+  if (!displayRows.value.length) {
     ElMessage.warning('请先选股')
     return
   }
   loading.value = true
   try {
-    const codes = rows.value.slice(0, 8).map((r) => r.code)
+    const codes = displayRows.value.slice(0, 8).map((r) => r.code)
     const res = await batchBacktest({
       codes,
       strategyId: 'S1',
@@ -202,12 +257,6 @@ async function onBatchBacktest() {
     loading.value = false
   }
 }
-
-watch(activeTab, (tab) => {
-  if (tab === 'market' && !marketRows.value.length) {
-    loadMarket(true)
-  }
-})
 
 onMounted(() => {
   loadMeta()
@@ -238,19 +287,25 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <el-tabs v-model="activeTab" class="tabs">
-      <el-tab-pane :label="`股票列表${meta.marketCount != null ? ' (' + meta.marketCount + ')' : ''}`" name="market" />
-      <el-tab-pane label="筛选条件" name="screen" />
-    </el-tabs>
-
-    <template v-if="activeTab === 'screen'">
-      <div class="actions row-actions">
-        <el-button type="primary" :loading="loading" @click="onRun">运行选股</el-button>
-        <el-button @click="onReset">清空条件</el-button>
-        <el-button :loading="loading" @click="onBatchBacktest">批量回测前8</el-button>
+    <section class="filter-panel" aria-label="股票筛选条件">
+      <div class="filter-heading">
+        <div>
+          <h2>股票列表</h2>
+          <span class="muted">
+            {{ screeningActive ? `筛选结果 ${displayRows.length} 只` : `共 ${marketTotal} 只` }} · 池内标「池」
+          </span>
+        </div>
+        <div class="actions row-actions">
+          <el-button type="primary" :loading="loading || marketLoading" @click="onQuery">查询</el-button>
+          <el-button @click="onReset">重置</el-button>
+          <el-button :disabled="!screeningActive" :loading="loading" @click="onBatchBacktest">批量回测前8</el-button>
+        </div>
       </div>
 
-      <el-form :inline="true" class="form">
+      <el-form :inline="true" class="form" @submit.prevent="onQuery">
+        <el-form-item label="代码/名称">
+          <el-input v-model="marketKeyword" clearable style="width: 140px" @keyup.enter="onQuery" />
+        </el-form-item>
         <el-form-item label="范围">
           <el-select v-model="form.scope" style="width: 120px">
             <el-option
@@ -300,57 +355,66 @@ onBeforeUnmount(() => {
         <el-form-item><el-checkbox v-model="form.excludeLimitUp">排除涨停</el-checkbox></el-form-item>
         <el-form-item><el-checkbox v-model="form.excludeLimitDown">排除跌停</el-checkbox></el-form-item>
       </el-form>
+    </section>
 
-      <div v-if="!loading && !rows.length" class="page-empty">
-        <h3>暂无筛选结果</h3>
-        <p>
-          当前范围：{{ form.scope === '__MARKET__' ? `全部市场（库内 ${meta.marketCount ?? '—'} 只）` : `自选「${form.groupName || '我的自选'}」` }}。
-          策略股票池 {{ meta.universeCount ?? '—' }} 只。设定条件后点「运行选股」。
-        </p>
-        <el-button type="primary" :loading="loading" @click="onRun">运行选股</el-button>
-        <el-button plain @click="activeTab = 'market'">浏览全市场</el-button>
-      </div>
-
-      <el-table
-        v-else
-        v-loading="loading"
-        class="screener-table"
-        :data="rows"
-        stripe
-        style="width: 100%"
-      >
+    <el-table
+      v-loading="loading || marketLoading"
+      class="screener-table"
+      :data="displayRows"
+      stripe
+      style="width: 100%"
+      empty-text="暂无符合条件的股票"
+    >
         <el-table-column prop="code" label="代码" min-width="96">
           <template #default="{ row }">
             <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="108" />
+        <el-table-column prop="name" label="名称" min-width="120">
+          <template #default="{ row }">
+            <span class="security-name">
+              <span>{{ row.name || '-' }}</span>
+              <span
+                v-if="securityMarketBadge(row)"
+                class="market-badge"
+                :class="`is-${securityMarketBadge(row).tone}`"
+                :title="securityMarketBadge(row).title"
+              >{{ securityMarketBadge(row).label }}</span>
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="!screeningActive" label="股票池" width="74">
+          <template #default="{ row }">
+            <el-tag v-if="row.inUniverse" size="small" type="success" effect="plain">池</el-tag>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="latestPrice" label="现价" min-width="84" />
         <el-table-column prop="pctChg" label="今日%" min-width="80">
           <template #default="{ row }">
             <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ row.pctChg ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="pctChg5" label="5日%" min-width="80">
+        <el-table-column v-if="screeningActive" prop="pctChg5" label="5日%" min-width="80">
           <template #default="{ row }">
             <span :class="Number(row.pctChg5) >= 0 ? 'up' : 'down'">{{ row.pctChg5 ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="pctChg20" label="20日%" min-width="80">
+        <el-table-column v-if="screeningActive" prop="pctChg20" label="20日%" min-width="80">
           <template #default="{ row }">
             <span :class="Number(row.pctChg20) >= 0 ? 'up' : 'down'">{{ row.pctChg20 ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="volumeRatio" min-width="72">
+        <el-table-column v-if="screeningActive" prop="volumeRatio" min-width="72">
           <template #header><TermTip term="volume_ratio">量比</TermTip></template>
         </el-table-column>
-        <el-table-column prop="upDays" min-width="64">
+        <el-table-column v-if="screeningActive" prop="upDays" min-width="64">
           <template #header><TermTip term="up_days">连涨</TermTip></template>
         </el-table-column>
-        <el-table-column prop="rs20VsHs300" min-width="72" sortable>
+        <el-table-column v-if="screeningActive" prop="rs20VsHs300" min-width="72" sortable>
           <template #header><TermTip term="rs20">RS20</TermTip></template>
         </el-table-column>
-        <el-table-column prop="atrPct" min-width="72" sortable>
+        <el-table-column v-if="screeningActive" prop="atrPct" min-width="72" sortable>
           <template #header><TermTip term="atr_pct">ATR%</TermTip></template>
         </el-table-column>
         <el-table-column prop="peTtm" min-width="72" sortable>
@@ -373,10 +437,23 @@ onBeforeUnmount(() => {
             <el-button link @click="router.push({ path: '/paper', query: { code: row.code, side: 'BUY' } })">模拟</el-button>
           </template>
         </el-table-column>
-      </el-table>
+    </el-table>
 
-      <h3 v-if="batchRows.length">批量回测排名</h3>
-      <el-table v-if="batchRows.length" :data="batchRows" size="small" style="width: 100%">
+    <div v-if="!screeningActive" class="pager">
+      <el-pagination
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="marketTotal"
+        :current-page="marketPage"
+        :page-size="marketSize"
+        :page-sizes="[50, 100, 200]"
+        @current-change="onMarketPageChange"
+        @size-change="onMarketSizeChange"
+      />
+    </div>
+
+    <h3 v-if="batchRows.length">批量回测排名</h3>
+    <el-table v-if="batchRows.length" :data="batchRows" size="small" style="width: 100%">
         <el-table-column prop="code" label="代码" width="100" />
         <el-table-column prop="jobId" label="任务" width="80" />
         <el-table-column prop="totalReturn" label="收益" width="100">
@@ -397,80 +474,7 @@ onBeforeUnmount(() => {
             <el-button v-if="row.jobId" link type="primary" @click="router.push({ path: '/backtest', query: { code: row.code } })">查看</el-button>
           </template>
         </el-table-column>
-      </el-table>
-    </template>
-
-    <template v-else>
-      <div class="market-toolbar">
-        <el-input
-          v-model="marketKeyword"
-          clearable
-          placeholder="代码 / 名称"
-          style="width: 200px"
-          @keyup.enter="loadMarket(true)"
-        />
-        <el-checkbox v-model="marketExcludeSt" @change="loadMarket(true)">排除ST</el-checkbox>
-        <el-button type="primary" :loading="marketLoading" @click="loadMarket(true)">查询</el-button>
-        <span class="muted">共 {{ marketTotal }} 只 · 池内标「池」</span>
-      </div>
-
-      <el-table
-        v-loading="marketLoading"
-        class="screener-table"
-        :data="marketRows"
-        stripe
-        style="width: 100%"
-        empty-text="暂无股票，请先在「同步」补全市场代码"
-      >
-        <el-table-column prop="code" label="代码" min-width="96">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-          </template>
-        </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="120" />
-        <el-table-column prop="market" label="市场" width="72" />
-        <el-table-column label="股票池" width="80">
-          <template #default="{ row }">
-            <el-tag v-if="row.inUniverse" size="small" type="success" effect="plain">池</el-tag>
-            <span v-else class="muted">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="latestPrice" label="现价" min-width="84" />
-        <el-table-column prop="pctChg" label="今日%" min-width="80">
-          <template #default="{ row }">
-            <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ row.pctChg ?? '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="peTtm" label="PE" min-width="72" />
-        <el-table-column prop="pb" label="PB" min-width="72" />
-        <el-table-column prop="circMv" label="流通(亿)" min-width="88">
-          <template #default="{ row }">
-            {{ row.circMv != null ? (Number(row.circMv) / 1e8).toFixed(1) : '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="industry" label="行业" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="barCount" label="K线" min-width="72" />
-        <el-table-column v-if="showActionColumn" label="操作" width="180" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="warning" @click="addObserve(row)">观察</el-button>
-            <el-button link @click="router.push({ path: '/paper', query: { code: row.code, side: 'BUY' } })">模拟</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div class="pager">
-        <el-pagination
-          background
-          layout="total, sizes, prev, pager, next"
-          :total="marketTotal"
-          :current-page="marketPage"
-          :page-size="marketSize"
-          :page-sizes="[50, 100, 200]"
-          @current-change="onMarketPageChange"
-          @size-change="onMarketSizeChange"
-        />
-      </div>
-    </template>
+    </el-table>
   </div>
 </template>
 
@@ -526,36 +530,112 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.tabs {
-  margin-top: 4px;
+.filter-panel {
+  margin: 4px 0 12px;
+  padding: 12px 0 2px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.filter-heading h2 {
+  margin: 0 0 3px;
+  font-size: 18px;
+  line-height: 1.35;
 }
 
 .row-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 
 .form {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .screener-table {
   width: 100%;
 }
 
-.market-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.security-name {
+  display: inline-flex;
   align-items: center;
-  margin-bottom: 12px;
+  gap: 5px;
+  min-width: 0;
+}
+
+.market-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.market-badge.is-star {
+  color: #0a66c2;
+  background: rgba(0, 113, 227, 0.09);
+  border-color: rgba(0, 113, 227, 0.18);
+}
+
+.market-badge.is-chinext {
+  color: #16775d;
+  background: rgba(42, 157, 143, 0.1);
+  border-color: rgba(42, 157, 143, 0.2);
+}
+
+.market-badge.is-bj {
+  color: #a86400;
+  background: rgba(255, 159, 10, 0.11);
+  border-color: rgba(255, 159, 10, 0.22);
+}
+
+.market-badge.is-hk {
+  color: #6b4fbb;
+  background: rgba(107, 79, 187, 0.1);
+  border-color: rgba(107, 79, 187, 0.2);
 }
 
 .pager {
   margin-top: 12px;
   display: flex;
   justify-content: flex-end;
+}
+
+@media (max-width: 820px) {
+  .filter-heading {
+    display: block;
+  }
+
+  .filter-heading .row-actions {
+    margin-top: 10px;
+  }
+
+  .form :deep(.el-form-item) {
+    margin-right: 10px;
+    margin-bottom: 10px;
+  }
+
+  .pager {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
 }
 </style>
