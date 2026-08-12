@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowRight } from '@element-plus/icons-vue'
 import {
   fetchDecisionAttribution,
   fetchDecisionBuyAiSummary,
@@ -9,7 +10,6 @@ import {
   fetchDecisionPlaybook,
   fetchDecisionToday,
 } from '../api/decision'
-import { startSyncJob } from '../api/sync'
 import { getAccount, orderFromSignal, placeOrder } from '../api/paper'
 import {
   buildDecisionShareSheet,
@@ -52,7 +52,7 @@ const buyMinScore = ref(savedFilters.minScore ?? '')
 const buyMainlineOnly = ref(!!savedFilters.mainlineOnly)
 const buyExecutableOnly = ref(!!savedFilters.executableOnly)
 const buyCheapOnly = ref(!!savedFilters.cheapOnly)
-/** 默认不含北交所（京市）；勾选后生成/展示才纳入 */
+/** 默认不含北交所（京市）；开启后在决策清单中纳入 */
 const includeBj = ref(savedFilters.includeBj === true)
 
 useSessionViewState('decision', { activeTab })
@@ -222,19 +222,6 @@ async function load() {
     loadBuyAi(false)
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-async function onRun() {
-  loading.value = true
-  try {
-    const res = await startSyncJob({ taskType: 'DECISION', includeBj: includeBj.value })
-    ElMessage.success(`智能决策已转入后台任务 #${res.data?.id || ''}`)
-    router.push('/sync')
-  } catch (e) {
-    ElMessage.error(e.message || '启动智能决策失败')
   } finally {
     loading.value = false
   }
@@ -458,23 +445,30 @@ onBeforeUnmount(() => {
   <div class="page decision" v-loading="loading">
     <DecisionWorkspaceTabs />
     <header class="header dec-header">
-      <div>
+      <div class="dec-heading">
         <p class="eyebrow">灵枢 · Decision</p>
         <h1>智能决策</h1>
         <p class="sub">
           {{ data?.message || '先看市场立场，再按评分出买卖单' }}
         </p>
       </div>
-      <div class="actions">
-        <el-checkbox
-          v-model="includeBj"
-          class="include-bj"
-          title="默认不含北交所；勾选后一键生成才会纳入京市"
-          @change="persistBuyFilters"
-        >
-          含京市
-        </el-checkbox>
-        <el-button type="primary" class="cta" :loading="loading" @click="onRun">后台生成决策</el-button>
+      <div class="dec-controls">
+        <label class="market-scope" title="默认不含北交所；开启后在决策清单中纳入京市">
+          <span>
+            <em>股票范围</em>
+            <b>京市</b>
+          </span>
+          <el-switch
+            v-model="includeBj"
+            size="small"
+            aria-label="纳入京市"
+            @change="persistBuyFilters"
+          />
+        </label>
+        <el-button class="sync-link" link type="primary" @click="router.push('/sync')">
+          同步中心
+          <el-icon><ArrowRight /></el-icon>
+        </el-button>
       </div>
     </header>
 
@@ -662,7 +656,10 @@ onBeforeUnmount(() => {
           <div v-if="!buys.length" class="page-empty">
             <h3>暂无买入机会</h3>
             <p>系统会在后台扫描全 A + 热点并写入观察池</p>
-            <el-button type="primary" :loading="loading" @click="onRun">后台生成决策</el-button>
+            <el-button plain type="primary" @click="router.push('/sync')">
+              去同步中心
+              <el-icon><ArrowRight /></el-icon>
+            </el-button>
           </div>
           <el-table
             v-else
@@ -990,6 +987,19 @@ onBeforeUnmount(() => {
   margin-bottom: 0;
 }
 
+.dec-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 18px;
+  padding: 2px 2px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dec-heading {
+  min-width: 0;
+}
+
 .dec-header .eyebrow {
   margin: 0 0 4px;
   font-size: 12px;
@@ -1000,22 +1010,58 @@ onBeforeUnmount(() => {
 }
 
 .dec-header .sub {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   max-width: 52ch;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
 }
 
-.dec-header .actions {
+.dec-controls {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.cta {
-  min-width: 128px;
+.market-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.46);
+  cursor: pointer;
+}
+
+.market-scope > span {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.market-scope em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.market-scope b {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.sync-link {
+  min-height: 40px;
+  padding: 0 8px;
+  font-weight: 600;
+}
+
+.sync-link :deep(.el-icon) {
+  margin-left: 2px;
 }
 
 /* —— 市场立场 —— */
@@ -1560,6 +1606,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
+  .dec-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
   .note-row {
     grid-template-columns: 64px 1fr;
   }
@@ -1582,6 +1632,34 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 560px) {
+  .dec-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 10px;
+    padding: 0 2px 10px;
+  }
+
+  .dec-header .eyebrow {
+    margin-bottom: 2px;
+    font-size: 10px;
+  }
+
+  .dec-header .sub {
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .dec-controls {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .market-scope,
+  .sync-link {
+    min-height: 44px;
+  }
+
   .action-panel {
     padding: 14px 10px 10px;
   }
