@@ -271,9 +271,9 @@ onMounted(() => {
   const cached = readHomeCache()
   if (cached) {
     home.value = cached
-    load({ silent: true, forceRefresh: true })
+    load({ silent: true, forceRefresh: false })
   } else {
-    load({ forceRefresh: true })
+    load({ forceRefresh: false })
   }
 })
 </script>
