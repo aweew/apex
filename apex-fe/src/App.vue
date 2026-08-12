@@ -372,41 +372,43 @@ onBeforeUnmount(() => {
             </svg>
           </button>
         </div>
-        <div
-          v-for="(group, groupIndex) in navGroups"
-          :key="group.label"
-          class="nav-group"
-          :class="{ 'has-active': isNavGroupActive(group) }"
-        >
-          <span class="group-label">
-            <span class="group-number">{{ String(groupIndex + 1).padStart(2, '0') }}</span>
-            <span class="group-name">{{ group.label }}</span>
-            <span v-if="isNavGroupActive(group)" class="group-current">当前</span>
-          </span>
-          <div class="nav-group-links">
-            <RouterLink
-              v-for="item in group.items"
-              :key="item.to"
-              :to="item.to"
-              :class="{ 'router-link-active': item.activePaths?.includes(route.path) }"
-              @click="setMobileMenu(false)"
-            >
-              {{ item.label }}
-              <svg class="mobile-link-arrow" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </RouterLink>
+        <div class="mobile-menu-scroll">
+          <div
+            v-for="(group, groupIndex) in navGroups"
+            :key="group.label"
+            class="nav-group"
+            :class="{ 'has-active': isNavGroupActive(group) }"
+          >
+            <span class="group-label">
+              <span class="group-number">{{ String(groupIndex + 1).padStart(2, '0') }}</span>
+              <span class="group-name">{{ group.label }}</span>
+              <span v-if="isNavGroupActive(group)" class="group-current">当前</span>
+            </span>
+            <div class="nav-group-links">
+              <RouterLink
+                v-for="item in group.items"
+                :key="item.to"
+                :to="item.to"
+                :class="{ 'router-link-active': item.activePaths?.includes(route.path) }"
+                @click="setMobileMenu(false)"
+              >
+                {{ item.label }}
+                <svg class="mobile-link-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </RouterLink>
+            </div>
           </div>
-        </div>
-        <div class="mobile-menu-actions">
-          <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
-            <i class="dot" />
-            {{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '检测中…' }}
-          </span>
-          <button type="button" class="mobile-action-btn" :class="{ on: denseMode }" @click="toggleDense">
-            <span>{{ denseMode ? '紧凑密度' : '舒适密度' }}</span>
-          </button>
-          <button type="button" class="mobile-action-btn" @click="openGlossary(); setMobileMenu(false)">名词百科</button>
+          <div class="mobile-menu-actions">
+            <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
+              <i class="dot" />
+              {{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '检测中…' }}
+            </span>
+            <button type="button" class="mobile-action-btn" :class="{ on: denseMode }" @click="toggleDense">
+              <span>{{ denseMode ? '紧凑密度' : '舒适密度' }}</span>
+            </button>
+            <button type="button" class="mobile-action-btn" @click="openGlossary(); setMobileMenu(false)">名词百科</button>
+          </div>
         </div>
       </div>
       <div class="nav-actions desktop-nav-actions">
@@ -638,6 +640,10 @@ onBeforeUnmount(() => {
 .mobile-link-arrow,
 .nav-scrim {
   display: none;
+}
+
+.mobile-menu-scroll {
+  display: contents;
 }
 
 .nav-icon-btn {
@@ -1120,14 +1126,15 @@ onBeforeUnmount(() => {
     z-index: 102;
     width: min(86vw, 360px);
     max-width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
-    padding: env(safe-area-inset-top) 12px calc(16px + env(safe-area-inset-bottom));
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
     background: #f2f4f7;
     border-right: 1px solid rgba(0, 0, 0, 0.08);
     box-shadow: 18px 0 54px rgba(15, 23, 42, 0.16);
@@ -1144,16 +1151,30 @@ onBeforeUnmount(() => {
 
   .mobile-menu-head {
     display: flex;
-    position: sticky;
-    top: 0;
+    position: relative;
     z-index: 2;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: space-between;
-    min-height: 68px;
-    margin: 0 -12px 2px;
-    padding: 8px 14px 10px 20px;
+    min-height: calc(68px + env(safe-area-inset-top));
+    margin: 0;
+    padding: calc(8px + env(safe-area-inset-top)) 14px 10px 20px;
     border-bottom: 1px solid rgba(15, 23, 42, 0.1);
     background: #fff;
+  }
+
+  .mobile-menu-scroll {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding: 10px 12px calc(16px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
   }
 
   .mobile-menu-head > div {
@@ -1379,9 +1400,10 @@ onBeforeUnmount(() => {
 
   .search-body {
     flex: 1;
-    min-height: 104px;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    touch-action: pan-y;
     -webkit-overflow-scrolling: touch;
   }
 

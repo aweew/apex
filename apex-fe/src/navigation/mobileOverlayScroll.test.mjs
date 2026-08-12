@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+const appSource = await readFile(new URL('../App.vue', import.meta.url), 'utf8')
+const sharedStyles = await readFile(new URL('../style.css', import.meta.url), 'utf8')
+const glossarySource = await readFile(new URL('../components/GlossaryPanel.vue', import.meta.url), 'utf8')
+
+test('mobile navigation owns scrolling inside a dedicated drawer body', () => {
+  assert.match(appSource, /class="mobile-menu-scroll"/)
+  assert.match(appSource, /\.links\s*\{[\s\S]*?height:\s*100dvh;[\s\S]*?overflow:\s*hidden;/)
+  assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/)
+  assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?touch-action:\s*pan-y;/)
+  assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?-webkit-overflow-scrolling:\s*touch;/)
+})
+
+test('mobile search and glossary keep their content regions independently scrollable', () => {
+  assert.match(appSource, /\.search-body\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/)
+  assert.match(appSource, /\.search-body\s*\{[\s\S]*?touch-action:\s*pan-y;/)
+  assert.match(glossarySource, /\.glossary-list\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?touch-action:\s*pan-y;/)
+  assert.match(glossarySource, /\.glossary-detail\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?touch-action:\s*pan-y;/)
+})
+
+test('shared mobile dialogs and drawers retain vertical touch scrolling', () => {
+  assert.match(sharedStyles, /\.el-dialog__body,[\s\S]*?\.el-drawer__body\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/)
+  assert.match(sharedStyles, /\.el-dialog__body,[\s\S]*?\.el-drawer__body\s*\{[\s\S]*?touch-action:\s*auto;/)
+})
+
+test('desktop navigation keeps its original horizontal layout', () => {
+  const desktopStyles = appSource.slice(0, appSource.indexOf('@media (max-width: 900px)'))
+  assert.match(desktopStyles, /\.mobile-menu-scroll\s*\{\s*display:\s*contents;/)
+})

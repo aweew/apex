@@ -896,11 +896,18 @@ textarea {
     padding: 16px 48px 12px 16px;
   }
 
-  .el-dialog__body {
+  .el-dialog__body,
+  .el-drawer__body {
+    min-height: 0;
     max-height: calc(100dvh - 132px);
-    padding: 12px 14px 16px;
     overflow-y: auto;
     overscroll-behavior: contain;
+    touch-action: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .el-dialog__body {
+    padding: 12px 14px 16px;
   }
 
   .el-dialog__footer {

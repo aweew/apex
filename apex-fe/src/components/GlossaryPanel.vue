@@ -936,6 +936,7 @@ defineExpose({ openGlossary, close })
     border-bottom: 0;
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    touch-action: pan-y;
     -webkit-overflow-scrolling: touch;
   }
 
@@ -986,6 +987,7 @@ defineExpose({ openGlossary, close })
     padding: 18px 16px calc(78px + env(safe-area-inset-bottom));
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    touch-action: pan-y;
     -webkit-overflow-scrolling: touch;
   }
 
