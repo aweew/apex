@@ -209,14 +209,23 @@ public class DecisionServiceImpl implements IDecisionService {
         String groupName = StringUtils.isNotBlank(safe.getGroupName()) ? safe.getGroupName().trim() : "我的自选";
         DecisionContext context = DecisionContext.from(safe);
         DecisionRun decisionRun = decisionRunManager.start(context, groupName, decisionConfigSnapshot());
+        long startedAt = System.currentTimeMillis();
+        log.info("一键决策开始 runNo={} mode={} actionDate={} groupName={} includeBj={}",
+                decisionRun.getRunNo(), decisionRun.getMode(), decisionRun.getActionDate(), groupName,
+                Boolean.TRUE.equals(safe.getIncludeBj()));
         try {
             DecisionTodayResp response = executeRun(safe, groupName, context, decisionRun);
             String dataLevel = Objects.nonNull(response.getMarketBriefing())
                     ? response.getMarketBriefing().getDataLevel() : null;
             finishRun(context, decisionRun, response, dataLevel);
+            log.info("一键决策完成 runNo={} mode={} universeCount={} buyCount={} sellCount={} holdCount={} elapsedMs={}",
+                    decisionRun.getRunNo(), decisionRun.getMode(), response.getUniverseCount(), response.getBuyCount(),
+                    response.getSellCount(), response.getHoldCount(), System.currentTimeMillis() - startedAt);
             return response;
         } catch (RuntimeException ex) {
             decisionRunManager.fail(decisionRun, ex);
+            log.error("一键决策失败 runNo={} mode={} elapsedMs={}", decisionRun.getRunNo(), decisionRun.getMode(),
+                    System.currentTimeMillis() - startedAt, ex);
             throw ex;
         }
     }
@@ -1087,7 +1096,7 @@ public class DecisionServiceImpl implements IDecisionService {
             }
         }
         String message = CollUtil.isEmpty(all)
-                ? "今日尚无决策，请点击「一键生成决策」；下方市场简报已可参考"
+                ? "今日尚无决策，请启动「后台生成决策」；下方市场简报已可参考"
                 : "市场「" + briefing.getStance() + "」· 买 " + buys.size()
                 + " / 卖 " + sells.size() + " / 持有 " + holds.size()
                 + " · 可执行 " + executableCount;
@@ -1273,7 +1282,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .byMainline(List.of())
                     .byStance(List.of())
                     .bySellStrategy(List.of())
-                    .message("暂无决策记录，请先一键生成决策")
+                    .message("暂无决策记录，请先启动后台生成决策")
                     .build();
         }
         List<LocalDate> dates = new ArrayList<>();
@@ -1363,7 +1372,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .fromCache(false)
                     .actionDate(actionDate)
                     .buyCount(0)
-                    .summary("当前无建议买入标的，暂不生成 AI 总结。请先一键生成决策。")
+                    .summary("当前无建议买入标的，暂不生成 AI 总结。请先启动后台生成决策。")
                     .watchPoints(List.of())
                     .stockNotes(List.of())
                     .disclaimer(BUY_AI_DISCLAIMER)

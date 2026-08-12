@@ -1,9 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { dashboardHome } from '../api/dashboard'
-import { runDecision } from '../api/decision'
 import { startSyncJob } from '../api/sync'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
@@ -258,22 +257,11 @@ async function onRunDecision() {
     } catch {
       includeBj = false
     }
-    const res = await runDecision({ includeBj })
-    ElNotification({
-      title: `决策已完成 · ${res.data?.actionDate || '-'}`,
-      message: res.data?.message || '决策已生成',
-      type: 'success',
-      duration: 8000,
-    })
-    router.push('/decision')
+    const res = await startSyncJob({ taskType: 'DECISION', includeBj })
+    ElMessage.success(`智能决策已转入后台任务 #${res.data?.id || ''}`)
+    router.push('/sync')
   } catch (e) {
-    const raw = e?.message || ''
-    if (/timeout|timed out|exceeded|Network Error|aborted/i.test(raw) || e?.code === 'ECONNABORTED') {
-      ElMessage.warning('请求超时：服务端可能已跑完，请打开「智能决策」查看今日清单')
-      router.push('/decision')
-      return
-    }
-    ElMessage.error(e.message || '生成失败')
+    ElMessage.error(e.message || '启动智能决策失败')
   } finally {
     running.value = false
   }
@@ -305,7 +293,7 @@ onMounted(() => {
       </div>
       <div class="actions">
         <el-button type="primary" class="cta" :loading="running" @click="onRunDecision">
-          生成今日决策
+          后台生成决策
         </el-button>
         <el-button type="success" plain :loading="syncingClose" @click="onCloseBundleSync">
           一键收盘同步
@@ -636,7 +624,7 @@ onMounted(() => {
               :loading="running"
               @click="onRunDecision"
             >
-              一键生成决策
+              后台生成决策
             </el-button>
           </el-empty>
           <el-table

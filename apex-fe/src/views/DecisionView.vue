@@ -1,15 +1,15 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   fetchDecisionAttribution,
   fetchDecisionBuyAiSummary,
   fetchDecisionHistory,
   fetchDecisionPlaybook,
   fetchDecisionToday,
-  runDecision,
 } from '../api/decision'
+import { startSyncJob } from '../api/sync'
 import { getAccount, orderFromSignal, placeOrder } from '../api/paper'
 import {
   buildDecisionShareSheet,
@@ -230,67 +230,13 @@ async function load() {
 async function onRun() {
   loading.value = true
   try {
-    const res = await runDecision({ includeBj: includeBj.value })
-    data.value = res.data
-    pickDefaultTab()
-    await Promise.all([loadHistory(), loadAttribution()])
-    notifyDecisionDone(res.data)
-    loadBuyAi(true)
+    const res = await startSyncJob({ taskType: 'DECISION', includeBj: includeBj.value })
+    ElMessage.success(`智能决策已转入后台任务 #${res.data?.id || ''}`)
+    router.push('/sync')
   } catch (e) {
-    const recovered = await tryRecoverAfterRunFailure(e)
-    if (!recovered) {
-      ElMessage.error(formatRunError(e))
-    }
+    ElMessage.error(e.message || '启动智能决策失败')
   } finally {
     loading.value = false
-  }
-}
-
-function notifyDecisionDone(payload) {
-  const dateText = payload?.actionDate || '-'
-  const msg = payload?.message || '决策已生成'
-  ElNotification({
-    title: `决策已完成 · ${dateText}`,
-    message: msg,
-    type: 'success',
-    duration: 8000,
-    position: 'top-right',
-  })
-}
-
-function formatRunError(e) {
-  const raw = e?.message || ''
-  if (/timeout|timed out|exceeded/i.test(raw) || e?.code === 'ECONNABORTED') {
-    return '请求超时：服务端可能仍在跑或已跑完。请点页面刷新/重进决策页查看是否已有今日清单；并确认日线已同步到最近交易日。'
-  }
-  return raw || '生成失败'
-}
-
-/** 超时/断连时尝试拉今日决策，避免「其实已落库但前端无提示」 */
-async function tryRecoverAfterRunFailure(e) {
-  const raw = e?.message || ''
-  const maybeDone = /timeout|timed out|exceeded|Network Error|aborted/i.test(raw)
-    || e?.code === 'ECONNABORTED'
-  if (!maybeDone) return false
-  try {
-    const res = await fetchDecisionToday(undefined, DEFAULT_GROUP)
-    const payload = res.data
-    if (!payload?.actionDate || (!payload.buyCount && !payload.sellCount && !payload.holdCount && !payload.items?.length)) {
-      return false
-    }
-    data.value = payload
-    pickDefaultTab()
-    await Promise.all([loadHistory(), loadAttribution()])
-    ElNotification({
-      title: `决策可能已完成 · ${payload.actionDate}`,
-      message: payload.message || '前端超时，但已从服务端读到今日决策结果',
-      type: 'warning',
-      duration: 10000,
-    })
-    loadBuyAi(true)
-    return true
-  } catch {
-    return false
   }
 }
 
@@ -404,7 +350,7 @@ async function captureDecisionShare() {
 
 async function openShare() {
   if (!buys.value.length && !sells.value.length && !holds.value.length) {
-    ElMessage.warning('暂无决策清单可分享，请先一键生成决策')
+    ElMessage.warning('暂无决策清单，请先启动后台生成')
     return
   }
   sharing.value = true
@@ -528,7 +474,7 @@ onBeforeUnmount(() => {
         >
           含京市
         </el-checkbox>
-        <el-button type="primary" class="cta" :loading="loading" @click="onRun">一键生成决策</el-button>
+        <el-button type="primary" class="cta" :loading="loading" @click="onRun">后台生成决策</el-button>
       </div>
     </header>
 
@@ -715,8 +661,8 @@ onBeforeUnmount(() => {
           </div>
           <div v-if="!buys.length" class="page-empty">
             <h3>暂无买入机会</h3>
-            <p>先同步日线，再一键生成决策；系统会扫全 A + 热点并写入观察池</p>
-            <el-button type="primary" :loading="loading" @click="onRun">一键生成决策</el-button>
+            <p>系统会在后台扫描全 A + 热点并写入观察池</p>
+            <el-button type="primary" :loading="loading" @click="onRun">后台生成决策</el-button>
           </div>
           <el-table
             v-else

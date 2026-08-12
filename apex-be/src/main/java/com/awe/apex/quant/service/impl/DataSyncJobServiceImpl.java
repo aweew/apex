@@ -5,6 +5,8 @@ import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
+import com.awe.apex.quant.domain.dto.DecisionRunReq;
+import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.SyncJobResp;
 import com.awe.apex.quant.domain.dto.SyncOverviewResp;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
@@ -14,6 +16,7 @@ import com.awe.apex.quant.mapper.SyncJobMapper;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
+import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IWatchlistService;
@@ -84,6 +87,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Resource
     private IConfigService configService;
+
+    @Resource
+    private IDecisionService decisionService;
 
     @Resource
     private ObjectMapper objectMapper;
@@ -201,26 +207,28 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
      * @return 任务
      */
     @Override
-    public SyncJobResp start(SyncStartReq req) {
+    public synchronized SyncJobResp start(SyncStartReq req) {
         if (Objects.isNull(req) || StringUtils.isBlank(req.getTaskType())) {
             throw new BusinessException("请指定 taskType");
         }
         SyncTaskSpec spec = syncTaskRegistry.require(req.getTaskType());
         SyncJob running = syncJobMapper.selectOne(Wrappers.<SyncJob>lambdaQuery()
                 .eq(SyncJob::getTaskType, spec.getTaskType())
-                .eq(SyncJob::getStatus, "RUNNING")
+                .in(SyncJob::getStatus, List.of("PENDING", "RUNNING"))
                 .orderByDesc(SyncJob::getId)
                 .last("LIMIT 1"));
         if (Objects.nonNull(running)) {
             throw new BusinessException(spec.getName() + " 正在运行中（jobId=" + running.getId() + "），请先停止");
         }
 
-        Path scriptDir = resolveScriptDir();
-        Path script = scriptDir.resolve(spec.getScriptFile());
-        if (!Files.isRegularFile(script)) {
-            throw new BusinessException("未找到脚本 " + spec.getScriptFile() + "，请配置 apex.sync.script-dir");
+        Path script = null;
+        if (!"DECISION".equals(spec.getTaskType())) {
+            Path scriptDir = resolveScriptDir();
+            script = scriptDir.resolve(spec.getScriptFile());
+            if (!Files.isRegularFile(script)) {
+                throw new BusinessException("未找到脚本 " + spec.getScriptFile() + "，请配置 apex.sync.script-dir");
+            }
         }
-
         List<String> scriptArgs = syncTaskRegistry.buildArgs(spec, req);
         String paramsJson;
         try {
@@ -243,9 +251,58 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
         AtomicBoolean cancelled = new AtomicBoolean(false);
         cancelFlags.put(job.getId(), cancelled);
-        Future<?> future = executor.submit(() -> runJob(job.getId(), spec, script, scriptArgs, cancelled));
+        Future<?> future;
+        if ("DECISION".equals(spec.getTaskType())) {
+            future = executor.submit(() -> runDecisionJob(job.getId(), req, cancelled));
+        } else {
+            Path jobScript = script;
+            future = executor.submit(() -> runJob(job.getId(), spec, jobScript, scriptArgs, cancelled));
+        }
         runningFutures.put(job.getId(), future);
         return getJob(job.getId());
+    }
+
+    private void runDecisionJob(Long jobId, SyncStartReq syncRequest, AtomicBoolean cancelled) {
+        SyncJob job = syncJobMapper.selectById(jobId);
+        if (Objects.isNull(job)) {
+            return;
+        }
+        try {
+            job.setStatus("RUNNING");
+            job.setMessage("正在生成智能决策");
+            job.setStartedAt(LocalDateTime.now());
+            appendLog(job, "[decision] started\n");
+            syncJobMapper.updateById(job);
+
+            DecisionRunReq request = new DecisionRunReq();
+            request.setGroupName(configService.getString("auto_sync_group", "我的自选"));
+            request.setIncludeBj(Boolean.TRUE.equals(syncRequest.getIncludeBj()));
+            DecisionTodayResp response = decisionService.run(request);
+
+            if (cancelled.get()) {
+                return;
+            }
+            job.setStatus("SUCCESS");
+            job.setProgressPct(100);
+            job.setMessage("完成：买入 " + response.getBuyCount() + "，卖出 " + response.getSellCount()
+                    + "，持有 " + response.getHoldCount());
+            appendLog(job, "[decision] runNo=" + response.getRunNo() + "\n");
+            appendLog(job, "[decision] " + response.getMessage() + "\n");
+            job.setFinishedAt(LocalDateTime.now());
+            syncJobMapper.updateById(job);
+        } catch (Exception ex) {
+            job = syncJobMapper.selectById(jobId);
+            if (Objects.nonNull(job) && !"CANCELLED".equals(job.getStatus())) {
+                job.setStatus("FAILED");
+                job.setMessage(clip(StringUtils.isNotBlank(ex.getMessage()) ? ex.getMessage() : "智能决策失败", 400));
+                appendLog(job, "[error] " + ex + "\n");
+                job.setFinishedAt(LocalDateTime.now());
+                syncJobMapper.updateById(job);
+            }
+            log.warn("智能决策任务失败 jobId={} err={}", jobId, ex.toString());
+        } finally {
+            cleanup(jobId);
+        }
     }
 
     /**
@@ -282,6 +339,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         SyncJob job = syncJobMapper.selectById(jobId);
         if (Objects.isNull(job)) {
             throw new BusinessException("任务不存在: " + jobId);
+        }
+        if ("DECISION".equals(job.getTaskType())
+                && ("RUNNING".equals(job.getStatus()) || "PENDING".equals(job.getStatus()))) {
+            throw new BusinessException("智能决策运行后不可停止，请等待后台完成");
         }
         if (!"RUNNING".equals(job.getStatus()) && !"PENDING".equals(job.getStatus())) {
             return toResp(job);

@@ -63,4 +63,9 @@ public class SyncStartReq {
      * 轮数
      */
     private Integer rounds;
+
+    /**
+     * 智能决策是否纳入北交所
+     */
+    private Boolean includeBj;
 }

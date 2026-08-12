@@ -240,7 +240,7 @@ public class DashboardServiceImpl implements IDashboardService {
                 + " · 可执行 " + executableCount
                 + " · 低估 " + valuationCheapCount
                 + " · 主线 " + mainlineMatchCount)
-                : "今日尚无决策，点击「一键生成决策」";
+                : "今日尚无决策，可启动后台生成决策";
         DashboardHomeResp.DecisionBlock decision = DashboardHomeResp.DecisionBlock.builder()
                 .actionDate(actionDate)
                 .hasToday(hasToday)

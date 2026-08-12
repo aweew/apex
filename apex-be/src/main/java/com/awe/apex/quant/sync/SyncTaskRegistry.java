@@ -21,6 +21,14 @@ public class SyncTaskRegistry {
     private final Map<String, SyncTaskSpec> specs = new LinkedHashMap<>();
 
     public SyncTaskRegistry() {
+        register(SyncTaskSpec.builder()
+                .taskType("DECISION")
+                .name("智能决策")
+                .groupName("决策任务")
+                .description("后台扫描全市场并生成当前交易日决策")
+                .defaultParamsHint("工作日 11:40、15:40、16:10 自动运行，也可手动触发")
+                .timeoutSec(1800)
+                .build());
         // 置顶：收盘后日常一键同步（不含全A日线，那类任务太重）
         register(SyncTaskSpec.builder()
                 .taskType("CLOSE_BUNDLE")
@@ -318,6 +326,9 @@ public class SyncTaskRegistry {
                     args.add("--news-limit");
                     args.add(String.valueOf(Math.max(safe.getLimit(), 80)));
                 }
+            }
+            case "DECISION" -> {
+                // Java 内部任务，无脚本参数。
             }
             default -> throw new BusinessException("未实现参数构建: " + type);
         }

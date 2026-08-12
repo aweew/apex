@@ -229,6 +229,16 @@ docker exec apex-backend-1 getent hosts mysql
 运行 `docker compose ... ps`，确认 `backend` 为 healthy。不要把前端的 API 地址
 改成 NAS 的 `8080`；生产环境应始终通过 `/apex` 反向代理。
 
+### 一键决策约 60 秒后返回 504
+
+一键决策会同步扫描全市场，耗时可能超过一分钟。前端容器内的 Nginx 已将读取超时
+设为 600 秒；还需要在 DSM「登录门户 → 高级 → 反向代理」中编辑 Apex 规则，进入
+「自定义标题/高级」并将代理响应超时设为至少 600 秒。若 DSM 版本不提供该界面项，
+需在实际位于最外层的反向代理中设置 `proxy_read_timeout 600s`。
+
+后端日志出现“决策同步观察池”后又出现 `Broken pipe`，通常表示决策已经完成，但
+外层代理提前关闭了浏览器连接；这时刷新智能决策页即可读取已落库的今日结果。
+
 ### NAS 内存较小
 
 修改 `.env.production` 中的 `JAVA_TOOL_OPTIONS`，例如 2 GB 内存设备可先使用

@@ -314,7 +314,7 @@ onUnmounted(stopPoll)
         <p class="eyebrow">灵枢 · Sync</p>
         <h1>数据同步</h1>
         <p>
-          {{ overview?.message || '统一管理行情 / 板块 / 热点 / 资讯 / 基本面等同步任务，可看进度、可启停' }}
+          {{ overview?.message || '统一管理数据同步与智能决策任务，可看进度、可启停' }}
         </p>
       </div>
       <div class="actions">
@@ -401,7 +401,7 @@ onUnmounted(stopPoll)
                   启动
                 </el-button>
                 <el-button
-                  v-if="task.running && task.latestJob"
+                  v-if="task.running && task.latestJob && task.taskType !== 'DECISION'"
                   type="danger"
                   size="small"
                   plain
@@ -454,7 +454,7 @@ onUnmounted(stopPoll)
           <div class="panel-head">
             <h3>当前任务</h3>
             <el-button
-              v-if="activeJob && (activeJob.status === 'RUNNING' || activeJob.status === 'PENDING')"
+              v-if="activeJob && activeJob.taskType !== 'DECISION' && (activeJob.status === 'RUNNING' || activeJob.status === 'PENDING')"
               type="danger"
               size="small"
               @click="onStop(activeJob)"
