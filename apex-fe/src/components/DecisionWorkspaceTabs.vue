@@ -52,7 +52,7 @@ const route = useRoute()
   outline-offset: 1px;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 900px) {
   .decision-workspace-tabs {
     width: 100%;
     margin-bottom: 12px;

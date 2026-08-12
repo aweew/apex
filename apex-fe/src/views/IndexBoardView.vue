@@ -1546,6 +1546,21 @@ onBeforeUnmount(() => {
     display: inline;
   }
 
+  .hero-price {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .hero-price b {
+    min-width: 0;
+    font-size: 20px;
+  }
+
+  .hero-price em {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
   .cards {
     grid-template-columns: 1fr 1fr;
   }
@@ -1555,8 +1570,67 @@ onBeforeUnmount(() => {
   .pulse-tile + .pulse-tile::before {
     display: none;
   }
+
+}
+
+@media (max-width: 560px) {
+  .pulse-effect {
+    padding: 10px;
+  }
+
+  .pulse-effect-head {
+    margin-bottom: 8px;
+  }
+
   .pulse-effect-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--mc-line);
+    border-radius: 10px;
+    background: #f8fafc;
+  }
+
+  .pulse-effect-grid .metric {
+    position: relative;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 66px;
+    padding: 9px 3px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    text-align: center;
+  }
+
+  .pulse-effect-grid .metric + .metric::before {
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: 0;
+    width: 1px;
+    background: var(--mc-line);
+    content: '';
+  }
+
+  .pulse-effect-grid .metric .k {
+    width: 100%;
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pulse-effect-grid .metric .v {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 360px) and (max-width: 560px) {
+  .pulse-effect-grid .metric .v {
+    font-size: 15px;
   }
 }
 

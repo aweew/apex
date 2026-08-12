@@ -640,6 +640,13 @@ watch(
   { immediate: true },
 )
 
+watch(mobileDetailOpen, async (open) => {
+  if (!open) return
+  await nextTick()
+  renderPies()
+  renderDailyChart()
+})
+
 watch(includeArchived, () => loadList(true))
 
 watch(showIndustry, async () => {
@@ -677,6 +684,10 @@ function renderPies() {
   })
 
   if (showIndustry.value && industryPieRef.value && industryDist.value.length) {
+    if (industryChart && industryChart.getDom() !== industryPieRef.value) {
+      industryChart.dispose()
+      industryChart = null
+    }
     if (!industryChart) industryChart = echarts.init(industryPieRef.value)
     industryChart.setOption(
       pieOpt(
@@ -690,6 +701,10 @@ function renderPies() {
   }
 
   if (themePieRef.value && themeDist.value.length) {
+    if (themeChart && themeChart.getDom() !== themePieRef.value) {
+      themeChart.dispose()
+      themeChart = null
+    }
     if (!themeChart) themeChart = echarts.init(themePieRef.value)
     const pieData = compactDist(themeDist.value)
     const colors = pieData.map((x, i) => distColor(x.name, i))
@@ -705,6 +720,10 @@ function renderDailyChart() {
     return
   }
   if (!chartRef.value) return
+  if (chart && chart.getDom() !== chartRef.value) {
+    chart.dispose()
+    chart = null
+  }
   if (!chart) chart = echarts.init(chartRef.value)
   const dates = dailyRows.value.map((x) => x.tradeDate)
   const pcts = dailyRows.value.map((x) => (x.todayPct != null ? Number(x.todayPct) : null))
@@ -1301,23 +1320,6 @@ onBeforeUnmount(() => {
         <el-button plain @click="router.push('/holding')">真实持仓</el-button>
         <el-button text :loading="loading" @click="loadList(true)">刷新</el-button>
       </div>
-      <div class="mobile-header-actions">
-        <el-button type="primary" @click="openCreatePf">新建组合</el-button>
-        <el-dropdown trigger="click" placement="bottom-end" @command="handleMobileListAction">
-          <button type="button" class="portfolio-more-trigger" aria-label="组合更多操作" title="更多操作">
-            <el-icon><MoreFilled /></el-icon>
-          </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="today-share" :disabled="!list.length">今日战绩拼图</el-dropdown-item>
-              <el-dropdown-item command="refresh-all">刷新全部行情</el-dropdown-item>
-              <el-dropdown-item command="snapshot-all">全部打快照</el-dropdown-item>
-              <el-dropdown-item command="holding" divided>真实持仓</el-dropdown-item>
-              <el-dropdown-item command="refresh-list">刷新组合列表</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
     </header>
 
     <div class="layout" :class="{ 'is-side-collapsed': sideCollapsed && !isMobileViewport }">
@@ -1326,12 +1328,34 @@ onBeforeUnmount(() => {
         class="side"
         :class="{ collapsed: sideCollapsed && !isMobileViewport }"
       >
-        <div class="side-head">
-          <button v-if="!isMobileViewport" type="button" class="side-toggle" :title="sideCollapsed ? '展开列表' : '折叠列表'" @click="toggleSide">
+        <div v-if="isMobileViewport" class="mobile-list-toolbar">
+          <div class="mobile-list-heading">
+            <strong>我的组合</strong>
+            <span>{{ list.length }} 组</span>
+          </div>
+          <el-checkbox v-model="includeArchived" size="small">含归档</el-checkbox>
+          <el-button class="mobile-create-button" type="primary" @click="openCreatePf">新建</el-button>
+          <el-dropdown trigger="click" placement="bottom-end" @command="handleMobileListAction">
+            <button type="button" class="portfolio-more-trigger" aria-label="组合更多操作" title="更多操作">
+              <el-icon><MoreFilled /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="today-share" :disabled="!list.length">今日战绩拼图</el-dropdown-item>
+                <el-dropdown-item command="refresh-all">刷新全部行情</el-dropdown-item>
+                <el-dropdown-item command="snapshot-all">全部打快照</el-dropdown-item>
+                <el-dropdown-item command="holding" divided>真实持仓</el-dropdown-item>
+                <el-dropdown-item command="refresh-list">刷新组合列表</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+        <div v-else class="side-head">
+          <button type="button" class="side-toggle" :title="sideCollapsed ? '展开列表' : '折叠列表'" @click="toggleSide">
             {{ sideCollapsed ? '»' : '«' }}
           </button>
-          <template v-if="!sideCollapsed || isMobileViewport">
-            <span class="side-title">{{ isMobileViewport ? '我的组合' : '组合列表' }}</span>
+          <template v-if="!sideCollapsed">
+            <span class="side-title">组合列表</span>
             <el-checkbox v-model="includeArchived" size="small">含归档</el-checkbox>
           </template>
         </div>
@@ -1377,20 +1401,27 @@ onBeforeUnmount(() => {
                 @click.stop
                 @change="(v) => toggleSelect(row.id, v)"
               />
-              <strong>{{ row.name }}</strong>
-              <span v-if="row.isDefault" class="tag">默认</span>
+              <span class="pf-name">
+                <strong>{{ row.name }}</strong>
+                <span v-if="row.isDefault" class="tag">默认</span>
+              </span>
+              <span v-if="isMobileViewport" class="pf-mobile-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
+                <span class="pf-mobile-pnl-label">今日</span>
+                <b>{{ fmtSignedMoney(row.todayPnl) }}</b>
+                <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
+              </span>
               <el-icon v-if="isMobileViewport" class="pf-card-arrow"><ArrowRight /></el-icon>
             </div>
             <div v-if="!isMobileViewport" class="pf-meta">
               <span>{{ row.positionCount || 0 }} 只</span>
             </div>
-            <div class="pf-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
+            <div v-if="!isMobileViewport" class="pf-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
               今日 {{ fmtSignedMoney(row.todayPnl) }}
               <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
             </div>
             <div v-if="row.topHoldings?.length" class="pf-tops">
               <span v-for="h in row.topHoldings.slice(0, 3)" :key="h.code" class="pf-top-chip">
-                {{ h.name || h.code }}
+                <span class="pf-top-chip-name">{{ h.name || h.code }}</span>
                 <em :class="Number(h.pctChg) >= 0 ? 'up' : 'down'">{{ fmtSignedPct(h.pctChg) }}</em>
               </span>
             </div>
@@ -2055,7 +2086,7 @@ onBeforeUnmount(() => {
   position: static;
 }
 
-.mobile-header-actions,
+.mobile-list-toolbar,
 .mobile-detail-nav {
   display: none;
 }
@@ -2070,29 +2101,12 @@ onBeforeUnmount(() => {
     bottom: calc(12px + env(safe-area-inset-bottom));
   }
 
-  .portfolio-header {
-    gap: 12px;
-  }
-
-  .portfolio-header > div:first-child p:last-child {
+  .portfolio-page .portfolio-header {
     display: none;
   }
 
   .desktop-header-actions {
     display: none !important;
-  }
-
-  .mobile-header-actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    width: 100%;
-  }
-
-  .mobile-header-actions > .el-button {
-    min-width: 112px;
-    margin: 0;
   }
 
   .portfolio-more-trigger {
@@ -2338,6 +2352,13 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding-right: 72px;
 }
+.pf-name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .pf-top strong {
   font-size: 14px;
 }
@@ -2371,12 +2392,21 @@ onBeforeUnmount(() => {
   margin-top: 6px;
 }
 .pf-top-chip {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
   font-size: 11px;
   color: #6e6e73;
   background: rgba(0, 0, 0, 0.04);
   padding: 2px 6px;
   border-radius: 4px;
   line-height: 1.3;
+}
+.pf-top-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pf-top-chip em {
   font-style: normal;
@@ -3226,19 +3256,63 @@ onBeforeUnmount(() => {
     background: transparent;
   }
 
-  .side-head {
-    margin-bottom: 8px;
-    padding: 0 2px 8px;
+  .mobile-list-toolbar {
+    display: grid;
+    grid-template-columns: minmax(72px, 1fr) auto auto 44px;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 0;
+    padding: 0 2px 10px;
     border-bottom: 1px solid var(--line);
   }
 
-  .side-title {
-    font-size: 16px;
+  .mobile-list-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .mobile-list-heading strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 17px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-list-heading span {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .mobile-list-toolbar :deep(.el-checkbox) {
+    margin-right: 0;
+    white-space: nowrap;
+  }
+
+  .mobile-list-toolbar :deep(.el-checkbox__label) {
+    padding-left: 5px;
+    color: var(--ink-soft);
+    font-size: 12px;
+  }
+
+  .mobile-list-toolbar :deep(.mobile-create-button) {
+    min-width: 64px;
+    height: 44px;
+    margin: 0;
+    padding: 0 14px;
+    border-radius: 8px;
+    font-size: 13px;
   }
 
   .pf-card {
     margin: 0;
-    padding: 15px 2px 14px;
+    padding: 10px 2px 11px;
     border: 0;
     border-bottom: 1px solid var(--line);
     border-radius: 0;
@@ -3265,23 +3339,63 @@ onBeforeUnmount(() => {
   }
 
   .pf-top {
-    gap: 6px;
+    display: grid;
+    grid-template-columns: minmax(64px, 1fr) auto 18px;
+    min-height: 32px;
+    gap: 8px;
     padding-right: 0;
   }
 
-  .pf-top strong {
+  .pf-name {
     overflow: hidden;
-    font-size: 17px;
+  }
+
+  .pf-name strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 16px;
     font-weight: 700;
+    letter-spacing: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .pf-name .tag {
+    flex: 0 0 auto;
+    padding: 1px 5px;
+  }
+
   .pf-card-arrow {
     flex: 0 0 auto;
-    margin-left: auto;
+    margin-left: 0;
     color: var(--muted);
-    font-size: 18px;
+    font-size: 16px;
+  }
+
+  .pf-mobile-pnl {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 5px;
+    min-width: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pf-mobile-pnl-label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .pf-mobile-pnl b {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .pf-mobile-pnl small {
+    font-size: 11px;
+    font-weight: 600;
   }
 
   .pf-pnl {
@@ -3299,23 +3413,32 @@ onBeforeUnmount(() => {
   }
 
   .pf-tops {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-    margin-top: 10px;
+    display: flex;
+    gap: 0;
+    margin-top: 7px;
+    overflow: hidden;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.035);
   }
 
   .pf-top-chip {
-    display: flex;
+    display: inline-flex;
+    flex: 1 1 0;
     min-width: 0;
     align-items: baseline;
     justify-content: space-between;
-    gap: 4px;
+    gap: 5px;
     overflow: hidden;
-    padding: 6px 7px;
-    border-radius: 4px;
+    padding: 6px 8px;
+    border-right: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
     font-size: 11px;
     white-space: nowrap;
+  }
+
+  .pf-top-chip:last-child {
+    border-right: 0;
   }
 
   .pf-top-chip em {
@@ -3329,6 +3452,27 @@ onBeforeUnmount(() => {
 
   .mobile-detail-open .detail-title h2 {
     font-size: 24px;
+  }
+}
+
+@media (max-width: 360px) {
+  .mobile-list-toolbar {
+    grid-template-columns: minmax(64px, 1fr) auto auto 44px;
+    gap: 6px;
+  }
+
+  .mobile-list-heading span {
+    display: none;
+  }
+
+  .mobile-list-toolbar :deep(.mobile-create-button) {
+    min-width: 58px;
+    padding: 0 10px;
+  }
+
+  .pf-mobile-pnl-label,
+  .pf-mobile-pnl small {
+    display: none;
   }
 }
 
