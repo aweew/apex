@@ -14,6 +14,7 @@ import {
 import { saveObserve } from '../api/observe'
 import { getSyncJob, startSyncJob } from '../api/sync'
 import { useTradeDateStore } from '../stores/tradeDate'
+import { resolveActionColumnFixed } from '../utils/responsiveTable.js'
 import { snapshotFallbackText, snapshotStamp } from '../utils/snapshotDate'
 import { useSessionViewState } from '../utils/viewState.js'
 
@@ -41,6 +42,8 @@ const drawerSortBy = ref('pctChg')
 const drawerOrder = ref('desc')
 const currentSector = ref(null)
 const constituents = ref(null)
+const viewportWidth = ref(window.innerWidth)
+const drawerActionColumnFixed = computed(() => resolveActionColumnFixed(viewportWidth.value))
 
 useSessionViewState('sector', {
   activeTab,
@@ -56,6 +59,10 @@ const TAB_META = {
 }
 
 const TYPE_LABEL = { INDUSTRY: '行业', CONCEPT: '概念', THEME: '题材' }
+
+function syncViewportWidth() {
+  viewportWidth.value = window.innerWidth
+}
 
 const items = computed(() => {
   const list = board.value?.items || []
@@ -341,53 +348,61 @@ watch(
 )
 
 onMounted(() => {
+  window.addEventListener('resize', syncViewportWidth)
   applyRouteQuery()
   load()
 })
 onBeforeUnmount(() => {
   syncPollCancelled = true
+  window.removeEventListener('resize', syncViewportWidth)
 })
 </script>
 
 <template>
   <div class="page" v-loading="loading || refreshing">
-    <header class="header">
+    <header class="header sector-header">
       <div>
         <p class="eyebrow">灵枢 · Sector</p>
         <h1>板块行情</h1>
         <p>{{ snapshotNotice || board?.message || '主线强弱 · 涨停家数 · 联动决策候选' }}</p>
       </div>
-      <div class="actions">
-        <el-date-picker
-          v-model="tradeDate"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="交易日"
-          style="width: 150px"
-          :clearable="false"
-          :disabled-date="disableUnavailableDate"
-        />
-        <el-select v-model="sortBy" style="width: 120px" size="default">
-          <el-option label="涨跌幅" value="pctChg" />
-          <el-option label="3日涨幅" value="pctChg3d" />
-          <el-option label="5日涨幅" value="pctChg5d" />
-          <el-option label="涨停家数" value="limitUpCount" />
-          <el-option label="连板高度" value="maxLianban" />
-          <el-option label="净流入" value="netInflow" />
-        </el-select>
-        <el-select v-model="order" style="width: 100px" size="default">
-          <el-option label="降序" value="desc" />
-          <el-option label="升序" value="asc" />
-        </el-select>
-        <el-input
-          v-model="nameFilter"
-          clearable
-          placeholder="筛板块名"
-          style="width: 140px"
-        />
-        <el-button type="primary" :loading="refreshing" @click="onRefresh">刷新</el-button>
-        <el-button plain @click="router.push('/limit-up')">涨停</el-button>
-        <el-button plain @click="router.push('/decision')">决策</el-button>
+      <div class="actions sector-actions">
+        <div class="sector-filters">
+          <el-date-picker
+            v-model="tradeDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="交易日"
+            aria-label="选择交易日"
+            style="width: 150px"
+            :clearable="false"
+            :disabled-date="disableUnavailableDate"
+          />
+          <el-select v-model="sortBy" aria-label="选择排序指标" style="width: 120px" size="default">
+            <el-option label="涨跌幅" value="pctChg" />
+            <el-option label="3日涨幅" value="pctChg3d" />
+            <el-option label="5日涨幅" value="pctChg5d" />
+            <el-option label="涨停家数" value="limitUpCount" />
+            <el-option label="连板高度" value="maxLianban" />
+            <el-option label="净流入" value="netInflow" />
+          </el-select>
+          <el-select v-model="order" aria-label="选择排序方向" style="width: 100px" size="default">
+            <el-option label="降序" value="desc" />
+            <el-option label="升序" value="asc" />
+          </el-select>
+          <el-input
+            v-model="nameFilter"
+            clearable
+            aria-label="筛选板块名称"
+            placeholder="筛板块名"
+            style="width: 140px"
+          />
+        </div>
+        <div class="sector-shortcuts">
+          <el-button type="primary" :loading="refreshing" @click="onRefresh">刷新</el-button>
+          <el-button plain @click="router.push('/limit-up')">涨停</el-button>
+          <el-button plain @click="router.push('/decision')">决策</el-button>
+        </div>
       </div>
     </header>
 
@@ -396,124 +411,155 @@ onBeforeUnmount(() => {
         <h3><TermTip term="theme_rotation">轮动时间轴</TermTip></h3>
         <span class="muted">{{ rotation?.message || '近10日行业涨幅 Top' }}</span>
       </div>
-      <div v-if="rotation?.days?.length" class="rotation-track">
-        <div v-for="day in rotation.days" :key="day.tradeDate" class="rotation-day">
-          <div class="rotation-date">{{ String(day.tradeDate).slice(5) }}</div>
-          <div class="rotation-tops">
-            <span v-for="(top, idx) in day.tops || []" :key="idx" class="rotation-chip">{{ top }}</span>
+      <div v-if="rotation?.days?.length" class="rotation-viewport">
+        <div class="rotation-track">
+          <div
+            v-for="(day, dayIndex) in rotation.days"
+            :key="day.tradeDate"
+            class="rotation-day"
+            :class="{ 'is-latest': dayIndex === 0 }"
+          >
+            <div class="rotation-date">
+              <span>{{ String(day.tradeDate).slice(5) }}</span>
+              <span v-if="dayIndex === 0" class="latest-dot" aria-label="最新交易日" />
+            </div>
+            <div class="rotation-tops">
+              <span v-for="(top, idx) in day.tops || []" :key="idx" class="rotation-chip">
+                <span class="rotation-position">{{ idx + 1 }}</span>
+                <span class="rotation-name">{{ top }}</span>
+              </span>
+            </div>
           </div>
         </div>
       </div>
       <div v-else-if="!rotationLoading" class="rotation-empty">暂无轮动数据</div>
     </section>
 
-    <div v-if="mainline.length" class="mainline">
-      <div
-        v-for="(row, idx) in mainline"
-        :key="row.boardType + row.code"
-        class="mainline-item"
-        @click="openMainline(row)"
-      >
-        <span v-if="idx < 3" class="rank" :class="'rank-' + (idx + 1)">{{ idx + 1 }}</span>
-        <span v-else class="rank-placeholder" aria-hidden="true" />
-        <span class="ml-type">{{ TYPE_LABEL[row.boardType] || row.boardType }}</span>
-        <b class="mainline-name">{{ row.name }}</b>
-        <span class="mainline-change" :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">
-          {{ fmtPct(row.pctChg) }}
-        </span>
-        <span class="mainline-signals">
-          <span v-if="row.limitUpCount" class="up">涨停 {{ row.limitUpCount }}</span>
-          <span v-if="row.maxLianban" class="up">{{ row.maxLianban }} 板</span>
-        </span>
-        <span class="mainline-reason muted">{{ row.moveReason || '-' }}</span>
+    <section v-if="mainline.length" class="mainline-section">
+      <div class="mainline-head">
+        <h3>主线候选</h3>
+        <span>{{ mainline.length }} 个方向</span>
       </div>
-    </div>
+      <div class="mainline">
+        <button
+          v-for="(row, idx) in mainline"
+          :key="row.boardType + row.code"
+          type="button"
+          class="mainline-item"
+          :aria-label="`查看${row.name || ''}成分股`"
+          @click="openMainline(row)"
+        >
+          <span class="rank" :class="idx < 3 ? 'rank-' + (idx + 1) : 'rank-other'">{{ idx + 1 }}</span>
+          <span class="mainline-heading">
+            <span class="ml-type">{{ TYPE_LABEL[row.boardType] || row.boardType }}</span>
+            <b class="mainline-name">{{ row.name }}</b>
+          </span>
+          <span class="mainline-change" :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">
+            {{ fmtPct(row.pctChg) }}
+          </span>
+          <span class="mainline-signals">
+            <span v-if="row.limitUpCount" class="signal-pill limit-up-signal">涨停 {{ row.limitUpCount }}</span>
+            <span v-if="row.maxLianban" class="signal-pill board-height-signal">{{ row.maxLianban }} 板</span>
+          </span>
+          <span class="mainline-reason">{{ row.moveReason || '-' }}</span>
+        </button>
+      </div>
+    </section>
 
-    <el-tabs v-model="activeTab" class="tabs">
-      <el-tab-pane
-        v-for="(meta, key) in TAB_META"
-        :key="key"
-        :label="meta.label"
-        :name="key"
-      />
-    </el-tabs>
+    <section class="board-ranking">
+      <div class="board-ranking-head">
+        <h3>板块榜单</h3>
+        <span>{{ items.length }} 个板块</span>
+      </div>
+      <el-tabs v-model="activeTab" class="tabs">
+        <el-tab-pane
+          v-for="(meta, key) in TAB_META"
+          :key="key"
+          :label="meta.label"
+          :name="key"
+        />
+      </el-tabs>
 
-    <el-table
-      :data="items"
-      size="small"
-      stripe
-      empty-text="暂无数据，请先刷新榜单"
-      highlight-current-row
-      @row-click="openConstituents"
-      style="cursor: pointer"
-    >
-      <el-table-column label="#" width="52" align="center">
-        <template #default="{ $index }">
-          <span v-if="$index < 3" class="rank" :class="'rank-' + ($index + 1)">{{ $index + 1 }}</span>
-          <span v-else class="rank-muted">{{ $index + 1 }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="110" sortable />
-      <el-table-column width="90" sortable prop="pctChg">
-        <template #header><TermTip term="pct_chg">涨跌幅</TermTip></template>
-        <template #default="{ row }">
-          <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="3日" width="85" sortable prop="pctChg3d">
-        <template #default="{ row }">
-          <span :class="Number(row.pctChg3d) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg3d) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="5日" width="85" sortable prop="pctChg5d">
-        <template #default="{ row }">
-          <span :class="Number(row.pctChg5d) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg5d) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column width="100" sortable prop="netInflow">
-        <template #header><TermTip term="main_fund_flow">净流入</TermTip></template>
-        <template #default="{ row }">
-          <span :class="Number(row.netInflow) >= 0 ? 'up' : 'down'">{{ fmtInflowYi(row.netInflow) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column width="70" sortable prop="limitUpCount" align="center">
-        <template #header><TermTip term="limit_up">涨停</TermTip></template>
-        <template #default="{ row }">
-          <span :class="Number(row.limitUpCount) > 0 ? 'up' : ''">{{ row.limitUpCount ?? '-' }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column width="70" sortable prop="maxLianban" align="center">
-        <template #header><TermTip term="lianban">连板</TermTip></template>
-        <template #default="{ row }">
-          <span :class="Number(row.maxLianban) > 1 ? 'up' : ''">{{ row.maxLianban ?? '-' }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="领涨股" min-width="120">
-        <template #default="{ row }">
-          <template v-if="row.leadStockName || row.leadStockCode">
-            <el-button
-              v-if="row.leadStockCode"
-              link
-              type="primary"
-              @click.stop="router.push(`/stock/${row.leadStockCode}`)"
-            >
-              {{ row.leadStockName || row.leadStockCode }}
-            </el-button>
-            <span v-else>{{ row.leadStockName }}</span>
-            <span class="lead-pct" :class="Number(row.leadStockPct) >= 0 ? 'up' : 'down'">
-              {{ fmtPct(row.leadStockPct) }}
-            </span>
+      <el-table
+        :data="items"
+        class="board-table"
+        size="small"
+        stripe
+        empty-text="暂无数据，请先刷新榜单"
+        highlight-current-row
+        @row-click="openConstituents"
+        style="cursor: pointer"
+      >
+        <el-table-column label="#" width="52" align="center">
+          <template #default="{ $index }">
+            <span v-if="$index < 3" class="rank" :class="'rank-' + ($index + 1)">{{ $index + 1 }}</span>
+            <span v-else class="rank-muted">{{ $index + 1 }}</span>
           </template>
-          <span v-else>-</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="moveReason" label="涨跌原因" min-width="220" show-overflow-tooltip />
-    </el-table>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" min-width="110" sortable />
+        <el-table-column width="90" sortable prop="pctChg">
+          <template #header><TermTip term="pct_chg">涨跌幅</TermTip></template>
+          <template #default="{ row }">
+            <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="3日" width="85" sortable prop="pctChg3d">
+          <template #default="{ row }">
+            <span :class="Number(row.pctChg3d) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg3d) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="5日" width="85" sortable prop="pctChg5d">
+          <template #default="{ row }">
+            <span :class="Number(row.pctChg5d) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg5d) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column width="100" sortable prop="netInflow">
+          <template #header><TermTip term="main_fund_flow">净流入</TermTip></template>
+          <template #default="{ row }">
+            <span :class="Number(row.netInflow) >= 0 ? 'up' : 'down'">{{ fmtInflowYi(row.netInflow) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column width="70" sortable prop="limitUpCount" align="center">
+          <template #header><TermTip term="limit_up">涨停</TermTip></template>
+          <template #default="{ row }">
+            <span :class="Number(row.limitUpCount) > 0 ? 'up' : ''">{{ row.limitUpCount ?? '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column width="70" sortable prop="maxLianban" align="center">
+          <template #header><TermTip term="lianban">连板</TermTip></template>
+          <template #default="{ row }">
+            <span :class="Number(row.maxLianban) > 1 ? 'up' : ''">{{ row.maxLianban ?? '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="领涨股" min-width="120">
+          <template #default="{ row }">
+            <template v-if="row.leadStockName || row.leadStockCode">
+              <el-button
+                v-if="row.leadStockCode"
+                link
+                type="primary"
+                @click.stop="router.push(`/stock/${row.leadStockCode}`)"
+              >
+                {{ row.leadStockName || row.leadStockCode }}
+              </el-button>
+              <span v-else>{{ row.leadStockName }}</span>
+              <span class="lead-pct" :class="Number(row.leadStockPct) >= 0 ? 'up' : 'down'">
+                {{ fmtPct(row.leadStockPct) }}
+              </span>
+            </template>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="moveReason" label="涨跌原因" min-width="220" show-overflow-tooltip />
+      </el-table>
+    </section>
 
     <el-drawer
       v-model="drawerOpen"
+      class="sector-drawer"
       :title="`${currentSector?.name || ''}（${currentSector?.code || ''}）成分股`"
       size="520px"
+      append-to-body
       destroy-on-close
     >
       <div class="drawer-actions">
@@ -565,7 +611,7 @@ onBeforeUnmount(() => {
             <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="88" fixed="right">
+        <el-table-column label="操作" width="88" :fixed="drawerActionColumnFixed">
           <template #default="{ row }">
             <el-button link type="warning" :disabled="!row.code" @click="addObserve(row)">观察</el-button>
           </template>
@@ -576,61 +622,162 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.sector-actions,
+.sector-filters,
+.sector-shortcuts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sector-actions {
+  justify-content: flex-end;
+}
+
+.sector-shortcuts :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
 .rotation {
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--glass-border);
+  margin-bottom: 16px;
+  padding: 14px 16px 12px;
+  overflow: hidden;
+  border: 1px solid rgba(20, 32, 51, 0.08);
   border-radius: var(--radius);
-  background: var(--glass);
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 8px 24px rgba(20, 32, 51, 0.04);
 }
 
 .rotation-head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .rotation-head h3 {
+  position: relative;
   margin: 0;
-  font-size: 14px;
+  padding-left: 10px;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.rotation-head h3::before {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  content: '';
+}
+
+.rotation-viewport {
+  position: relative;
+  margin-right: -16px;
+}
+
+.rotation-viewport::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 8px;
+  width: 30px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.94));
+  pointer-events: none;
+  content: '';
 }
 
 .rotation-track {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding: 0 28px 9px 0;
+  scroll-padding-left: 0;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+  scrollbar-color: rgba(0, 113, 227, 0.34) rgba(20, 32, 51, 0.06);
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rotation-track::-webkit-scrollbar {
+  height: 4px;
+}
+
+.rotation-track::-webkit-scrollbar-track {
+  border-radius: 4px;
+  background: rgba(20, 32, 51, 0.06);
+}
+
+.rotation-track::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(0, 113, 227, 0.34);
 }
 
 .rotation-day {
-  flex: 0 0 auto;
-  min-width: 140px;
-  max-width: 200px;
-  padding: 8px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  flex: 0 0 178px;
+  min-height: 148px;
+  padding: 10px 11px;
+  scroll-snap-align: start;
+  border: 1px solid rgba(20, 32, 51, 0.09);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.5);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(20, 32, 51, 0.035);
+}
+
+.rotation-day.is-latest {
+  border-color: rgba(0, 113, 227, 0.28);
+  background: #f7fbff;
+  box-shadow: inset 0 2px 0 rgba(0, 113, 227, 0.72);
 }
 
 .rotation-date {
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--ink);
-  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.latest-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.11);
 }
 
 .rotation-tops {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
 }
 
 .rotation-chip {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
   font-size: 11px;
   color: var(--slate);
-  white-space: nowrap;
+}
+
+.rotation-position {
+  color: #9ca3af;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rotation-name {
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 
@@ -640,39 +787,114 @@ onBeforeUnmount(() => {
   padding: 8px 0;
 }
 
+.mainline-section {
+  margin-bottom: 18px;
+}
+
+.mainline-head,
+.board-ranking-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mainline-head h3,
+.board-ranking-head h3 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.mainline-head > span,
+.board-ranking-head > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .mainline {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 8px;
 }
 
 .mainline-item {
+  position: relative;
   display: grid;
-  grid-template-columns: 20px 28px minmax(100px, max-content) max-content max-content minmax(0, 1fr);
+  grid-template-columns: 24px minmax(150px, max-content) max-content max-content minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  background: var(--glass);
+  width: 100%;
+  gap: 12px;
+  padding: 11px 36px 11px 12px;
+  border: 1px solid rgba(20, 32, 51, 0.09);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 2px 10px rgba(20, 32, 51, 0.035);
   cursor: pointer;
+  color: var(--ink);
+  font: inherit;
   font-size: 13px;
+  text-align: left;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mainline-item::after {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  width: 7px;
+  height: 7px;
+  border-top: 1.5px solid #a0a7b2;
+  border-right: 1.5px solid #a0a7b2;
+  content: '';
+  transform: translateY(-50%) rotate(45deg);
 }
 
 .mainline-item:hover {
-  border-color: var(--el-color-primary);
+  border-color: rgba(0, 113, 227, 0.34);
+  box-shadow: 0 7px 22px rgba(20, 32, 51, 0.08);
+  transform: translateY(-1px);
+}
+
+.mainline-item:active {
+  box-shadow: 0 2px 8px rgba(20, 32, 51, 0.05);
+  transform: translateY(0) scale(0.997);
+}
+
+.mainline-item:focus-visible {
+  outline: 3px solid rgba(0, 113, 227, 0.2);
+  outline-offset: 2px;
+}
+
+.mainline-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
 }
 
 .ml-type {
-  color: var(--muted);
-  font-size: 12px;
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border: 1px solid rgba(0, 113, 227, 0.12);
+  border-radius: 5px;
+  background: rgba(0, 113, 227, 0.06);
+  color: #44617c;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .mainline-name {
   min-width: 0;
-  line-height: 1.4;
+  overflow: hidden;
+  color: #202733;
+  font-size: 14px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mainline-change,
@@ -680,38 +902,85 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.mainline-change {
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.mainline-change.up {
+  background: rgba(255, 59, 48, 0.075);
+}
+
+.mainline-change.down {
+  background: rgba(52, 199, 89, 0.09);
+}
+
 .mainline-signals {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+}
+
+.signal-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.limit-up-signal {
+  background: rgba(255, 59, 48, 0.08);
+  color: #d92f28;
+}
+
+.board-height-signal {
+  background: rgba(255, 159, 10, 0.11);
+  color: #a75f00;
 }
 
 .mainline-reason {
   min-width: 0;
+  overflow: hidden;
+  color: #737b87;
   line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rank {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #fff;
+  font-variant-numeric: tabular-nums;
 }
 
 .rank-1 {
-  background: #e6a23c;
+  background: #d9901d;
+  box-shadow: 0 3px 8px rgba(217, 144, 29, 0.22);
 }
 
 .rank-2 {
-  background: #909399;
+  background: #7d8795;
 }
 
 .rank-3 {
-  background: #b87333;
+  background: #a96c43;
+}
+
+.rank-other {
+  background: #eef1f4;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .rank-muted {
@@ -719,9 +988,33 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.rank-placeholder {
-  width: 20px;
-  height: 20px;
+.board-ranking {
+  min-width: 0;
+}
+
+.board-ranking-head {
+  margin-bottom: 2px;
+}
+
+.tabs {
+  --el-tabs-header-height: 42px;
+}
+
+.tabs :deep(.el-tabs__header) {
+  margin-bottom: 10px;
+}
+
+.tabs :deep(.el-tabs__item) {
+  min-width: 72px;
+  padding: 0 18px;
+  font-weight: 600;
+}
+
+.board-table {
+  overflow: hidden;
+  border: 1px solid rgba(20, 32, 51, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .lead-pct {
@@ -750,34 +1043,54 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
+  .sector-header {
+    margin-bottom: 16px;
+  }
+
+  .sector-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .sector-filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .sector-filters :deep(.el-date-editor),
+  .sector-filters :deep(.el-select),
+  .sector-filters :deep(.el-input) {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .sector-shortcuts {
+    justify-content: flex-end;
+  }
+
   .mainline {
     gap: 8px;
   }
 
   .mainline-item {
-    grid-template-columns: 20px 32px minmax(0, 1fr) max-content;
+    grid-template-columns: 24px minmax(0, 1fr) max-content;
     grid-template-areas:
-      "rank type name change"
-      ". signals signals signals"
-      ". reason reason reason";
+      "rank heading change"
+      ". signals signals"
+      ". reason reason";
     align-items: start;
     column-gap: 8px;
-    row-gap: 6px;
-    padding: 12px;
+    row-gap: 7px;
+    padding: 12px 36px 12px 12px;
   }
 
-  .mainline-item .rank,
-  .mainline-item .rank-placeholder {
+  .mainline-item .rank {
     grid-area: rank;
   }
 
-  .mainline-item .ml-type {
-    grid-area: type;
-    padding-top: 1px;
-  }
-
-  .mainline-name {
-    grid-area: name;
+  .mainline-heading {
+    grid-area: heading;
   }
 
   .mainline-change {
@@ -790,6 +1103,185 @@ onBeforeUnmount(() => {
 
   .mainline-reason {
     grid-area: reason;
+    padding-top: 7px;
+    border-top: 1px solid rgba(20, 32, 51, 0.065);
+    overflow: visible;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 560px) {
+  .sector-header > div:first-child {
+    width: 100%;
+  }
+
+  .sector-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sector-filters :deep(.el-input__wrapper) {
+    min-height: 42px;
+    border-radius: 8px;
+  }
+
+  .sector-shortcuts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .sector-shortcuts :deep(.el-button) {
+    width: 100%;
+    min-height: 42px;
+    margin: 0;
+    border-radius: 8px;
+  }
+
+  .rotation {
+    margin-right: -10px;
+    margin-left: -10px;
+    padding: 14px 10px 12px;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+    box-shadow: 0 5px 16px rgba(20, 32, 51, 0.035);
+  }
+
+  .rotation-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .rotation-head .muted {
+    padding-left: 10px;
+    line-height: 1.4;
+  }
+
+  .rotation-viewport {
+    margin-right: -10px;
+  }
+
+  .rotation-day {
+    flex-basis: min(68vw, 196px);
+  }
+
+  .mainline-section {
+    margin-bottom: 20px;
+  }
+
+  .mainline-item {
+    min-height: 116px;
+  }
+
+  .mainline-item:hover {
+    box-shadow: 0 2px 10px rgba(20, 32, 51, 0.035);
+    transform: none;
+  }
+
+  .mainline-item:active {
+    border-color: rgba(0, 113, 227, 0.3);
+    background: #f8fbff;
+    transform: scale(0.995);
+  }
+
+  .mainline-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mainline-name {
+    width: 100%;
+  }
+
+  .mainline-change {
+    margin-top: 1px;
+  }
+
+  .tabs {
+    --el-tabs-header-height: 44px;
+  }
+
+  .tabs :deep(.el-tabs__nav-wrap) {
+    padding: 3px;
+    border: 1px solid rgba(20, 32, 51, 0.08);
+    border-radius: 8px;
+    background: rgba(20, 32, 51, 0.045);
+  }
+
+  .tabs :deep(.el-tabs__nav-wrap::after),
+  .tabs :deep(.el-tabs__active-bar) {
+    display: none;
+  }
+
+  .tabs :deep(.el-tabs__nav) {
+    width: 100%;
+  }
+
+  .tabs :deep(.el-tabs__item) {
+    flex: 1;
+    min-width: 0;
+    height: 38px;
+    padding: 0;
+    border-radius: 6px;
+    color: var(--slate);
+    transition: color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .tabs :deep(.el-tabs__item.is-active) {
+    background: #fff;
+    color: var(--accent);
+    box-shadow: 0 1px 4px rgba(20, 32, 51, 0.1);
+  }
+
+  .board-table {
+    border-radius: 8px;
+  }
+
+  :global(.sector-drawer) {
+    width: min(520px, 100vw) !important;
+  }
+
+  :global(.sector-drawer .el-drawer__header) {
+    margin-bottom: 12px;
+    padding: 16px 14px 0;
+  }
+
+  :global(.sector-drawer .el-drawer__body) {
+    padding: 0 12px 16px;
+  }
+
+  :global(.sector-drawer .drawer-actions) {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  :global(.sector-drawer .drawer-actions > .muted) {
+    line-height: 1.35;
+  }
+
+  :global(.sector-drawer .drawer-controls) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.88fr) minmax(88px, 1fr);
+    gap: 6px;
+  }
+
+  :global(.sector-drawer .drawer-controls .el-select),
+  :global(.sector-drawer .drawer-controls .el-button) {
+    width: 100% !important;
+    min-width: 0;
+    margin: 0;
+  }
+
+  :global(.sector-drawer .drawer-controls .el-select__wrapper),
+  :global(.sector-drawer .drawer-controls .el-button) {
+    min-height: 36px;
+    border-radius: 7px;
   }
 }
 </style>
