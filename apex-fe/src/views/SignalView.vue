@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { MoreFilled } from '@element-plus/icons-vue'
 import {
   latestSignals,
   latestUniverse,
@@ -31,6 +32,7 @@ const forward = ref(null)
 const confluence = ref(null)
 const morePanels = ref([])
 const viewportWidth = ref(window.innerWidth)
+const isMobileViewport = computed(() => viewportWidth.value <= 820)
 const actionColumnFixed = computed(() => resolveActionColumnFixed(viewportWidth.value))
 
 useSessionViewState('signals', {
@@ -167,6 +169,22 @@ async function addObserve(row) {
   }
 }
 
+function handleMobileRowAction(command, row) {
+  if (command === 'quick') {
+    onQuickFromSignal(row)
+    return
+  }
+  if (command === 'paper') {
+    onPaperOrder(row)
+    return
+  }
+  if (command === 'backtest') {
+    router.push({ path: '/backtest', query: { code: row.code, strategyId: row.strategyId } })
+    return
+  }
+  if (command === 'observe') addObserve(row)
+}
+
 onMounted(() => {
   window.addEventListener('resize', syncViewportWidth)
   load()
@@ -243,7 +261,60 @@ onBeforeUnmount(() => {
         <el-button type="primary" :loading="loading" @click="onGenerateSignals">生成策略信号</el-button>
       </div>
 
-      <el-table v-else :data="filtered" size="small" stripe height="calc(100vh - 340px)">
+      <div v-else-if="isMobileViewport" class="signal-mobile-list" role="list">
+        <p v-if="!filtered.length" class="signal-filter-empty">当前筛选下暂无信号</p>
+        <article
+          v-for="(row, index) in filtered"
+          :key="row.id || `${row.signalDate}-${row.code}-${row.strategyId}-${index}`"
+          class="signal-mobile-item"
+          role="listitem"
+        >
+          <header class="signal-mobile-head">
+            <div class="signal-stock">
+              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
+                {{ row.code }}
+              </el-button>
+              <strong>{{ row.name || '-' }}</strong>
+            </div>
+            <el-dropdown
+              trigger="click"
+              placement="bottom-end"
+              @command="handleMobileRowAction($event, row)"
+            >
+              <button
+                type="button"
+                class="signal-actions-trigger"
+                :aria-label="`${row.name || row.code}更多操作`"
+                title="更多操作"
+                @click.stop
+              >
+                <el-icon><MoreFilled /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="quick">一键模拟</el-dropdown-item>
+                  <el-dropdown-item command="paper">
+                    模拟{{ row.side === 'SELL' ? '卖出' : '买入' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="backtest" divided>查看回测</el-dropdown-item>
+                  <el-dropdown-item command="observe">加入观察池</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </header>
+          <div class="signal-mobile-meta">
+            <time>{{ row.signalDate || '-' }}</time>
+            <span class="strategy-badge">{{ row.strategyId || '-' }}</span>
+            <span class="side-badge" :class="row.side === 'BUY' ? 'is-buy' : 'is-sell'">
+              {{ row.side === 'BUY' ? '买入' : '卖出' }}
+            </span>
+            <span class="signal-score">评分 <b>{{ row.score ?? '-' }}</b></span>
+          </div>
+          <p class="signal-reason">{{ row.reasonJson || '暂无理由' }}</p>
+        </article>
+      </div>
+
+      <el-table v-else class="signal-desktop-table" :data="filtered" size="small" stripe height="calc(100vh - 340px)">
         <el-table-column prop="signalDate" label="日期" width="110" sortable />
         <el-table-column prop="code" label="代码" width="96">
           <template #default="{ row }">
@@ -405,5 +476,171 @@ onBeforeUnmount(() => {
 
 .down {
   color: var(--down);
+}
+
+.signal-mobile-list {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .list-panel {
+    padding: 12px 10px 4px;
+    overflow: hidden;
+  }
+
+  .signal-page .toolbar-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .signal-page .toolbar-bar :deep(.el-select),
+  .signal-page .toolbar-bar :deep(.el-input) {
+    width: 100% !important;
+  }
+
+  .signal-page .toolbar-bar :deep(.el-switch) {
+    min-width: 0;
+  }
+
+  .signal-page .toolbar-bar > .muted {
+    justify-self: end;
+    align-self: center;
+  }
+
+  .signal-mobile-list {
+    display: block;
+    min-width: 0;
+  }
+
+  .signal-filter-empty {
+    margin: 0;
+    padding: 34px 12px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .signal-mobile-item {
+    min-width: 0;
+    padding: 14px 2px 13px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .signal-mobile-item:last-child {
+    border-bottom: 0;
+  }
+
+  .signal-mobile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .signal-stock {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .signal-stock :deep(.el-button) {
+    min-height: 36px;
+    margin: 0;
+    padding: 0;
+    font-size: 16px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .signal-stock strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .signal-actions-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .signal-actions-trigger:active {
+    background: var(--fill);
+  }
+
+  .signal-actions-trigger .el-icon {
+    font-size: 20px;
+  }
+
+  .signal-mobile-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .signal-mobile-meta time {
+    margin-right: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .strategy-badge,
+  .side-badge,
+  .signal-score {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 7px;
+    border-radius: 4px;
+    background: var(--fill);
+  }
+
+  .strategy-badge {
+    color: var(--ink-soft);
+    font-weight: 650;
+  }
+
+  .side-badge.is-buy {
+    background: rgba(255, 59, 48, 0.08);
+    color: var(--up);
+  }
+
+  .side-badge.is-sell {
+    background: rgba(52, 199, 89, 0.1);
+    color: var(--down);
+  }
+
+  .signal-score b {
+    margin-left: 3px;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .signal-reason {
+    margin: 9px 0 0;
+    overflow-wrap: anywhere;
+    color: var(--ink-soft);
+    font-size: 12px;
+    line-height: 1.55;
+  }
 }
 </style>
