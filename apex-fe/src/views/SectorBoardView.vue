@@ -415,12 +415,17 @@ onBeforeUnmount(() => {
         @click="openMainline(row)"
       >
         <span v-if="idx < 3" class="rank" :class="'rank-' + (idx + 1)">{{ idx + 1 }}</span>
+        <span v-else class="rank-placeholder" aria-hidden="true" />
         <span class="ml-type">{{ TYPE_LABEL[row.boardType] || row.boardType }}</span>
-        <b>{{ row.name }}</b>
-        <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
-        <span v-if="row.limitUpCount" class="up">涨停{{ row.limitUpCount }}</span>
-        <span v-if="row.maxLianban" class="up">{{ row.maxLianban }}板</span>
-        <span class="muted">{{ row.moveReason || '-' }}</span>
+        <b class="mainline-name">{{ row.name }}</b>
+        <span class="mainline-change" :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">
+          {{ fmtPct(row.pctChg) }}
+        </span>
+        <span class="mainline-signals">
+          <span v-if="row.limitUpCount" class="up">涨停 {{ row.limitUpCount }}</span>
+          <span v-if="row.maxLianban" class="up">{{ row.maxLianban }} 板</span>
+        </span>
+        <span class="mainline-reason muted">{{ row.moveReason || '-' }}</span>
       </div>
     </div>
 
@@ -643,7 +648,8 @@ onBeforeUnmount(() => {
 }
 
 .mainline-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 20px 28px minmax(100px, max-content) max-content max-content minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -661,7 +667,27 @@ onBeforeUnmount(() => {
 .ml-type {
   color: var(--muted);
   font-size: 12px;
-  min-width: 28px;
+  white-space: nowrap;
+}
+
+.mainline-name {
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.mainline-change,
+.mainline-signals {
+  white-space: nowrap;
+}
+
+.mainline-signals {
+  display: flex;
+  gap: 8px;
+}
+
+.mainline-reason {
+  min-width: 0;
+  line-height: 1.45;
 }
 
 .rank {
@@ -693,6 +719,11 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.rank-placeholder {
+  width: 20px;
+  height: 20px;
+}
+
 .lead-pct {
   margin-left: 6px;
   font-size: 12px;
@@ -716,5 +747,49 @@ onBeforeUnmount(() => {
 .muted {
   color: var(--muted);
   font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .mainline {
+    gap: 8px;
+  }
+
+  .mainline-item {
+    grid-template-columns: 20px 32px minmax(0, 1fr) max-content;
+    grid-template-areas:
+      "rank type name change"
+      ". signals signals signals"
+      ". reason reason reason";
+    align-items: start;
+    column-gap: 8px;
+    row-gap: 6px;
+    padding: 12px;
+  }
+
+  .mainline-item .rank,
+  .mainline-item .rank-placeholder {
+    grid-area: rank;
+  }
+
+  .mainline-item .ml-type {
+    grid-area: type;
+    padding-top: 1px;
+  }
+
+  .mainline-name {
+    grid-area: name;
+  }
+
+  .mainline-change {
+    grid-area: change;
+  }
+
+  .mainline-signals {
+    grid-area: signals;
+  }
+
+  .mainline-reason {
+    grid-area: reason;
+  }
 }
 </style>
