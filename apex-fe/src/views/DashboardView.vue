@@ -3,14 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { dashboardHome } from '../api/dashboard'
-import { startSyncJob } from '../api/sync'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 const router = useRouter()
 const HOME_CACHE_KEY = 'apex.dashboard.home.v13'
 const loading = ref(false)
 const refreshing = ref(false)
-const running = ref(false)
 const home = ref(null)
 const loadError = ref('')
 const marketDetailOpen = ref(false)
@@ -187,41 +185,24 @@ function fmtWeight(v) {
 
 async function load(opts = {}) {
   const silent = !!opts.silent
-  const forceRefresh = opts.forceRefresh !== false
   const hasCache = !!home.value
   if (!silent && !hasCache) loading.value = true
   refreshing.value = true
   loadError.value = ''
   try {
-    if (forceRefresh) {
-      try {
-        sessionStorage.removeItem(HOME_CACHE_KEY)
-      } catch {
-        // ignore
-      }
-    }
-    const res = await dashboardHome(undefined, '我的自选', forceRefresh)
+    const res = await dashboardHome(undefined, '我的自选', false)
     home.value = res.data
     writeHomeCache(res.data)
-    if (forceRefresh && !silent) {
-      const vol = res.data?.market?.indexVolumeText
-      const stance = res.data?.market?.stance
-      ElMessage.success(
-        vol
-          ? `行情已刷新 · ${stance || ''} · 沪深京 ${vol}`
-          : `行情已刷新 · ${stance || '简报已重建'}`,
-      )
-    }
   } catch (e) {
     if (!hasCache) {
       home.value = null
       const msg = e.message || '加载失败'
       loadError.value = msg.includes('404') || msg.includes('Not Found')
-        ? '看板接口未就绪：请重启后端后再刷新（/api/dashboard/home）'
+        ? '看板接口未就绪：请重启后端后重新进入看板（/api/dashboard/home）'
         : msg
       ElMessage.error(loadError.value)
     } else {
-      ElMessage.warning('刷新失败，仍展示本地缓存（可能过期）')
+      ElMessage.warning('数据更新失败，仍展示本地缓存（可能过期）')
     }
   } finally {
     loading.value = false
@@ -229,51 +210,13 @@ async function load(opts = {}) {
   }
 }
 
-const syncingClose = ref(false)
-
-/** 收盘一键：跳转同步中心看进度 */
-async function onCloseBundleSync() {
-  syncingClose.value = true
-  try {
-    const res = await startSyncJob({
-      taskType: 'CLOSE_BUNDLE',
-      types: 'INDUSTRY,CONCEPT,THEME',
-    })
-    ElMessage.success(`已启动一键收盘同步 #${res.data?.id || ''}`)
-    router.push('/sync')
-  } catch (e) {
-    ElMessage.error(e.message || '启动失败')
-  } finally {
-    syncingClose.value = false
-  }
-}
-
-async function onRunDecision() {
-  running.value = true
-  try {
-    let includeBj = false
-    try {
-      includeBj = JSON.parse(localStorage.getItem('apex.decision.buyFilters') || '{}').includeBj === true
-    } catch {
-      includeBj = false
-    }
-    const res = await startSyncJob({ taskType: 'DECISION', includeBj })
-    ElMessage.success(`智能决策已转入后台任务 #${res.data?.id || ''}`)
-    router.push('/sync')
-  } catch (e) {
-    ElMessage.error(e.message || '启动智能决策失败')
-  } finally {
-    running.value = false
-  }
-}
-
 onMounted(() => {
   const cached = readHomeCache()
   if (cached) {
     home.value = cached
-    load({ silent: true, forceRefresh: false })
+    load({ silent: true })
   } else {
-    load({ forceRefresh: false })
+    load()
   }
 })
 </script>
@@ -291,16 +234,6 @@ onMounted(() => {
           }}
         </p>
       </div>
-      <div class="actions">
-        <el-button type="primary" class="cta" :loading="running" @click="onRunDecision">
-          后台生成决策
-        </el-button>
-        <el-button type="success" plain :loading="syncingClose" @click="onCloseBundleSync">
-          一键收盘同步
-        </el-button>
-        <el-button plain @click="router.push('/sync')">同步中心</el-button>
-        <el-button plain :loading="refreshing" @click="load({ forceRefresh: true })">刷新行情</el-button>
-      </div>
     </header>
 
     <el-alert
@@ -312,36 +245,9 @@ onMounted(() => {
       :title="loadError"
     >
       <template #default>
-        看板数据依赖 <code>/api/dashboard/home</code>。重启后端后点「刷新」；指数/板块未同步时简报也会偏空。
+        看板数据依赖 <code>/api/dashboard/home</code>。重启后端后重新进入看板；数据任务统一在同步中心执行。
       </template>
     </el-alert>
-
-    <nav class="workflow-strip" aria-label="今日工作流">
-      <button type="button" class="wf-step" @click="router.push('/sync')">
-        <span class="wf-idx">1</span>
-        <span class="wf-label">同步数据</span>
-      </button>
-      <span class="wf-sep" aria-hidden="true" />
-      <button type="button" class="wf-step" @click="onRunDecision">
-        <span class="wf-idx">2</span>
-        <span class="wf-label">生成决策</span>
-      </button>
-      <span class="wf-sep" aria-hidden="true" />
-      <button type="button" class="wf-step" @click="router.push('/decision')">
-        <span class="wf-idx">3</span>
-        <span class="wf-label">看买卖清单</span>
-      </button>
-      <span class="wf-sep" aria-hidden="true" />
-      <button type="button" class="wf-step" @click="router.push('/observe')">
-        <span class="wf-idx">4</span>
-        <span class="wf-label">盯观察池</span>
-      </button>
-      <span class="wf-sep" aria-hidden="true" />
-      <button type="button" class="wf-step" @click="router.push('/paper')">
-        <span class="wf-idx">5</span>
-        <span class="wf-label">模拟执行</span>
-      </button>
-    </nav>
 
     <!-- ① 市场立场（始终占位，避免整块消失） -->
     <section
@@ -384,7 +290,7 @@ onMounted(() => {
               {{
                 market?.stanceReason
                   || (loadError
-                    ? '首页接口未返回市场简报，请先重启后端并刷新'
+                    ? '首页接口未返回市场简报，请先重启后端并重新进入看板'
                     : (loading || refreshing
                       ? '正在拉取市场简报…'
                       : '若长期空白，请先同步指数/板块/涨停'))
@@ -621,71 +527,112 @@ onMounted(() => {
               v-if="!loading && !refreshing"
               type="primary"
               size="small"
-              :loading="running"
-              @click="onRunDecision"
+              @click="router.push('/sync')"
             >
-              后台生成决策
+              去同步中心
             </el-button>
           </el-empty>
-          <el-table
-            v-else
-            :data="topBuys"
-            size="small"
-            class="dash-table"
-            empty-text="暂无买入建议"
-            stripe
-          >
-            <el-table-column prop="code" label="代码" width="100" class-name="code-col">
-              <template #default="{ row }">
-                <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
-                  {{ row.code }}
-                </button>
-              </template>
-            </el-table-column>
-            <el-table-column prop="name" label="名称" width="90" />
-            <el-table-column prop="strategyId" label="策略" width="56" />
-            <el-table-column label="评分" width="110">
-              <template #default="{ row }">
-                <ScoreBar :score="row.score" />
-              </template>
-            </el-table-column>
-            <el-table-column label="估值" width="88">
-              <template #default="{ row }">
-                <span class="muted">{{ row.valuationLabel || '-' }}</span>
-                <el-tag
-                  v-if="row.executableHint"
-                  size="small"
-                  type="success"
-                  effect="plain"
-                  style="margin-left: 4px"
-                >可执行</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="仓位" width="64">
-              <template #default="{ row }">
-                <span class="num">{{ fmtWeight(row.suggestedWeight) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="联动" min-width="88">
-              <template #default="{ row }">
-                <el-tag
-                  v-if="row.linkHint"
-                  size="small"
-                  effect="plain"
-                  :type="String(row.linkHint).includes('降权') ? 'danger' : 'success'"
-                >{{ row.linkHint }}</el-tag>
-                <span v-else class="muted">-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="主线" min-width="72">
-              <template #default="{ row }">
-                <el-tag v-if="row.mainlineMatch" size="small" type="warning" effect="light" round>
-                  {{ row.mainlineName || '匹配' }}
-                </el-tag>
-                <span v-else class="muted">-</span>
-              </template>
-            </el-table-column>
-          </el-table>
+          <template v-else>
+            <el-table
+              :data="topBuys"
+              size="small"
+              class="dash-table desktop-action-table"
+              empty-text="暂无买入建议"
+              stripe
+            >
+              <el-table-column prop="code" label="代码" width="100" class-name="code-col">
+                <template #default="{ row }">
+                  <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
+                    {{ row.code }}
+                  </button>
+                </template>
+              </el-table-column>
+              <el-table-column prop="name" label="名称" width="90" />
+              <el-table-column prop="strategyId" label="策略" width="56" />
+              <el-table-column label="评分" width="110">
+                <template #default="{ row }">
+                  <ScoreBar :score="row.score" />
+                </template>
+              </el-table-column>
+              <el-table-column label="估值" width="88">
+                <template #default="{ row }">
+                  <span class="muted">{{ row.valuationLabel || '-' }}</span>
+                  <el-tag
+                    v-if="row.executableHint"
+                    size="small"
+                    type="success"
+                    effect="plain"
+                    style="margin-left: 4px"
+                  >可执行</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="仓位" width="64">
+                <template #default="{ row }">
+                  <span class="num">{{ fmtWeight(row.suggestedWeight) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="联动" min-width="88">
+                <template #default="{ row }">
+                  <el-tag
+                    v-if="row.linkHint"
+                    size="small"
+                    effect="plain"
+                    :type="String(row.linkHint).includes('降权') ? 'danger' : 'success'"
+                  >{{ row.linkHint }}</el-tag>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="主线" min-width="72">
+                <template #default="{ row }">
+                  <el-tag v-if="row.mainlineMatch" size="small" type="warning" effect="light" round>
+                    {{ row.mainlineName || '匹配' }}
+                  </el-tag>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="mobile-action-list" aria-label="今日买入机会">
+              <p v-if="!topBuys.length" class="mobile-action-empty">暂无买入建议</p>
+              <button
+                v-for="row in topBuys"
+                :key="row.code"
+                type="button"
+                class="mobile-action-item"
+                @click="router.push(`/stock/${row.code}`)"
+              >
+                <span class="mobile-action-primary">
+                  <span class="mobile-stock">
+                    <strong>{{ row.code }}</strong>
+                    <span>{{ row.name || '-' }}</span>
+                  </span>
+                  <span class="mobile-score">
+                    <em>评分</em>
+                    <ScoreBar :score="row.score" />
+                  </span>
+                </span>
+                <span class="mobile-action-details">
+                  <span><em>策略</em><b>{{ row.strategyId || '-' }}</b></span>
+                  <span><em>估值</em><b>{{ row.valuationLabel || '-' }}</b></span>
+                  <span><em>仓位</em><b class="num">{{ fmtWeight(row.suggestedWeight) }}</b></span>
+                </span>
+                <span
+                  v-if="row.executableHint || row.linkHint || row.mainlineMatch"
+                  class="mobile-action-tags"
+                >
+                  <span v-if="row.executableHint" class="mobile-action-tag executable">可执行</span>
+                  <span
+                    v-if="row.linkHint"
+                    class="mobile-action-tag"
+                    :class="String(row.linkHint).includes('降权') ? 'negative' : 'positive'"
+                  >{{ row.linkHint }}</span>
+                  <span v-if="row.mainlineMatch" class="mobile-action-tag mainline">
+                    主线 · {{ row.mainlineName || '匹配' }}
+                  </span>
+                </span>
+              </button>
+            </div>
+          </template>
         </div>
       </section>
 
@@ -718,29 +665,69 @@ onMounted(() => {
             :description="loading || refreshing ? '卖点加载中…' : '持仓暂无卖点'"
             :image-size="56"
           />
-          <el-table v-else :data="topSells" size="small" class="dash-table" stripe>
-            <el-table-column prop="code" label="代码" width="100" class-name="code-col">
-              <template #default="{ row }">
-                <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
-                  {{ row.code }}
-                </button>
-              </template>
-            </el-table-column>
-            <el-table-column prop="name" label="名称" width="90" />
-            <el-table-column label="策略" width="72">
-              <template #default="{ row }">
-                <span :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
-                  {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
+          <template v-else>
+            <el-table
+              :data="topSells"
+              size="small"
+              class="dash-table desktop-action-table"
+              stripe
+            >
+              <el-table-column prop="code" label="代码" width="100" class-name="code-col">
+                <template #default="{ row }">
+                  <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
+                    {{ row.code }}
+                  </button>
+                </template>
+              </el-table-column>
+              <el-table-column prop="name" label="名称" width="90" />
+              <el-table-column label="策略" width="72">
+                <template #default="{ row }">
+                  <span :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
+                    {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="评分" width="100">
+                <template #default="{ row }">
+                  <ScoreBar :score="row.score" />
+                </template>
+              </el-table-column>
+              <el-table-column prop="exitRule" label="触发" min-width="120" show-overflow-tooltip />
+            </el-table>
+
+            <div class="mobile-action-list" aria-label="持仓卖出行动">
+              <button
+                v-for="row in topSells"
+                :key="row.code"
+                type="button"
+                class="mobile-action-item"
+                @click="router.push(`/stock/${row.code}`)"
+              >
+                <span class="mobile-action-primary">
+                  <span class="mobile-stock">
+                    <strong>{{ row.code }}</strong>
+                    <span>{{ row.name || '-' }}</span>
+                  </span>
+                  <span class="mobile-score">
+                    <em>评分</em>
+                    <ScoreBar :score="row.score" />
+                  </span>
                 </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="评分" width="100">
-              <template #default="{ row }">
-                <ScoreBar :score="row.score" />
-              </template>
-            </el-table-column>
-            <el-table-column prop="exitRule" label="触发" min-width="120" show-overflow-tooltip />
-          </el-table>
+                <span class="mobile-action-details sell-details">
+                  <span>
+                    <em>策略</em>
+                    <b :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
+                      {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
+                    </b>
+                  </span>
+                </span>
+                <span class="mobile-exit-rule">
+                  <em>触发</em>
+                  <span>{{ row.exitRule || row.reason || '-' }}</span>
+                </span>
+              </button>
+            </div>
+          </template>
         </div>
       </section>
     </div>
@@ -848,73 +835,6 @@ onMounted(() => {
 
 .dash-header .sub {
   margin-top: 6px;
-}
-
-.cta {
-  min-width: 132px;
-  font-weight: 600;
-}
-
-.workflow-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  background: var(--glass);
-}
-
-.wf-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  padding: 6px 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  color: var(--ink-soft);
-  font: inherit;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.wf-step:hover {
-  background: rgba(0, 113, 227, 0.08);
-  color: var(--accent);
-}
-
-.wf-idx {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--accent);
-}
-
-.wf-label {
-  font-size: 13px;
-  font-weight: 550;
-}
-
-.wf-sep {
-  width: 18px;
-  height: 1px;
-  background: var(--line-strong);
-  margin: 0 2px;
-}
-
-@media (max-width: 720px) {
-  .wf-sep {
-    display: none;
-  }
 }
 
 /* —— enter motion —— */
@@ -1627,6 +1547,10 @@ onMounted(() => {
   padding-right: 4px;
 }
 
+.mobile-action-list {
+  display: none;
+}
+
 .code-link {
   border: 0;
   background: transparent;
@@ -1944,6 +1868,203 @@ onMounted(() => {
   .count-date {
     margin-left: 0;
     width: 100%;
+  }
+}
+
+@media (max-width: 820px) {
+  .desktop-action-table {
+    display: none;
+  }
+
+  .mobile-action-list {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .mobile-action-item {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: 76px;
+    margin: 0;
+    padding: 14px 2px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background 0.15s ease;
+  }
+
+  .mobile-action-empty {
+    margin: 0;
+    padding: 28px 0;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .mobile-action-item:last-child {
+    border-bottom: 0;
+  }
+
+  .mobile-action-item:active {
+    background: rgba(0, 113, 227, 0.06);
+  }
+
+  .mobile-action-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .mobile-action-primary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 112px);
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .mobile-stock {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 3px 8px;
+    min-width: 0;
+  }
+
+  .mobile-stock strong {
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .mobile-stock > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--ink-soft);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .mobile-score {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .mobile-score > em,
+  .mobile-action-details em,
+  .mobile-exit-rule > em {
+    color: var(--muted);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .mobile-score :deep(.score-bar) {
+    min-width: 0;
+  }
+
+  .mobile-score :deep(.score-bar-track) {
+    min-width: 24px;
+  }
+
+  .mobile-action-details {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px 12px;
+    margin-top: 11px;
+  }
+
+  .mobile-action-details > span {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .mobile-action-details b {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  .mobile-action-details .risk-tag {
+    color: var(--warn);
+  }
+
+  .mobile-action-details.sell-details {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-action-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .mobile-action-tag {
+    max-width: 100%;
+    padding: 3px 6px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 10px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-action-tag.executable,
+  .mobile-action-tag.positive {
+    border-color: rgba(52, 199, 89, 0.2);
+    background: rgba(52, 199, 89, 0.08);
+    color: #248a3d;
+  }
+
+  .mobile-action-tag.negative {
+    border-color: rgba(255, 59, 48, 0.2);
+    background: rgba(255, 59, 48, 0.08);
+    color: var(--up);
+  }
+
+  .mobile-action-tag.mainline {
+    border-color: rgba(255, 159, 10, 0.22);
+    background: rgba(255, 159, 10, 0.09);
+    color: #9a5b00;
+  }
+
+  .mobile-exit-rule {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    min-width: 0;
+    margin-top: 9px;
+    padding: 8px 10px;
+    border-left: 2px solid rgba(255, 159, 10, 0.5);
+    background: rgba(255, 159, 10, 0.06);
+    color: var(--ink-soft);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .mobile-exit-rule > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 }
 
