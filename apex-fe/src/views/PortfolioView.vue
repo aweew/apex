@@ -1,8 +1,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, ArrowRight, MoreFilled } from '@element-plus/icons-vue'
 import { saveObserve } from '../api/observe'
 import { searchStock } from '../api/stock'
 import {
@@ -46,7 +47,9 @@ import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
+const detailLoading = ref(false)
 const refreshing = ref(false)
 const list = ref([])
 const includeArchived = ref(false)
@@ -58,6 +61,11 @@ const chartRef = ref(null)
 const industryPieRef = ref(null)
 const themePieRef = ref(null)
 const viewportWidth = ref(window.innerWidth)
+const isMobileViewport = computed(() => viewportWidth.value <= 820)
+const mobileDetailOpen = computed(() => {
+  const portfolioId = Number(route.query.portfolio)
+  return isMobileViewport.value && Number.isFinite(portfolioId) && portfolioId > 0
+})
 const showActionColumn = computed(() => resolveActionColumnVisible(viewportWidth.value))
 let chart = null
 let industryChart = null
@@ -532,6 +540,7 @@ async function loadDetail(id, silent = false) {
     renderDailyChart()
     return
   }
+  detailLoading.value = true
   try {
     const [dRes, dayRes] = await Promise.all([
       portfolioDetail(id),
@@ -548,16 +557,88 @@ async function loadDetail(id, silent = false) {
     renderDailyChart()
   } catch (e) {
     ElMessage.error(e.message || '加载详情失败')
+  } finally {
+    detailLoading.value = false
   }
 }
 
-function selectPortfolio(row) {
+async function selectPortfolio(row) {
   activeId.value = row.id
+  if (isMobileViewport.value) {
+    await router.push({
+      path: route.path,
+      query: { ...route.query, portfolio: String(row.id) },
+    })
+    await nextTick()
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+}
+
+async function closeMobileDetail() {
+  const query = { ...route.query }
+  delete query.portfolio
+  await router.replace({ path: route.path, query })
+}
+
+function handleMobileListAction(command) {
+  if (command === 'today-share') {
+    selectedIds.value = (list.value || []).map((row) => Number(row.id))
+    nextTick(() => openShare('today'))
+    return
+  }
+  if (command === 'refresh-all') {
+    onRefreshQuotesAll()
+    return
+  }
+  if (command === 'snapshot-all') {
+    onSnapshotAll()
+    return
+  }
+  if (command === 'holding') {
+    router.push('/holding')
+    return
+  }
+  if (command === 'refresh-list') loadList(true)
+}
+
+function handleMobileDetailAction(command) {
+  if (command === 'edit') {
+    if (activeSummary.value) openEditPf(activeSummary.value)
+    return
+  }
+  if (command === 'remove') {
+    if (activeSummary.value) onRemovePf(activeSummary.value)
+    return
+  }
+  if (command === 'refresh') {
+    onRefreshQuotes()
+    return
+  }
+  if (command === 'import') {
+    openImport()
+    return
+  }
+  if (command === 'snapshot') {
+    onSnapshot()
+    return
+  }
+  if (command === 'holding') router.push('/holding')
 }
 
 watch(activeId, (id) => {
   if (id) loadDetail(id)
 })
+
+watch(
+  () => route.query.portfolio,
+  (id) => {
+    const portfolioId = Number(id)
+    if (isMobileViewport.value && Number.isFinite(portfolioId) && portfolioId > 0) {
+      activeId.value = portfolioId
+    }
+  },
+  { immediate: true },
+)
 
 watch(includeArchived, () => loadList(true))
 
@@ -1202,35 +1283,60 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page" v-loading="loading || refreshing">
-    <header class="header">
+  <div
+    class="page portfolio-page"
+    :class="{ 'mobile-detail-open': mobileDetailOpen }"
+    v-loading="loading || detailLoading || refreshing"
+  >
+    <header v-if="!mobileDetailOpen" class="header portfolio-header">
       <div>
         <p class="eyebrow">灵枢 · Portfolio</p>
         <h1>组合</h1>
         <p>跟踪自己的或别人的实盘；详情区与「真实持仓」同风格，可导入与每日浮盈快照。</p>
       </div>
-      <div class="actions">
+      <div class="actions desktop-header-actions">
         <el-button type="primary" @click="openCreatePf">新建组合</el-button>
         <el-button plain :loading="refreshing" @click="onRefreshQuotesAll">刷新全部行情</el-button>
         <el-button plain :loading="snapshotting" @click="onSnapshotAll">全部打快照</el-button>
         <el-button plain @click="router.push('/holding')">真实持仓</el-button>
         <el-button text :loading="loading" @click="loadList(true)">刷新</el-button>
       </div>
+      <div class="mobile-header-actions">
+        <el-button type="primary" @click="openCreatePf">新建组合</el-button>
+        <el-dropdown trigger="click" placement="bottom-end" @command="handleMobileListAction">
+          <button type="button" class="portfolio-more-trigger" aria-label="组合更多操作" title="更多操作">
+            <el-icon><MoreFilled /></el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="today-share" :disabled="!list.length">今日战绩拼图</el-dropdown-item>
+              <el-dropdown-item command="refresh-all">刷新全部行情</el-dropdown-item>
+              <el-dropdown-item command="snapshot-all">全部打快照</el-dropdown-item>
+              <el-dropdown-item command="holding" divided>真实持仓</el-dropdown-item>
+              <el-dropdown-item command="refresh-list">刷新组合列表</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </header>
 
-    <div class="layout" :class="{ 'is-side-collapsed': sideCollapsed }">
-      <aside class="side" :class="{ collapsed: sideCollapsed }">
+    <div class="layout" :class="{ 'is-side-collapsed': sideCollapsed && !isMobileViewport }">
+      <aside
+        v-if="!isMobileViewport || !mobileDetailOpen"
+        class="side"
+        :class="{ collapsed: sideCollapsed && !isMobileViewport }"
+      >
         <div class="side-head">
-          <button type="button" class="side-toggle" :title="sideCollapsed ? '展开列表' : '折叠列表'" @click="toggleSide">
+          <button v-if="!isMobileViewport" type="button" class="side-toggle" :title="sideCollapsed ? '展开列表' : '折叠列表'" @click="toggleSide">
             {{ sideCollapsed ? '»' : '«' }}
           </button>
-          <template v-if="!sideCollapsed">
-            <span class="side-title">组合列表</span>
+          <template v-if="!sideCollapsed || isMobileViewport">
+            <span class="side-title">{{ isMobileViewport ? '我的组合' : '组合列表' }}</span>
             <el-checkbox v-model="includeArchived" size="small">含归档</el-checkbox>
           </template>
         </div>
-        <template v-if="!sideCollapsed">
-          <div class="side-select-bar">
+        <template v-if="!sideCollapsed || isMobileViewport">
+          <div v-if="!isMobileViewport" class="side-select-bar">
             <el-checkbox
               :model-value="list.length > 0 && selectedIds.length === list.length"
               :indeterminate="selectedIds.length > 0 && selectedIds.length < list.length"
@@ -1257,19 +1363,25 @@ onBeforeUnmount(() => {
             :key="row.id"
             type="button"
             class="pf-card"
-            :class="{ active: row.id === activeId, archived: row.status === 'ARCHIVED', picked: isSelected(row.id) }"
+            :class="{
+              active: !isMobileViewport && row.id === activeId,
+              archived: row.status === 'ARCHIVED',
+              picked: !isMobileViewport && isSelected(row.id),
+            }"
             @click="selectPortfolio(row)"
           >
             <div class="pf-top">
               <el-checkbox
+                v-if="!isMobileViewport"
                 :model-value="isSelected(row.id)"
                 @click.stop
                 @change="(v) => toggleSelect(row.id, v)"
               />
               <strong>{{ row.name }}</strong>
               <span v-if="row.isDefault" class="tag">默认</span>
+              <el-icon v-if="isMobileViewport" class="pf-card-arrow"><ArrowRight /></el-icon>
             </div>
-            <div class="pf-meta">
+            <div v-if="!isMobileViewport" class="pf-meta">
               <span>{{ row.positionCount || 0 }} 只</span>
             </div>
             <div class="pf-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
@@ -1282,13 +1394,13 @@ onBeforeUnmount(() => {
                 <em :class="Number(h.pctChg) >= 0 ? 'up' : 'down'">{{ fmtSignedPct(h.pctChg) }}</em>
               </span>
             </div>
-            <div class="pf-ops" @click.stop>
+            <div v-if="!isMobileViewport" class="pf-ops" @click.stop>
               <el-button link type="primary" @click="openEditPf(row)">编辑</el-button>
               <el-button link type="danger" :disabled="row.isDefault" @click="onRemovePf(row)">删除</el-button>
             </div>
           </button>
         </template>
-        <div v-else class="side-rail">
+        <div v-else-if="!isMobileViewport" class="side-rail">
           <button
             v-for="row in list"
             :key="'rail-' + row.id"
@@ -1303,7 +1415,28 @@ onBeforeUnmount(() => {
         </div>
       </aside>
 
-      <main ref="detailCaptureRef" class="main" v-if="detail">
+      <main v-if="detail && (!isMobileViewport || mobileDetailOpen)" ref="detailCaptureRef" class="main">
+        <div v-if="isMobileViewport && !sharingCapture" class="mobile-detail-nav">
+          <button type="button" class="mobile-back-button" @click="closeMobileDetail">
+            <el-icon><ArrowLeft /></el-icon>
+            <span>组合列表</span>
+          </button>
+          <el-dropdown trigger="click" placement="bottom-end" @command="handleMobileDetailAction">
+            <button type="button" class="portfolio-more-trigger" aria-label="组合详情更多操作" title="更多操作">
+              <el-icon><MoreFilled /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="edit">编辑组合</el-dropdown-item>
+                <el-dropdown-item command="refresh" :disabled="!rows.length">刷新行情和日线</el-dropdown-item>
+                <el-dropdown-item command="import">导入持仓</el-dropdown-item>
+                <el-dropdown-item command="snapshot">打今日快照</el-dropdown-item>
+                <el-dropdown-item v-if="detail.isDefault" command="holding" divided>打开持仓页</el-dropdown-item>
+                <el-dropdown-item v-if="!detail.isDefault" command="remove" divided>删除组合</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
         <div v-show="sharingCapture" class="share-brand-strip">
           <BrandShareLockup :subtitle="detail.isDefault ? '真实持仓' : '组合跟踪'" :size="44" />
         </div>
@@ -1317,7 +1450,7 @@ onBeforeUnmount(() => {
               <template v-if="detail.note">{{ detail.note }}</template>
             </p>
           </div>
-          <div class="actions">
+          <div class="actions detail-actions">
             <el-button type="primary" @click="openCreate">添加持仓</el-button>
             <el-button plain :loading="refreshing" :disabled="!rows.length" @click="onRefreshQuotes">
               刷新当前行情+日线
@@ -1753,7 +1886,7 @@ onBeforeUnmount(() => {
         />
       </main>
 
-      <main v-else class="main empty-main">
+      <main v-else-if="!isMobileViewport" class="main empty-main">
         <h3>选择或新建一个组合</h3>
         <p class="muted">默认「我的持仓」会从现有真实持仓自动迁移</p>
       </main>
@@ -1922,10 +2055,98 @@ onBeforeUnmount(() => {
   position: static;
 }
 
+.mobile-header-actions,
+.mobile-detail-nav {
+  display: none;
+}
+
 @media (max-width: 820px) {
   .floating-share-dropdown {
     right: 16px;
     bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .portfolio-page.mobile-detail-open .floating-share-dropdown {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .portfolio-header {
+    gap: 12px;
+  }
+
+  .portfolio-header > div:first-child p:last-child {
+    display: none;
+  }
+
+  .desktop-header-actions {
+    display: none !important;
+  }
+
+  .mobile-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .mobile-header-actions > .el-button {
+    min-width: 112px;
+    margin: 0;
+  }
+
+  .portfolio-more-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+
+  .portfolio-more-trigger .el-icon {
+    font-size: 20px;
+  }
+
+  .mobile-detail-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .mobile-back-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 44px;
+    padding: 0 8px 0 2px;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .mobile-back-button .el-icon {
+    font-size: 18px;
+  }
+
+  .portfolio-page.mobile-detail-open .detail-actions {
+    display: none;
+  }
+
+  .portfolio-page.mobile-detail-open .detail-header {
+    margin-bottom: 12px;
   }
 }
 
@@ -2988,6 +3209,143 @@ onBeforeUnmount(() => {
   }
   .theme-bar-mv {
     display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  .layout,
+  .layout.is-side-collapsed {
+    display: block;
+  }
+
+  .side,
+  .side.collapsed {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .side-head {
+    margin-bottom: 8px;
+    padding: 0 2px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .side-title {
+    font-size: 16px;
+  }
+
+  .pf-card {
+    margin: 0;
+    padding: 15px 2px 14px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .pf-card:last-child {
+    border-bottom: 0;
+  }
+
+  .pf-card:active {
+    background: var(--fill);
+  }
+
+  .pf-card:focus-visible,
+  .portfolio-more-trigger:focus-visible,
+  .mobile-back-button:focus-visible {
+    outline: 2px solid var(--el-color-primary-light-5);
+    outline-offset: 2px;
+  }
+
+  .pf-card.archived {
+    opacity: 0.58;
+  }
+
+  .pf-top {
+    gap: 6px;
+    padding-right: 0;
+  }
+
+  .pf-top strong {
+    overflow: hidden;
+    font-size: 17px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pf-card-arrow {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 18px;
+  }
+
+  .pf-pnl {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-top: 8px;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pf-pnl small {
+    margin-left: 0;
+    font-size: 13px;
+  }
+
+  .pf-tops {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .pf-top-chip {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px;
+    overflow: hidden;
+    padding: 6px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .pf-top-chip em {
+    flex: 0 0 auto;
+  }
+
+  .mobile-detail-open .main {
+    width: 100%;
+    animation: portfolio-mobile-view-in 0.18s ease-out;
+  }
+
+  .mobile-detail-open .detail-title h2 {
+    font-size: 24px;
+  }
+}
+
+@keyframes portfolio-mobile-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-detail-open .main {
+    animation: none;
   }
 }
 </style>
