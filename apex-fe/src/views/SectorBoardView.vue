@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { ArrowDown, Refresh, Search, SortDown, SortUp } from '@element-plus/icons-vue'
 import {
   fetchSectorBoard,
   fetchSectorConstituents,
@@ -34,6 +35,7 @@ const rotation = ref(null)
 const rotationLoading = ref(false)
 const availableDateSet = ref(new Set())
 const nameFilter = ref('')
+const mobileSortExpanded = ref(false)
 
 const drawerOpen = ref(false)
 const drawerLoading = ref(false)
@@ -59,9 +61,36 @@ const TAB_META = {
 }
 
 const TYPE_LABEL = { INDUSTRY: '行业', CONCEPT: '概念', THEME: '题材' }
+const MOBILE_PRIMARY_SORTS = [
+  { label: '涨跌', fullLabel: '涨跌幅', value: 'pctChg' },
+  { label: '3日', fullLabel: '3日涨幅', value: 'pctChg3d' },
+  { label: '5日', fullLabel: '5日涨幅', value: 'pctChg5d' },
+]
+const MOBILE_MORE_SORTS = [
+  { label: '涨停数', fullLabel: '涨停家数', value: 'limitUpCount' },
+  { label: '连板', fullLabel: '连板高度', value: 'maxLianban' },
+  { label: '净流入', fullLabel: '净流入', value: 'netInflow' },
+]
+const mobileSortLabel = computed(() => {
+  const currentSort = [...MOBILE_PRIMARY_SORTS, ...MOBILE_MORE_SORTS]
+    .find((option) => option.value === sortBy.value)
+  return currentSort?.fullLabel || '涨跌幅'
+})
+const mobileMoreSortActive = computed(() => {
+  return MOBILE_MORE_SORTS.some((option) => option.value === sortBy.value)
+})
 
 function syncViewportWidth() {
   viewportWidth.value = window.innerWidth
+}
+
+function selectMobileSort(value) {
+  sortBy.value = value
+  mobileSortExpanded.value = false
+}
+
+function toggleSortOrder() {
+  order.value = order.value === 'desc' ? 'asc' : 'desc'
 }
 
 const items = computed(() => {
@@ -367,7 +396,7 @@ onBeforeUnmount(() => {
         <p>{{ snapshotNotice || board?.message || '主线强弱 · 涨停家数 · 联动决策候选' }}</p>
       </div>
       <div class="actions sector-actions">
-        <div class="sector-filters">
+        <div class="sector-filters sector-desktop-filters">
           <el-date-picker
             v-model="tradeDate"
             type="date"
@@ -398,8 +427,105 @@ onBeforeUnmount(() => {
             style="width: 140px"
           />
         </div>
-        <div class="sector-shortcuts">
+        <div class="sector-shortcuts sector-desktop-shortcuts">
           <el-button type="primary" :loading="refreshing" @click="onRefresh">刷新</el-button>
+          <el-button plain @click="router.push('/limit-up')">涨停</el-button>
+          <el-button plain @click="router.push('/decision')">决策</el-button>
+        </div>
+
+        <section class="sector-mobile-filters" aria-label="板块筛选">
+          <div class="mobile-filter-primary">
+            <el-date-picker
+              v-model="tradeDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="交易日"
+              aria-label="选择交易日"
+              :clearable="false"
+              :disabled-date="disableUnavailableDate"
+            />
+            <el-input
+              v-model="nameFilter"
+              clearable
+              :prefix-icon="Search"
+              aria-label="筛选板块名称"
+              placeholder="搜索板块"
+            />
+          </div>
+
+          <div class="mobile-sort-control">
+            <span class="mobile-filter-label">排序</span>
+            <div class="mobile-sort-row">
+              <div class="mobile-sort-strip" role="group" aria-label="排序指标">
+                <button
+                  v-for="option in MOBILE_PRIMARY_SORTS"
+                  :key="option.value"
+                  type="button"
+                  class="mobile-sort-chip"
+                  :class="{ 'is-active': sortBy === option.value }"
+                  :aria-pressed="sortBy === option.value"
+                  @click="selectMobileSort(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+                <button
+                  type="button"
+                  class="mobile-sort-chip mobile-sort-more"
+                  :class="{ 'is-active': mobileMoreSortActive }"
+                  :aria-expanded="mobileSortExpanded"
+                  aria-controls="mobile-sector-more-sorts"
+                  @click="mobileSortExpanded = !mobileSortExpanded"
+                >
+                  更多
+                  <el-icon :class="{ 'is-open': mobileSortExpanded }"><ArrowDown /></el-icon>
+                </button>
+              </div>
+              <button
+                type="button"
+                class="mobile-order-toggle"
+                :aria-label="order === 'desc' ? '切换为升序' : '切换为降序'"
+                :title="order === 'desc' ? '当前降序' : '当前升序'"
+                @click="toggleSortOrder"
+              >
+                <el-icon><SortDown v-if="order === 'desc'" /><SortUp v-else /></el-icon>
+              </button>
+            </div>
+            <div
+              v-show="mobileSortExpanded"
+              id="mobile-sector-more-sorts"
+              class="mobile-sort-overflow"
+              role="group"
+              aria-label="更多排序指标"
+            >
+              <button
+                v-for="option in MOBILE_MORE_SORTS"
+                :key="option.value"
+                type="button"
+                class="mobile-sort-chip"
+                :class="{ 'is-active': sortBy === option.value }"
+                :aria-pressed="sortBy === option.value"
+                @click="selectMobileSort(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+
+          <div class="mobile-filter-summary" aria-live="polite">
+            <span><b>{{ items.length }}</b> 个板块</span>
+            <span>{{ mobileSortLabel }} · {{ order === 'desc' ? '降序' : '升序' }}</span>
+          </div>
+        </section>
+
+        <div class="mobile-sector-shortcuts">
+          <el-button
+            class="mobile-refresh-button"
+            :icon="Refresh"
+            :loading="refreshing"
+            aria-label="刷新板块行情"
+            title="刷新板块行情"
+            @click="onRefresh"
+          />
           <el-button plain @click="router.push('/limit-up')">涨停</el-button>
           <el-button plain @click="router.push('/decision')">决策</el-button>
         </div>
@@ -632,6 +758,11 @@ onBeforeUnmount(() => {
 
 .sector-actions {
   justify-content: flex-end;
+}
+
+.sector-mobile-filters,
+.mobile-sector-shortcuts {
+  display: none;
 }
 
 .sector-shortcuts :deep(.el-button + .el-button) {
@@ -1085,6 +1216,10 @@ onBeforeUnmount(() => {
     padding: 12px 36px 12px 12px;
   }
 
+  .mainline-item::after {
+    top: 26px;
+  }
+
   .mainline-item .rank {
     grid-area: rank;
   }
@@ -1105,7 +1240,7 @@ onBeforeUnmount(() => {
     grid-area: reason;
     padding-top: 7px;
     border-top: 1px solid rgba(20, 32, 51, 0.065);
-    overflow: visible;
+    overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
@@ -1114,30 +1249,206 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 560px) {
+  .sector-header {
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
   .sector-header > div:first-child {
     width: 100%;
   }
 
-  .sector-filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .sector-header .eyebrow {
+    display: none;
   }
 
-  .sector-filters :deep(.el-input__wrapper) {
-    min-height: 42px;
+  .sector-header h1 {
+    font-size: 24px;
+  }
+
+  .sector-header > div:first-child > p:last-child {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+
+  .sector-actions {
+    width: 100%;
+  }
+
+  .sector-desktop-filters,
+  .sector-desktop-shortcuts {
+    display: none;
+  }
+
+  .sector-mobile-filters {
+    display: grid;
+    gap: 10px;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--glass-border);
     border-radius: 8px;
+    background: var(--glass-strong);
+    box-shadow: var(--shadow-soft);
   }
 
-  .sector-shortcuts {
+  .mobile-filter-primary {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 8px;
+  }
+
+  .mobile-filter-primary :deep(.el-date-editor),
+  .mobile-filter-primary :deep(.el-input) {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .mobile-filter-primary :deep(.el-input__wrapper) {
+    min-height: 44px;
+    border-radius: 7px;
+    box-shadow: 0 0 0 1px var(--line) inset;
+  }
+
+  .mobile-filter-primary :deep(.el-input__wrapper.is-focus) {
+    box-shadow: 0 0 0 1px var(--accent) inset;
+  }
+
+  .mobile-sort-control {
+    display: grid;
+    gap: 6px;
+  }
+
+  .mobile-filter-label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .mobile-sort-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 8px;
+  }
+
+  .mobile-sort-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+    min-width: 0;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper-deep);
+  }
+
+  .mobile-sort-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 5px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--slate);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .mobile-sort-chip.is-active {
+    background: var(--glass-strong);
+    color: var(--accent);
+    box-shadow: 0 1px 4px rgba(20, 32, 51, 0.1);
+  }
+
+  .mobile-sort-more .el-icon {
+    transition: transform 0.2s ease;
+  }
+
+  .mobile-sort-more .el-icon.is-open {
+    transform: rotate(180deg);
+  }
+
+  .mobile-order-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    align-self: center;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--glass-strong);
+    color: var(--accent);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .mobile-order-toggle .el-icon {
+    font-size: 19px;
+  }
+
+  .mobile-sort-chip:active,
+  .mobile-order-toggle:active {
+    background: var(--fill);
+  }
+
+  .mobile-sort-chip:focus-visible,
+  .mobile-order-toggle:focus-visible {
+    outline: 3px solid rgba(0, 113, 227, 0.2);
+    outline-offset: 1px;
+  }
+
+  .mobile-sort-overflow {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding-top: 2px;
+  }
+
+  .mobile-sort-overflow .mobile-sort-chip {
+    border: 1px solid var(--line);
+  }
+
+  .mobile-filter-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 30px;
+    padding-top: 7px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .mobile-filter-summary b {
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mobile-sector-shortcuts {
+    display: grid;
+    grid-template-columns: 44px repeat(2, minmax(0, 1fr));
+    gap: 8px;
     width: 100%;
   }
 
-  .sector-shortcuts :deep(.el-button) {
+  .mobile-sector-shortcuts :deep(.el-button) {
     width: 100%;
-    min-height: 42px;
+    min-height: 44px;
     margin: 0;
     border-radius: 8px;
+  }
+
+  .mobile-sector-shortcuts .mobile-refresh-button {
+    padding: 0;
   }
 
   .rotation {
@@ -1173,10 +1484,6 @@ onBeforeUnmount(() => {
     margin-bottom: 20px;
   }
 
-  .mainline-item {
-    min-height: 116px;
-  }
-
   .mainline-item:hover {
     box-shadow: 0 2px 10px rgba(20, 32, 51, 0.035);
     transform: none;
@@ -1189,13 +1496,13 @@ onBeforeUnmount(() => {
   }
 
   .mainline-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
+    align-items: center;
+    flex-direction: row;
+    gap: 6px;
   }
 
   .mainline-name {
-    width: 100%;
+    flex: 1;
   }
 
   .mainline-change {
