@@ -12,11 +12,11 @@ import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.indicator.BenchmarkBarLoader;
-import com.awe.apex.quant.indicator.BenchmarkBarLoader;
 import com.awe.apex.quant.indicator.RelativeStrengthUtils;
 import com.awe.apex.quant.market.IntradayQuoteClient;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IStockService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -146,10 +147,10 @@ public class StockServiceImpl implements IStockService {
                     .build();
         }
 
-        List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+        List<BarDaily> bars = new ArrayList<>(barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
                 .eq(BarDaily::getCode, pure)
                 .orderByDesc(BarDaily::getTradeDate)
-                .last("limit " + limit));
+                .last("limit " + limit)));
         bars.sort((a, b) -> a.getTradeDate().compareTo(b.getTradeDate()));
 
         BigDecimal rs20 = null;
@@ -164,8 +165,23 @@ public class StockServiceImpl implements IStockService {
             // 相对强度失败不影响详情
         }
 
-        String note = bars.isEmpty()
-                ? "当前仅展示本地数据；暂无日线，请点击「同步日线」落库后再看K线。过去表现不代表未来收益。"
+        LocalDate lastBarDate = bars.isEmpty() ? null : bars.get(bars.size() - 1).getTradeDate();
+        LocalDate expectedTradeDate = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
+        String barStatus = "READY";
+        String missingDataReason = null;
+        if (bars.isEmpty()) {
+            barStatus = "EMPTY";
+            missingDataReason = "本地暂无日线，需补齐历史行情后才能计算K线指标。";
+        } else if (lastBarDate.isBefore(expectedTradeDate)) {
+            barStatus = "STALE";
+            missingDataReason = "日线仅截至 " + lastBarDate + "，最新交易日 " + expectedTradeDate + " 尚未同步。";
+        } else if (bars.size() < 60) {
+            barStatus = "INSUFFICIENT";
+            missingDataReason = "本地仅 " + bars.size() + " 根日线，少于技术分析所需的 60 根。";
+        }
+        boolean needSyncBars = !"READY".equals(barStatus);
+        String note = needSyncBars
+                ? missingDataReason + " 个股页会自动尝试补齐一次，也可手动点击「同步数据」。"
                 : "数据来自本地库（stock_basic / bar_daily）。点「刷新行情」可更新快照。过去表现不代表未来收益。";
         return StockDetailResp.builder()
                 .basic(basic)
@@ -173,7 +189,10 @@ public class StockServiceImpl implements IStockService {
                 .rs20VsHs300(rs20)
                 .rs60VsHs300(rs60)
                 .volumeRatio(volumeRatio)
-                .needSyncBars(bars.size() < 30)
+                .needSyncBars(needSyncBars)
+                .barStatus(barStatus)
+                .lastBarDate(lastBarDate)
+                .missingDataReason(missingDataReason)
                 .barCount(bars.size())
                 .note(note)
                 .build();

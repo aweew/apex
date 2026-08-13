@@ -4,6 +4,8 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -50,8 +52,30 @@ public final class ProcessIoUtils {
     public static boolean waitOrKill(Process process, long timeoutSec) throws InterruptedException {
         boolean finished = process.waitFor(timeoutSec, TimeUnit.SECONDS);
         if (!finished) {
-            process.destroyForcibly();
+            destroyProcessTree(process);
         }
         return finished;
+    }
+
+    /**
+     * 强制终止进程及其全部后代，避免 Python 子进程在父进程退出后继续占用资源。
+     *
+     * @param process 目标进程
+     */
+    public static void destroyProcessTree(Process process) {
+        if (process == null) {
+            return;
+        }
+        List<ProcessHandle> handles = new ArrayList<>();
+        process.toHandle().descendants().forEach(handles::add);
+        for (int index = handles.size() - 1; index >= 0; index--) {
+            ProcessHandle handle = handles.get(index);
+            if (handle.isAlive()) {
+                handle.destroyForcibly();
+            }
+        }
+        if (process.isAlive()) {
+            process.destroyForcibly();
+        }
     }
 }

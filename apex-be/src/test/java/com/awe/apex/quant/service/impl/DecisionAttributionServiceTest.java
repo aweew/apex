@@ -5,6 +5,7 @@ import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.DailyActionMapper;
+import com.awe.apex.quant.mapper.DecisionOutcomeMapper;
 import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
@@ -33,6 +34,7 @@ class DecisionAttributionServiceTest {
     private final BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);
     private final MarketBriefingSnapshotMapper marketBriefingSnapshotMapper =
             mock(MarketBriefingSnapshotMapper.class);
+    private final DecisionOutcomeMapper decisionOutcomeMapper = mock(DecisionOutcomeMapper.class);
 
     @BeforeAll
     static void initTableInfo() {
@@ -46,6 +48,8 @@ class DecisionAttributionServiceTest {
         ReflectionTestUtils.setField(service, "dailyActionMapper", dailyActionMapper);
         ReflectionTestUtils.setField(service, "barDailyMapper", barDailyMapper);
         ReflectionTestUtils.setField(service, "marketBriefingSnapshotMapper", marketBriefingSnapshotMapper);
+        ReflectionTestUtils.setField(service, "decisionOutcomeMapper", decisionOutcomeMapper);
+        when(decisionOutcomeMapper.selectStrategyPerformance()).thenReturn(List.of());
     }
 
     @Test

@@ -39,4 +39,16 @@ class DecisionServiceModeTest {
         verify(runManager).completeUnpublished(run, "GREEN", "完成");
         verify(publisher, never()).publish(run, List.of(), "GREEN", "完成");
     }
+
+    @Test
+    void redDataCompletesWithoutPublishingActions() {
+        DecisionContext context = DecisionContext.builder().mode(DecisionMode.LIVE).build();
+        DecisionRun run = DecisionRun.builder().id(1L).build();
+        DecisionTodayResp response = DecisionTodayResp.builder().items(List.of()).message("完成").build();
+
+        service.finishRun(context, run, response, "RED");
+
+        verify(runManager).completeUnpublished(run, "RED", response.getMessage());
+        verify(publisher, never()).publish(run, List.of(), "RED", response.getMessage());
+    }
 }

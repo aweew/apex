@@ -42,4 +42,19 @@ class ProcessIoUtilsTest {
         assertTrue(ProcessIoUtils.waitOrKill(process, 10));
         assertEquals(0, process.exitValue());
     }
+
+    @Test
+    void destroyProcessTree_stopsParentAndChild() throws Exception {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (os.contains("win")) {
+            return;
+        }
+        Process process = new ProcessBuilder("sh", "-c", "sleep 30 & wait").start();
+        Thread.sleep(100);
+
+        ProcessIoUtils.destroyProcessTree(process);
+
+        assertTrue(process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(process.toHandle().descendants().noneMatch(ProcessHandle::isAlive));
+    }
 }

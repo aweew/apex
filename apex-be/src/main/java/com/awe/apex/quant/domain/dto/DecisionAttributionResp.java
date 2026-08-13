@@ -47,6 +47,11 @@ public class DecisionAttributionResp {
     private List<DecisionAttrBucket> bySellStrategy;
 
     /**
+     * 成熟五日超额表现（近一年；只统计正式发布的买入建议）
+     */
+    private List<DecisionStrategyPerformance> matureStrategyPerformance;
+
+    /**
      * 说明
      */
     private String message;

@@ -8,6 +8,7 @@ import com.awe.apex.quant.ai.AiChatProperties;
 import com.awe.apex.quant.ai.KimiChatClient;
 import com.awe.apex.quant.decision.DecisionContext;
 import com.awe.apex.quant.decision.DecisionActionPublisher;
+import com.awe.apex.quant.decision.DecisionDataReadiness;
 import com.awe.apex.quant.decision.DecisionFeature;
 import com.awe.apex.quant.decision.DecisionFeatureBuilder;
 import com.awe.apex.quant.decision.DecisionFeatureInput;
@@ -39,6 +40,7 @@ import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionPortfolioHolding;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.DecisionStrategyPerformance;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
 import com.awe.apex.quant.domain.dto.LimitUpLadderResp;
 import com.awe.apex.quant.domain.dto.LimitUpStockItem;
@@ -69,6 +71,7 @@ import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.DailyActionMapper;
 import com.awe.apex.quant.mapper.DecisionRunMapper;
+import com.awe.apex.quant.mapper.DecisionOutcomeMapper;
 import com.awe.apex.quant.mapper.DecisionPortfolioSnapshotMapper;
 import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
@@ -204,6 +207,9 @@ public class DecisionServiceImpl implements IDecisionService {
     private DecisionPerformanceCalibrator performanceCalibrator;
 
     @Resource
+    private DecisionOutcomeMapper decisionOutcomeMapper;
+
+    @Resource
     private KimiChatClient kimiChatClient;
 
     @Resource
@@ -249,7 +255,10 @@ public class DecisionServiceImpl implements IDecisionService {
 
     void finishRun(DecisionContext context, DecisionRun run,
                    DecisionTodayResp response, String dataLevel) {
-        if (context.getMode() == DecisionMode.SHADOW) {
+        if (context.getMode() == DecisionMode.SHADOW || !DecisionDataReadiness.canPublish(dataLevel)) {
+            if (!DecisionDataReadiness.canPublish(dataLevel)) {
+                response.setMessage(response.getMessage() + "；市场关键数据未就绪，本次仅保留未发布运行记录");
+            }
             decisionRunManager.completeUnpublished(run, dataLevel, response.getMessage());
             return;
         }
@@ -1885,6 +1894,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .byMainline(List.of())
                     .byStance(List.of())
                     .bySellStrategy(List.of())
+                    .matureStrategyPerformance(List.of())
                     .message("暂无决策记录，请先启动后台生成决策")
                     .build();
         }
@@ -1951,6 +1961,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 .byMainline(toBuckets(byMl))
                 .byStance(toBuckets(byStance))
                 .bySellStrategy(toBuckets(bySellStrategy))
+                .matureStrategyPerformance(decisionOutcomeMapper.selectStrategyPerformance())
                 .message("近 " + dates.size() + " 个决策日 · 买 " + buys.size()
                         + " / 卖 " + sells.size() + " · 按次日涨跌归因（缺日线样本不计入均值）")
                 .build();

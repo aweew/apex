@@ -367,7 +367,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
         Process process = runningProcesses.get(jobId);
         if (Objects.nonNull(process) && process.isAlive()) {
-            process.destroyForcibly();
+            ProcessIoUtils.destroyProcessTree(process);
         }
         Future<?> future = runningFutures.get(jobId);
         if (Objects.nonNull(future)) {
@@ -410,7 +410,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         for (Map.Entry<Long, Process> entry : runningProcesses.entrySet()) {
             Process p = entry.getValue();
             if (Objects.nonNull(p) && p.isAlive()) {
-                p.destroyForcibly();
+                ProcessIoUtils.destroyProcessTree(p);
             }
         }
         executor.shutdownNow();
@@ -453,15 +453,22 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             syncJobMapper.updateById(job);
 
-            // 独立线程 drain，避免与任务线程池互相占坑导致管道堵死
+            // 独立线程逐行写入进度和日志，避免长脚本结束前无可观测信息。
             Charset charset = detectCharset();
             Process drainProcess = process;
+            SyncJob runningJob = job;
             Thread drainThread = new Thread(() -> {
-                try {
-                    String text = ProcessIoUtils.readAndDrain(drainProcess.getInputStream(), charset, LOG_MAX);
-                    if (StringUtils.isNotBlank(text)) {
+                try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(drainProcess.getInputStream(), charset))) {
+                    String line;
+                    long lineNo = 0;
+                    while ((line = reader.readLine()) != null) {
+                        lineNo++;
                         synchronized (logBuf) {
-                            logBuf.append(text);
+                            appendLine(logBuf, line);
+                        }
+                        if (!cancelled.get()) {
+                            updateProgressFromLine(runningJob, line, lineNo);
+                            syncJobMapper.updateById(runningJob);
                         }
                     }
                 } catch (Exception ex) {
@@ -474,7 +481,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             long timeoutSec = Math.max(spec.getTimeoutSec(), 60);
             boolean finished = ProcessIoUtils.waitOrKill(process, timeoutSec);
             try {
-                drainThread.join(Math.min(Math.max(timeoutSec, 60), 600) * 1000L);
+                drainThread.join(10000L);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             }
@@ -484,7 +491,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             try {
                 exit = process.exitValue();
             } catch (IllegalThreadStateException ex) {
-                process.destroyForcibly();
+                ProcessIoUtils.destroyProcessTree(process);
                 exit = process.waitFor();
             }
             // 按行刷进度（日志已在 drain 线程写入）
@@ -534,7 +541,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             if (Objects.nonNull(process)) {
                 try {
                     if (process.isAlive()) {
-                        process.destroyForcibly();
+                        ProcessIoUtils.destroyProcessTree(process);
                     }
                     exit = process.exitValue();
                 } catch (Exception ignored) {

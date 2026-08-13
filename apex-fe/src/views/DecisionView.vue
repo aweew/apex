@@ -1047,6 +1047,23 @@ onBeforeUnmount(() => {
               </el-table-column>
             </el-table>
           </div>
+          <div>
+            <h4>成熟五日超额</h4>
+            <el-table :data="attribution.matureStrategyPerformance || []" size="small" stripe empty-text="样本积累中">
+              <el-table-column prop="strategyId" label="策略" width="80" />
+              <el-table-column prop="sampleCount" label="样本" width="60" />
+              <el-table-column label="超额均%" width="90">
+                <template #default="{ row }">
+                  <span :class="Number(row.avgExcess5d) > 0 ? 'up' : Number(row.avgExcess5d) < 0 ? 'down' : ''">
+                    {{ row.avgExcess5d == null ? '-' : (Number(row.avgExcess5d) * 100).toFixed(2) + '%' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="胜率" width="70">
+                <template #default="{ row }">{{ row.winRate5d == null ? '-' : (Number(row.winRate5d) * 100).toFixed(0) + '%' }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
         </div>
       </el-collapse-item>
 

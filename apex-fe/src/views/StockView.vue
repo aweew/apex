@@ -24,6 +24,8 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const syncingBars = ref(false)
+const autoRepairingBars = ref(false)
+const repairedCodes = new Set()
 const fundLoading = ref(false)
 const profileLoading = ref(false)
 const profileRefreshing = ref(false)
@@ -1414,6 +1416,7 @@ async function load(refreshQuote = false) {
   try {
     const res = await fetchStockDetail(code.value.trim(), BAR_LIMIT, false)
     applyDetail(res.data)
+    await repairMissingBarsOnOpen(res.data)
     await loadFundamental()
     // 静默拉概况：回填东财二级行业到 meta，并同步 stock_basic.industry
     loadProfile(false).then(() => {
@@ -1512,6 +1515,26 @@ function applyDetail(data) {
   rs60.value = data.rs60VsHs300
   volumeRatio.value = data.volumeRatio
   refreshChart()
+}
+
+async function repairMissingBarsOnOpen(detail) {
+  const pure = code.value.trim()
+  if (!detail?.needSyncBars || !pure || repairedCodes.has(pure)) return
+  repairedCodes.add(pure)
+  autoRepairingBars.value = true
+  try {
+    const res = await syncBars({ codes: [pure] })
+    await syncStockBasic(pure)
+    const refreshed = await fetchStockDetail(pure, BAR_LIMIT, false)
+    applyDetail(refreshed.data)
+    if (!refreshed.data?.needSyncBars) {
+      ElMessage.success(`已补齐 ${res.data?.barCount ?? 0} 根日线`)
+    }
+  } catch (error) {
+    console.warn('个股详情自动补齐日线失败', error)
+  } finally {
+    autoRepairingBars.value = false
+  }
 }
 
 async function syncStockData() {
@@ -1733,7 +1756,7 @@ function dash(v) {
         <p class="stock-note">{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>
       <div class="actions">
-        <el-button type="primary" :loading="syncingBars" @click="syncStockData">同步数据</el-button>
+        <el-button type="primary" :loading="syncingBars || autoRepairingBars" @click="syncStockData">同步数据</el-button>
         <el-button type="warning" plain @click="activeTab = 'analysis'">综合研判</el-button>
         <el-button plain @click="router.push('/decision')">决策</el-button>
         <el-button plain @click="activeTab = 'valuation'">估值</el-button>
@@ -1793,7 +1816,7 @@ function dash(v) {
       type="warning"
       :closable="false"
       show-icon
-      :title="`本地仅 ${barCount} 根日线，建议同步补齐后再做指标/回测`"
+      :title="note || `本地仅 ${barCount} 根日线，建议同步补齐后再做指标/回测`"
     />
 
     <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">

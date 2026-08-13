@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -53,6 +54,21 @@ public class StockDetailResp {
      * 是否建议同步日线（本地不足）
      */
     private Boolean needSyncBars;
+
+    /**
+     * 日线状态：READY / INSUFFICIENT / STALE / EMPTY
+     */
+    private String barStatus;
+
+    /**
+     * 本地最后日线日期
+     */
+    private LocalDate lastBarDate;
+
+    /**
+     * 缺失或过期原因
+     */
+    private String missingDataReason;
 
     /**
      * 数据说明
