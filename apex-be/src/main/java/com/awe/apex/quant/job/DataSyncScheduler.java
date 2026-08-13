@@ -16,6 +16,7 @@ import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.INewsService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.ISectorBoardService;
+import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IWatchlistService;
 
 import java.time.LocalDate;
@@ -63,6 +64,35 @@ public class DataSyncScheduler {
 
     @Resource
     private IPortfolioService portfolioService;
+
+    @Resource
+    private IObservePoolService observePoolService;
+
+    /**
+     * 交易时段按本地行情快照重估观察池，不依赖外部同步开关
+     */
+    @Scheduled(cron = "0 5 10,11,14,15 * * MON-FRI", zone = "Asia/Shanghai")
+    public void refreshObservePoolIntraday() {
+        refreshObservePool(LocalDate.now());
+    }
+
+    /**
+     * 按指定日期重估观察池
+     *
+     * @param tradeDate 待执行日期
+     */
+    public void refreshObservePool(LocalDate tradeDate) {
+        if (!TradingCalendar.isTradingDay(tradeDate)) {
+            return;
+        }
+        try {
+            Map<String, Object> stats = observePoolService.refresh();
+            log.info("定时重估观察池 total={} near={} triggered={} archived={}",
+                    stats.get("total"), stats.get("near"), stats.get("triggered"), stats.get("archived"));
+        } catch (Exception ex) {
+            log.warn("定时重估观察池失败: {}", ex.getMessage());
+        }
+    }
 
     /**
      * 工作日傍晚尝试同步过期日线

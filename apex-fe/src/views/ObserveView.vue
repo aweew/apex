@@ -34,7 +34,7 @@ const saving = ref(false)
 const rows = ref([])
 const templates = ref([])
 const sideTab = ref('BUY')
-const statusFilter = ref('')
+const statusFilter = ref('READY')
 const keyword = ref('')
 const dialogVisible = ref(false)
 const guideOpenId = ref(null)
@@ -49,7 +49,6 @@ let sharePreviewObjectUrl = ''
 
 useSessionViewState('observe', {
   sideTab,
-  statusFilter,
   keyword,
 })
 
@@ -231,9 +230,10 @@ async function loadTemplates() {
 async function onRefresh() {
   refreshing.value = true
   try {
-    await refreshObserve()
+    const res = await refreshObserve()
     await load()
-    ElMessage.success('已按现价重估')
+    const archived = res.data?.archived || 0
+    ElMessage.success(archived ? `已按现价重估，自动归档 ${archived} 条` : '已按现价重估')
   } catch (e) {
     ElMessage.error(e.message || '刷新失败')
   } finally {

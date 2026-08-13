@@ -109,6 +109,11 @@ public class ObservePoolResp {
     private String tags;
 
     /**
+     * 最近一次智能决策写入时间
+     */
+    private LocalDateTime decisionUpdatedAt;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;

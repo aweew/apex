@@ -17,6 +17,7 @@ import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.ObservePoolMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IValuationService;
 import com.awe.apex.quant.strategy.BarSeries;
@@ -58,6 +59,8 @@ public class ObservePoolServiceImpl implements IObservePoolService {
     private static final int AUTO_WATCH_LIMIT = 30;
     /** 情绪风向标自动写入上限 */
     private static final int AUTO_MOOD_LIMIT = 15;
+    private static final int AUTO_BUY_EXPIRE_TRADING_DAYS = 5;
+    private static final int AUTO_MOOD_EXPIRE_TRADING_DAYS = 2;
     private static final int TECH_LOOKBACK_DAYS = 220;
     private static final BigDecimal VOL_SURGE = new BigDecimal("1.5");
     /** 仅归档锁定；HIT_TARGET/STOPPED 允许按现价重估，避免买卖逻辑错判后锁死 */
@@ -419,6 +422,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         int hitTarget = 0;
         int stopped = 0;
         int watching = 0;
+        int archived = 0;
         LocalDateTime now = LocalDateTime.now();
         Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(rows);
         for (ObservePool row : rows) {
@@ -429,6 +433,15 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             }
             ObservePoolResp eval = toResp(row, basics.get(row.getCode()), barsByCode.get(row.getCode()), null);
             String next = eval.getStatus();
+            String archiveReason = autoArchiveReason(row, next, now.toLocalDate());
+            if (StringUtils.isNotBlank(archiveReason)) {
+                row.setStatus("ARCHIVED");
+                row.setNote(appendNote(row.getNote(), archiveReason));
+                row.setUpdateTime(now);
+                observePoolMapper.updateById(row);
+                archived++;
+                continue;
+            }
             if (sideDirty || !Objects.equals(row.getStatus(), next)) {
                 if ("TRIGGERED".equals(next) && Objects.isNull(row.getTriggeredAt())) {
                     row.setTriggeredAt(now);
@@ -452,7 +465,9 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         stats.put("triggered", triggered);
         stats.put("hitTarget", hitTarget);
         stats.put("stopped", stopped);
-        log.info("观察池刷新完成 total={} near={} triggered={}", rows.size(), near, triggered);
+        stats.put("archived", archived);
+        log.info("观察池刷新完成 total={} near={} triggered={} archived={}",
+                rows.size(), near, triggered, archived);
         return stats;
     }
 
@@ -836,6 +851,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             }
             exist.setTags(tags);
             exist.setNote(buildObserveNote(item));
+            exist.setDecisionUpdatedAt(now);
             exist.setUpdateTime(now);
             observePoolMapper.updateById(exist);
             return false;
@@ -859,12 +875,67 @@ public class ObservePoolServiceImpl implements IObservePoolService {
                 .triggeredAt("TRIGGERED".equals(status) ? now : null)
                 .tags(tags)
                 .note(buildObserveNote(item))
+                .decisionUpdatedAt(now)
                 .createTime(now)
                 .updateTime(now)
                 .deleted(0)
                 .build();
         observePoolMapper.insert(created);
         return true;
+    }
+
+    static String autoArchiveReason(ObservePool row, String status, LocalDate today) {
+        if (!isAutomatic(row)) {
+            return null;
+        }
+        if ("HIT_TARGET".equals(status)) {
+            return "自动归档：触及目标";
+        }
+        if ("STOPPED".equals(status)) {
+            return "自动归档：触发止损";
+        }
+        LocalDateTime decisionUpdatedAt = Objects.nonNull(row.getDecisionUpdatedAt())
+                ? row.getDecisionUpdatedAt() : row.getUpdateTime();
+        if (Objects.isNull(decisionUpdatedAt) || Objects.isNull(today)) {
+            return null;
+        }
+        int elapsedTradingDays = countElapsedTradingDays(decisionUpdatedAt.toLocalDate(), today);
+        if (row.getTags().contains("情绪") && elapsedTradingDays >= AUTO_MOOD_EXPIRE_TRADING_DAYS) {
+            return "自动归档：自动情绪观察超过 2 个交易日未更新";
+        }
+        if (elapsedTradingDays >= AUTO_BUY_EXPIRE_TRADING_DAYS) {
+            return "自动归档：自动买入观察超过 5 个交易日未更新";
+        }
+        return null;
+    }
+
+    private static boolean isAutomatic(ObservePool row) {
+        return Objects.nonNull(row) && StringUtils.isNotBlank(row.getTags()) && row.getTags().contains("自动");
+    }
+
+    private static int countElapsedTradingDays(LocalDate start, LocalDate end) {
+        if (Objects.isNull(start) || Objects.isNull(end) || !start.isBefore(end)) {
+            return 0;
+        }
+        int count = 0;
+        LocalDate cursor = start.plusDays(1);
+        while (!cursor.isAfter(end)) {
+            if (TradingCalendar.isTradingDay(cursor)) {
+                count++;
+            }
+            cursor = cursor.plusDays(1);
+        }
+        return count;
+    }
+
+    private String appendNote(String note, String archiveReason) {
+        if (StringUtils.isBlank(note)) {
+            return archiveReason;
+        }
+        if (note.contains(archiveReason)) {
+            return note;
+        }
+        return trim(note + "；" + archiveReason, 512);
     }
 
     private String buildObserveNote(DecisionItemResp item) {
@@ -1139,6 +1210,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
                 .triggeredAt(row.getTriggeredAt())
                 .note(row.getNote())
                 .tags(row.getTags())
+                .decisionUpdatedAt(row.getDecisionUpdatedAt())
                 .createTime(row.getCreateTime())
                 .updateTime(row.getUpdateTime())
                 .latestPrice(latest)

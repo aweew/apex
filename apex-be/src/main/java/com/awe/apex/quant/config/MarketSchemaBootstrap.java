@@ -104,6 +104,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                         triggered_at DATETIME NULL COMMENT '触发时间',
                         note VARCHAR(512) NULL COMMENT '备注',
                         tags VARCHAR(256) NULL COMMENT '标签逗号分隔',
+                        decision_updated_at DATETIME NULL COMMENT '最近一次智能决策写入时间',
                         create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
                         update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
                         deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
@@ -116,6 +117,14 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             log.info("schema ready: observe_pool");
             ensureColumn("observe_pool", "side",
                     "ALTER TABLE observe_pool ADD COLUMN side VARCHAR(8) NULL DEFAULT 'BUY' COMMENT '方向BUY/SELL'");
+            ensureColumn("observe_pool", "decision_updated_at",
+                    "ALTER TABLE observe_pool ADD COLUMN decision_updated_at DATETIME NULL COMMENT '最近一次智能决策写入时间'");
+            jdbcTemplate.update("""
+                    UPDATE observe_pool
+                    SET decision_updated_at = update_time
+                    WHERE decision_updated_at IS NULL
+                      AND tags LIKE '%自动%'
+                    """);
             ensurePortfolioTables();
             ensurePortfolioDecisionColumns();
             ensureBotTables();

@@ -58,6 +58,8 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "ADD COLUMN take_profit_price DECIMAL(16, 4) NULL");
         assertContains(executed, "ALTER TABLE stock_basic ADD COLUMN pe_dynamic");
         assertContains(executed, "ALTER TABLE stock_basic ADD COLUMN pe_static");
+        assertContains(executed, "ALTER TABLE observe_pool ADD COLUMN decision_updated_at");
+        assertContains(executed, "UPDATE observe_pool");
         assertContains(executed, "UPDATE stock_basic SET pe_ttm = NULL");
     }
 
@@ -81,6 +83,10 @@ class MarketSchemaBootstrapTest {
             executed.add(invocation.getArgument(0));
             return null;
         }).when(jdbcTemplate).execute(anyString());
+        doAnswer(invocation -> {
+            executed.add(invocation.getArgument(0));
+            return 0;
+        }).when(jdbcTemplate).update(anyString());
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(), any()))
                 .thenAnswer(invocation -> invocation.getArgument(0, String.class).contains("STATISTICS")
                         ? indexCount : columnCount);
