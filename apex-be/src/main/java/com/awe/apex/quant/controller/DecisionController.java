@@ -2,6 +2,7 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
+import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.DecisionBuyAiResp;
 import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionPlaybookResp;
@@ -105,5 +106,17 @@ public class DecisionController {
     @GetMapping("/attribution")
     public Result<DecisionAttributionResp> attribution(@RequestParam(defaultValue = "20") Integer days) {
         return Result.success(decisionService.attribution(days));
+    }
+
+    /**
+     * 默认组合最终决策提示
+     *
+     * @param date 决策日
+     * @return 最终决策提示
+     */
+    @GetMapping("/advice")
+    public Result<DecisionAdviceResp> advice(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return Result.success(decisionService.advice(date));
     }
 }

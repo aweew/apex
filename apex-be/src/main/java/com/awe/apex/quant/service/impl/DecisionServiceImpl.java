@@ -13,18 +13,30 @@ import com.awe.apex.quant.decision.DecisionFeatureBuilder;
 import com.awe.apex.quant.decision.DecisionFeatureInput;
 import com.awe.apex.quant.decision.DecisionFeatureSource;
 import com.awe.apex.quant.decision.DecisionMode;
+import com.awe.apex.quant.decision.DecisionPerformanceCalibrator;
+import com.awe.apex.quant.decision.DecisionPortfolioSnapshotManager;
 import com.awe.apex.quant.decision.DecisionRunManager;
+import com.awe.apex.quant.decision.MarketRegimeEnum;
+import com.awe.apex.quant.decision.MarketRegimeResolver;
+import com.awe.apex.quant.decision.MarketRegimeResult;
+import com.awe.apex.quant.decision.PositionRiskCalculator;
+import com.awe.apex.quant.decision.PositionRiskInput;
+import com.awe.apex.quant.decision.PositionRiskResult;
+import com.awe.apex.quant.decision.PortfolioDrawdownReducer;
 import com.awe.apex.quant.decision.DecisionScoreReq;
 import com.awe.apex.quant.decision.DecisionScoreResp;
 import com.awe.apex.quant.decision.DecisionScorer;
 import com.awe.apex.quant.decision.MainlineBoardRules;
 import com.awe.apex.quant.decision.MainlineMatcher;
 import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
+import com.awe.apex.quant.domain.dto.DecisionAdviceActionResp;
+import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
 import com.awe.apex.quant.domain.dto.DecisionBuyAiResp;
 import com.awe.apex.quant.domain.dto.DecisionBuyAiStockNote;
 import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
+import com.awe.apex.quant.domain.dto.DecisionPortfolioHolding;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
@@ -44,9 +56,11 @@ import com.awe.apex.quant.domain.dto.ValuationBriefResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.domain.entity.DecisionRun;
+import com.awe.apex.quant.domain.entity.DecisionPortfolioSnapshot;
 import com.awe.apex.quant.domain.entity.MarketBriefingSnapshot;
 import com.awe.apex.quant.domain.entity.MarketHot;
 import com.awe.apex.quant.domain.entity.MyHolding;
+import com.awe.apex.quant.domain.entity.RiskRule;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StockFinAbstract;
 import com.awe.apex.quant.domain.entity.StockFinIndicator;
@@ -55,21 +69,18 @@ import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.DailyActionMapper;
 import com.awe.apex.quant.mapper.DecisionRunMapper;
+import com.awe.apex.quant.mapper.DecisionPortfolioSnapshotMapper;
 import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
-import com.awe.apex.quant.mapper.MyHoldingMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockFinAbstractMapper;
 import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.TradingCalendar;
-import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.service.IMarketBriefingService;
-import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
-import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.ISignalService;
@@ -124,16 +135,13 @@ public class DecisionServiceImpl implements IDecisionService {
     private IRiskService riskService;
 
     @Resource
-    private IPaperService paperService;
-
-    @Resource
     private DailyActionMapper dailyActionMapper;
 
     @Resource
     private DecisionRunMapper decisionRunMapper;
 
     @Resource
-    private IMyHoldingService myHoldingService;
+    private DecisionPortfolioSnapshotMapper decisionPortfolioSnapshotMapper;
 
     @Resource
     private StockBasicMapper stockBasicMapper;
@@ -181,10 +189,19 @@ public class DecisionServiceImpl implements IDecisionService {
     private DecisionActionPublisher decisionActionPublisher;
 
     @Resource
-    private MyHoldingMapper myHoldingMapper;
+    private DecisionPortfolioSnapshotManager portfolioSnapshotManager;
 
     @Resource
-    private IConfigService configService;
+    private MarketRegimeResolver marketRegimeResolver;
+
+    @Resource
+    private PositionRiskCalculator positionRiskCalculator;
+
+    @Resource
+    private PortfolioDrawdownReducer portfolioDrawdownReducer;
+
+    @Resource
+    private DecisionPerformanceCalibrator performanceCalibrator;
 
     @Resource
     private KimiChatClient kimiChatClient;
@@ -249,15 +266,25 @@ public class DecisionServiceImpl implements IDecisionService {
                 ? briefing.getBuyWeightFactor() : BigDecimal.ONE;
         List<String> mainlineNames = resolveMainlineNames(briefing, context.getMode() != DecisionMode.REPLAY);
 
-        // 1. 我的持仓（仅用于卖出/持有决策；买入候选不从持仓里挑）
-        List<MyHolding> holdings = context.getMode() == DecisionMode.REPLAY
-                ? List.of() : myHoldingService.listHoldings();
+        // 1. 固化市场状态和默认组合时点，后续仓位只使用该快照
+        MarketRegimeResult marketRegime = resolveRunMarketRegime(context);
+        RiskOverviewResp configuredRisk = DecisionMode.REPLAY.equals(context.getMode())
+                ? null : loadRiskLimits();
+        DecisionPortfolioSnapshot portfolioSnapshot = portfolioSnapshotManager.resolve(
+                context, decisionRun, marketRegime, configuredRisk);
+        if (DecisionMode.REPLAY.equals(context.getMode())) {
+            marketRegime = snapshotMarketRegime(portfolioSnapshot);
+        }
+        RiskOverviewResp risk = portfolioRiskOverview(portfolioSnapshot);
+
+        // 2. 默认组合持仓仅用于卖出/持有和风险预算；买入候选不从持仓里挑
+        List<MyHolding> holdings = toDecisionHoldings(portfolioSnapshot.getHoldings());
         Map<String, MyHolding> posMap = new HashMap<>();
         for (MyHolding holding : holdings) {
             posMap.put(holding.getCode(), holding);
         }
 
-        // 2. 刷新全A股票池：本地日线≥60 的全市场（不截断市值 TopN）；宽松质量不因估值硬踢
+        // 3. 刷新全A股票池：本地日线≥60 的全市场（不截断市值 TopN）；宽松质量不因估值硬踢
         // 默认不含北交所（京市），仅 includeBj=true 时纳入
         boolean includeBj = Boolean.TRUE.equals(safe.getIncludeBj());
         UniverseRefreshReq universeReq = new UniverseRefreshReq();
@@ -341,9 +368,7 @@ public class DecisionServiceImpl implements IDecisionService {
             }
         }
 
-        // 5. 风控参数（仓位上限仍读模拟盘风控配置）
-        RiskOverviewResp risk = context.getMode() == DecisionMode.REPLAY
-                ? replayRiskOverview() : riskService.overview(paperService.defaultAccount().getId());
+        // 5. 风控参数只读规则，账户权益和仓位来自默认组合快照
         BigDecimal singleLimit = Objects.nonNull(risk.getSingleLimit()) ? risk.getSingleLimit() : new BigDecimal("0.15");
 
         Set<String> codesNeeded = new HashSet<>(signalCodeSet);
@@ -356,8 +381,10 @@ public class DecisionServiceImpl implements IDecisionService {
         }
         Map<String, FundSnapshot> fundMap = context.getMode() == DecisionMode.REPLAY
                 ? Map.of() : loadFunds(codesNeeded);
+        Map<String, BigDecimal> performanceAdjustments = resolvePerformanceAdjustments(context.getMode());
 
         // 持仓缺止损/止盈时先补全（供卖出/持有/加仓离场规则使用）
+        boolean snapshotRiskLevelsChanged = false;
         for (MyHolding holding : holdings) {
             String code = holding.getCode();
             StockBasic basic = basicMap.get(code);
@@ -365,7 +392,24 @@ public class DecisionServiceImpl implements IDecisionService {
                 basic = basicMap.get(MarketCodeUtils.normalizeHoldingCode(code));
             }
             BigDecimal price = Objects.nonNull(basic) ? basic.getLatestPrice() : holding.getMarketPrice();
-            ensureHoldingStopTake(holding, price, actionDate);
+            if (ensureHoldingStopTake(holding, price, actionDate,
+                    portfolioSnapshot.getAtrStopMultiplier(), portfolioSnapshot.getAtrTakeMultiplier())) {
+                snapshotRiskLevelsChanged = true;
+            }
+        }
+        if (snapshotRiskLevelsChanged) {
+            Map<String, DecisionPortfolioHolding> snapshotHoldingMap = new HashMap<>();
+            for (DecisionPortfolioHolding snapshotHolding : portfolioSnapshot.getHoldings()) {
+                snapshotHoldingMap.put(snapshotHolding.getCode(), snapshotHolding);
+            }
+            for (MyHolding holding : holdings) {
+                DecisionPortfolioHolding snapshotHolding = snapshotHoldingMap.get(holding.getCode());
+                if (Objects.nonNull(snapshotHolding)) {
+                    snapshotHolding.setStopLoss(holding.getStopLoss());
+                    snapshotHolding.setTakeProfit(holding.getTakeProfit());
+                }
+            }
+            portfolioSnapshotManager.updateHoldingRiskLevels(portfolioSnapshot);
         }
 
         // 5b. 买入信号批量估值（决策加减分 / 观察池理由）
@@ -384,7 +428,10 @@ public class DecisionServiceImpl implements IDecisionService {
         List<DecisionItemResp> sells = new ArrayList<>();
         List<DecisionItemResp> holds = new ArrayList<>();
         List<DecisionItemResp> observeCandidates = new ArrayList<>();
+        Map<String, DecisionItemResp> featureCandidates = new HashMap<>();
         Map<String, DecisionFeatureInput> featureInputs = new HashMap<>();
+        Map<String, String> featureSelectionStatus = new HashMap<>();
+        Map<String, String> featureRejectReason = new HashMap<>();
         Set<String> covered = new HashSet<>();
         Set<String> observeCodes = new HashSet<>();
         for (StrategySignalEntity signal : signals) {
@@ -429,9 +476,11 @@ public class DecisionServiceImpl implements IDecisionService {
                                 + (cfCount >= minCf ? " · 多策略共振卖出" : ""))
                         .executableHint(false)
                         .build();
-                featureInputs.put(featureKey(code, "SELL"), new DecisionFeatureInput(
-                        baseScore(signal.getScore()), false, false, false, null,
-                        buyFactor, singleLimit, false));
+                featureInputs.put(featureKey(code, "SELL"), DecisionFeatureInput.builder()
+                        .signalScore(baseScore(signal.getScore()))
+                        .buyWeightFactor(buyFactor)
+                        .singleLimit(singleLimit)
+                        .build());
                 sells.add(item);
                 covered.add(code);
                 continue;
@@ -495,46 +544,68 @@ public class DecisionServiceImpl implements IDecisionService {
                     .observeOnly(gate.exclude)
                     .build();
             DecisionScoreResp scored = decisionScorer.scoreBuy(scoreReq);
-            featureInputs.put(featureKey(code, "BUY"), new DecisionFeatureInput(
-                    scoreReq.getSignalScore(), scoreReq.isFundExclude(), scoreReq.isFundWeak(),
-                    scoreReq.isOffMainline(), Objects.nonNull(valBrief) ? valBrief.getScoreDelta() : null,
-                    scoreReq.getBuyWeightFactor(), scoreReq.getSingleLimit(), scoreReq.isObserveOnly()));
+            BigDecimal performanceAdjustment = performanceAdjustments.get(signal.getStrategyId());
+            if (Objects.nonNull(performanceAdjustment) && performanceAdjustment.signum() != 0) {
+                scored.setFinalScore(scored.getFinalScore().add(performanceAdjustment)
+                        .max(BigDecimal.ZERO).min(new BigDecimal("100"))
+                        .setScale(2, RoundingMode.HALF_UP));
+                scored.setScoreExplain(trimReason(scored.getScoreExplain()
+                        + " · 成熟样本校准" + (performanceAdjustment.signum() > 0 ? "+" : "")
+                        + performanceAdjustment.toPlainString()));
+                if (scored.getFinalScore().compareTo(strategyParams.decisionExecutableScore()) < 0) {
+                    scored.setExecutableHint(false);
+                }
+            }
+            featureInputs.put(featureKey(code, "BUY"), DecisionFeatureInput.builder()
+                    .signalScore(scoreReq.getSignalScore())
+                    .fundExclude(scoreReq.isFundExclude())
+                    .fundWeak(scoreReq.isFundWeak())
+                    .offMainline(scoreReq.isOffMainline())
+                    .valuationScoreDelta(Objects.nonNull(valBrief) ? valBrief.getScoreDelta() : null)
+                    .buyWeightFactor(scoreReq.getBuyWeightFactor())
+                    .singleLimit(scoreReq.getSingleLimit())
+                    .observeOnly(scoreReq.isObserveOnly())
+                    .build());
             if (StringUtils.isNotBlank(scored.getLinkHint())) {
                 reason = trimReason(reason + " · " + scored.getLinkHint());
             }
 
             // 基本面硬剔除：不进「今日买入」，但仍可进观察池盯信号
             BigDecimal buyPrice = Objects.nonNull(basic) ? basic.getLatestPrice() : null;
-            String buyExitRule = buyExitRule(signal.getStrategyId(), code, buyPrice, holdingInMap, actionDate);
+            String buyExitRule = buyExitRule(signal.getStrategyId(), code, buyPrice, holdingInMap, actionDate,
+                    portfolioSnapshot.getAtrStopMultiplier(), portfolioSnapshot.getAtrTakeMultiplier());
 
             if (gate.exclude) {
+                DecisionItemResp rejectedItem = DecisionItemResp.builder()
+                        .actionDate(actionDate)
+                        .code(code)
+                        .name(name)
+                        .action("BUY")
+                        .strategyId(signal.getStrategyId())
+                        .reason(trimReason("观察：" + reason + " · 基本面警示仅观察不急买"))
+                        .score(scored.getFinalScore())
+                        .suggestedWeight(BigDecimal.ZERO)
+                        .exitRule(buyExitRule)
+                        .confluenceCount(cfCount)
+                        .confluence(cfCount >= minCf)
+                        .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
+                        .fundNote(gate.note)
+                        .signalId(signal.getId())
+                        .mainlineMatch(mainHit.match)
+                        .mainlineName(mainHit.name)
+                        .scoreExplain(scored.getScoreExplain())
+                        .valuationLevel(Objects.nonNull(valBrief) ? valBrief.getLevel() : null)
+                        .valuationLabel(Objects.nonNull(valBrief) ? valBrief.getLevelLabel() : null)
+                        .valuationScore(Objects.nonNull(valBrief) ? valBrief.getScore() : null)
+                        .valuationSummary(Objects.nonNull(valBrief) ? valBrief.getSummary() : null)
+                        .riskFlags(scored.getRiskFlags())
+                        .executableHint(false)
+                        .linkHint(scored.getLinkHint())
+                        .build();
+                putFeatureCandidate(featureCandidates, featureSelectionStatus, featureRejectReason,
+                        rejectedItem, "REJECTED", "基本面未过买入门槛");
                 if (!alreadyHeld && observeCodes.add(code)) {
-                    observeCandidates.add(DecisionItemResp.builder()
-                            .actionDate(actionDate)
-                            .code(code)
-                            .name(name)
-                            .action("BUY")
-                            .strategyId(signal.getStrategyId())
-                            .reason(trimReason("观察：" + reason + " · 基本面警示仅观察不急买"))
-                            .score(scored.getFinalScore())
-                            .suggestedWeight(BigDecimal.ZERO)
-                            .exitRule(buyExitRule)
-                            .confluenceCount(cfCount)
-                            .confluence(cfCount >= minCf)
-                            .strategies(Objects.nonNull(cf) ? cf.getStrategies() : List.of(signal.getStrategyId()))
-                            .fundNote(gate.note)
-                            .signalId(signal.getId())
-                            .mainlineMatch(mainHit.match)
-                            .mainlineName(mainHit.name)
-                            .scoreExplain(scored.getScoreExplain())
-                            .valuationLevel(Objects.nonNull(valBrief) ? valBrief.getLevel() : null)
-                            .valuationLabel(Objects.nonNull(valBrief) ? valBrief.getLevelLabel() : null)
-                            .valuationScore(Objects.nonNull(valBrief) ? valBrief.getScore() : null)
-                            .valuationSummary(Objects.nonNull(valBrief) ? valBrief.getSummary() : null)
-                            .riskFlags(scored.getRiskFlags())
-                            .executableHint(false)
-                            .linkHint(scored.getLinkHint())
-                            .build());
+                    observeCandidates.add(rejectedItem);
                 }
                 continue;
             }
@@ -566,6 +637,8 @@ public class DecisionServiceImpl implements IDecisionService {
                     .linkHint(scored.getLinkHint())
                     .build();
             buys.add(item);
+            putFeatureCandidate(featureCandidates, featureSelectionStatus, featureRejectReason,
+                    item, "SELECTED", null);
             if (!alreadyHeld && observeCodes.add(code)) {
                 // 观察池单独降权「近端大涨」：避免只堆这两天涨得好的票
                 observeCandidates.add(toObserveBuyCandidate(item, basic));
@@ -755,6 +828,34 @@ public class DecisionServiceImpl implements IDecisionService {
             }
         }
 
+        // 组合总仓超过回撤门槛时，已有全卖动作优先，其余持仓按权重等比例减仓
+        Set<String> fullExitCodes = new HashSet<>();
+        for (DecisionItemResp sell : sells) {
+            if ("SELL".equals(sell.getAction())) {
+                fullExitCodes.add(sell.getCode());
+            }
+        }
+        List<DecisionItemResp> reductionActions = portfolioDrawdownReducer.buildReductionActions(
+                actionDate, portfolioSnapshot.getHoldings(), portfolioSnapshot.getTotalEquity(),
+                portfolioSnapshot.getExposureRatio(), risk.getTotalLimit(),
+                portfolioSnapshot.getDrawdown(), fullExitCodes);
+        Set<String> positionCutCodes = new HashSet<>(fullExitCodes);
+        for (DecisionItemResp reductionAction : reductionActions) {
+            positionCutCodes.add(reductionAction.getCode());
+            sells.add(reductionAction);
+            covered.add(reductionAction.getCode());
+        }
+        for (int buyIndex = buys.size() - 1; buyIndex >= 0; buyIndex--) {
+            DecisionItemResp buy = buys.get(buyIndex);
+            if (!positionCutCodes.contains(buy.getCode())) {
+                continue;
+            }
+            String rejectReason = fullExitCodes.contains(buy.getCode())
+                    ? "同票已有卖出动作，风险优先禁止加仓" : "组合回撤降仓，禁止同票加仓";
+            rejectRiskCandidate(buy, rejectReason, featureSelectionStatus, featureRejectReason);
+            buys.remove(buyIndex);
+        }
+
         // 其余「我的持仓」→ HOLD（离场规则必含止损+止盈）
         for (MyHolding holding : holdings) {
             String code = holding.getCode();
@@ -787,22 +888,49 @@ public class DecisionServiceImpl implements IDecisionService {
         buys.sort(Comparator.comparing(DecisionItemResp::getScore, Comparator.nullsLast(Comparator.reverseOrder())));
         sells.sort(Comparator.comparing(DecisionItemResp::getScore, Comparator.nullsLast(Comparator.reverseOrder())));
 
+        // 7. 按评分顺序逐笔占用风险预算，生成组合可同时执行的目标仓位
+        applyPortfolioRiskBudget(buys, portfolioSnapshot, marketRegime, risk, basicMap,
+                featureSelectionStatus, featureRejectReason, actionDate);
+
         List<DecisionItemResp> all = new ArrayList<>();
-        all.addAll(buys);
         all.addAll(sells);
+        all.addAll(buys);
         all.addAll(holds);
+        for (DecisionItemResp item : sells) {
+            putFeatureCandidate(featureCandidates, featureSelectionStatus, featureRejectReason,
+                    item, "SELECTED", null);
+        }
+        for (DecisionItemResp item : holds) {
+            putFeatureCandidate(featureCandidates, featureSelectionStatus, featureRejectReason,
+                    item, "SELECTED", null);
+        }
+        List<DecisionItemResp> rankedFeatureCandidates = new ArrayList<>(featureCandidates.values());
+        rankedFeatureCandidates.sort(Comparator.comparing(DecisionItemResp::getScore,
+                Comparator.nullsLast(Comparator.reverseOrder())));
         List<DecisionFeature> features = new ArrayList<>();
-        for (DecisionItemResp item : all) {
+        int featureRank = 0;
+        for (DecisionItemResp item : rankedFeatureCandidates) {
+            featureRank++;
             HotConfluenceItem hot = hotMap.get(item.getCode());
             int hotSourceCount = Objects.nonNull(hot) && Objects.nonNull(hot.getSourceCount())
                     ? hot.getSourceCount() : 0;
             DecisionFeatureInput input = featureInputs.get(featureKey(item.getCode(), item.getAction()));
             if (Objects.isNull(input)) {
-                input = new DecisionFeatureInput(item.getScore(), false, false, false, null,
-                        briefing.getBuyWeightFactor(), singleLimit, false);
+                input = DecisionFeatureInput.builder()
+                        .signalScore(item.getScore())
+                        .buyWeightFactor(briefing.getBuyWeightFactor())
+                        .singleLimit(singleLimit)
+                        .build();
             }
-            features.add(decisionFeatureBuilder.build(item,
-                    new DecisionFeatureSource(input, hotSourceCount, briefing)));
+            String key = featureKey(item.getCode(), item.getAction());
+            features.add(decisionFeatureBuilder.build(item, DecisionFeatureSource.builder()
+                    .scoringInput(input)
+                    .hotSourceCount(hotSourceCount)
+                    .briefing(briefing)
+                    .selectionStatus(featureSelectionStatus.getOrDefault(key, "SELECTED"))
+                    .rejectReason(featureRejectReason.get(key))
+                    .rankNo(featureRank)
+                    .build()));
         }
         decisionRunManager.saveFeatures(decisionRun, features);
         if (context.getMode() == DecisionMode.LIVE) {
@@ -825,9 +953,12 @@ public class DecisionServiceImpl implements IDecisionService {
             log.warn("决策同步观察池失败: {}", ex.getMessage());
         }
 
-        String riskNote = "单票上限 " + pctText(singleLimit)
+        String riskNote = "市场状态 " + marketRegime.getMarketRegime().getDesc()
+                + " · 单票上限 " + pctText(singleLimit)
                 + " · 总仓 " + pctText(risk.getPositionRatio())
-                + "/" + pctText(risk.getTotalLimit());
+                + "/" + pctText(risk.getTotalLimit())
+                + " · 回撤 " + pctText(portfolioSnapshot.getDrawdown())
+                + " · 现金 " + portfolioSnapshot.getCash().setScale(2, RoundingMode.HALF_UP);
         if (Objects.nonNull(risk.getCriticalCount()) && risk.getCriticalCount() > 0) {
             riskNote = riskNote + " · 风控CRITICAL " + risk.getCriticalCount();
         }
@@ -945,6 +1076,31 @@ public class DecisionServiceImpl implements IDecisionService {
         return String.valueOf(code) + "|" + String.valueOf(action);
     }
 
+    private void putFeatureCandidate(Map<String, DecisionItemResp> featureCandidates,
+                                     Map<String, String> selectionStatus,
+                                     Map<String, String> rejectReason,
+                                     DecisionItemResp item, String status, String reason) {
+        String key = featureKey(item.getCode(), item.getAction());
+        DecisionItemResp existing = featureCandidates.get(key);
+        BigDecimal existingScore = Objects.nonNull(existing) && Objects.nonNull(existing.getScore())
+                ? existing.getScore() : null;
+        BigDecimal candidateScore = item.getScore();
+        boolean replace = Objects.isNull(existing)
+                || (Objects.nonNull(candidateScore)
+                && (Objects.isNull(existingScore) || candidateScore.compareTo(existingScore) > 0))
+                || ("SELECTED".equals(status) && !"SELECTED".equals(selectionStatus.get(key)));
+        if (!replace) {
+            return;
+        }
+        featureCandidates.put(key, item);
+        selectionStatus.put(key, status);
+        if (StringUtils.isNotBlank(reason)) {
+            rejectReason.put(key, reason);
+        } else {
+            rejectReason.remove(key);
+        }
+    }
+
     private Map<String, Object> decisionConfigSnapshot() {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("confluenceWindow", strategyParams.decisionConfluenceWindow());
@@ -960,21 +1116,221 @@ public class DecisionServiceImpl implements IDecisionService {
         config.put("linkUndervaluedS2", strategyParams.decisionLinkUndervaluedS2());
         config.put("linkOvervaluedS3", strategyParams.decisionLinkOvervaluedS3());
         config.put("executableScore", strategyParams.decisionExecutableScore());
+        config.put("performanceCalibration", "COMPLETE_5D_EXCESS_V1");
         return config;
     }
 
-    private RiskOverviewResp replayRiskOverview() {
+    Map<String, BigDecimal> resolvePerformanceAdjustments(DecisionMode mode) {
+        return DecisionMode.REPLAY.equals(mode) ? Map.of() : performanceCalibrator.loadAdjustments();
+    }
+
+    MarketRegimeResult resolveRunMarketRegime(DecisionContext context) {
+        if (DecisionMode.REPLAY.equals(context.getMode())) {
+            return null;
+        }
+        return marketRegimeResolver.resolve(context.getActionDate());
+    }
+
+    private List<MyHolding> toDecisionHoldings(List<DecisionPortfolioHolding> snapshotHoldings) {
+        List<MyHolding> holdings = new ArrayList<>();
+        if (CollUtil.isEmpty(snapshotHoldings)) {
+            return holdings;
+        }
+        for (DecisionPortfolioHolding snapshotHolding : snapshotHoldings) {
+            holdings.add(MyHolding.builder()
+                    .code(snapshotHolding.getCode())
+                    .name(snapshotHolding.getName())
+                    .quantity(snapshotHolding.getQuantity())
+                    .costPrice(snapshotHolding.getCostPrice())
+                    .stopLoss(snapshotHolding.getStopLoss())
+                    .takeProfit(snapshotHolding.getTakeProfit())
+                    .marketPrice(snapshotHolding.getMarketPrice())
+                    .marketValue(snapshotHolding.getMarketValue())
+                    .industry(snapshotHolding.getIndustry())
+                    .build());
+        }
+        return holdings;
+    }
+
+    private RiskOverviewResp loadRiskLimits() {
+        BigDecimal totalLimit = new BigDecimal("0.80");
+        BigDecimal singleLimit = new BigDecimal("0.15");
+        BigDecimal industryLimit = new BigDecimal("0.30");
+        List<RiskRule> riskRules = riskService.listRules();
+        if (CollUtil.isNotEmpty(riskRules)) {
+            for (RiskRule riskRule : riskRules) {
+                if (Objects.isNull(riskRule) || StringUtils.isBlank(riskRule.getRuleValue())) {
+                    continue;
+                }
+                try {
+                    BigDecimal ruleValue = new BigDecimal(riskRule.getRuleValue());
+                    if ("total_position_limit".equals(riskRule.getRuleKey())) {
+                        totalLimit = ruleValue;
+                    } else if ("single_stock_limit".equals(riskRule.getRuleKey())) {
+                        singleLimit = ruleValue;
+                    } else if ("industry_limit".equals(riskRule.getRuleKey())) {
+                        industryLimit = ruleValue;
+                    }
+                } catch (NumberFormatException ex) {
+                    log.warn("忽略非法风控规则 ruleKey={} ruleValue={}",
+                            riskRule.getRuleKey(), riskRule.getRuleValue());
+                }
+            }
+        }
         return RiskOverviewResp.builder()
-                .positionValue(BigDecimal.ZERO)
-                .positionRatio(BigDecimal.ZERO)
-                .totalLimit(new BigDecimal("0.80"))
-                .singleLimit(new BigDecimal("0.15"))
-                .industryLimit(new BigDecimal("0.30"))
-                .warnings(List.of("历史回放未使用当前账户持仓"))
+                .totalLimit(totalLimit)
+                .singleLimit(singleLimit)
+                .industryLimit(industryLimit)
+                .build();
+    }
+
+    private RiskOverviewResp portfolioRiskOverview(DecisionPortfolioSnapshot snapshot) {
+        if (Objects.isNull(snapshot.getExposureLimit())
+                || Objects.isNull(snapshot.getSingleStockLimit())
+                || Objects.isNull(snapshot.getIndustryLimit())) {
+            throw new BusinessException("决策组合快照缺少冻结风控参数");
+        }
+        return RiskOverviewResp.builder()
+                .totalAsset(snapshot.getTotalEquity())
+                .cash(snapshot.getCash())
+                .positionValue(snapshot.getMarketValue())
+                .positionRatio(snapshot.getExposureRatio())
+                .totalLimit(snapshot.getExposureLimit())
+                .singleLimit(snapshot.getSingleStockLimit())
+                .industryLimit(snapshot.getIndustryLimit())
+                .warnings(List.of())
                 .alerts(List.of())
                 .criticalCount(0)
                 .warnCount(0)
                 .build();
+    }
+
+    private void applyPortfolioRiskBudget(List<DecisionItemResp> buys,
+                                          DecisionPortfolioSnapshot portfolioSnapshot,
+                                          MarketRegimeResult marketRegime,
+                                          RiskOverviewResp risk,
+                                          Map<String, StockBasic> basicMap,
+                                          Map<String, String> featureSelectionStatus,
+                                          Map<String, String> featureRejectReason,
+                                          LocalDate actionDate) {
+        if (CollUtil.isEmpty(buys)) {
+            return;
+        }
+        BigDecimal equity = portfolioSnapshot.getTotalEquity();
+        if (Objects.isNull(equity) || equity.signum() <= 0) {
+            for (DecisionItemResp item : buys) {
+                rejectRiskCandidate(item, "默认组合总权益必须大于0",
+                        featureSelectionStatus, featureRejectReason);
+            }
+            return;
+        }
+
+        BigDecimal availableCash = portfolioSnapshot.getCash();
+        BigDecimal exposure = portfolioSnapshot.getExposureRatio();
+        Map<String, BigDecimal> industryWeight = new HashMap<>(portfolioSnapshot.getIndustryExposure());
+        Map<String, BigDecimal> codeWeight = new HashMap<>();
+        if (CollUtil.isNotEmpty(portfolioSnapshot.getHoldings())) {
+            for (DecisionPortfolioHolding holding : portfolioSnapshot.getHoldings()) {
+                if (StringUtils.isBlank(holding.getCode()) || Objects.isNull(holding.getMarketValue())) {
+                    continue;
+                }
+                codeWeight.put(holding.getCode(), holding.getMarketValue()
+                        .divide(equity, 12, RoundingMode.HALF_UP));
+            }
+        }
+
+        for (DecisionItemResp item : buys) {
+            String featureKey = featureKey(item.getCode(), item.getAction());
+            BigDecimal currentWeight = codeWeight.getOrDefault(item.getCode(), BigDecimal.ZERO);
+            if (!Boolean.TRUE.equals(item.getExecutableHint())) {
+                item.setSuggestedWeight(currentWeight.setScale(4, RoundingMode.HALF_UP));
+                featureSelectionStatus.put(featureKey, "WATCH");
+                featureRejectReason.put(featureKey, "评分未达到可执行阈值");
+                appendRiskFlag(item, "仅观察：评分未达到执行阈值");
+                continue;
+            }
+
+            StockBasic basic = basicMap.get(item.getCode());
+            BigDecimal price = Objects.nonNull(basic) ? basic.getLatestPrice() : null;
+            if (Objects.isNull(price) || price.signum() <= 0) {
+                rejectRiskCandidate(item, "缺少有效价格，无法按整手计算",
+                        featureSelectionStatus, featureRejectReason);
+                continue;
+            }
+            String industry = Objects.nonNull(basic) && StringUtils.isNotBlank(basic.getIndustry())
+                    ? basic.getIndustry() : "未知行业";
+            BigDecimal currentIndustryWeight = industryWeight.getOrDefault(industry, BigDecimal.ZERO);
+            BigDecimal[] stopTake = suggestStopTake(item.getCode(), price, actionDate,
+                    portfolioSnapshot.getAtrStopMultiplier(), portfolioSnapshot.getAtrTakeMultiplier());
+            item.setReferencePrice(price);
+            item.setStopLossPrice(stopTake[0]);
+            item.setTakeProfitPrice(stopTake[1]);
+            BigDecimal stopDistance = FALLBACK_STOP_PCT;
+            if (Objects.nonNull(stopTake[0]) && stopTake[0].signum() > 0 && stopTake[0].compareTo(price) < 0) {
+                stopDistance = price.subtract(stopTake[0]).divide(price, 8, RoundingMode.HALF_UP);
+            }
+            BigDecimal scoreTarget = Objects.nonNull(item.getSuggestedWeight())
+                    && item.getSuggestedWeight().signum() > 0
+                    ? item.getSuggestedWeight() : risk.getSingleLimit();
+            BigDecimal candidateSingleLimit = risk.getSingleLimit().min(scoreTarget.max(currentWeight));
+            PositionRiskResult positionRisk = positionRiskCalculator.calculate(PositionRiskInput.builder()
+                    .equity(equity)
+                    .cash(availableCash)
+                    .currentExposure(exposure)
+                    .currentDrawdown(portfolioSnapshot.getDrawdown())
+                    .totalExposureLimit(risk.getTotalLimit())
+                    .marketRegime(marketRegime.getMarketRegime())
+                    .singleLimit(candidateSingleLimit)
+                    .industryLimit(risk.getIndustryLimit())
+                    .currentWeight(currentWeight)
+                    .industryWeight(currentIndustryWeight)
+                    .stopDistance(stopDistance)
+                    .correlationClusterWeight(currentIndustryWeight)
+                    .lotValue(price.multiply(new BigDecimal("100")))
+                    .build());
+            if (!Boolean.TRUE.equals(positionRisk.getCanOpenPosition())) {
+                item.setSuggestedWeight(currentWeight.setScale(4, RoundingMode.HALF_UP));
+                rejectRiskCandidate(item, positionRisk.getReason(),
+                        featureSelectionStatus, featureRejectReason);
+                continue;
+            }
+
+            BigDecimal incrementalWeight = positionRisk.getIncrementalWeight();
+            BigDecimal incrementalAmount = incrementalWeight.multiply(equity);
+            availableCash = availableCash.subtract(incrementalAmount).max(BigDecimal.ZERO);
+            exposure = exposure.add(incrementalWeight).min(BigDecimal.ONE);
+            codeWeight.put(item.getCode(), positionRisk.getTargetWeight());
+            industryWeight.put(industry, currentIndustryWeight.add(incrementalWeight));
+            item.setSuggestedWeight(positionRisk.getTargetWeight().setScale(4, RoundingMode.HALF_UP));
+            item.setScoreExplain(trimReason(nullToEmpty(item.getScoreExplain())
+                    + " · 风险预算通过，新增 " + pctText(incrementalWeight)));
+            featureSelectionStatus.put(featureKey, "SELECTED");
+            featureRejectReason.remove(featureKey);
+        }
+    }
+
+    private void rejectRiskCandidate(DecisionItemResp item, String reason,
+                                     Map<String, String> featureSelectionStatus,
+                                     Map<String, String> featureRejectReason) {
+        item.setExecutableHint(false);
+        if (Objects.isNull(item.getSuggestedWeight())) {
+            item.setSuggestedWeight(BigDecimal.ZERO);
+        }
+        appendRiskFlag(item, reason);
+        String key = featureKey(item.getCode(), item.getAction());
+        featureSelectionStatus.put(key, "REJECTED");
+        featureRejectReason.put(key, reason);
+    }
+
+    private void appendRiskFlag(DecisionItemResp item, String reason) {
+        List<String> riskFlags = new ArrayList<>();
+        if (CollUtil.isNotEmpty(item.getRiskFlags())) {
+            riskFlags.addAll(item.getRiskFlags());
+        }
+        if (StringUtils.isNotBlank(reason) && !riskFlags.contains(reason)) {
+            riskFlags.add(reason);
+        }
+        item.setRiskFlags(riskFlags);
     }
 
     /**
@@ -1048,6 +1404,9 @@ public class DecisionServiceImpl implements IDecisionService {
                     .reason(row.getReason())
                     .score(row.getScore())
                     .suggestedWeight(row.getSuggestedWeight())
+                    .referencePrice(row.getReferencePrice())
+                    .stopLossPrice(row.getStopLossPrice())
+                    .takeProfitPrice(row.getTakeProfitPrice())
                     .exitRule(row.getExitRule())
                     .confluenceCount(row.getConfluenceCount())
                     .confluence(Objects.nonNull(row.getConfluenceCount()) && row.getConfluenceCount() >= 2)
@@ -1068,7 +1427,8 @@ public class DecisionServiceImpl implements IDecisionService {
             all.add(item);
             if ("BUY".equalsIgnoreCase(row.getAction())) {
                 buys.add(item);
-            } else if ("SELL".equalsIgnoreCase(row.getAction())) {
+            } else if ("SELL".equalsIgnoreCase(row.getAction())
+                    || "REDUCE".equalsIgnoreCase(row.getAction())) {
                 sells.add(item);
             } else {
                 holds.add(item);
@@ -1141,6 +1501,248 @@ public class DecisionServiceImpl implements IDecisionService {
     }
 
     /**
+     * 获取面向默认组合的最终决策提示
+     *
+     * @param date 决策日，可空=今天
+     * @return 最终决策提示
+     */
+    @Override
+    public DecisionAdviceResp advice(LocalDate date) {
+        LocalDate actionDate = Objects.nonNull(date) ? date : LocalDate.now();
+        List<DailyAction> actions = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getActionDate, actionDate)
+                .orderByAsc(DailyAction::getRankNo)
+                .orderByDesc(DailyAction::getScore));
+        if (CollUtil.isEmpty(actions)) {
+            throw new BusinessException("该日期尚无已发布决策: " + actionDate);
+        }
+        DecisionRun run = loadDecisionRun(actions);
+        if (Objects.isNull(run)) {
+            throw new BusinessException("决策缺少运行上下文: " + actionDate);
+        }
+        DecisionPortfolioSnapshot snapshot = decisionPortfolioSnapshotMapper.selectOne(
+                Wrappers.<DecisionPortfolioSnapshot>lambdaQuery()
+                        .eq(DecisionPortfolioSnapshot::getRunId, run.getId())
+                        .last("LIMIT 1"));
+        if (Objects.isNull(snapshot)) {
+            throw new BusinessException("决策缺少组合快照: " + actionDate);
+        }
+        List<DecisionPortfolioHolding> holdings = JsonUtils.parseArray(
+                snapshot.getHoldingPayload(), DecisionPortfolioHolding.class);
+        Map<String, DecisionPortfolioHolding> holdingMap = new HashMap<>();
+        if (CollUtil.isNotEmpty(holdings)) {
+            for (DecisionPortfolioHolding holding : holdings) {
+                holdingMap.put(holding.getCode(), holding);
+            }
+        }
+
+        List<DecisionAdviceActionResp> adviceActions = new ArrayList<>();
+        BigDecimal targetExposure = snapshot.getExposureRatio();
+        int priority = 0;
+        for (DailyAction action : actions) {
+            DecisionPortfolioHolding holding = holdingMap.get(action.getCode());
+            BigDecimal currentWeight = currentWeight(holding, snapshot.getTotalEquity());
+            BigDecimal targetWeight = Objects.nonNull(action.getSuggestedWeight())
+                    ? action.getSuggestedWeight() : currentWeight;
+            String adviceAction = resolveAdviceAction(action, currentWeight, targetWeight);
+            if ("SELL".equals(adviceAction)) {
+                targetWeight = BigDecimal.ZERO;
+            }
+            boolean executable = "BUY".equals(adviceAction) || "ADD".equals(adviceAction)
+                    || "REDUCE".equals(adviceAction) || "SELL".equals(adviceAction);
+            if (!executable) {
+                targetWeight = currentWeight;
+            }
+            BigDecimal referencePrice = resolveReferencePrice(action, holding);
+            Integer quantity = calculateAdviceQuantity(adviceAction, currentWeight, targetWeight,
+                    snapshot.getTotalEquity(), referencePrice, holding);
+            if (executable && quantity <= 0) {
+                executable = false;
+                adviceAction = "WATCH";
+                targetWeight = currentWeight;
+            } else if (executable && !"SELL".equals(adviceAction)) {
+                BigDecimal tradeWeight = referencePrice.multiply(BigDecimal.valueOf(quantity))
+                        .divide(snapshot.getTotalEquity(), 8, RoundingMode.HALF_UP);
+                targetWeight = "REDUCE".equals(adviceAction)
+                        ? currentWeight.subtract(tradeWeight).max(BigDecimal.ZERO)
+                        : currentWeight.add(tradeWeight).min(BigDecimal.ONE);
+            }
+            String riskNote = CollUtil.isNotEmpty(parseStrategiesCsv(action.getRiskFlags()))
+                    ? String.join("；", parseStrategiesCsv(action.getRiskFlags())) : null;
+            adviceActions.add(DecisionAdviceActionResp.builder()
+                    .priority(++priority)
+                    .code(action.getCode())
+                    .name(action.getName())
+                    .action(adviceAction)
+                    .currentWeight(currentWeight.setScale(4, RoundingMode.HALF_UP))
+                    .targetWeight(targetWeight.setScale(4, RoundingMode.HALF_UP))
+                    .quantity(quantity)
+                    .referencePrice(referencePrice)
+                    .stopLossPrice(Objects.nonNull(action.getStopLossPrice())
+                            ? action.getStopLossPrice() : Objects.nonNull(holding) ? holding.getStopLoss() : null)
+                    .takeProfitPrice(Objects.nonNull(action.getTakeProfitPrice())
+                            ? action.getTakeProfitPrice() : Objects.nonNull(holding) ? holding.getTakeProfit() : null)
+                    .minHoldingDays(5)
+                    .maxHoldingDays(20)
+                    .reason(action.getReason())
+                    .riskNote(riskNote)
+                    .executable(executable)
+                    .build());
+            if ("BUY".equals(adviceAction) || "ADD".equals(adviceAction)) {
+                targetExposure = targetExposure.add(targetWeight.subtract(currentWeight).max(BigDecimal.ZERO));
+            } else if ("SELL".equals(adviceAction)) {
+                targetExposure = targetExposure.subtract(currentWeight).max(BigDecimal.ZERO);
+            } else if ("REDUCE".equals(adviceAction)) {
+                targetExposure = targetExposure.subtract(currentWeight.subtract(targetWeight).max(BigDecimal.ZERO))
+                        .max(BigDecimal.ZERO);
+            }
+        }
+        String localSummary = buildLocalAdviceSummary(snapshot, adviceActions, targetExposure);
+        String aiSummary = enhanceAdviceSummary(snapshot, adviceActions, localSummary);
+        return DecisionAdviceResp.builder()
+                .runNo(run.getRunNo())
+                .actionDate(actionDate)
+                .executionDate(TradingCalendar.nextTradingDay(actionDate))
+                .executionTiming("下一交易日开盘，价格偏离参考价超过3%时取消追价并转观察")
+                .marketRegime(snapshot.getMarketRegime())
+                .regimeReason(snapshot.getRegimeReason())
+                .currentExposure(snapshot.getExposureRatio())
+                .targetExposure(targetExposure.setScale(4, RoundingMode.HALF_UP))
+                .cash(snapshot.getCash())
+                .totalEquity(snapshot.getTotalEquity())
+                .drawdown(snapshot.getDrawdown())
+                .summary(StringUtils.isNotBlank(aiSummary) ? aiSummary : localSummary)
+                .aiEnhanced(StringUtils.isNotBlank(aiSummary))
+                .actions(adviceActions)
+                .reviewSchedule(List.of("第5个交易日复核趋势与止损", "第10个交易日复核超额收益",
+                        "第20个交易日强制退出或重新评估"))
+                .generatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private BigDecimal currentWeight(DecisionPortfolioHolding holding, BigDecimal totalEquity) {
+        if (Objects.isNull(holding) || Objects.isNull(holding.getMarketValue())
+                || Objects.isNull(totalEquity) || totalEquity.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return holding.getMarketValue().divide(totalEquity, 8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal resolveReferencePrice(DailyAction action, DecisionPortfolioHolding holding) {
+        if (Objects.nonNull(action.getReferencePrice())) {
+            return action.getReferencePrice();
+        }
+        return Objects.nonNull(holding) ? holding.getMarketPrice() : null;
+    }
+
+    private MarketRegimeResult snapshotMarketRegime(DecisionPortfolioSnapshot snapshot) {
+        MarketRegimeEnum marketRegime = MarketRegimeEnum.UNKNOWN;
+        if (Objects.nonNull(snapshot) && StringUtils.isNotBlank(snapshot.getMarketRegime())) {
+            try {
+                marketRegime = MarketRegimeEnum.valueOf(snapshot.getMarketRegime());
+            } catch (IllegalArgumentException ignored) {
+                marketRegime = MarketRegimeEnum.UNKNOWN;
+            }
+        }
+        return MarketRegimeResult.builder()
+                .marketRegime(marketRegime)
+                .totalExposureLimit(Objects.nonNull(snapshot) && Objects.nonNull(snapshot.getExposureLimit())
+                        ? snapshot.getExposureLimit() : marketRegime.getTotalExposureLimit())
+                .reason(Objects.nonNull(snapshot) ? snapshot.getRegimeReason() : "历史市场状态缺失")
+                .build();
+    }
+
+    private String resolveAdviceAction(DailyAction action, BigDecimal currentWeight, BigDecimal targetWeight) {
+        if ("SELL".equalsIgnoreCase(action.getAction())) {
+            return "SELL";
+        }
+        if ("REDUCE".equalsIgnoreCase(action.getAction()) && targetWeight.compareTo(currentWeight) < 0) {
+            return "REDUCE";
+        }
+        if ("HOLD".equalsIgnoreCase(action.getAction())) {
+            return "HOLD";
+        }
+        if (!"BUY".equalsIgnoreCase(action.getAction())
+                || !Objects.equals(action.getExecutableHint(), 1)
+                || targetWeight.compareTo(currentWeight) <= 0) {
+            return "WATCH";
+        }
+        return currentWeight.signum() > 0 ? "ADD" : "BUY";
+    }
+
+    private Integer calculateAdviceQuantity(String action, BigDecimal currentWeight, BigDecimal targetWeight,
+                                            BigDecimal totalEquity, BigDecimal referencePrice,
+                                            DecisionPortfolioHolding holding) {
+        if ("SELL".equals(action)) {
+            return Objects.nonNull(holding) && Objects.nonNull(holding.getQuantity()) ? holding.getQuantity() : 0;
+        }
+        if ("REDUCE".equals(action)) {
+            if (Objects.isNull(totalEquity) || Objects.isNull(referencePrice) || referencePrice.signum() <= 0
+                    || Objects.isNull(holding) || Objects.isNull(holding.getQuantity())) {
+                return 0;
+            }
+            int targetQuantity = targetWeight.multiply(totalEquity)
+                    .divide(referencePrice.multiply(new BigDecimal("100")), 0, RoundingMode.DOWN)
+                    .multiply(new BigDecimal("100")).intValue();
+            return Math.max(holding.getQuantity() - targetQuantity, 0);
+        }
+        if (!"BUY".equals(action) && !"ADD".equals(action)) {
+            return 0;
+        }
+        if (Objects.isNull(totalEquity) || Objects.isNull(referencePrice) || referencePrice.signum() <= 0) {
+            return 0;
+        }
+        BigDecimal amount = targetWeight.subtract(currentWeight).max(BigDecimal.ZERO).multiply(totalEquity);
+        return amount.divide(referencePrice.multiply(new BigDecimal("100")), 0, RoundingMode.DOWN)
+                .multiply(new BigDecimal("100")).intValue();
+    }
+
+    private String buildLocalAdviceSummary(DecisionPortfolioSnapshot snapshot,
+                                           List<DecisionAdviceActionResp> actions,
+                                           BigDecimal targetExposure) {
+        int executableCount = 0;
+        int watchCount = 0;
+        for (DecisionAdviceActionResp action : actions) {
+            if (Boolean.TRUE.equals(action.getExecutable())) {
+                executableCount++;
+            } else if ("WATCH".equals(action.getAction())) {
+                watchCount++;
+            }
+        }
+        return "市场状态" + nullToEmpty(snapshot.getMarketRegime())
+                + "，当前仓位" + pctText(snapshot.getExposureRatio())
+                + "，建议调整至" + pctText(targetExposure)
+                + "；按优先级执行" + executableCount + "项，观察" + watchCount
+                + "项。单笔按止损距离控制风险，组合回撤达到12%停止新仓，15%仅减仓。";
+    }
+
+    private String enhanceAdviceSummary(DecisionPortfolioSnapshot snapshot,
+                                        List<DecisionAdviceActionResp> actions,
+                                        String localSummary) {
+        if (!kimiChatClient.available()) {
+            return null;
+        }
+        String system = "你是A股组合决策解释器。只能解释给定的冻结动作，不得修改动作、仓位、数量、价格、止损止盈或风险门禁。"
+                + "只输出一段120到220字中文纯文本，不要Markdown，不得补充未提供的新闻或财务事实。";
+        StringBuilder user = new StringBuilder();
+        user.append("本地结论：").append(localSummary).append('\n')
+                .append("市场状态：").append(snapshot.getMarketRegime())
+                .append("；原因：").append(snapshot.getRegimeReason()).append('\n')
+                .append("动作：\n");
+        int limit = Math.min(actions.size(), 12);
+        for (int index = 0; index < limit; index++) {
+            DecisionAdviceActionResp action = actions.get(index);
+            user.append(action.getPriority()).append('.')
+                    .append(action.getCode()).append(' ')
+                    .append(action.getAction()).append(" 当前=")
+                    .append(action.getCurrentWeight()).append(" 目标=")
+                    .append(action.getTargetWeight()).append(" 数量=")
+                    .append(action.getQuantity()).append('\n');
+        }
+        return kimiChatClient.chat(system, user.toString(), 450);
+    }
+
+    /**
      * 决策历史 + 买入建议事后次日收益
      *
      * @param limit 天数
@@ -1209,7 +1811,8 @@ public class DecisionServiceImpl implements IDecisionService {
                     if (StringUtils.isNotBlank(row.getCode())) {
                         buyCodes.add(row.getCode());
                     }
-                } else if ("SELL".equalsIgnoreCase(row.getAction())) {
+                } else if ("SELL".equalsIgnoreCase(row.getAction())
+                        || "REDUCE".equalsIgnoreCase(row.getAction())) {
                     sell++;
                 } else {
                     hold++;
@@ -1296,7 +1899,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 .eq(DailyAction::getAction, "BUY"));
         List<DailyAction> sells = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
                 .in(DailyAction::getActionDate, dates)
-                .eq(DailyAction::getAction, "SELL"));
+                .in(DailyAction::getAction, List.of("SELL", "REDUCE")));
 
         Map<String, List<BigDecimal>> byStrategy = new HashMap<>();
         Map<String, List<BigDecimal>> byCf = new HashMap<>();
@@ -2116,14 +2719,15 @@ public class DecisionServiceImpl implements IDecisionService {
      * 买入离场规则：策略离场 + 止损/止盈价（持仓已有则用持仓，否则按现价生成建议）
      */
     private String buyExitRule(String strategyId, String code, BigDecimal price,
-                               MyHolding holding, LocalDate asOfDate) {
+                               MyHolding holding, LocalDate asOfDate,
+                               BigDecimal atrStopMultiplier, BigDecimal atrTakeMultiplier) {
         String base = exitRuleOf(strategyId);
         if (Objects.nonNull(holding)
                 && Objects.nonNull(holding.getStopLoss()) && holding.getStopLoss().signum() > 0
                 && Objects.nonNull(holding.getTakeProfit()) && holding.getTakeProfit().signum() > 0) {
             return mergeExitRule(base, holding);
         }
-        BigDecimal[] levels = suggestStopTake(code, price, asOfDate);
+        BigDecimal[] levels = suggestStopTake(code, price, asOfDate, atrStopMultiplier, atrTakeMultiplier);
         if (Objects.isNull(levels[0]) || Objects.isNull(levels[1])) {
             return base;
         }
@@ -2158,14 +2762,15 @@ public class DecisionServiceImpl implements IDecisionService {
     /**
      * 持仓缺止损或止盈时自动生成并回写（已有值不覆盖）
      */
-    private void ensureHoldingStopTake(MyHolding holding, BigDecimal price, LocalDate asOfDate) {
-        if (Objects.isNull(holding) || Objects.isNull(holding.getId())) {
-            return;
+    private boolean ensureHoldingStopTake(MyHolding holding, BigDecimal price, LocalDate asOfDate,
+                                          BigDecimal atrStopMultiplier, BigDecimal atrTakeMultiplier) {
+        if (Objects.isNull(holding)) {
+            return false;
         }
         boolean needStop = Objects.isNull(holding.getStopLoss()) || holding.getStopLoss().signum() <= 0;
         boolean needTake = Objects.isNull(holding.getTakeProfit()) || holding.getTakeProfit().signum() <= 0;
         if (!needStop && !needTake) {
-            return;
+            return false;
         }
         BigDecimal base = null;
         if (Objects.nonNull(holding.getCostPrice()) && holding.getCostPrice().signum() > 0) {
@@ -2175,24 +2780,16 @@ public class DecisionServiceImpl implements IDecisionService {
         } else if (Objects.nonNull(holding.getMarketPrice()) && holding.getMarketPrice().signum() > 0) {
             base = holding.getMarketPrice();
         }
-        BigDecimal[] levels = suggestStopTake(holding.getCode(), base, asOfDate);
+        BigDecimal[] levels = suggestStopTake(
+                holding.getCode(), base, asOfDate, atrStopMultiplier, atrTakeMultiplier);
         if (needStop && Objects.nonNull(levels[0])) {
             holding.setStopLoss(levels[0]);
         }
         if (needTake && Objects.nonNull(levels[1])) {
             holding.setTakeProfit(levels[1]);
         }
-        if ((needStop && Objects.nonNull(holding.getStopLoss()))
-                || (needTake && Objects.nonNull(holding.getTakeProfit()))) {
-            MyHolding patch = new MyHolding();
-            patch.setId(holding.getId());
-            patch.setStopLoss(holding.getStopLoss());
-            patch.setTakeProfit(holding.getTakeProfit());
-            patch.setUpdateTime(LocalDateTime.now());
-            myHoldingMapper.updateById(patch);
-            log.info("持仓止损止盈已自动补全 code={} stop={} take={}",
-                    holding.getCode(), holding.getStopLoss(), holding.getTakeProfit());
-        }
+        return (needStop && Objects.nonNull(holding.getStopLoss()))
+                || (needTake && Objects.nonNull(holding.getTakeProfit()));
     }
 
     /**
@@ -2200,19 +2797,21 @@ public class DecisionServiceImpl implements IDecisionService {
      *
      * @return [stop, take]，算不出则为 null
      */
-    private BigDecimal[] suggestStopTake(String code, BigDecimal basePrice, LocalDate asOfDate) {
+    private BigDecimal[] suggestStopTake(String code, BigDecimal basePrice, LocalDate asOfDate,
+                                         BigDecimal atrStopMultiplier, BigDecimal atrTakeMultiplier) {
         BigDecimal[] result = new BigDecimal[]{null, null};
         if (Objects.isNull(basePrice) || basePrice.signum() <= 0) {
             return result;
         }
-        BigDecimal stopMult = configService.getDecimal("atr_stop_mult", new BigDecimal("2.0"));
-        BigDecimal takeMult = configService.getDecimal("atr_take_mult", new BigDecimal("3.0"));
+        if (Objects.isNull(atrStopMultiplier) || Objects.isNull(atrTakeMultiplier)) {
+            throw new BusinessException("决策组合快照缺少冻结ATR参数");
+        }
         BigDecimal atr = calcAtr14(code, asOfDate);
         BigDecimal stop;
         BigDecimal take;
         if (Objects.nonNull(atr) && atr.signum() > 0) {
-            stop = basePrice.subtract(atr.multiply(stopMult)).setScale(2, RoundingMode.HALF_UP);
-            take = basePrice.add(atr.multiply(takeMult)).setScale(2, RoundingMode.HALF_UP);
+            stop = basePrice.subtract(atr.multiply(atrStopMultiplier)).setScale(2, RoundingMode.HALF_UP);
+            take = basePrice.add(atr.multiply(atrTakeMultiplier)).setScale(2, RoundingMode.HALF_UP);
             if (stop.signum() <= 0) {
                 stop = basePrice.multiply(BigDecimal.ONE.subtract(FALLBACK_STOP_PCT))
                         .setScale(2, RoundingMode.HALF_UP);

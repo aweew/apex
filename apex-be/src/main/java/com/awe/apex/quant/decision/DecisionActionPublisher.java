@@ -1,6 +1,7 @@
 package com.awe.apex.quant.decision;
 
 import cn.hutool.core.collection.CollUtil;
+import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.entity.DailyAction;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 @Component
 public class DecisionActionPublisher {
@@ -26,6 +28,14 @@ public class DecisionActionPublisher {
     @Resource
     private DecisionRunMapper decisionRunMapper;
 
+    /**
+     * 原子发布本次决策动作并切换正式运行
+     *
+     * @param run       决策运行
+     * @param items     决策动作
+     * @param dataLevel 数据质量等级
+     * @param message   决策说明
+     */
     @Transactional(rollbackFor = Exception.class)
     public void publish(DecisionRun run, List<DecisionItemResp> items,
                         String dataLevel, String message) {
@@ -39,7 +49,9 @@ public class DecisionActionPublisher {
         int rank = 0;
         for (DecisionItemResp item : items) {
             DailyAction row = toAction(actionDate, run.getId(), ++rank, item, now);
-            dailyActionMapper.insert(row);
+            if (dailyActionMapper.insert(row) != 1) {
+                throw new BusinessException("决策动作发布失败，code=" + item.getCode());
+            }
             item.setId(row.getId());
         }
         decisionRunMapper.update(null, new UpdateWrapper<DecisionRun>()
@@ -55,7 +67,7 @@ public class DecisionActionPublisher {
         run.setPublished(1);
         run.setUpdateTime(now);
         if (decisionRunMapper.updateById(run) != 1) {
-            throw new IllegalStateException("决策运行发布状态更新失败: " + run.getId());
+            throw new BusinessException("决策运行发布状态更新失败: " + run.getId());
         }
     }
 
@@ -71,6 +83,9 @@ public class DecisionActionPublisher {
                 .strategyId(item.getStrategyId())
                 .reason(limit(item.getReason(), 512))
                 .suggestedWeight(item.getSuggestedWeight())
+                .referencePrice(item.getReferencePrice())
+                .stopLossPrice(item.getStopLossPrice())
+                .takeProfitPrice(item.getTakeProfitPrice())
                 .exitRule(item.getExitRule())
                 .score(item.getScore())
                 .confluenceCount(item.getConfluenceCount())
@@ -95,7 +110,7 @@ public class DecisionActionPublisher {
     }
 
     private Integer booleanInt(Boolean value) {
-        return value == null ? null : (value ? 1 : 0);
+        return Objects.isNull(value) ? null : (value ? 1 : 0);
     }
 
     private String csv(List<String> values, int maxLength) {

@@ -66,6 +66,16 @@ public class PortfolioSummaryResp {
     private BigDecimal marketValue;
 
     /**
+     * 现金余额
+     */
+    private BigDecimal cashBalance;
+
+    /**
+     * 总权益（持仓市值 + 现金余额）
+     */
+    private BigDecimal totalEquity;
+
+    /**
      * 成本市值
      */
     private BigDecimal costValue;

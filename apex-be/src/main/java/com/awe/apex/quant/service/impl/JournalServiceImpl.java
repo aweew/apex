@@ -74,7 +74,7 @@ public class JournalServiceImpl implements IJournalService {
         JournalCreateReq req = new JournalCreateReq();
         req.setTradeDate(action.getActionDate().toString());
         req.setCode(action.getCode());
-        req.setSide(action.getAction());
+        req.setSide("REDUCE".equalsIgnoreCase(action.getAction()) ? "SELL" : action.getAction());
         req.setPrice(price);
         req.setQuantity(quantity);
         req.setRelatedActionId(actionId);

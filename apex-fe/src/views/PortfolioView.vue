@@ -219,6 +219,7 @@ const pfForm = reactive({
   ownerLabel: '',
   note: '',
   status: 'ACTIVE',
+  cashBalance: 0,
 })
 
 const form = reactive({
@@ -754,7 +755,14 @@ function renderDailyChart() {
 }
 
 function openCreatePf() {
-  Object.assign(pfForm, { id: null, name: '', ownerLabel: '', note: '', status: 'ACTIVE' })
+  Object.assign(pfForm, {
+    id: null,
+    name: '',
+    ownerLabel: '',
+    note: '',
+    status: 'ACTIVE',
+    cashBalance: 0,
+  })
   pfDialog.value = true
 }
 
@@ -765,6 +773,7 @@ function openEditPf(row) {
     ownerLabel: row.ownerLabel || '',
     note: row.note || '',
     status: row.status || 'ACTIVE',
+    cashBalance: row.cashBalance ?? 0,
   })
   pfDialog.value = true
 }
@@ -1521,8 +1530,16 @@ onBeforeUnmount(() => {
             <b>{{ rows.length }}</b>
           </div>
           <div v-if="!sharingCapture" class="stat-card">
-            <label><TermTip term="total_mv">总市值</TermTip></label>
+            <label><TermTip term="total_mv">持仓市值</TermTip></label>
             <b>{{ fmtMoney(totalMv) }}</b>
+          </div>
+          <div v-if="!sharingCapture" class="stat-card">
+            <label>现金</label>
+            <b>{{ fmtMoney(detail.cashBalance) }}</b>
+          </div>
+          <div v-if="!sharingCapture" class="stat-card">
+            <label>总权益</label>
+            <b>{{ fmtMoney(detail.totalEquity) }}</b>
           </div>
           <div class="stat-card">
             <label>{{ sharingCapture ? '今日涨跌' : '今日盈亏' }}</label>
@@ -1937,6 +1954,16 @@ onBeforeUnmount(() => {
         </el-form-item>
         <el-form-item label="归属人">
           <el-input v-model="pfForm.ownerLabel" maxlength="32" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="现金余额">
+          <el-input-number
+            v-model="pfForm.cashBalance"
+            :min="0"
+            :precision="2"
+            :step="1000"
+            controls-position="right"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="pfForm.note" type="textarea" :rows="2" maxlength="200" />

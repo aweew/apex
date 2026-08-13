@@ -75,9 +75,24 @@ public class PortfolioDaily implements Serializable {
     private Integer positionCount;
 
     /**
-     * 现金（预留）
+     * 现金
      */
     private BigDecimal cash;
+
+    /**
+     * 总权益（持仓市值 + 现金）
+     */
+    private BigDecimal totalEquity;
+
+    /**
+     * 历史峰值权益
+     */
+    private BigDecimal peakEquity;
+
+    /**
+     * 相对历史峰值的回撤比例
+     */
+    private BigDecimal drawdown;
 
     /**
      * 持仓明细JSON

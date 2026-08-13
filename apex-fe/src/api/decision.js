@@ -35,3 +35,7 @@ export function fetchDecisionPlaybook() {
 export function fetchDecisionAttribution(days = 20) {
   return http.get('/api/decision/attribution', { params: { days } })
 }
+
+export function fetchDecisionAdvice(date) {
+  return http.get('/api/decision/advice', { params: date ? { date } : {} })
+}

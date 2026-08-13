@@ -1,5 +1,6 @@
 package com.awe.apex.quant.decision;
 
+import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.domain.entity.DecisionRun;
@@ -15,6 +16,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,7 +33,8 @@ class DecisionActionPublisherTest {
     void setUp() {
         ReflectionTestUtils.setField(publisher, "dailyActionMapper", mapper);
         ReflectionTestUtils.setField(publisher, "decisionRunMapper", runMapper);
-        when(runMapper.updateById(org.mockito.ArgumentMatchers.any(DecisionRun.class))).thenReturn(1);
+        when(mapper.insert(any(DailyAction.class))).thenReturn(1);
+        when(runMapper.updateById(any(DecisionRun.class))).thenReturn(1);
     }
 
     @Test
@@ -56,5 +60,18 @@ class DecisionActionPublisherTest {
         assertEquals(1, run.getPublished());
         verify(runMapper).selectList(org.mockito.ArgumentMatchers.any());
         verify(runMapper).updateById(run);
+    }
+
+    @Test
+    void failsWhenPublishedActionCannotBePersisted() {
+        DecisionRun run = DecisionRun.builder()
+                .id(12L)
+                .actionDate(LocalDate.of(2026, 8, 7))
+                .build();
+        when(mapper.insert(any(DailyAction.class))).thenReturn(0);
+
+        assertThrows(BusinessException.class, () -> publisher.publish(run,
+                List.of(DecisionItemResp.builder().code("000001").action("BUY").build()),
+                "GREEN", "完成"));
     }
 }

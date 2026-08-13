@@ -79,7 +79,7 @@ async function paperFromAction(row) {
     await placeOrder({
       accountId: acc.data.id,
       code: row.code,
-      side: row.action === 'SELL' ? 'SELL' : 'BUY',
+      side: row.action === 'SELL' || row.action === 'REDUCE' ? 'SELL' : 'BUY',
       quantity,
     })
     ElMessage.success('已模拟成交')
@@ -124,7 +124,9 @@ onMounted(load)
     <el-table v-else v-loading="loading" :data="rows" height="360" stripe class="apex-table">
       <el-table-column prop="action" label="动作" width="80">
         <template #default="{ row }">
-          <span :class="{ up: row.action === 'BUY', down: row.action === 'SELL' }">{{ row.action }}</span>
+          <span :class="{ up: row.action === 'BUY', down: row.action === 'SELL' || row.action === 'REDUCE' }">
+            {{ row.action }}
+          </span>
         </template>
       </el-table-column>
       <el-table-column prop="code" label="代码" width="100">

@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
 import {
   fetchDecisionAttribution,
+  fetchDecisionAdvice,
   fetchDecisionBuyAiSummary,
   fetchDecisionHistory,
   fetchDecisionPlaybook,
@@ -38,6 +39,8 @@ const activeTab = ref('buys')
 const history = ref([])
 const playbook = ref(null)
 const attribution = ref(null)
+const decisionAdvice = ref(null)
+const adviceLoading = ref(false)
 const morePanels = ref([])
 const FILTER_PREF_KEY = 'apex.decision.buyFilters'
 const savedFilters = (() => {
@@ -203,6 +206,18 @@ async function loadAttribution() {
   }
 }
 
+async function loadDecisionAdvice(date) {
+  adviceLoading.value = true
+  try {
+    const res = await fetchDecisionAdvice(date)
+    decisionAdvice.value = res.data
+  } catch {
+    decisionAdvice.value = null
+  } finally {
+    adviceLoading.value = false
+  }
+}
+
 function strategyName(id) {
   if (id === 'RISK') return 'RISK 止损止盈'
   const s = strategies.value.find((x) => x.strategyId === id)
@@ -219,6 +234,7 @@ async function load() {
     data.value = res.data
     pickDefaultTab()
     await Promise.all([loadHistory(), loadAttribution()])
+    loadDecisionAdvice(data.value?.actionDate)
     loadBuyAi(false)
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
@@ -234,6 +250,7 @@ async function openHistoryDay(row) {
     const res = await fetchDecisionToday(row.actionDate, DEFAULT_GROUP)
     data.value = res.data
     pickDefaultTab()
+    loadDecisionAdvice(data.value?.actionDate)
     loadBuyAi(false)
     ElMessage.success(`已切换到决策日 ${row.actionDate}`)
   } catch (e) {
@@ -260,6 +277,34 @@ function fmtPct(v) {
 function fmtScore(v) {
   if (v == null) return '-'
   return Number(v).toFixed(1)
+}
+
+function fmtMoney(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '-'
+  return Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+}
+
+function fmtPrice(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '-'
+  return Number(v).toFixed(2)
+}
+
+function adviceActionLabel(action) {
+  return {
+    BUY: '买入',
+    ADD: '加仓',
+    REDUCE: '减仓',
+    SELL: '卖出',
+    HOLD: '持有',
+    WATCH: '观察',
+  }[action] || action || '-'
+}
+
+function adviceActionType(action) {
+  if (action === 'BUY' || action === 'ADD') return 'danger'
+  if (action === 'SELL' || action === 'REDUCE') return 'success'
+  if (action === 'WATCH') return 'warning'
+  return 'info'
 }
 
 async function loadBuyAi(force = false) {
@@ -549,6 +594,58 @@ onBeforeUnmount(() => {
         :title="tip.text"
       />
     </div>
+
+    <section v-if="decisionAdvice || adviceLoading" class="advice-panel" v-loading="adviceLoading">
+      <div v-if="decisionAdvice" class="advice-head">
+        <div>
+          <div class="kicker">最终决策 · {{ decisionAdvice.actionDate }}</div>
+          <h2>{{ decisionAdvice.executionDate }} {{ decisionAdvice.executionTiming }}</h2>
+          <p>{{ decisionAdvice.summary }}</p>
+        </div>
+        <div class="advice-metrics">
+          <span><label>当前仓位</label><b>{{ fmtPct(decisionAdvice.currentExposure) }}</b></span>
+          <span><label>目标仓位</label><b>{{ fmtPct(decisionAdvice.targetExposure) }}</b></span>
+          <span><label>回撤</label><b>{{ fmtPct(decisionAdvice.drawdown) }}</b></span>
+          <span><label>现金</label><b>{{ fmtMoney(decisionAdvice.cash) }}</b></span>
+        </div>
+      </div>
+      <div v-if="decisionAdvice?.actions?.length" class="advice-table-wrap">
+        <el-table :data="decisionAdvice.actions" size="small" class="advice-table">
+          <el-table-column prop="priority" label="#" width="44" align="center" />
+          <el-table-column label="标的" min-width="118">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
+                {{ row.name || row.code }}
+              </el-button>
+              <small class="advice-code">{{ row.code }}</small>
+            </template>
+          </el-table-column>
+          <el-table-column label="动作" width="76" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain" :type="adviceActionType(row.action)">
+                {{ adviceActionLabel(row.action) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="当前 / 目标" min-width="118" align="center">
+            <template #default="{ row }">{{ fmtPct(row.currentWeight) }} / {{ fmtPct(row.targetWeight) }}</template>
+          </el-table-column>
+          <el-table-column label="数量" width="88" align="right">
+            <template #default="{ row }">{{ row.quantity ? `${row.quantity} 股` : '-' }}</template>
+          </el-table-column>
+          <el-table-column label="参考 / 止损 / 止盈" min-width="168" align="center">
+            <template #default="{ row }">
+              {{ fmtPrice(row.referencePrice) }} / {{ fmtPrice(row.stopLossPrice) }} /
+              {{ fmtPrice(row.takeProfitPrice) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="reason" label="理由" min-width="260" show-overflow-tooltip />
+        </el-table>
+      </div>
+      <div v-if="decisionAdvice?.reviewSchedule?.length" class="review-row">
+        <span v-for="item in decisionAdvice.reviewSchedule" :key="item">{{ item }}</span>
+      </div>
+    </section>
 
     <!-- ② 今日清单 -->
     <section class="action-panel">
@@ -1394,6 +1491,97 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
+.advice-panel {
+  margin: 12px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.advice-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 12px;
+}
+
+.advice-head h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+
+.advice-head p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.advice-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(78px, 1fr));
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.advice-metrics span {
+  padding: 8px 10px;
+  border-left: 2px solid rgba(0, 113, 227, 0.24);
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.advice-metrics label,
+.advice-metrics b {
+  display: block;
+  letter-spacing: 0;
+}
+
+.advice-metrics label {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.advice-metrics b {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.advice-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.advice-table {
+  min-width: 920px;
+}
+
+.advice-code {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.review-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.review-row span {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .tip-item {
   margin: 0;
 }
@@ -1629,6 +1817,14 @@ onBeforeUnmount(() => {
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .advice-head {
+    flex-direction: column;
+  }
+
+  .advice-metrics {
+    width: 100%;
+  }
 }
 
 @media (max-width: 560px) {
@@ -1662,6 +1858,14 @@ onBeforeUnmount(() => {
 
   .action-panel {
     padding: 14px 10px 10px;
+  }
+
+  .advice-panel {
+    padding: 14px 10px;
+  }
+
+  .advice-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .metric-row {

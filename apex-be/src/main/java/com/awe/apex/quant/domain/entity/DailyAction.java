@@ -29,10 +29,13 @@ public class DailyAction implements Serializable {
     /** 运行内排序 */ private Integer rankNo;
     /** 证券代码 */ private String code;
     /** 简称 */ private String name;
-    /** BUY/SELL/HOLD */ private String action;
+    /** BUY/REDUCE/SELL/HOLD */ private String action;
     /** 策略ID */ private String strategyId;
     /** 理由 */ private String reason;
     /** 建议仓位 */ private BigDecimal suggestedWeight;
+    /** 决策时参考价 */ private BigDecimal referencePrice;
+    /** 决策止损价 */ private BigDecimal stopLossPrice;
+    /** 决策止盈价 */ private BigDecimal takeProfitPrice;
     /** 离场条件 */ private String exitRule;
     /** 综合评分 */ private BigDecimal score;
     /** 共振策略数 */ private Integer confluenceCount;

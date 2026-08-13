@@ -3,6 +3,7 @@ package com.awe.apex.quant.job;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IDataSyncJobService;
+import com.awe.apex.quant.service.IDecisionOutcomeService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -20,6 +21,9 @@ public class DecisionScheduler {
     @Resource
     private IDataSyncJobService dataSyncJobService;
 
+    @Resource
+    private IDecisionOutcomeService decisionOutcomeService;
+
     /**
      * 午间和收盘后自动生成决策。
      */
@@ -34,6 +38,15 @@ public class DecisionScheduler {
     @Scheduled(cron = "0 10 16 * * MON-FRI", zone = "Asia/Shanghai")
     public void runClosingSession() {
         runScheduledDecision(LocalDate.now());
+    }
+
+    /**
+     * 收盘数据同步后补算成熟的候选结果
+     */
+    @Scheduled(cron = "0 30 18 * * MON-FRI", zone = "Asia/Shanghai")
+    public void calculateDecisionOutcomes() {
+        int savedCount = decisionOutcomeService.calculatePendingOutcomes();
+        log.info("智能决策结果归因定时任务完成 savedCount={}", savedCount);
     }
 
     void runScheduledDecision(LocalDate actionDate) {

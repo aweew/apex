@@ -59,6 +59,12 @@ public class DailyActionServiceImpl implements IDailyActionService {
     @Transactional(rollbackFor = Exception.class)
     public List<DailyAction> run(LocalDate date) {
         LocalDate actionDate = Objects.nonNull(date) ? date : LocalDate.now();
+        List<DailyAction> publishedActions = listByDate(actionDate);
+        for (DailyAction publishedAction : publishedActions) {
+            if (Objects.nonNull(publishedAction.getRunId())) {
+                return publishedActions;
+            }
+        }
         dailyActionMapper.delete(Wrappers.<DailyAction>lambdaQuery().eq(DailyAction::getActionDate, actionDate));
 
         SignalRunReq req = new SignalRunReq();
