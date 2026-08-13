@@ -670,47 +670,6 @@ textarea {
 
   .header {
     flex-direction: column;
-    position: relative;
-    gap: 10px;
-    margin: 0 0 16px;
-    padding: 4px 2px 12px 12px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  /* 顶栏已承担品牌识别，内容标题只表达当前页面任务。 */
-  .header .eyebrow {
-    display: none !important;
-  }
-
-  .header > :first-child {
-    min-width: 0;
-  }
-
-  .header > :first-child::before {
-    position: absolute;
-    top: 6px;
-    bottom: 14px;
-    left: 0;
-    width: 3px;
-    border-radius: 2px;
-    background: var(--accent);
-    content: '';
-  }
-
-  .header h1,
-  .shell.dense .header h1 {
-    font-size: 22px !important;
-    font-weight: 700;
-    line-height: 1.22;
-    letter-spacing: 0;
-  }
-
-  .header p {
-    max-width: none;
-    margin-top: 4px;
-    font-size: 12px;
-    line-height: 1.45;
-    color: var(--slate);
   }
 
   .header .actions,
@@ -731,22 +690,19 @@ textarea {
   }
 
   .header {
+    gap: 12px;
     margin-bottom: 14px;
-    padding-bottom: 10px;
   }
 
   .header h1,
   .shell.dense .header h1 {
-    font-size: 22px !important;
+    font-size: 24px;
     letter-spacing: 0;
   }
 
   .header p {
     max-width: none;
-    margin-top: 4px;
-    font-size: 12px;
-    line-height: 1.45;
-    color: var(--slate);
+    margin-top: 6px;
   }
 
   .cards,
