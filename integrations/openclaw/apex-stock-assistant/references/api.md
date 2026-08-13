@@ -10,7 +10,7 @@ Send `POST /apex/bot/v1/ask` with JSON:
 }
 ```
 
-`question` is required and must contain the user's original question. The endpoint is read-only and supports stock analysis, market summaries, portfolio risk, and current decision queries.
+`question` is required and must contain the user's original question. The endpoint is read-only and supports stock analysis, market summaries, default-portfolio today's profit or loss, portfolio risk, and current decision queries. For example, `我今天亏多少` returns the default portfolio's current-day profit or loss when holdings and quotes are available.
 
 `requestId`, `userId`, and `conversationId` are optional request fields. The bundled script intentionally sends only `question`; Apex generates a request ID when one is not supplied.
 
@@ -53,13 +53,11 @@ The response uses the Apex result envelope:
   "code": 0,
   "data": {
     "requestId": "generated-request-id",
-    "intent": "STOCK_ANALYSIS",
-    "stockCode": "300750",
-    "stockName": "宁德时代",
-    "answer": "...",
+    "intent": "PORTFOLIO_TODAY_PNL",
+    "answer": "今日持仓盈亏...",
     "dataAsOf": "2026-08-13",
     "dataLevel": "GREEN",
-    "aiEnhanced": true
+    "aiEnhanced": false
   },
   "msg": "成功"
 }
@@ -68,3 +66,9 @@ The response uses the Apex result envelope:
 Treat Apex as the authoritative source. Present `data.answer` and preserve `data.dataAsOf`, `data.dataLevel`, and the investment-risk notice in the answer. `aiEnhanced=false` means Apex returned its deterministic fallback answer; it is still valid and must not be replaced with an invented conclusion. On any non-2xx response, surface the returned error and do not invent a fallback conclusion.
 
 `dataLevel` is `GREEN`, `YELLOW`, or `RED`. It describes data completeness and freshness, not a buy or sell signal.
+
+## Structured tool endpoint
+
+Send signed `POST /apex/bot/v1/tool` requests using the same HMAC headers. `operation` is one of `PORTFOLIO_ADVICE`, `PORTFOLIO_STATUS`, `HOLDING_PREVIEW`, `HOLDING_CONFIRM`, or `OPERATION_STATUS`.
+
+All tool requests require the original WeClaw `userId` and `conversationId`. `HOLDING_PREVIEW` accepts only structured holding rows with a six-digit code, positive quantity, and positive cost price. It creates a pending full-replacement operation. `HOLDING_CONFIRM` requires the one-time confirmation code returned by the preview and is restricted to the same user and conversation for ten minutes.

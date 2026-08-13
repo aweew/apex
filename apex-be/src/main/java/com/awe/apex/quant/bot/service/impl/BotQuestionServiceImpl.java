@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -89,9 +90,24 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
         if (CollUtil.isNotEmpty(portfolios)) {
             for (PortfolioSummaryResp portfolio : portfolios) {
                 if (StringUtils.isNotBlank(portfolio.getName()) && question.contains(portfolio.getName())) {
-                    return answerPortfolio(requestId, portfolio.getId());
+                    return answerPortfolio(requestId, portfolio.getId(), containsAny(question, "建议", "怎么操作", "怎么办", "买卖"));
                 }
             }
+        }
+        if (containsAny(question, "今天", "今日")
+                && containsAny(question, "盈亏", "赚多少", "亏多少", "赚了多少", "亏了多少")) {
+            for (PortfolioSummaryResp portfolio : portfolios) {
+                if (Boolean.TRUE.equals(portfolio.getIsDefault())) {
+                    return answerPortfolioTodayPnl(requestId, portfolio.getId());
+                }
+            }
+            return BotAskResp.builder()
+                    .requestId(requestId)
+                    .intent("PORTFOLIO_TODAY_PNL")
+                    .answer("还没有可用于计算的默认组合。请先在 Apex 录入持仓后再查询今日盈亏。\n" + DISCLAIMER)
+                    .dataLevel("YELLOW")
+                    .aiEnhanced(false)
+                    .build();
         }
         if (containsAny(question, "我的持仓", "持仓风险", "组合风险", "总体风险", "仓位", "浮亏", "浮盈")) {
             return answerPortfolioRisk(requestId);
@@ -229,7 +245,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
                 .build();
     }
 
-    private BotAskResp answerPortfolio(String requestId, Long portfolioId) {
+    private BotAskResp answerPortfolio(String requestId, Long portfolioId, boolean includeAdvice) {
         PortfolioSummaryResp portfolio = portfolioService.detail(portfolioId);
         StringBuilder answer = new StringBuilder();
         answer.append("组合：").append(portfolio.getName()).append("\n");
@@ -242,7 +258,38 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
             answer.append("（").append(portfolio.getTodayPct()).append("%）");
         }
         answer.append("\n");
-        if (CollUtil.isNotEmpty(portfolio.getTopHoldings())) {
+        if (includeAdvice && Objects.nonNull(portfolio.getBrief())) {
+            answer.append("组合立场：").append(defaultText(portfolio.getBrief().getStance(), "暂无"))
+                    .append("。 ").append(defaultText(portfolio.getBrief().getSummary(), "暂无组合研判")).append("\n");
+            if (CollUtil.isNotEmpty(portfolio.getBrief().getActions())) {
+                answer.append("优先操作：\n");
+                for (var action : portfolio.getBrief().getActions()) {
+                    answer.append("- ").append(action.getText()).append("\n");
+                }
+            }
+        }
+        if (includeAdvice && CollUtil.isNotEmpty(portfolio.getHoldings())) {
+            answer.append("单票建议：\n");
+            int count = 0;
+            for (var holding : portfolio.getHoldings()) {
+                if (count >= 8) {
+                    break;
+                }
+                answer.append("- ").append(defaultText(holding.getName(), holding.getCode())).append("（")
+                        .append(holding.getCode()).append("）：").append(defaultText(holding.getVerdict(), "数据不足"));
+                if (StringUtils.isNotBlank(holding.getAdvice())) {
+                    answer.append("，").append(holding.getAdvice());
+                }
+                if (Objects.nonNull(holding.getWeightPct())) {
+                    answer.append("，仓位 ").append(holding.getWeightPct()).append("%");
+                }
+                if (Objects.nonNull(holding.getStopLoss())) {
+                    answer.append("，止损 ").append(holding.getStopLoss());
+                }
+                answer.append("\n");
+                count++;
+            }
+        } else if (CollUtil.isNotEmpty(portfolio.getTopHoldings())) {
             answer.append("主要持仓：\n");
             for (PortfolioTopHoldingResp holding : portfolio.getTopHoldings()) {
                 answer.append("- ").append(defaultText(holding.getName(), holding.getCode()));
@@ -255,16 +302,63 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
                 answer.append("\n");
             }
         }
+        if (Objects.nonNull(portfolio.getQuoteTime())) {
+            answer.append("行情最早时间：").append(portfolio.getQuoteTime()).append("\n");
+            if (isQuoteExpired(portfolio.getQuoteTime())) {
+                answer.append("行情已超过24小时未更新，建议可靠性下降。\n");
+            }
+        }
+        if (defaultInteger(portfolio.getMissingQuoteCount()) > 0) {
+            answer.append("缺少行情：").append(portfolio.getMissingQuoteCount()).append(" 只，建议可靠性下降。\n");
+        }
         if (Objects.nonNull(portfolio.getUpdateTime())) {
-            answer.append("更新时间：").append(portfolio.getUpdateTime()).append("\n");
+            answer.append("组合更新时间：").append(portfolio.getUpdateTime()).append("\n");
         }
         answer.append(DISCLAIMER);
         return BotAskResp.builder()
                 .requestId(requestId)
                 .intent("PORTFOLIO_SUMMARY")
                 .answer(answer.toString())
-                .dataAsOf(Objects.nonNull(portfolio.getUpdateTime()) ? portfolio.getUpdateTime().toString() : null)
-                .dataLevel(Objects.nonNull(portfolio.getTotalEquity()) ? "GREEN" : "YELLOW")
+                .dataAsOf(Objects.nonNull(portfolio.getQuoteTime()) ? portfolio.getQuoteTime().toString() : null)
+                .dataLevel(defaultInteger(portfolio.getMissingQuoteCount()) > 0 ? "RED"
+                        : (isQuoteExpired(portfolio.getQuoteTime()) ? "YELLOW"
+                        : (Objects.nonNull(portfolio.getQuoteTime()) ? "GREEN" : "YELLOW")))
+                .aiEnhanced(false)
+                .build();
+    }
+
+    private BotAskResp answerPortfolioTodayPnl(String requestId, Long portfolioId) {
+        PortfolioSummaryResp portfolio = portfolioService.detail(portfolioId);
+        StringBuilder answer = new StringBuilder("今日持仓盈亏\n");
+        if (defaultInteger(portfolio.getPositionCount()) == 0) {
+            answer.append("默认组合暂无持仓，无法计算今日盈亏。请先在 Apex 录入持仓。\n");
+        } else if (Objects.isNull(portfolio.getTodayPnl())) {
+            answer.append("默认组合有 ").append(defaultInteger(portfolio.getPositionCount()))
+                    .append(" 只持仓，但缺少今日行情，暂时无法计算今日盈亏。\n");
+        } else {
+            BigDecimal todayPnl = portfolio.getTodayPnl().setScale(2, RoundingMode.HALF_UP);
+            if (todayPnl.signum() < 0) {
+                answer.append("今日亏损：").append(todayPnl.abs().toPlainString()).append(" 元\n");
+            } else if (todayPnl.signum() > 0) {
+                answer.append("今日盈利：").append(todayPnl.toPlainString()).append(" 元\n");
+            } else {
+                answer.append("今日盈亏：0.00 元\n");
+            }
+            if (Objects.nonNull(portfolio.getTodayPct())) {
+                answer.append("今日涨跌幅：").append(portfolio.getTodayPct()).append("%\n");
+            }
+        }
+        if (Objects.nonNull(portfolio.getQuoteTime())) {
+            answer.append("行情最早时间：").append(portfolio.getQuoteTime()).append("\n");
+        }
+        answer.append(DISCLAIMER);
+        boolean available = defaultInteger(portfolio.getPositionCount()) > 0 && Objects.nonNull(portfolio.getTodayPnl());
+        return BotAskResp.builder()
+                .requestId(requestId)
+                .intent("PORTFOLIO_TODAY_PNL")
+                .answer(answer.toString())
+                .dataAsOf(Objects.nonNull(portfolio.getQuoteTime()) ? portfolio.getQuoteTime().toString() : null)
+                .dataLevel(available && !isQuoteExpired(portfolio.getQuoteTime()) ? "GREEN" : "YELLOW")
                 .aiEnhanced(false)
                 .build();
     }
@@ -336,5 +430,9 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
 
     private BigDecimal toPercent(BigDecimal ratio) {
         return ratio.multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros();
+    }
+
+    private boolean isQuoteExpired(java.time.LocalDateTime quoteTime) {
+        return Objects.nonNull(quoteTime) && Duration.between(quoteTime, java.time.LocalDateTime.now()).toHours() >= 24;
     }
 }

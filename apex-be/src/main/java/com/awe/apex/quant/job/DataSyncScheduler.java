@@ -14,6 +14,7 @@ import com.awe.apex.quant.service.IIndexBoardService;
 import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.INewsService;
+import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.IWatchlistService;
 
@@ -60,6 +61,9 @@ public class DataSyncScheduler {
     @Resource
     private IMarketBriefingService marketBriefingService;
 
+    @Resource
+    private IPortfolioService portfolioService;
+
     /**
      * 工作日傍晚尝试同步过期日线
      */
@@ -92,6 +96,14 @@ public class DataSyncScheduler {
             log.info("定时刷新行情完成 group={}, success={}", group, resp.get("successCount"));
         } catch (Exception ex) {
             log.warn("定时刷新行情失败: {}", ex.getMessage());
+        }
+        try {
+            Map<String, Object> resp = portfolioService.refreshQuotesAll(false);
+            portfolioService.snapshotAll();
+            log.info("定时刷新全部组合行情完成 portfolios={}, success={}, fail={}",
+                    resp.get("portfolioCount"), resp.get("success"), resp.get("fail"));
+        } catch (Exception ex) {
+            log.warn("定时刷新全部组合行情失败: {}", ex.getMessage());
         }
     }
 
@@ -173,6 +185,16 @@ public class DataSyncScheduler {
         } catch (Exception ex) {
             fail++;
             log.warn("收盘包·自选日线失败: {}", ex.getMessage());
+        }
+        try {
+            Map<String, Object> portfolioResp = portfolioService.refreshQuotesAll(false);
+            int snapshotCount = portfolioService.snapshotAll();
+            ok++;
+            log.info("收盘包·全部组合完成 portfolios={}, success={}, fail={}, snapshot={}",
+                    portfolioResp.get("portfolioCount"), portfolioResp.get("success"), portfolioResp.get("fail"), snapshotCount);
+        } catch (Exception ex) {
+            fail++;
+            log.warn("收盘包·全部组合失败: {}", ex.getMessage());
         }
         log.info("收盘包汇总 success={}, fail={}", ok, fail);
     }

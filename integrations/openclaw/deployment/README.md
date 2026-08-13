@@ -19,6 +19,7 @@ cp /volume1/docker/apex/integrations/openclaw/deployment/.env.example \
   /volume1/docker/openclaw/.env
 cp -R /volume1/docker/apex/integrations/openclaw/apex-stock-assistant \
   /volume1/docker/openclaw/data/workspace/skills/
+chmod 750 /volume1/docker/openclaw/data/workspace/skills/apex-stock-assistant/scripts/*.sh
 chown -R 1000:1000 /volume1/docker/openclaw/data
 chmod 600 /volume1/docker/openclaw/.env
 vim /volume1/docker/openclaw/.env
@@ -105,10 +106,29 @@ cd /volume1/docker/openclaw
 DOCKER=/var/packages/ContainerManager/target/usr/bin/docker
 $DOCKER compose --env-file .env -f compose.yaml run --rm openclaw-cli \
   agent --agent main --message "请问 Apex：宁德时代现在风险大吗？"
+$DOCKER compose --env-file .env -f compose.yaml run --rm openclaw-cli \
+  agent --agent main --message "我今天亏多少"
+$DOCKER compose --env-file .env -f compose.yaml run --rm openclaw-cli \
+  agent --agent main --message "针对疯锅的持仓，你有什么投资建议？"
 ```
 
 官方镜像已包含 Skill 所需的 Node.js、`curl` 和 `openssl`。如果命令执行失败，先看
 Gateway 日志和 Apex 返回的鉴权错误，不要在运行中的容器里临时安装软件。
+
+更新 Apex 代码中的 Skill 后，需要重新复制到已运行的 OpenClaw 工作目录并重启
+Gateway，旧副本不会自动更新：
+
+```bash
+cp -R /volume1/docker/apex/integrations/openclaw/apex-stock-assistant \
+  /volume1/docker/openclaw/data/workspace/skills/
+$DOCKER compose --env-file .env -f compose.yaml up -d --force-recreate openclaw-gateway
+```
+
+重启后确认新工具脚本已生效：
+
+```bash
+test -x /volume1/docker/openclaw/data/workspace/skills/apex-stock-assistant/scripts/apex_tool.sh
+```
 
 ## 6. 微信通道边界
 

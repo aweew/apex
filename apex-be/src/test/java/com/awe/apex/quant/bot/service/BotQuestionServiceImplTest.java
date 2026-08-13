@@ -144,6 +144,67 @@ class BotQuestionServiceImplTest {
         verify(portfolioService).detail(10L);
     }
 
+    @Test
+    void answersTodayPnlFromDefaultPortfolio() {
+        PortfolioSummaryResp defaultPortfolio = PortfolioSummaryResp.builder()
+                .id(1L).name("我的持仓").isDefault(true).positionCount(2)
+                .todayPnl(new BigDecimal("-1280.50"))
+                .todayPct(new BigDecimal("-1.36"))
+                .quoteTime(LocalDateTime.of(2026, 8, 13, 14, 55))
+                .updateTime(LocalDateTime.of(2026, 8, 13, 14, 55))
+                .build();
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of(defaultPortfolio));
+        when(portfolioService.detail(1L)).thenReturn(defaultPortfolio);
+
+        BotAskResp response = service.ask(request("我今天亏多少"));
+
+        assertEquals("PORTFOLIO_TODAY_PNL", response.getIntent());
+        assertTrue(response.getAnswer().contains("今日亏损：1280.50 元"));
+        assertTrue(response.getAnswer().contains("今日涨跌幅：-1.36%"));
+        assertTrue(response.getAnswer().contains("行情最早时间：2026-08-13T14:55"));
+        verify(portfolioService).detail(1L);
+    }
+
+    @Test
+    void explainsWhenDefaultPortfolioHasNoPositionsForTodayPnlQuestion() {
+        PortfolioSummaryResp defaultPortfolio = PortfolioSummaryResp.builder()
+                .id(1L).name("我的持仓").isDefault(true).positionCount(0)
+                .build();
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of(defaultPortfolio));
+        when(portfolioService.detail(1L)).thenReturn(defaultPortfolio);
+
+        BotAskResp response = service.ask(request("今天赚了多少"));
+
+        assertEquals("PORTFOLIO_TODAY_PNL", response.getIntent());
+        assertTrue(response.getAnswer().contains("默认组合暂无持仓"));
+        assertEquals("YELLOW", response.getDataLevel());
+    }
+
+    @Test
+    void includesHoldingAdviceAndQuoteTimeForNamedPortfolioAdviceQuestion() {
+        PortfolioSummaryResp summary = PortfolioSummaryResp.builder()
+                .id(9L).name("疯锅").positionCount(1).totalEquity(new BigDecimal("100000"))
+                .cashBalance(BigDecimal.ZERO).totalPnl(new BigDecimal("-5000"))
+                .quoteTime(LocalDateTime.of(2026, 8, 13, 15, 5))
+                .updateTime(LocalDateTime.of(2026, 8, 1, 10, 0))
+                .missingQuoteCount(0)
+                .holdings(List.of(com.awe.apex.quant.domain.entity.PortfolioHolding.builder()
+                        .code("000063").name("中兴通讯").verdict("谨慎持有")
+                        .advice("反弹优先减仓").weightPct(new BigDecimal("35"))
+                        .stopLoss(new BigDecimal("32.50")).build()))
+                .build();
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of(summary));
+        when(portfolioService.detail(9L)).thenReturn(summary);
+
+        BotAskResp response = service.ask(request("针对疯锅的持仓，你有什么投资建议？"));
+
+        assertEquals("PORTFOLIO_SUMMARY", response.getIntent());
+        assertTrue(response.getAnswer().contains("单票建议"));
+        assertTrue(response.getAnswer().contains("反弹优先减仓"));
+        assertTrue(response.getAnswer().contains("行情最早时间：2026-08-13T15:05"));
+        assertEquals("2026-08-13T15:05", response.getDataAsOf());
+    }
+
     private BotAskReq request(String question) {
         BotAskReq request = new BotAskReq();
         request.setRequestId("wx-1");

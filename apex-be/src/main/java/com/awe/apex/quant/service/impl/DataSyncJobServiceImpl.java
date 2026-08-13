@@ -20,6 +20,7 @@ import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
+import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IWatchlistService;
 import com.awe.apex.quant.sync.SyncTaskHealth;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
@@ -85,6 +86,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Resource
     private IMyHoldingService myHoldingService;
+
+    @Resource
+    private IPortfolioService portfolioService;
 
     @Resource
     private IConfigService configService;
@@ -614,6 +618,14 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 log.info("CLOSE_BUNDLE 后刷持仓行情完成");
             } catch (Exception ex) {
                 log.warn("CLOSE_BUNDLE 后刷持仓行情失败: {}", ex.getMessage());
+            }
+            try {
+                Map<String, Object> portfolioResp = portfolioService.refreshQuotesAll(false);
+                int snapshotCount = portfolioService.snapshotAll();
+                log.info("CLOSE_BUNDLE 后刷全部组合完成 portfolios={}, success={}, fail={}, snapshot={}",
+                        portfolioResp.get("portfolioCount"), portfolioResp.get("success"), portfolioResp.get("fail"), snapshotCount);
+            } catch (Exception ex) {
+                log.warn("CLOSE_BUNDLE 后刷全部组合失败: {}", ex.getMessage());
             }
             try {
                 BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);

@@ -101,6 +101,16 @@ public class PortfolioSummaryResp {
     private LocalDateTime updateTime;
 
     /**
+     * 最早有效行情时间
+     */
+    private LocalDateTime quoteTime;
+
+    /**
+     * 缺少行情的持仓数量
+     */
+    private Integer missingQuoteCount;
+
+    /**
      * 组合级研判简报（详情时填充）
      */
     private PortfolioBriefResp brief;

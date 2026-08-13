@@ -105,6 +105,12 @@ public class PortfolioHolding implements Serializable {
     private BigDecimal pctChg;
 
     /**
+     * 行情时间（非表字段）
+     */
+    @TableField(exist = false)
+    private LocalDateTime quoteTime;
+
+    /**
      * 市值（非表字段）
      */
     @TableField(exist = false)

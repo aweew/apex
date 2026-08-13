@@ -810,6 +810,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
         BigDecimal costValue = BigDecimal.ZERO;
         BigDecimal todayPnl = BigDecimal.ZERO;
         boolean hasToday = false;
+        LocalDateTime quoteTime = null;
+        int missingQuoteCount = 0;
         for (PortfolioHolding holding : holdings) {
             if (Objects.nonNull(holding.getMarketValue())) {
                 marketValue = marketValue.add(holding.getMarketValue());
@@ -820,6 +822,11 @@ public class PortfolioServiceImpl implements IPortfolioService {
             if (Objects.nonNull(holding.getTodayPnl())) {
                 todayPnl = todayPnl.add(holding.getTodayPnl());
                 hasToday = true;
+            }
+            if (Objects.isNull(holding.getQuoteTime())) {
+                missingQuoteCount++;
+            } else if (Objects.isNull(quoteTime) || holding.getQuoteTime().isBefore(quoteTime)) {
+                quoteTime = holding.getQuoteTime();
             }
         }
         marketValue = marketValue.setScale(2, RoundingMode.HALF_UP);
@@ -893,6 +900,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .todayPnl(todayPnl)
                 .todayPct(todayPct)
                 .updateTime(portfolio.getUpdateTime())
+                .quoteTime(quoteTime)
+                .missingQuoteCount(missingQuoteCount)
                 .brief(brief)
                 .topHoldings(topHoldings)
                 .holdings(withHoldings ? holdings : List.of())
@@ -936,6 +945,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
             holding.setMarketPrice(src.getMarketPrice());
             holding.setPctChg(src.getPctChg());
+            holding.setQuoteTime(src.getQuoteTime());
             holding.setMarketValue(src.getMarketValue());
             holding.setPnl(src.getPnl());
             holding.setPnlPct(src.getPnlPct());
@@ -1108,6 +1118,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
             holding.setMarketPrice(basic.getLatestPrice());
             holding.setPctChg(basic.getPctChg());
+            holding.setQuoteTime(basic.getQuoteTime());
             holding.setPeDynamic(basic.getPeDynamic());
             holding.setPeStatic(basic.getPeStatic());
             holding.setPeTtm(basic.getPeTtm());
