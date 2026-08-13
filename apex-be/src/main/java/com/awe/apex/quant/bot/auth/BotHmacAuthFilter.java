@@ -8,6 +8,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -19,6 +20,7 @@ import java.nio.charset.StandardCharsets;
  * Bot API HMAC 鉴权过滤器。
  */
 @Component
+@Slf4j
 public class BotHmacAuthFilter extends OncePerRequestFilter {
 
     private static final int MAX_BODY_BYTES = 8192;
@@ -49,6 +51,7 @@ public class BotHmacAuthFilter extends OncePerRequestFilter {
                 return;
             }
             CachedBodyHttpServletRequest cachedRequest = new CachedBodyHttpServletRequest(request, MAX_BODY_BYTES);
+            long authStartedAt = System.nanoTime();
             authService.validate(
                     request.getMethod(),
                     request.getContextPath() + request.getServletPath(),
@@ -58,6 +61,8 @@ public class BotHmacAuthFilter extends OncePerRequestFilter {
                     request.getHeader("X-Apex-Content-Sha256"),
                     request.getHeader("X-Apex-Signature"),
                     cachedRequest.getCachedBody());
+            log.info("Bot 鉴权完成 path={} bodyBytes={} durationMs={}",
+                    request.getRequestURI(), cachedRequest.getCachedBody().length, elapsedMillis(authStartedAt));
             filterChain.doFilter(cachedRequest, response);
         } catch (BotRequestBodyTooLargeException ex) {
             writeError(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, ex.getMessage());
@@ -71,6 +76,10 @@ public class BotHmacAuthFilter extends OncePerRequestFilter {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.getWriter().write(objectMapper.writeValueAsString(Result.failure(status, message)));
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     /**

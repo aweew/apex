@@ -9,6 +9,7 @@ import com.awe.apex.quant.domain.dto.BotToolReq;
 import com.awe.apex.quant.domain.dto.BotToolResp;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/bot/v1")
+@Slf4j
 public class BotController {
 
     @Resource
@@ -35,7 +37,17 @@ public class BotController {
      */
     @PostMapping("/ask")
     public Result<BotAskResp> ask(@Valid @RequestBody BotAskReq request) {
-        return Result.success(botQuestionService.ask(request));
+        long startedAt = System.nanoTime();
+        try {
+            BotAskResp response = botQuestionService.ask(request);
+            log.info("Bot 问答完成 requestId={} intent={} durationMs={}",
+                    response.getRequestId(), response.getIntent(), elapsedMillis(startedAt));
+            return Result.success(response);
+        } catch (Exception ex) {
+            log.warn("Bot 问答失败 requestId={} durationMs={} reason={}",
+                    request.getRequestId(), elapsedMillis(startedAt), ex.getMessage());
+            throw ex;
+        }
     }
 
     /**
@@ -47,5 +59,9 @@ public class BotController {
     @PostMapping("/tool")
     public Result<BotToolResp> tool(@Valid @RequestBody BotToolReq request) {
         return Result.success(botToolService.execute(request));
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 }

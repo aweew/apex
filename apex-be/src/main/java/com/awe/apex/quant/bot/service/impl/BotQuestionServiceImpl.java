@@ -23,6 +23,7 @@ import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IStockAnalysisService;
 import com.awe.apex.quant.service.IStockService;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -39,6 +40,7 @@ import java.util.regex.Pattern;
  * ClawBot 股票问答服务实现。
  */
 @Service
+@Slf4j
 public class BotQuestionServiceImpl implements IBotQuestionService {
 
     private static final Pattern STOCK_CODE_PATTERN = Pattern.compile("(?<!\\d)(\\d{6})(?!\\d)");
@@ -86,7 +88,10 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
         }
 
         // 3. 优先匹配真实组合名称，再处理默认持仓和通用决策
+        long portfolioListStartedAt = System.nanoTime();
         List<PortfolioSummaryResp> portfolios = portfolioService.listPortfolios(false);
+        log.info("Bot 组合列表查询完成 requestId={} portfolioCount={} durationMs={}",
+                requestId, portfolios.size(), elapsedMillis(portfolioListStartedAt));
         if (CollUtil.isNotEmpty(portfolios)) {
             for (PortfolioSummaryResp portfolio : portfolios) {
                 if (StringUtils.isNotBlank(portfolio.getName()) && question.contains(portfolio.getName())) {
@@ -140,7 +145,10 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     }
 
     private BotAskResp answerStock(String requestId, String code, String fallbackName) {
+        long startedAt = System.nanoTime();
         StockAnalysisResp analysis = stockAnalysisService.analyze(code, "BUY", 120, true, false);
+        log.info("Bot 个股分析查询完成 requestId={} code={} durationMs={}",
+                requestId, code, elapsedMillis(startedAt));
         String name = StringUtils.isNotBlank(analysis.getName()) ? analysis.getName() : fallbackName;
         StringBuilder answer = new StringBuilder();
         answer.append(StringUtils.isNotBlank(name) ? name : code).append("（").append(code).append("）\n");
@@ -189,7 +197,9 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     }
 
     private BotAskResp answerMarket(String requestId) {
+        long startedAt = System.nanoTime();
         MarketBriefingResp briefing = marketBriefingService.briefing(false);
+        log.info("Bot 市场简报查询完成 requestId={} durationMs={}", requestId, elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder("今日市场\n");
         answer.append("立场：").append(defaultText(briefing.getStance(), "暂无")).append("。")
                 .append(defaultText(briefing.getStanceReason(), "暂无市场说明")).append("\n");
@@ -212,7 +222,10 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     }
 
     private BotAskResp answerPortfolioRisk(String requestId) {
+        long startedAt = System.nanoTime();
         BotHoldingRiskResp risk = botHoldingRiskService.analyze();
+        log.info("Bot 持仓风险查询完成 requestId={} holdingCount={} durationMs={}",
+                requestId, defaultInteger(risk.getHoldingCount()), elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder("持仓风险\n");
         answer.append("持仓：").append(defaultInteger(risk.getHoldingCount())).append(" 只，")
                 .append(defaultInteger(risk.getQuotedCount())).append(" 只有有效行情\n");
@@ -246,7 +259,11 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     }
 
     private BotAskResp answerPortfolio(String requestId, Long portfolioId, boolean includeAdvice) {
+        long startedAt = System.nanoTime();
         PortfolioSummaryResp portfolio = portfolioService.detail(portfolioId);
+        log.info("Bot 组合详情查询完成 requestId={} portfolioId={} includeAdvice={} positionCount={} durationMs={}",
+                requestId, portfolioId, includeAdvice, defaultInteger(portfolio.getPositionCount()),
+                elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder();
         answer.append("组合：").append(portfolio.getName()).append("\n");
         answer.append("总权益：").append(defaultAmount(portfolio.getTotalEquity()))
@@ -328,7 +345,10 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     }
 
     private BotAskResp answerPortfolioTodayPnl(String requestId, Long portfolioId) {
+        long startedAt = System.nanoTime();
         PortfolioSummaryResp portfolio = portfolioService.detail(portfolioId);
+        log.info("Bot 今日盈亏查询完成 requestId={} portfolioId={} positionCount={} durationMs={}",
+                requestId, portfolioId, defaultInteger(portfolio.getPositionCount()), elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder("今日持仓盈亏\n");
         if (defaultInteger(portfolio.getPositionCount()) == 0) {
             answer.append("默认组合暂无持仓，无法计算今日盈亏。请先在 Apex 录入持仓。\n");
@@ -364,7 +384,11 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     }
 
     private BotAskResp answerDecision(String requestId) {
+        long startedAt = System.nanoTime();
         DecisionAdviceResp advice = decisionService.advice(null);
+        log.info("Bot 今日决策查询完成 requestId={} actionCount={} durationMs={}",
+                requestId, CollUtil.isNotEmpty(advice.getActions()) ? advice.getActions().size() : 0,
+                elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder("今日决策\n");
         answer.append(defaultText(advice.getSummary(), "当前没有可执行决策")).append("\n");
         if (Objects.nonNull(advice.getTargetExposure())) {
@@ -434,5 +458,9 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
 
     private boolean isQuoteExpired(java.time.LocalDateTime quoteTime) {
         return Objects.nonNull(quoteTime) && Duration.between(quoteTime, java.time.LocalDateTime.now()).toHours() >= 24;
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 }
