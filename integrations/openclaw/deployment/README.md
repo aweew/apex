@@ -1,7 +1,8 @@
 # OpenClaw 群晖部署
 
-该部署与 Apex 容器独立，固定使用 OpenClaw `2026.7.1-2`。Gateway 只发布到
-NAS 回环地址，通过 SSH 隧道访问，不挂载 Docker socket。
+该部署与 Apex 容器独立，固定使用阿里云镜像仓库中的 OpenClaw
+`2026.7.1-2`。Gateway 只发布到 NAS 回环地址，通过 SSH 隧道访问，不挂载
+Docker socket。
 
 ## 1. 在 NAS 准备目录
 
@@ -73,11 +74,14 @@ $DOCKER compose --env-file .env -f compose.yaml ps
 Onboarding 会要求选择模型供应商并填写对应 API Key。使用你已有的供应商即可；
 该选择与 Apex 自己使用的 Kimi 配置相互独立。
 
-若 NAS 拉取 GHCR 失败，将 `.env` 中镜像改为同版本 Docker Hub 官方镜像：
+默认镜像地址为：
 
 ```dotenv
-OPENCLAW_IMAGE=openclaw/openclaw:2026.7.1-2
+OPENCLAW_IMAGE=registry.cn-hangzhou.aliyuncs.com/awe-images/openclaw:2026.7.1-2
 ```
+
+这是固定版本标签，不要改成 `latest`。如果仓库改为私有，需要先在 NAS 执行
+`docker login registry.cn-hangzhou.aliyuncs.com`，再执行拉取命令。
 
 ## 4. 从 Mac 打开控制台
 
