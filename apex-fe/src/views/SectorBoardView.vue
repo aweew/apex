@@ -773,10 +773,10 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
   padding: 14px 16px 12px;
   overflow: hidden;
-  border: 1px solid rgba(20, 32, 51, 0.08);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: 0 8px 24px rgba(20, 32, 51, 0.04);
+  background: #fff;
+  box-shadow: var(--shadow-soft);
 }
 
 .rotation-head {
@@ -959,10 +959,10 @@ onBeforeUnmount(() => {
   width: 100%;
   gap: 12px;
   padding: 11px 36px 11px 12px;
-  border: 1px solid rgba(20, 32, 51, 0.09);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 2px 10px rgba(20, 32, 51, 0.035);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: var(--shadow-soft);
   cursor: pointer;
   color: var(--ink);
   font: inherit;
@@ -985,9 +985,8 @@ onBeforeUnmount(() => {
 }
 
 .mainline-item:hover {
-  border-color: rgba(0, 113, 227, 0.34);
-  box-shadow: 0 7px 22px rgba(20, 32, 51, 0.08);
-  transform: translateY(-1px);
+  border-color: rgba(22, 105, 201, 0.42);
+  box-shadow: 0 3px 9px rgba(15, 23, 42, 0.08);
 }
 
 .mainline-item:active {
@@ -1143,9 +1142,9 @@ onBeforeUnmount(() => {
 
 .board-table {
   overflow: hidden;
-  border: 1px solid rgba(20, 32, 51, 0.08);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
 }
 
 .lead-pct {

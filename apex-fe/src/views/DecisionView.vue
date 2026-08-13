@@ -644,6 +644,34 @@ onBeforeUnmount(() => {
           </el-table-column>
           <el-table-column prop="reason" label="理由" min-width="260" show-overflow-tooltip />
         </el-table>
+        <div class="advice-mobile-list" role="list">
+          <article
+            v-for="row in decisionAdvice.actions"
+            :key="`${row.priority}-${row.code}-${row.action}`"
+            class="advice-mobile-item"
+            role="listitem"
+          >
+            <div class="advice-mobile-main">
+              <span class="advice-priority">{{ row.priority }}</span>
+              <div class="advice-mobile-stock">
+                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
+                  {{ row.name || row.code }}
+                </el-button>
+                <SecurityMarketBadge :security="row" />
+                <small>{{ row.code }}</small>
+              </div>
+              <el-tag size="small" effect="plain" :type="adviceActionType(row.action)">
+                {{ adviceActionLabel(row.action) }}
+              </el-tag>
+            </div>
+            <div class="advice-mobile-meta">
+              <span>仓位 {{ fmtPct(row.currentWeight) }} → {{ fmtPct(row.targetWeight) }}</span>
+              <span v-if="row.quantity">{{ row.quantity }} 股</span>
+              <span v-if="row.referencePrice">参考 {{ fmtPrice(row.referencePrice) }}</span>
+            </div>
+            <p v-if="row.reason" class="advice-mobile-reason">{{ row.reason }}</p>
+          </article>
+        </div>
       </div>
       <div v-if="decisionAdvice?.reviewSchedule?.length" class="review-row">
         <span v-for="item in decisionAdvice.reviewSchedule" :key="item">{{ item }}</span>
@@ -1575,6 +1603,10 @@ onBeforeUnmount(() => {
   min-width: 920px;
 }
 
+.advice-mobile-list {
+  display: none;
+}
+
 .advice-code {
   display: block;
   color: var(--muted);
@@ -1909,6 +1941,91 @@ onBeforeUnmount(() => {
 
   .advice-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .advice-metrics span {
+    padding: 6px 8px;
+  }
+
+  .advice-metrics b {
+    font-size: 13px;
+  }
+
+  .advice-table-wrap {
+    overflow: visible;
+  }
+
+  .advice-table {
+    display: none;
+  }
+
+  .advice-mobile-list {
+    display: block;
+    border-top: 1px solid var(--line);
+  }
+
+  .advice-mobile-item {
+    padding: 9px 0 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .advice-mobile-main {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .advice-priority {
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  .advice-mobile-stock {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .advice-mobile-stock :deep(.el-button) {
+    min-width: 0;
+    min-height: 28px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .advice-mobile-stock small {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .advice-mobile-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin: 1px 0 0 27px;
+    color: var(--muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .advice-mobile-reason {
+    margin: 3px 0 0 27px;
+    overflow: hidden;
+    color: var(--ink-soft);
+    font-size: 11px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .metric-row {

@@ -54,6 +54,20 @@ const activeFilterCount = computed(() => {
 const hasCustomFilters = computed(() => activeFilterCount.value > 0 || !dedupeByCode.value)
 const scoreFilterLabel = computed(() => Number(minScore.value) > 0 ? `${minScore.value} 分以上` : '不限')
 
+function signalReason(row) {
+  const rawReason = String(row?.reasonJson || '').trim()
+  if (!rawReason || rawReason === '暂无理由') return ''
+  try {
+    const parsedReason = JSON.parse(rawReason)
+    if (typeof parsedReason === 'string') return parsedReason
+    if (typeof parsedReason?.rule === 'string') return parsedReason.rule
+    if (typeof parsedReason?.reason === 'string') return parsedReason.reason
+  } catch {
+    // 非 JSON 文案保持原样展示
+  }
+  return rawReason
+}
+
 useSessionViewState('signals', {
   sideFilter,
   strategyFilter,
@@ -501,7 +515,7 @@ onBeforeUnmount(() => {
             </span>
             <span class="signal-score">评分 <b>{{ row.score ?? '-' }}</b></span>
           </div>
-          <p class="signal-reason">{{ row.reasonJson || '暂无理由' }}</p>
+          <p v-if="signalReason(row)" class="signal-reason">{{ signalReason(row) }}</p>
           </article>
         </div>
 
@@ -1045,18 +1059,28 @@ onBeforeUnmount(() => {
   .signal-filters {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 9px;
+    gap: 6px;
     margin-bottom: 2px;
   }
 
   .filter-group {
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .filter-label {
+    font-size: 11px;
+  }
+
+  .signal-segmented {
+    padding: 2px;
+    border-radius: 6px;
   }
 
   .signal-segmented button {
     min-width: 0;
-    min-height: 44px;
-    padding: 0 5px;
+    min-height: 34px;
+    padding: 0 4px;
     font-size: 13px;
   }
 
@@ -1123,7 +1147,7 @@ onBeforeUnmount(() => {
 
   .signal-mobile-item {
     min-width: 0;
-    padding: 11px 2px 10px;
+    padding: 8px 2px;
     border-bottom: 1px solid var(--line);
   }
 
@@ -1141,16 +1165,16 @@ onBeforeUnmount(() => {
 
   .signal-stock {
     display: flex;
-    align-items: baseline;
-    gap: 10px;
+    align-items: center;
+    gap: 8px;
     min-width: 0;
   }
 
   .signal-stock :deep(.el-button) {
-    min-height: 36px;
+    min-height: 32px;
     margin: 0;
     padding: 0;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -1158,7 +1182,7 @@ onBeforeUnmount(() => {
   .signal-stock strong {
     overflow: hidden;
     color: var(--ink);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 650;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1168,8 +1192,8 @@ onBeforeUnmount(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
     padding: 0;
     border: 0;
     border-radius: 6px;
@@ -1190,11 +1214,11 @@ onBeforeUnmount(() => {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     min-width: 0;
-    margin-top: 6px;
+    margin-top: 1px;
     color: var(--muted);
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .signal-mobile-meta time {
@@ -1206,11 +1230,11 @@ onBeforeUnmount(() => {
   .side-badge {
     display: inline-flex;
     align-items: center;
-    min-height: 20px;
-    padding: 0 5px;
+    min-height: 18px;
+    padding: 0 4px;
     border-radius: 4px;
     background: var(--fill);
-    font-size: 11px;
+    font-size: 10px;
     line-height: 1;
   }
 
@@ -1231,7 +1255,7 @@ onBeforeUnmount(() => {
 
   .signal-score {
     color: var(--muted);
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .signal-score b {
@@ -1241,15 +1265,14 @@ onBeforeUnmount(() => {
   }
 
   .signal-reason {
-    display: -webkit-box;
-    margin: 7px 0 0;
+    margin: 3px 0 0;
     overflow-wrap: anywhere;
     overflow: hidden;
     color: var(--ink-soft);
-    font-size: 12px;
-    line-height: 1.5;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    font-size: 11px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .more-collapse :deep(.el-collapse-item__header) {

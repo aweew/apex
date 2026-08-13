@@ -23,6 +23,7 @@ const mobileMenuButtonRef = ref(null)
 const mobileMenuCloseRef = ref(null)
 const appActivityVisible = ref(false)
 const appActivityFinishing = ref(false)
+const mobileModuleTitle = ref('')
 /** 终端紧凑密度：缩小表格与页边距 */
 const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 let healthTimer
@@ -31,6 +32,31 @@ let debounceTimer
 let searchReturnFocus
 let activityShowTimer
 let activityHideTimer
+let moduleTitleFrame
+
+function syncMobileModuleTitle() {
+  if (window.innerWidth > 900) {
+    mobileModuleTitle.value = ''
+    return
+  }
+  const heading = document.querySelector('.page .header h1')
+  const navigation = document.querySelector('.nav')
+  if (!heading || !navigation) {
+    mobileModuleTitle.value = ''
+    return
+  }
+  mobileModuleTitle.value = heading.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().bottom
+    ? heading.textContent.trim()
+    : ''
+}
+
+function scheduleMobileModuleTitle() {
+  if (moduleTitleFrame) return
+  moduleTitleFrame = window.requestAnimationFrame(() => {
+    moduleTitleFrame = undefined
+    syncMobileModuleTitle()
+  })
+}
 
 function toggleDense() {
   denseMode.value = !denseMode.value
@@ -225,7 +251,10 @@ function onGlobalKeydown(e) {
 
 watch(
   () => route.fullPath,
-  () => setMobileMenu(false),
+  () => {
+    setMobileMenu(false)
+    nextTick(syncMobileModuleTitle)
+  },
 )
 
 watch(
@@ -279,14 +308,20 @@ onMounted(() => {
   healthTimer = setInterval(pingHealth, 30000)
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('resize', closeMobileMenuOnDesktop)
+  window.addEventListener('resize', scheduleMobileModuleTitle)
+  window.addEventListener('scroll', scheduleMobileModuleTitle, { passive: true })
+  nextTick(syncMobileModuleTitle)
 })
 onBeforeUnmount(() => {
   if (healthTimer) clearInterval(healthTimer)
   clearTimeout(debounceTimer)
   clearTimeout(activityShowTimer)
   clearTimeout(activityHideTimer)
+  if (moduleTitleFrame) window.cancelAnimationFrame(moduleTitleFrame)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', closeMobileMenuOnDesktop)
+  window.removeEventListener('resize', scheduleMobileModuleTitle)
+  window.removeEventListener('scroll', scheduleMobileModuleTitle)
   document.documentElement.classList.remove('mobile-menu-open')
   document.documentElement.classList.remove('search-open')
 })
@@ -315,6 +350,9 @@ onBeforeUnmount(() => {
         </div>
         <span class="tagline">{{ BRAND.taglineShort }}</span>
       </RouterLink>
+      <Transition name="mobile-module-title">
+        <span v-if="mobileModuleTitle" class="mobile-module-title">{{ mobileModuleTitle }}</span>
+      </Transition>
       <div class="mobile-top-actions">
         <button type="button" class="nav-icon-btn" aria-label="打开名词百科" title="名词百科" @click="openGlossary()">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -555,19 +593,30 @@ onBeforeUnmount(() => {
   padding: 0 18px;
   min-height: 56px;
   height: auto;
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+  background: #ffffff;
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   user-select: none;
   -webkit-user-select: none;
 }
 
 .nav.nav--opaque {
   background: #fff;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+}
+
+.mobile-module-title {
+  display: none;
+}
+
+.mobile-module-title-enter-active,
+.mobile-module-title-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.mobile-module-title-enter-from,
+.mobile-module-title-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 
 .app-activity {
@@ -855,7 +904,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 500;
   padding: 6px 10px;
-  border-radius: 980px;
+  border-radius: 5px;
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
@@ -890,20 +939,18 @@ onBeforeUnmount(() => {
   gap: 6px;
   height: 30px;
   padding: 0 12px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 980px;
-  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
   color: var(--ink-soft);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   white-space: nowrap;
 }
 
 .search-btn:hover {
-  background: rgba(255, 255, 255, 0.85);
+  background: #f7f9fc;
   color: var(--ink);
 }
 
@@ -1074,6 +1121,22 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
+  .mobile-module-title {
+    position: absolute;
+    right: 156px;
+    left: 132px;
+    display: block;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 1;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
   .nav,
   .shell.dense .nav {
     min-height: calc(56px + env(safe-area-inset-top));

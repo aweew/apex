@@ -984,23 +984,14 @@ onMounted(() => {
   gap: 20px;
   margin-bottom: 14px;
   padding: 20px 22px;
-  border-radius: calc(var(--radius) + 4px);
+  border-radius: var(--radius);
   border: 1px solid var(--glass-border);
   background: var(--glass-strong);
-  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
   box-shadow: var(--shadow);
 }
 
 .stance-glow {
-  position: absolute;
-  inset: -40% auto auto -10%;
-  width: 55%;
-  height: 140%;
-  pointer-events: none;
-  opacity: 0.55;
-  filter: blur(40px);
-  background: radial-gradient(circle at 30% 40%, rgba(0, 113, 227, 0.18), transparent 65%);
+  display: none;
 }
 
 .stance-attack .stance-glow {
@@ -1477,14 +1468,13 @@ onMounted(() => {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
   background: var(--glass);
-  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
   box-shadow: var(--shadow-soft);
   transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .panel:hover {
-  box-shadow: var(--shadow);
+  border-color: #bdc9d9;
+  box-shadow: 0 3px 9px rgba(15, 23, 42, 0.08);
 }
 
 .panel-head {
