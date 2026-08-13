@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Tile</title>
+  <rect width="240" height="240" rx="48" fill="#F6F9FC"/>
+  <path d="M49 49h142v142H49z" stroke="#1268C4" stroke-width="14"/>
+  <path d="m67 160 53-80 53 80h-31l-22-34-22 34H67Z" fill="#1268C4"/>
+  <path d="m102 160 18-34 18 34h-36Z" fill="#1EAD7B"/>
+  <path d="M111 92h18v22h-18z" fill="#F5B83D"/>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Grid</title>
+  <rect width="240" height="240" rx="48" fill="#F4F8FD"/>
+  <path d="M43 190V50M43 190h154" stroke="#9DB9D5" stroke-width="12" stroke-linecap="round"/>
+  <path d="m62 164 40-43 29 19 58-76" stroke="#1268C4" stroke-width="20" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="m166 64h23v23" stroke="#F4B740" stroke-width="13" stroke-linejoin="miter"/>
+  <rect x="77" y="156" width="18" height="18" fill="#19A974"/>
+  <rect x="122" y="135" width="18" height="39" fill="#19A974"/>
+  <rect x="167" y="94" width="18" height="80" fill="#19A974"/>
+</svg>

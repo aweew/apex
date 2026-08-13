@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Steps</title>
+  <rect width="240" height="240" rx="48" fill="#183962"/>
+  <path d="M43 184v-43h38v-42h38V57h38v-17h40v144H43Z" fill="#F6FAFF"/>
+  <path d="M43 184v-43h38v43H43Zm38 0v-43h38v43H81Zm38 0v-85h38v85h-38Zm38 0V57h40v127h-40Z" fill="#1BAA76"/>
+  <path d="M157 57h40v40h-40z" fill="#F5B83D"/>
+  <path d="m165 77 11-13 11 13" stroke="#183962" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>

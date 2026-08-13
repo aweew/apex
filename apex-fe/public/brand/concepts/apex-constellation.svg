@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Signal Constellation</title>
+  <rect width="240" height="240" rx="48" fill="#F5F8FC"/>
+  <path d="M54 162 91 125l29 29 29-29 37-37" stroke="#B8D6F1" stroke-width="10" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="42" y="150" width="24" height="24" fill="#1769C2"/>
+  <rect x="79" y="113" width="24" height="24" fill="#1769C2"/>
+  <rect x="108" y="142" width="24" height="24" fill="#1CAB78"/>
+  <rect x="137" y="113" width="24" height="24" fill="#1CAB78"/>
+  <rect x="174" y="76" width="24" height="24" fill="#F5B83D"/>
+  <rect x="42" y="52" width="24" height="24" fill="#D8E7F6"/>
+  <rect x="79" y="52" width="24" height="24" fill="#D8E7F6"/>
+  <rect x="116" y="52" width="24" height="24" fill="#D8E7F6"/>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Prism</title>
+  <rect width="240" height="240" rx="48" fill="#F4F8FD"/>
+  <path d="m120 37 79 46v74l-79 46-79-46V83l79-46Z" fill="#1769C2"/>
+  <path d="m120 37 79 46-79 45-79-45 79-46Z" fill="#A8D6FC"/>
+  <path d="m120 128 79-45v74l-79 46v-75Z" fill="#0B4A97"/>
+  <path d="m120 128-79-45v74l79 46v-75Z" fill="#1CAB78"/>
+  <path d="m120 64 28 16-28 16-28-16 28-16Z" fill="#F5B83D"/>
+</svg>

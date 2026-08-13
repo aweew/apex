@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Signal Aperture</title>
+  <rect width="240" height="240" rx="48" fill="#1769C2"/>
+  <path d="M43 43h63v37H80v26H43V43Zm91 0h63v63h-37V80h-26V43ZM43 134h37v26h26v37H43v-63Zm117 0h37v63h-63v-37h26v-26Z" fill="#DCEBFA"/>
+  <path d="m120 78 42 42-42 42-42-42 42-42Z" fill="#F7FBFF"/>
+  <path d="m120 101 19 19-19 19-19-19 19-19Z" fill="#F5B83D"/>
+</svg>

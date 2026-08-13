@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Ribbon</title>
+  <rect width="240" height="240" rx="48" fill="#F6F9FC"/>
+  <path d="M46 164 101 67h38l55 97h-39l-35-62-35 62H46Z" fill="#1268C4"/>
+  <path d="m86 164 34-62 34 62h-26l-8-15-8 15H86Z" fill="#1EAD7B"/>
+  <path d="M102 123h36v20h-36z" fill="#F5B83D"/>
+  <path d="M55 184h130" stroke="#C6DCEE" stroke-width="12" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Orbit</title>
+  <rect width="240" height="240" rx="48" fill="#F6F8FB"/>
+  <circle cx="120" cy="120" r="79" stroke="#B7D4EF" stroke-width="14"/>
+  <path d="M120 42v50M120 148v50M42 120h50M148 120h50" stroke="#1769C2" stroke-width="14"/>
+  <path d="m120 62 43 58-43 58-43-58 43-58Z" fill="#1769C2"/>
+  <path d="m120 62 43 58h-43V62Z" fill="#F5B83D"/>
+  <path d="m120 178-43-58h43v58Z" fill="#1BAB78"/>
+  <circle cx="120" cy="120" r="12" fill="#F6F8FB"/>
+</svg>

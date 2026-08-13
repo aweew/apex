@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Signal Gradient</title>
+  <rect width="240" height="240" rx="48" fill="#183962"/>
+  <path d="M43 178h154V62L43 178Z" fill="#0F569F"/>
+  <path d="M43 178h115V91L43 178Z" fill="#1774CD"/>
+  <path d="M43 178h76v-58L43 178Z" fill="#34AF86"/>
+  <path d="M120 62h77v116L120 62Z" fill="#B8D9F6"/>
+  <path d="M158 91h39v87l-39-87Z" fill="#F5B83D"/>
+  <rect x="43" y="178" width="154" height="14" fill="#F7FBFF"/>
+</svg>

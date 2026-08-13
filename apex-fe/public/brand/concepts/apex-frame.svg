@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Frame</title>
+  <rect width="240" height="240" rx="48" fill="#F6F9FC"/>
+  <path d="M55 55h130v130H55z" fill="#E1EEF9"/>
+  <path d="M55 55h130v26H81v104H55V55Z" fill="#1268C4"/>
+  <path d="M94 158 120 82l26 76h-18l-8-26-8 26H94Z" fill="#1EAD7B"/>
+  <rect x="111" y="106" width="18" height="14" fill="#F5B83D"/>
+  <path d="M81 185h104" stroke="#B7D4EC" stroke-width="10"/>
+</svg>

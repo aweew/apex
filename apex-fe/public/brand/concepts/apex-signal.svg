@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Signal</title>
+  <rect width="240" height="240" rx="48" fill="#F6F8FB"/>
+  <path d="M48 54h42v42H48z" fill="#1268C4"/>
+  <path d="M99 54h42v42H99z" fill="#D8E8F8"/>
+  <path d="M150 54h42v42h-42z" fill="#D8E8F8"/>
+  <path d="M48 105h42v42H48z" fill="#D8E8F8"/>
+  <path d="M99 105h42v42H99z" fill="#1268C4"/>
+  <path d="M150 105h42v42h-42z" fill="#D8E8F8"/>
+  <path d="M48 156h42v42H48z" fill="#D8E8F8"/>
+  <path d="M99 156h42v42H99z" fill="#D8E8F8"/>
+  <path d="M150 156h42v42h-42z" fill="#19A974"/>
+  <path d="m68 169 40-35 27 18 39-46" stroke="#F4B740" stroke-width="12" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>

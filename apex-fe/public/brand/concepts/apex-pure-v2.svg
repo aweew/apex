@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Pure Apex</title>
+  <rect width="240" height="240" rx="48" fill="#F7FAFD"/>
+  <path d="M43 187 102 53h37L88 168H57l-8 19H43Z" fill="#0B3A67"/>
+  <path d="M101 53h37l59 134h-32l-45-103-19-31Z" fill="#1F6EAE"/>
+  <path d="m90 151 30-67 30 67h-20l-10-23-10 23H90Z" fill="#8CC2EA"/>
+  <path d="M84 169h72" stroke="#0B3A67" stroke-width="16" stroke-linecap="square"/>
+  <path d="m120 42 13 26h-26l13-26Z" fill="#D4A437"/>
+  <path d="M112 106h16v16h-16z" fill="#D4A437"/>
+</svg>

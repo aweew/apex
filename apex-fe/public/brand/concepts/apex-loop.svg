@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Loop</title>
+  <rect width="240" height="240" rx="48" fill="#F6F9FC"/>
+  <path d="M74 46h92a28 28 0 0 1 28 28v92a28 28 0 0 1-28 28H74a28 28 0 0 1-28-28V74a28 28 0 0 1 28-28Z" fill="#1268C4"/>
+  <path d="M78 122 120 80l42 42-42 42-42-42Z" fill="#F7FBFF"/>
+  <path d="m120 96 26 26-26 26-26-26 26-26Z" fill="#1EAD7B"/>
+  <path d="M120 108v28" stroke="#F5B83D" stroke-width="10" stroke-linecap="round"/>
+</svg>

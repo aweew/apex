@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Matrix A</title>
+  <rect width="240" height="240" rx="48" fill="#F7FAFD"/>
+  <path d="M42 187 97 54h46l55 133h-33l-15-39H90l-15 39H42Zm63-67h30l-15-40-15 40Z" fill="#0B3A67"/>
+  <path d="M76 146h20v20H76zM91 110h20v20H91zM106 74h20v20h-20z" fill="#8CC2EA"/>
+  <path d="M144 146h20v20h-20zM129 110h20v20h-20z" fill="#5799D0"/>
+  <path d="m120 47 13 27h-26l13-27Z" fill="#D4A437"/>
+  <path d="M91 148h58" stroke="#D4A437" stroke-width="10" stroke-linecap="square"/>
+</svg>

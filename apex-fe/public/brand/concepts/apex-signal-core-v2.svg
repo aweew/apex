@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Signal Core</title>
+  <rect width="240" height="240" rx="48" fill="#F7FAFD"/>
+  <path d="m120 37 72 42v82l-72 42-72-42V79l72-42Z" fill="#E4F0FA"/>
+  <path d="m120 48 62 36v72l-62 36-62-36V84l62-36Z" stroke="#0B3A67" stroke-width="14" stroke-linejoin="round"/>
+  <path d="M63 87h25v25H63zM152 87h25v25h-25zM63 128h25v25H63zM152 128h25v25h-25z" fill="#5799D0"/>
+  <path d="m120 69 36 71H84l36-71Z" fill="#0B3A67"/>
+  <path d="m120 96 20 37h-40l20-37Z" fill="#F7FAFD"/>
+  <path d="m120 105 12 20h-24l12-20Z" fill="#D4A437"/>
+  <path d="M106 146h28" stroke="#D4A437" stroke-width="10" stroke-linecap="square"/>
+</svg>

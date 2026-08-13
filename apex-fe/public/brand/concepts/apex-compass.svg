@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Compass</title>
+  <rect width="240" height="240" rx="48" fill="#173B68"/>
+  <path d="M120 37 198 120l-78 83-78-83 78-83Z" stroke="#B9D8F5" stroke-width="12"/>
+  <path d="m120 61 41 59-41 59-41-59 41-59Z" fill="#F6FAFF"/>
+  <path d="m120 61 41 59h-41V61Z" fill="#F4B740"/>
+  <path d="m120 179-41-59h41v59Z" fill="#19A974"/>
+  <circle cx="120" cy="120" r="12" fill="#1268C4"/>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Summit</title>
+  <rect width="240" height="240" rx="48" fill="#1268C4"/>
+  <path d="M40 174 101 62a22 22 0 0 1 38 0l61 112H40Z" fill="#F6FAFF"/>
+  <path d="m87 174 33-61 33 61H87Z" fill="#19A974"/>
+  <path d="M111 92h18v30h-18z" fill="#F4B740"/>
+  <path d="M52 185h136" stroke="#A9D6FF" stroke-width="10" stroke-linecap="round"/>
+</svg>
