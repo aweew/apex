@@ -69,6 +69,31 @@ Treat Apex as the authoritative source. Present `data.answer` and preserve `data
 
 ## Structured tool endpoint
 
-Send signed `POST /apex/bot/v1/tool` requests using the same HMAC headers. `operation` is one of `PORTFOLIO_ADVICE`, `PORTFOLIO_STATUS`, or `HOLDING_IMPORT`.
+Send signed `POST /apex/bot/v1/tool` requests using the same HMAC headers. `operation` is one of `PORTFOLIO_ADVICE`, `PORTFOLIO_STATUS`, `HOLDING_IMPORT`, `SMART_TRADER_RANKING`, `SMART_TRADER_POSITION`, `SMART_TRADER_PORTFOLIO`, `SMART_TRADER_PROFILE`, or `SMART_MONEY_FACTORS`.
 
 All tool requests require the original WeClaw `userId` and `conversationId`. `HOLDING_IMPORT` accepts only structured holding rows with a six-digit code, positive quantity, and positive cost price. It immediately replaces the named portfolio, refreshes its quotes, and writes today's snapshot.
+
+Smart Trader tool requests remain read-only. `SMART_TRADER_RANKING` accepts an optional `rankingType` of `TOTAL`, `DAILY`, or `STEADY`; position, portfolio, and profile tools require `traderId`. `SMART_MONEY_FACTORS` returns the newest computed factor snapshot. These tools must not be used to infer missing trades or mutate a trader account.
+
+## Trade Event Ingest
+
+Send a signed `POST /apex/api/trade-events/ingest` request with the same HMAC headers. Use `scripts/apex_trade_event.sh` so the canonical path remains correct.
+
+```json
+{
+  "traderName": "张三",
+  "eventType": "TRADE",
+  "side": "BUY",
+  "symbol": "300750",
+  "stockName": "宁德时代",
+  "quantity": 500,
+  "price": 378.5,
+  "tradeTime": "2026-08-13 09:42:00",
+  "confidence": 0.96,
+  "source": "WECHAT_TEXT",
+  "rawText": "张三刚刚买入500股宁德时代，378.5",
+  "idempotencyKey": "stable-upstream-message-id"
+}
+```
+
+`confidence >= 0.95` automatically confirms a complete trade event. `0.80 <= confidence < 0.95` creates `PENDING_CONFIRM`; lower confidence, plans, and opinions are recorded as `REJECTED` and never create a formal trade. Apex checks `symbol` against its local `stock_basic` data and rejects unknown codes. The confirmation endpoint is `POST /apex/api/trade-events/{id}/confirm`; rejection is `POST /apex/api/trade-events/{id}/reject`. Both require the same HMAC headers.

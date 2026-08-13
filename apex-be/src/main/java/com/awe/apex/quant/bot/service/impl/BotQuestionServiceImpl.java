@@ -266,13 +266,9 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
                 elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder();
         answer.append("组合：").append(portfolio.getName()).append("\n");
-        answer.append("总权益：").append(defaultAmount(portfolio.getTotalEquity()))
-                .append("，现金：").append(defaultAmount(portfolio.getCashBalance()))
-                .append("，持仓：").append(defaultInteger(portfolio.getPositionCount())).append(" 只\n");
-        answer.append("累计浮盈：").append(defaultAmount(portfolio.getTotalPnl()))
-                .append("，今日浮盈：").append(defaultAmount(portfolio.getTodayPnl()));
+        answer.append("持仓：").append(defaultInteger(portfolio.getPositionCount())).append(" 只");
         if (Objects.nonNull(portfolio.getTodayPct())) {
-            answer.append("（").append(portfolio.getTodayPct()).append("%）");
+            answer.append("，今日涨跌 ").append(portfolio.getTodayPct()).append("%");
         }
         answer.append("\n");
         if (includeAdvice && Objects.nonNull(portfolio.getBrief())) {

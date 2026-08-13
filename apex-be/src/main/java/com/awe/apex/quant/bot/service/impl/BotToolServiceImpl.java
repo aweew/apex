@@ -18,6 +18,7 @@ import com.awe.apex.quant.mapper.BotCallAuditMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IPortfolioService;
+import com.awe.apex.quant.service.ISmartTraderAnalyticsService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +56,9 @@ public class BotToolServiceImpl implements IBotToolService {
     @Resource
     private BotCallAuditMapper callAuditMapper;
 
+    @Resource
+    private ISmartTraderAnalyticsService smartTraderAnalyticsService;
+
     /**
      * 执行受控 Bot 工具。
      *
@@ -74,6 +78,11 @@ public class BotToolServiceImpl implements IBotToolService {
                 case "PORTFOLIO_ADVICE" -> portfolioAdvice(request, requestId);
                 case "PORTFOLIO_STATUS" -> portfolioStatus(request, requestId);
                 case "HOLDING_IMPORT" -> holdingImport(request, requestId);
+                case "SMART_TRADER_RANKING" -> smartTraderRanking(request, requestId);
+                case "SMART_TRADER_POSITION" -> smartTraderPosition(request, requestId);
+                case "SMART_TRADER_PORTFOLIO" -> smartTraderPortfolio(request, requestId);
+                case "SMART_TRADER_PROFILE" -> smartTraderProfile(request, requestId);
+                case "SMART_MONEY_FACTORS" -> smartMoneyFactors(request, requestId);
                 default -> throw new BusinessException("不支持的 Bot 工具: " + operation);
             };
             return response;
@@ -89,11 +98,65 @@ public class BotToolServiceImpl implements IBotToolService {
         }
     }
 
+    private BotToolResp smartTraderRanking(BotToolReq request, String requestId) {
+        var rankings = smartTraderAnalyticsService.ranking(request.getRankingType());
+        StringBuilder answer = new StringBuilder("Smart Trader 排行榜\n");
+        int limit = Math.min(10, rankings.size());
+        for (int index = 0; index < limit; index++) {
+            var ranking = rankings.get(index);
+            answer.append(index + 1).append(". ").append(ranking.getTraderName()).append("：累计 ")
+                    .append(ranking.getTotalReturn()).append("，当日 ").append(ranking.getDailyReturn()).append("，回撤 ")
+                    .append(ranking.getMaxDrawdown()).append("\n");
+        }
+        if (rankings.isEmpty()) answer.append("暂无可用排名样本。\n");
+        return BotToolResp.builder().requestId(requestId).intent("SMART_TRADER_RANKING").answer(answer.append(DISCLAIMER).toString()).dataLevel(rankings.isEmpty() ? "YELLOW" : "GREEN").build();
+    }
+
+    private BotToolResp smartTraderPosition(BotToolReq request, String requestId) {
+        var positions = smartTraderAnalyticsService.positions(requireTraderId(request));
+        StringBuilder answer = new StringBuilder("交易者当前持仓\n");
+        for (var position : positions) answer.append(position.getStockName()).append("（").append(position.getSymbol()).append("）：")
+                .append(position.getQuantity()).append("股\n");
+        if (positions.isEmpty()) answer.append("暂无持仓。\n");
+        return BotToolResp.builder().requestId(requestId).intent("SMART_TRADER_POSITION").answer(answer.append(DISCLAIMER).toString()).dataLevel("GREEN").build();
+    }
+
+    private BotToolResp smartTraderPortfolio(BotToolReq request, String requestId) {
+        var portfolio = smartTraderAnalyticsService.portfolio(requireTraderId(request));
+        String answer = "交易者账户\n累计收益 " + portfolio.getTotalProfitRate() + "，最大回撤 "
+                + portfolio.getMaxDrawdown() + "，当前持仓 " + portfolio.getPositions().size() + " 只\n" + DISCLAIMER;
+        return BotToolResp.builder().requestId(requestId).intent("SMART_TRADER_PORTFOLIO").answer(answer).dataAsOf(portfolio.getTradeDate().toString()).dataLevel("GREEN").build();
+    }
+
+    private BotToolResp smartTraderProfile(BotToolReq request, String requestId) {
+        var profile = smartTraderAnalyticsService.profile(requireTraderId(request));
+        String answer = "交易者画像\n风格：" + profile.getStyle() + "\n偏好行业：" + profile.getPreferredIndustries()
+                + "\n集中度：" + profile.getConcentration() + "\n" + profile.getSummary() + "\n" + DISCLAIMER;
+        return BotToolResp.builder().requestId(requestId).intent("SMART_TRADER_PROFILE").answer(answer).dataLevel("YELLOW").build();
+    }
+
+    private BotToolResp smartMoneyFactors(BotToolReq request, String requestId) {
+        var factors = smartTraderAnalyticsService.factors(null);
+        StringBuilder answer = new StringBuilder("Smart Money 因子\n");
+        int limit = Math.min(10, factors.size());
+        for (int index = 0; index < limit; index++) {
+            var factor = factors.get(index);
+            answer.append(factor.getStockName()).append("（").append(factor.getSymbol()).append("）：因子 ")
+                    .append(factor.getFactorValue()).append("，共识度 ").append(factor.getConsensus()).append("\n");
+        }
+        if (factors.isEmpty()) answer.append("暂无可用因子样本。\n");
+        return BotToolResp.builder().requestId(requestId).intent("SMART_MONEY_FACTORS").answer(answer.append(DISCLAIMER).toString()).dataLevel(factors.isEmpty() ? "YELLOW" : "GREEN").build();
+    }
+
+    private Long requireTraderId(BotToolReq request) {
+        if (Objects.isNull(request.getTraderId())) throw new BusinessException("请提供交易者ID");
+        return request.getTraderId();
+    }
+
     private BotToolResp portfolioAdvice(BotToolReq request, String requestId) {
         PortfolioSummaryResp portfolio = detailByName(request.getPortfolioName());
         StringBuilder answer = new StringBuilder("组合投资建议：").append(portfolio.getName()).append("\n");
-        answer.append("持仓 ").append(defaultInteger(portfolio.getPositionCount())).append(" 只，现金 ")
-                .append(amount(portfolio.getCashBalance())).append("，累计浮盈 ").append(amount(portfolio.getTotalPnl())).append("。\n");
+        answer.append("持仓 ").append(defaultInteger(portfolio.getPositionCount())).append(" 只。\n");
         appendFreshness(answer, portfolio);
         if (Objects.nonNull(portfolio.getBrief())) {
             answer.append("组合立场：").append(defaultText(portfolio.getBrief().getStance(), "暂无"))
@@ -130,9 +193,11 @@ public class BotToolServiceImpl implements IBotToolService {
     private BotToolResp portfolioStatus(BotToolReq request, String requestId) {
         PortfolioSummaryResp portfolio = detailByName(request.getPortfolioName());
         StringBuilder answer = new StringBuilder("组合状态：").append(portfolio.getName()).append("\n");
-        answer.append("总权益 ").append(amount(portfolio.getTotalEquity())).append("，持仓 ")
-                .append(defaultInteger(portfolio.getPositionCount())).append(" 只，今日盈亏 ")
-                .append(amount(portfolio.getTodayPnl())).append("。\n");
+        answer.append("持仓 ").append(defaultInteger(portfolio.getPositionCount())).append(" 只。");
+        if (Objects.nonNull(portfolio.getTodayPct())) {
+            answer.append(" 今日涨跌 ").append(portfolio.getTodayPct()).append("%。");
+        }
+        answer.append("\n");
         appendFreshness(answer, portfolio);
         answer.append(DISCLAIMER);
         return response(requestId, "PORTFOLIO_STATUS", answer.toString(), portfolio);

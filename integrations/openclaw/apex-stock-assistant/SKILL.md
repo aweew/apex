@@ -43,4 +43,12 @@ Call `scripts/apex_tool.sh` with this JSON and return its answer unchanged. `HOL
 
 Configure `APEX_BOT_BASE_URL`, `APEX_BOT_CLIENT_KEY`, and `APEX_BOT_CLIENT_SECRET` in the OpenClaw runtime. Never print, persist, or send these credentials anywhere except the configured Apex endpoint.
 
+## Record A Trade Event
+
+When a user actively forwards a trading message to their own ClawBot, first extract a structured event. Call `scripts/apex_trade_event.sh` only for an event with explicit `traderName`, `eventType`, `confidence`, `source`, and `rawText`. Preserve unknown fields as `null`; never infer a stock code, quantity, price, or exact trade time.
+
+For a confirmed transaction, require a six-digit `symbol`, `BUY`/`SELL`/`ADD`/`REDUCE` side, positive quantity, and positive price. Use a stable message identifier as `idempotencyKey`, so retries cannot create a second trade. Do not call this tool for recommendations or plans: send `eventType` as `IGNORE` or `TRADE_INTENT` instead. `CLEAR` remains an event only in this phase because Apex has not enabled Position Engine calculation.
+
+Return Apex's status faithfully: `CONFIRMED` has created a formal ledger trade; `PENDING_CONFIRM` needs a user confirmation through Apex; `REJECTED` never creates a trade.
+
 Read [references/api.md](references/api.md) when diagnosing authentication, request, or response errors.

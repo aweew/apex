@@ -32,6 +32,12 @@ public class BotToolReq {
     /** 组合名称 */
     private String portfolioName;
 
+    /** Smart Trader交易者ID */
+    private Long traderId;
+
+    /** Smart Trader排名类型 */
+    private String rankingType;
+
     /** 截图解析出的持仓 */
     @Valid
     private List<BotHoldingInput> holdings = new ArrayList<>();

@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -139,7 +140,8 @@ class BotQuestionServiceImplTest {
 
         assertEquals("PORTFOLIO_SUMMARY", response.getIntent());
         assertTrue(response.getAnswer().contains("组合：郑十万"));
-        assertTrue(response.getAnswer().contains("总权益：128000.50"));
+        assertFalse(response.getAnswer().contains("总权益："));
+        assertFalse(response.getAnswer().contains("128000.50"));
         assertTrue(response.getAnswer().contains("宁德时代"));
         verify(portfolioService).detail(10L);
     }

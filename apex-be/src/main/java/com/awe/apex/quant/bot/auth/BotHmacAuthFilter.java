@@ -83,7 +83,7 @@ public class BotHmacAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 仅过滤 Bot API，预检请求由 CORS 处理。
+     * 过滤 Bot API 与 OpenClaw 交易写入入口，预检请求由 CORS 处理。
      *
      * @param request HTTP 请求
      * @return true=跳过
@@ -91,6 +91,7 @@ public class BotHmacAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return "OPTIONS".equalsIgnoreCase(request.getMethod())
-                || !request.getRequestURI().startsWith(request.getContextPath() + "/bot/");
+                || (!request.getRequestURI().startsWith(request.getContextPath() + "/bot/")
+                && !request.getRequestURI().startsWith(request.getContextPath() + "/api/trade-events/"));
     }
 }
