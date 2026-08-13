@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <title>Apex Arc Mark</title>
+  <path d="M52 182 106 58c3-7 8-11 14-11s12 4 15 11l53 124h-29l-39-94-39 94H52Z" fill="#1478D4"/>
+  <path d="M81 174c15-29 43-45 76-45" stroke="#16B9C4" stroke-width="15" stroke-linecap="round"/>
+  <circle cx="163" cy="126" r="12" fill="#F2B84B"/>
+</svg>

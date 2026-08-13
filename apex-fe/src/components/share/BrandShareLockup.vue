@@ -43,7 +43,7 @@ defineProps({
 .brand-share-logo {
   object-fit: contain;
   flex: 0 0 auto;
-  border-radius: 50%;
+  border-radius: 22%;
   display: block;
 }
 

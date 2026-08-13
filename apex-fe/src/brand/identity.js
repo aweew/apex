@@ -3,10 +3,10 @@
  * 中文名：灵枢 · 英文名：Apex · Slogan：灵枢既定，只问顶峰
  *
  * 资源：
- * - mark：圆形峰顶图标（透明底，导航）
- * - markShare：深色圆底图标（分享截图专用，更清晰）
- * - lockup：完整竖版（透明底）
- * - solid：深色底完整版
+ * - mark：Arc 标志（透明底，导航）
+ * - markShare：Arc App 图标（分享截图专用）
+ * - lockup：完整横版标识
+ * - solid：蓝底完整标识
  */
 
 export const BRAND = {
@@ -19,10 +19,10 @@ export const BRAND = {
   /** 页眉短标语（导航窄位） */
   taglineShort: '只问顶峰',
   assets: {
-    mark: '/brand/logo-mark.png',
-    markShare: '/brand/logo-mark-share.png',
-    lockup: '/brand/logo-lockup.png',
-    solid: '/brand/logo-solid.png',
+    mark: '/brand/arc-mark.svg',
+    markShare: '/brand/arc-app-icon.svg',
+    lockup: '/brand/arc-lockup.svg',
+    solid: '/brand/arc-solid.svg',
   },
 }
 
@@ -87,7 +87,7 @@ export function shareBrandLockupHtml(opts = {}) {
     : ''
 
   return `<div style="display:flex;align-items:center;gap:12px;white-space:nowrap;">
-    <img src="${markSrc}" alt="${BRAND.nameZh}" width="${markSize}" height="${markSize}" style="width:${markSize}px;height:${markSize}px;object-fit:contain;flex:0 0 auto;display:block;border-radius:50%;" crossorigin="anonymous" />
+    <img src="${markSrc}" alt="${BRAND.nameZh}" width="${markSize}" height="${markSize}" style="width:${markSize}px;height:${markSize}px;object-fit:contain;flex:0 0 auto;display:block;border-radius:22%;" crossorigin="anonymous" />
     <div style="display:flex;align-items:baseline;gap:8px;min-width:0;">
       <span style="font-size:${zhSize}px;font-weight:750;letter-spacing:0.06em;line-height:1;color:${zhColor};font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;">${BRAND.nameZh}</span>
       <span style="font-size:${enSize}px;font-weight:700;letter-spacing:0.14em;line-height:1;color:${enColor};font-family:Arial,'Plus Jakarta Sans',sans-serif;text-transform:uppercase;">${BRAND.nameEn}</span>

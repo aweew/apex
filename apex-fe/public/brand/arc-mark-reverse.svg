@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
-  <title>Apex Arc App Icon</title>
-  <rect width="240" height="240" rx="52" fill="#1478D4"/>
+  <title>Apex Arc Reverse Mark</title>
   <path d="M52 182 106 58c3-7 8-11 14-11s12 4 15 11l53 124h-29l-39-94-39 94H52Z" fill="#FFFFFF"/>
   <path d="M81 174c15-29 43-45 76-45" stroke="#8BE3EB" stroke-width="15" stroke-linecap="round"/>
   <circle cx="163" cy="126" r="12" fill="#F7CB69"/>

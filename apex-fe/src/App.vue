@@ -746,10 +746,6 @@ onBeforeUnmount(() => {
   object-fit: contain;
   flex: 0 0 auto;
   display: block;
-  padding: 2px;
-  border-radius: 50%;
-  background: #0c1015;
-  box-sizing: border-box;
 }
 
 .brand-text {
