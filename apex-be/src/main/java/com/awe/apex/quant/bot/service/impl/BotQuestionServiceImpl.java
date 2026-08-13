@@ -11,12 +11,15 @@ import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.DecisionAdviceActionResp;
 import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
+import com.awe.apex.quant.domain.dto.PortfolioTopHoldingResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisAiResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisFreshnessResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IStockAnalysisService;
 import com.awe.apex.quant.service.IStockService;
 import jakarta.annotation.Resource;
@@ -53,6 +56,9 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     private IBotHoldingRiskService botHoldingRiskService;
 
     @Resource
+    private IPortfolioService portfolioService;
+
+    @Resource
     private IDecisionService decisionService;
 
     /**
@@ -78,7 +84,15 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
             return answerMarket(requestId);
         }
 
-        // 3. 组合问题与通用决策问题无需猜测股票名称
+        // 3. 优先匹配真实组合名称，再处理默认持仓和通用决策
+        List<PortfolioSummaryResp> portfolios = portfolioService.listPortfolios(false);
+        if (CollUtil.isNotEmpty(portfolios)) {
+            for (PortfolioSummaryResp portfolio : portfolios) {
+                if (StringUtils.isNotBlank(portfolio.getName()) && question.contains(portfolio.getName())) {
+                    return answerPortfolio(requestId, portfolio.getId());
+                }
+            }
+        }
         if (containsAny(question, "我的持仓", "持仓风险", "组合风险", "总体风险", "仓位", "浮亏", "浮盈")) {
             return answerPortfolioRisk(requestId);
         }
@@ -215,6 +229,46 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
                 .build();
     }
 
+    private BotAskResp answerPortfolio(String requestId, Long portfolioId) {
+        PortfolioSummaryResp portfolio = portfolioService.detail(portfolioId);
+        StringBuilder answer = new StringBuilder();
+        answer.append("组合：").append(portfolio.getName()).append("\n");
+        answer.append("总权益：").append(defaultAmount(portfolio.getTotalEquity()))
+                .append("，现金：").append(defaultAmount(portfolio.getCashBalance()))
+                .append("，持仓：").append(defaultInteger(portfolio.getPositionCount())).append(" 只\n");
+        answer.append("累计浮盈：").append(defaultAmount(portfolio.getTotalPnl()))
+                .append("，今日浮盈：").append(defaultAmount(portfolio.getTodayPnl()));
+        if (Objects.nonNull(portfolio.getTodayPct())) {
+            answer.append("（").append(portfolio.getTodayPct()).append("%）");
+        }
+        answer.append("\n");
+        if (CollUtil.isNotEmpty(portfolio.getTopHoldings())) {
+            answer.append("主要持仓：\n");
+            for (PortfolioTopHoldingResp holding : portfolio.getTopHoldings()) {
+                answer.append("- ").append(defaultText(holding.getName(), holding.getCode()));
+                if (Objects.nonNull(holding.getWeightPct())) {
+                    answer.append("，仓位 ").append(holding.getWeightPct()).append("%");
+                }
+                if (Objects.nonNull(holding.getPctChg())) {
+                    answer.append("，今日 ").append(holding.getPctChg()).append("%");
+                }
+                answer.append("\n");
+            }
+        }
+        if (Objects.nonNull(portfolio.getUpdateTime())) {
+            answer.append("更新时间：").append(portfolio.getUpdateTime()).append("\n");
+        }
+        answer.append(DISCLAIMER);
+        return BotAskResp.builder()
+                .requestId(requestId)
+                .intent("PORTFOLIO_SUMMARY")
+                .answer(answer.toString())
+                .dataAsOf(Objects.nonNull(portfolio.getUpdateTime()) ? portfolio.getUpdateTime().toString() : null)
+                .dataLevel(Objects.nonNull(portfolio.getTotalEquity()) ? "GREEN" : "YELLOW")
+                .aiEnhanced(false)
+                .build();
+    }
+
     private BotAskResp answerDecision(String requestId) {
         DecisionAdviceResp advice = decisionService.advice(null);
         StringBuilder answer = new StringBuilder("今日决策\n");
@@ -274,6 +328,10 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
 
     private int defaultInteger(Integer value) {
         return Objects.nonNull(value) ? value : 0;
+    }
+
+    private BigDecimal defaultAmount(BigDecimal value) {
+        return Objects.nonNull(value) ? value.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO.setScale(2);
     }
 
     private BigDecimal toPercent(BigDecimal ratio) {

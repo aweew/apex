@@ -6,12 +6,15 @@ import com.awe.apex.quant.domain.dto.BotHoldingRiskItem;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
+import com.awe.apex.quant.domain.dto.PortfolioTopHoldingResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisFreshnessResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.bot.service.IBotHoldingRiskService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IStockAnalysisService;
 import com.awe.apex.quant.service.IStockService;
 import com.awe.apex.quant.bot.service.impl.BotQuestionServiceImpl;
@@ -21,6 +24,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,6 +44,7 @@ class BotQuestionServiceImplTest {
     private IStockAnalysisService stockAnalysisService;
     private IMarketBriefingService marketBriefingService;
     private IBotHoldingRiskService botHoldingRiskService;
+    private IPortfolioService portfolioService;
     private IDecisionService decisionService;
 
     @BeforeEach
@@ -49,11 +54,13 @@ class BotQuestionServiceImplTest {
         stockAnalysisService = mock(IStockAnalysisService.class);
         marketBriefingService = mock(IMarketBriefingService.class);
         botHoldingRiskService = mock(IBotHoldingRiskService.class);
+        portfolioService = mock(IPortfolioService.class);
         decisionService = mock(IDecisionService.class);
         ReflectionTestUtils.setField(service, "stockService", stockService);
         ReflectionTestUtils.setField(service, "stockAnalysisService", stockAnalysisService);
         ReflectionTestUtils.setField(service, "marketBriefingService", marketBriefingService);
         ReflectionTestUtils.setField(service, "botHoldingRiskService", botHoldingRiskService);
+        ReflectionTestUtils.setField(service, "portfolioService", portfolioService);
         ReflectionTestUtils.setField(service, "decisionService", decisionService);
     }
 
@@ -107,6 +114,34 @@ class BotQuestionServiceImplTest {
         BotAskResp decision = service.ask(request("今天应该买什么"));
         assertEquals("TODAY_DECISION", decision.getIntent());
         assertTrue(decision.getAnswer().contains("控制仓位"));
+    }
+
+    @Test
+    void routesNamedPortfolioBeforeStockLookup() {
+        PortfolioSummaryResp summary = PortfolioSummaryResp.builder()
+                .id(10L).name("郑十万").positionCount(3)
+                .totalEquity(new BigDecimal("128000.50"))
+                .cashBalance(new BigDecimal("28000.50"))
+                .totalPnl(new BigDecimal("8000.00"))
+                .todayPnl(new BigDecimal("1200.00"))
+                .todayPct(new BigDecimal("0.95"))
+                .updateTime(LocalDateTime.of(2026, 8, 13, 14, 55))
+                .topHoldings(List.of(PortfolioTopHoldingResp.builder()
+                        .code("300750").name("宁德时代")
+                        .weightPct(new BigDecimal("35.20"))
+                        .pctChg(new BigDecimal("1.25"))
+                        .build()))
+                .build();
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of(summary));
+        when(portfolioService.detail(10L)).thenReturn(summary);
+
+        BotAskResp response = service.ask(request("郑十万是组合，现在怎么样"));
+
+        assertEquals("PORTFOLIO_SUMMARY", response.getIntent());
+        assertTrue(response.getAnswer().contains("组合：郑十万"));
+        assertTrue(response.getAnswer().contains("总权益：128000.50"));
+        assertTrue(response.getAnswer().contains("宁德时代"));
+        verify(portfolioService).detail(10L);
     }
 
     private BotAskReq request(String question) {
