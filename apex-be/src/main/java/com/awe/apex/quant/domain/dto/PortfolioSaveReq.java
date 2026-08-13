@@ -2,6 +2,8 @@ package com.awe.apex.quant.domain.dto;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 /**
  * 保存组合
  */
@@ -37,4 +39,9 @@ public class PortfolioSaveReq {
      * 排序
      */
     private Integer sortNo;
+
+    /**
+     * 现金余额，更新时为空表示保留原值
+     */
+    private BigDecimal cashBalance;
 }

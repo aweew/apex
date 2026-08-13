@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS decision_feature_snapshot (
     id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
     run_id BIGINT NOT NULL COMMENT '决策运行ID',
     code VARCHAR(16) NOT NULL COMMENT '证券代码',
-    action VARCHAR(16) NULL COMMENT 'BUY/SELL/HOLD/AVOID',
+    action VARCHAR(16) NULL COMMENT 'BUY/REDUCE/SELL/HOLD/AVOID',
     feature_version VARCHAR(64) NOT NULL COMMENT '特征版本',
     feature_hash VARCHAR(64) NOT NULL COMMENT '特征SHA-256',
     signal_score DECIMAL(10, 4) NULL COMMENT '策略信号分',

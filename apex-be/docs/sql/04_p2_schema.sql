@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS daily_action (
     action_date DATE NOT NULL COMMENT '清单日期',
     code VARCHAR(16) NOT NULL COMMENT '证券代码',
     name VARCHAR(64) NULL COMMENT '简称',
-    action VARCHAR(16) NOT NULL COMMENT 'BUY/SELL/HOLD',
+    action VARCHAR(16) NOT NULL COMMENT 'BUY/REDUCE/SELL/HOLD',
     strategy_id VARCHAR(16) NULL COMMENT '策略ID',
     reason VARCHAR(512) NULL COMMENT '理由',
     suggested_weight DECIMAL(10, 4) NULL COMMENT '建议仓位',

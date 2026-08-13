@@ -117,6 +117,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                     .isDefault(1)
                     .status(STATUS_ACTIVE)
                     .sortNo(0)
+                    .cashBalance(BigDecimal.ZERO)
                     .createTime(now)
                     .updateTime(now)
                     .deleted(0)
@@ -211,6 +212,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
         if (Objects.isNull(req) || StringUtils.isBlank(req.getName())) {
             throw new BusinessException("组合名称不能为空");
         }
+        if (Objects.nonNull(req.getCashBalance()) && req.getCashBalance().signum() < 0) {
+            throw new BusinessException("组合现金不能小于0");
+        }
         ensureDefaultPortfolio();
         String name = req.getName().trim();
         String status = StringUtils.isNotBlank(req.getStatus()) ? req.getStatus().trim().toUpperCase() : STATUS_ACTIVE;
@@ -231,8 +235,14 @@ public class PortfolioServiceImpl implements IPortfolioService {
             if (Objects.nonNull(req.getSortNo())) {
                 exist.setSortNo(req.getSortNo());
             }
+            if (Objects.nonNull(req.getCashBalance())) {
+                exist.setCashBalance(req.getCashBalance());
+            }
             exist.setUpdateTime(now);
             portfolioMapper.updateById(exist);
+            if (Objects.nonNull(req.getCashBalance())) {
+                refreshTodaySnapshotQuietly(exist.getId());
+            }
             return exist;
         }
         assertNameUnique(name, null);
@@ -243,6 +253,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .isDefault(0)
                 .status(status)
                 .sortNo(Objects.nonNull(req.getSortNo()) ? req.getSortNo() : 100)
+                .cashBalance(Objects.nonNull(req.getCashBalance()) ? req.getCashBalance() : BigDecimal.ZERO)
                 .createTime(now)
                 .updateTime(now)
                 .deleted(0)
@@ -477,6 +488,20 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .eq(PortfolioDaily::getPortfolioId, portfolioId)
                 .eq(PortfolioDaily::getTradeDate, tradeDate)
                 .last("LIMIT 1"));
+        BigDecimal totalEquity = Objects.nonNull(summary.getTotalEquity())
+                ? summary.getTotalEquity()
+                : zeroIfNull(summary.getMarketValue()).add(zeroIfNull(summary.getCashBalance()));
+        totalEquity = totalEquity.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal peakEquity = portfolioDailyMapper.selectPeakEquityBefore(portfolioId, tradeDate);
+        if (Objects.nonNull(exist) && Objects.nonNull(exist.getPeakEquity())) {
+            peakEquity = Objects.isNull(peakEquity) ? exist.getPeakEquity() : peakEquity.max(exist.getPeakEquity());
+        }
+        peakEquity = Objects.isNull(peakEquity) ? totalEquity : peakEquity.max(totalEquity);
+        BigDecimal drawdown = BigDecimal.ZERO.setScale(6, RoundingMode.HALF_UP);
+        if (peakEquity.signum() > 0 && totalEquity.compareTo(peakEquity) < 0) {
+            drawdown = peakEquity.subtract(totalEquity)
+                    .divide(peakEquity, 6, RoundingMode.HALF_UP);
+        }
         if (Objects.nonNull(exist)) {
             exist.setMarketValue(summary.getMarketValue());
             exist.setCostValue(summary.getCostValue());
@@ -484,7 +509,10 @@ public class PortfolioServiceImpl implements IPortfolioService {
             exist.setTodayPnl(summary.getTodayPnl());
             exist.setTodayPct(summary.getTodayPct());
             exist.setPositionCount(summary.getPositionCount());
-            exist.setCash(BigDecimal.ZERO);
+            exist.setCash(summary.getCashBalance());
+            exist.setTotalEquity(totalEquity);
+            exist.setPeakEquity(peakEquity);
+            exist.setDrawdown(drawdown);
             exist.setPayload(payload);
             exist.setUpdateTime(now);
             portfolioDailyMapper.updateById(exist);
@@ -499,7 +527,10 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .todayPnl(summary.getTodayPnl())
                 .todayPct(summary.getTodayPct())
                 .positionCount(summary.getPositionCount())
-                .cash(BigDecimal.ZERO)
+                .cash(summary.getCashBalance())
+                .totalEquity(totalEquity)
+                .peakEquity(peakEquity)
+                .drawdown(drawdown)
                 .payload(payload)
                 .createTime(now)
                 .updateTime(now)
@@ -507,6 +538,10 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .build();
         portfolioDailyMapper.insert(created);
         return created;
+    }
+
+    private BigDecimal zeroIfNull(BigDecimal value) {
+        return Objects.nonNull(value) ? value : BigDecimal.ZERO;
     }
 
     /**
@@ -788,6 +823,10 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
         }
         marketValue = marketValue.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal cashBalance = Objects.nonNull(portfolio.getCashBalance())
+                ? portfolio.getCashBalance().setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalEquity = marketValue.add(cashBalance).setScale(2, RoundingMode.HALF_UP);
         costValue = costValue.setScale(2, RoundingMode.HALF_UP);
         todayPnl = hasToday ? todayPnl.setScale(2, RoundingMode.HALF_UP) : null;
         BigDecimal totalPnl = null;
@@ -847,6 +886,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .sortNo(portfolio.getSortNo())
                 .positionCount(holdings.size())
                 .marketValue(marketValue)
+                .cashBalance(cashBalance)
+                .totalEquity(totalEquity)
                 .costValue(costValue)
                 .totalPnl(totalPnl)
                 .todayPnl(todayPnl)

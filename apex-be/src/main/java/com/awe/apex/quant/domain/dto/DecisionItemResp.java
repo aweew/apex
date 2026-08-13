@@ -39,7 +39,7 @@ public class DecisionItemResp {
     private String name;
 
     /**
-     * BUY/SELL/HOLD
+     * BUY/REDUCE/SELL/HOLD
      */
     private String action;
 
@@ -62,6 +62,21 @@ public class DecisionItemResp {
      * 建议仓位（0~1）
      */
     private BigDecimal suggestedWeight;
+
+    /**
+     * 决策时参考价
+     */
+    private BigDecimal referencePrice;
+
+    /**
+     * 决策止损价
+     */
+    private BigDecimal stopLossPrice;
+
+    /**
+     * 决策止盈价
+     */
+    private BigDecimal takeProfitPrice;
 
     /**
      * 离场规则

@@ -44,6 +44,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     """);
             log.info("schema ready: market_briefing_snapshot");
             ensureDecisionTables();
+            ensureCompoundDecisionColumns();
             ensureColumn("daily_action", "run_id",
                     "ALTER TABLE daily_action ADD COLUMN run_id BIGINT NULL COMMENT '决策运行ID'");
             ensureColumn("daily_action", "rank_no",
@@ -54,6 +55,12 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     "ALTER TABLE daily_action ADD COLUMN uncertainty DECIMAL(10, 4) NULL COMMENT '决策不确定性'");
             ensureColumn("daily_action", "decision_status",
                     "ALTER TABLE daily_action ADD COLUMN decision_status VARCHAR(16) NULL COMMENT '决策状态'");
+            ensureColumn("daily_action", "reference_price",
+                    "ALTER TABLE daily_action ADD COLUMN reference_price DECIMAL(16, 4) NULL COMMENT '决策时参考价'");
+            ensureColumn("daily_action", "stop_loss_price",
+                    "ALTER TABLE daily_action ADD COLUMN stop_loss_price DECIMAL(16, 4) NULL COMMENT '决策止损价'");
+            ensureColumn("daily_action", "take_profit_price",
+                    "ALTER TABLE daily_action ADD COLUMN take_profit_price DECIMAL(16, 4) NULL COMMENT '决策止盈价'");
             ensureColumn("daily_action", "mainline_match",
                     "ALTER TABLE daily_action ADD COLUMN mainline_match TINYINT NULL");
             ensureColumn("daily_action", "mainline_name",
@@ -110,6 +117,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             ensureColumn("observe_pool", "side",
                     "ALTER TABLE observe_pool ADD COLUMN side VARCHAR(8) NULL DEFAULT 'BUY' COMMENT '方向BUY/SELL'");
             ensurePortfolioTables();
+            ensurePortfolioDecisionColumns();
             ensureCompanyProfileRevenueColumns();
             ensureStockBasicPeColumns();
         } catch (Exception ex) {
@@ -169,7 +177,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
                     run_id BIGINT NOT NULL COMMENT '决策运行ID',
                     code VARCHAR(16) NOT NULL COMMENT '证券代码',
-                    action VARCHAR(16) NULL COMMENT 'BUY/SELL/HOLD/AVOID',
+                    action VARCHAR(16) NULL COMMENT 'BUY/REDUCE/SELL/HOLD/AVOID',
                     feature_version VARCHAR(64) NOT NULL COMMENT '特征版本',
                     feature_hash VARCHAR(64) NOT NULL COMMENT '特征SHA-256',
                     signal_score DECIMAL(10, 4) NULL COMMENT '策略信号分',
@@ -179,6 +187,9 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     valuation_level VARCHAR(32) NULL COMMENT '估值档位',
                     market_stance VARCHAR(16) NULL COMMENT '市场状态',
                     data_quality VARCHAR(16) NULL COMMENT '特征数据质量',
+                    selection_status VARCHAR(16) NOT NULL DEFAULT 'SELECTED',
+                    reject_reason VARCHAR(256) NULL,
+                    rank_no INT NULL,
                     feature_json MEDIUMTEXT NOT NULL COMMENT '完整特征JSON',
                     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
                     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -192,10 +203,13 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS decision_outcome (
                     id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
-                    action_id BIGINT NOT NULL COMMENT '操作清单ID',
+                    feature_snapshot_id BIGINT NOT NULL,
+                    action_id BIGINT NULL COMMENT '操作清单ID',
                     run_id BIGINT NULL COMMENT '决策运行ID',
                     code VARCHAR(16) NOT NULL COMMENT '证券代码',
                     action_date DATE NOT NULL COMMENT '决策交易日',
+                    entry_date DATE NULL,
+                    entry_price DECIMAL(16, 4) NULL,
                     status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/PARTIAL/COMPLETE/INVALID',
                     return_1d DECIMAL(12, 6) NULL COMMENT '1交易日收益率',
                     return_3d DECIMAL(12, 6) NULL COMMENT '3交易日收益率',
@@ -225,12 +239,79 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
                     deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
                     PRIMARY KEY (id),
+                    UNIQUE KEY uk_decision_outcome_feature (feature_snapshot_id),
                     UNIQUE KEY uk_decision_outcome_action (action_id),
                     KEY idx_decision_outcome_run_code (run_id, code),
                     KEY idx_decision_outcome_date (action_date)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能决策结果归因'
                 """);
-        log.info("schema ready: decision_run / decision_feature_snapshot / decision_outcome");
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS decision_portfolio_snapshot (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    run_id BIGINT NOT NULL,
+                    portfolio_id BIGINT NOT NULL,
+                    action_date DATE NOT NULL,
+                    cash DECIMAL(18, 2) NOT NULL DEFAULT 0,
+                    market_value DECIMAL(18, 2) NOT NULL DEFAULT 0,
+                    total_equity DECIMAL(18, 2) NOT NULL DEFAULT 0,
+                    peak_equity DECIMAL(18, 2) NOT NULL DEFAULT 0,
+                    drawdown DECIMAL(12, 6) NOT NULL DEFAULT 0,
+                    exposure_ratio DECIMAL(12, 6) NOT NULL DEFAULT 0,
+                    market_regime VARCHAR(16) NULL,
+                    exposure_limit DECIMAL(12, 6) NULL,
+                    single_stock_limit DECIMAL(12, 6) NULL,
+                    industry_limit DECIMAL(12, 6) NULL,
+                    atr_stop_multiplier DECIMAL(12, 6) NULL,
+                    atr_take_multiplier DECIMAL(12, 6) NULL,
+                    regime_reason VARCHAR(256) NULL,
+                    industry_exposure_json MEDIUMTEXT NULL,
+                    holding_payload MEDIUMTEXT NULL,
+                    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    deleted TINYINT NOT NULL DEFAULT 0,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uk_decision_portfolio_run (run_id),
+                    KEY idx_decision_portfolio_date (portfolio_id, action_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """);
+        log.info("schema ready: compound decision tables");
+    }
+
+    /**
+     * 复利决策候选与结果字段
+     */
+    private void ensureCompoundDecisionColumns() {
+        ensureColumn("decision_feature_snapshot", "selection_status",
+                "ALTER TABLE decision_feature_snapshot ADD COLUMN selection_status VARCHAR(16) NOT NULL DEFAULT 'SELECTED'");
+        ensureColumn("decision_feature_snapshot", "reject_reason",
+                "ALTER TABLE decision_feature_snapshot ADD COLUMN reject_reason VARCHAR(256) NULL");
+        ensureColumn("decision_feature_snapshot", "rank_no",
+                "ALTER TABLE decision_feature_snapshot ADD COLUMN rank_no INT NULL");
+        ensureColumn("decision_outcome", "feature_snapshot_id",
+                "ALTER TABLE decision_outcome ADD COLUMN feature_snapshot_id BIGINT NULL");
+        ensureColumn("decision_outcome", "entry_date",
+                "ALTER TABLE decision_outcome ADD COLUMN entry_date DATE NULL");
+        ensureColumn("decision_outcome", "entry_price",
+                "ALTER TABLE decision_outcome ADD COLUMN entry_price DECIMAL(16, 4) NULL");
+        ensureNullableColumn("decision_outcome", "action_id",
+                "ALTER TABLE decision_outcome MODIFY COLUMN action_id BIGINT NULL");
+        ensureColumn("decision_portfolio_snapshot", "market_regime",
+                "ALTER TABLE decision_portfolio_snapshot ADD COLUMN market_regime VARCHAR(16) NULL");
+        ensureColumn("decision_portfolio_snapshot", "exposure_limit",
+                "ALTER TABLE decision_portfolio_snapshot ADD COLUMN exposure_limit DECIMAL(12, 6) NULL");
+        ensureColumn("decision_portfolio_snapshot", "single_stock_limit",
+                "ALTER TABLE decision_portfolio_snapshot ADD COLUMN single_stock_limit DECIMAL(12, 6) NULL");
+        ensureColumn("decision_portfolio_snapshot", "industry_limit",
+                "ALTER TABLE decision_portfolio_snapshot ADD COLUMN industry_limit DECIMAL(12, 6) NULL");
+        ensureColumn("decision_portfolio_snapshot", "atr_stop_multiplier",
+                "ALTER TABLE decision_portfolio_snapshot ADD COLUMN atr_stop_multiplier DECIMAL(12, 6) NULL");
+        ensureColumn("decision_portfolio_snapshot", "atr_take_multiplier",
+                "ALTER TABLE decision_portfolio_snapshot ADD COLUMN atr_take_multiplier DECIMAL(12, 6) NULL");
+        ensureColumn("decision_portfolio_snapshot", "regime_reason",
+                "ALTER TABLE decision_portfolio_snapshot ADD COLUMN regime_reason VARCHAR(256) NULL");
+        if (!indexExists("decision_outcome", "uk_decision_outcome_feature")) {
+            jdbcTemplate.execute("ALTER TABLE decision_outcome ADD UNIQUE KEY uk_decision_outcome_feature (feature_snapshot_id)");
+        }
     }
 
     /**
@@ -264,6 +345,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     name VARCHAR(64) NOT NULL COMMENT '组合名称',
                     note VARCHAR(512) NULL COMMENT '备注',
                     owner_label VARCHAR(64) NULL COMMENT '实盘归属人标签',
+                    cash_balance DECIMAL(18, 2) NOT NULL DEFAULT 0,
                     is_default TINYINT NOT NULL DEFAULT 0 COMMENT '是否默认组合',
                     status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/ARCHIVED',
                     sort_no INT NOT NULL DEFAULT 0 COMMENT '排序',
@@ -306,6 +388,9 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     today_pct DECIMAL(10, 4) NULL COMMENT '当日涨跌幅%',
                     position_count INT NOT NULL DEFAULT 0 COMMENT '持仓只数',
                     cash DECIMAL(18, 2) NOT NULL DEFAULT 0 COMMENT '现金',
+                    total_equity DECIMAL(18, 2) NULL,
+                    peak_equity DECIMAL(18, 2) NULL,
+                    drawdown DECIMAL(12, 6) NULL,
                     payload MEDIUMTEXT NULL COMMENT '持仓明细JSON',
                     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
                     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -316,6 +401,20 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='组合每日快照'
                 """);
         log.info("schema ready: portfolio / portfolio_holding / portfolio_daily");
+    }
+
+    /**
+     * 组合现金与权益字段
+     */
+    private void ensurePortfolioDecisionColumns() {
+        ensureColumn("portfolio", "cash_balance",
+                "ALTER TABLE portfolio ADD COLUMN cash_balance DECIMAL(18, 2) NOT NULL DEFAULT 0");
+        ensureColumn("portfolio_daily", "total_equity",
+                "ALTER TABLE portfolio_daily ADD COLUMN total_equity DECIMAL(18, 2) NULL");
+        ensureColumn("portfolio_daily", "peak_equity",
+                "ALTER TABLE portfolio_daily ADD COLUMN peak_equity DECIMAL(18, 2) NULL");
+        ensureColumn("portfolio_daily", "drawdown",
+                "ALTER TABLE portfolio_daily ADD COLUMN drawdown DECIMAL(12, 6) NULL");
     }
 
     /**
@@ -337,5 +436,41 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 判断索引是否存在
+     *
+     * @param table     表名
+     * @param indexName 索引名
+     * @return 是否存在
+     */
+    private boolean indexExists(String table, String indexName) {
+        Integer count = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*) FROM information_schema.STATISTICS
+                        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+                        """,
+                Integer.class, table, indexName);
+        return Objects.nonNull(count) && count > 0;
+    }
+
+    /**
+     * 列存在但仍为非空约束时改为可空
+     *
+     * @param table  表名
+     * @param column 列名
+     * @param ddl    ALTER 语句
+     */
+    private void ensureNullableColumn(String table, String column, String ddl) {
+        String nullable = jdbcTemplate.queryForObject(
+                """
+                        SELECT IS_NULLABLE FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+                        """,
+                String.class, table, column);
+        if (!"YES".equalsIgnoreCase(nullable)) {
+            jdbcTemplate.execute(ddl);
+        }
     }
 }

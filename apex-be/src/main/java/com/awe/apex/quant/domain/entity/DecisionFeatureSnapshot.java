@@ -41,6 +41,9 @@ public class DecisionFeatureSnapshot implements Serializable {
     private String valuationLevel;
     private String marketStance;
     private String dataQuality;
+    private String selectionStatus;
+    private String rejectReason;
+    private Integer rankNo;
     private String featureJson;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

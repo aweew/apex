@@ -39,8 +39,8 @@ class DecisionFeatureBuilderTest {
         DecisionFeature second = builder.build(item, 3, briefing);
 
         assertEquals(first, second);
-        assertNotNull(first.featureHash());
-        assertEquals(64, first.featureHash().length());
+        assertNotNull(first.getFeatureHash());
+        assertEquals(64, first.getFeatureHash().length());
     }
 
     @Test
@@ -50,9 +50,45 @@ class DecisionFeatureBuilderTest {
                 0,
                 MarketBriefingResp.builder().dataLevel("YELLOW").build());
 
-        assertEquals("600000", feature.code());
-        assertEquals("HOLD", feature.action());
-        assertEquals("YELLOW", feature.dataQuality());
-        assertEquals(List.of(), feature.riskFlags());
+        assertEquals("600000", feature.getCode());
+        assertEquals("HOLD", feature.getAction());
+        assertEquals("YELLOW", feature.getDataQuality());
+        assertEquals(List.of(), feature.getRiskFlags());
+    }
+
+    @Test
+    void selectionStatusChangesFeatureHash() {
+        DecisionItemResp item = DecisionItemResp.builder()
+                .code("000001")
+                .action("BUY")
+                .strategyId("S2")
+                .score(new BigDecimal("80"))
+                .build();
+        MarketBriefingResp briefing = MarketBriefingResp.builder()
+                .stance("均衡")
+                .dataLevel("GREEN")
+                .build();
+
+        DecisionFeature selected = builder.build(item, DecisionFeatureSource.builder()
+                .scoringInput(DecisionFeatureInput.builder().signalScore(new BigDecimal("70")).build())
+                .hotSourceCount(0)
+                .briefing(briefing)
+                .selectionStatus("SELECTED")
+                .rankNo(1)
+                .build());
+        DecisionFeature rejected = builder.build(item, DecisionFeatureSource.builder()
+                .scoringInput(DecisionFeatureInput.builder().signalScore(new BigDecimal("70")).build())
+                .hotSourceCount(0)
+                .briefing(briefing)
+                .selectionStatus("REJECTED")
+                .rejectReason("基本面未过门槛")
+                .rankNo(1)
+                .build());
+
+        assertEquals("SELECTED", selected.getSelectionStatus());
+        assertEquals("REJECTED", rejected.getSelectionStatus());
+        assertNotNull(rejected.getRejectReason());
+        assertEquals(1, selected.getRankNo());
+        org.junit.jupiter.api.Assertions.assertNotEquals(selected.getFeatureHash(), rejected.getFeatureHash());
     }
 }
