@@ -69,6 +69,6 @@ Treat Apex as the authoritative source. Present `data.answer` and preserve `data
 
 ## Structured tool endpoint
 
-Send signed `POST /apex/bot/v1/tool` requests using the same HMAC headers. `operation` is one of `PORTFOLIO_ADVICE`, `PORTFOLIO_STATUS`, `HOLDING_PREVIEW`, `HOLDING_CONFIRM`, or `OPERATION_STATUS`.
+Send signed `POST /apex/bot/v1/tool` requests using the same HMAC headers. `operation` is one of `PORTFOLIO_ADVICE`, `PORTFOLIO_STATUS`, or `HOLDING_IMPORT`.
 
-All tool requests require the original WeClaw `userId` and `conversationId`. `HOLDING_PREVIEW` accepts only structured holding rows with a six-digit code, positive quantity, and positive cost price. It creates a pending full-replacement operation. `HOLDING_CONFIRM` requires the one-time confirmation code returned by the preview and is restricted to the same user and conversation for ten minutes.
+All tool requests require the original WeClaw `userId` and `conversationId`. `HOLDING_IMPORT` accepts only structured holding rows with a six-digit code, positive quantity, and positive cost price. It immediately replaces the named portfolio, refreshes its quotes, and writes today's snapshot.

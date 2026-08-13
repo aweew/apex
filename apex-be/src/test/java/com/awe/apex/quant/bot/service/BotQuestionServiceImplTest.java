@@ -189,7 +189,7 @@ class BotQuestionServiceImplTest {
                 .updateTime(LocalDateTime.of(2026, 8, 1, 10, 0))
                 .missingQuoteCount(0)
                 .holdings(List.of(com.awe.apex.quant.domain.entity.PortfolioHolding.builder()
-                        .code("000063").name("中兴通讯").verdict("谨慎持有")
+                        .code("000063").name("中兴通讯").verdict("持有不加仓")
                         .advice("反弹优先减仓").weightPct(new BigDecimal("35"))
                         .stopLoss(new BigDecimal("32.50")).build()))
                 .build();

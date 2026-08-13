@@ -2,7 +2,6 @@ package com.awe.apex.quant.bot.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
-import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.bot.service.IBotToolService;
@@ -13,11 +12,9 @@ import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.dto.PortfolioTipItem;
 import com.awe.apex.quant.domain.entity.BotCallAudit;
-import com.awe.apex.quant.domain.entity.BotPendingOperation;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.mapper.BotCallAuditMapper;
-import com.awe.apex.quant.mapper.BotPendingOperationMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IPortfolioService;
@@ -46,8 +43,6 @@ import java.util.UUID;
 public class BotToolServiceImpl implements IBotToolService {
 
     private static final String DISCLAIMER = "以上基于 Apex 当前数据生成，仅供研究，不构成投资建议。";
-    private static final int CONFIRM_MINUTES = 10;
-
     @Resource
     private ApexBotProperties properties;
 
@@ -56,9 +51,6 @@ public class BotToolServiceImpl implements IBotToolService {
 
     @Resource
     private PortfolioMapper portfolioMapper;
-
-    @Resource
-    private BotPendingOperationMapper pendingOperationMapper;
 
     @Resource
     private BotCallAuditMapper callAuditMapper;
@@ -81,9 +73,7 @@ public class BotToolServiceImpl implements IBotToolService {
             response = switch (operation) {
                 case "PORTFOLIO_ADVICE" -> portfolioAdvice(request, requestId);
                 case "PORTFOLIO_STATUS" -> portfolioStatus(request, requestId);
-                case "HOLDING_PREVIEW" -> holdingPreview(request, requestId);
-                case "HOLDING_CONFIRM" -> holdingConfirm(request, requestId);
-                case "OPERATION_STATUS" -> operationStatus(request, requestId);
+                case "HOLDING_IMPORT" -> holdingImport(request, requestId);
                 default -> throw new BusinessException("不支持的 Bot 工具: " + operation);
             };
             return response;
@@ -148,7 +138,7 @@ public class BotToolServiceImpl implements IBotToolService {
         return response(requestId, "PORTFOLIO_STATUS", answer.toString(), portfolio);
     }
 
-    private BotToolResp holdingPreview(BotToolReq request, String requestId) {
+    private BotToolResp holdingImport(BotToolReq request, String requestId) {
         Portfolio portfolio = portfolioByName(request.getPortfolioName());
         validateHoldingInputs(request.getHoldings(), request.getTotalMarketValue());
         List<PortfolioHolding> existing = portfolioService.detail(portfolio.getId()).getHoldings();
@@ -172,81 +162,24 @@ public class BotToolServiceImpl implements IBotToolService {
                 deleted++;
             }
         }
-        String confirmationCode = UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
-        LocalDateTime now = LocalDateTime.now();
-        BotPendingOperation pending = new BotPendingOperation();
-        pending.setOperationType("REPLACE_PORTFOLIO_HOLDINGS");
-        pending.setPortfolioId(portfolio.getId());
-        pending.setUserId(request.getUserId());
-        pending.setConversationId(request.getConversationId());
-        pending.setConfirmationCode(confirmationCode);
-        pending.setPayloadJson(JsonUtils.toJsonString(request.getHoldings()));
-        pending.setStatus("PENDING");
-        pending.setExpireTime(now.plusMinutes(CONFIRM_MINUTES));
-        pending.setCreateTime(now);
-        pending.setDeleted(0);
-        pendingOperationMapper.insert(pending);
-        String answer = "已解析「" + portfolio.getName() + "」持仓预览：" + request.getHoldings().size()
-                + " 只，新增 " + added + " 只，移除 " + deleted + " 只。\n"
-                + "该操作会全量替换当前组合持仓。请在 " + CONFIRM_MINUTES + " 分钟内回复：确认 " + confirmationCode;
-        return BotToolResp.builder().requestId(requestId).intent("HOLDING_PREVIEW").answer(answer)
-                .dataLevel("GREEN").operationId(pending.getId()).confirmationCode(confirmationCode).build();
-    }
-
-    private BotToolResp holdingConfirm(BotToolReq request, String requestId) {
-        BotPendingOperation pending = pendingOperationMapper.selectOne(Wrappers.<BotPendingOperation>lambdaQuery()
-                .eq(BotPendingOperation::getConfirmationCode, request.getConfirmationCode())
-                .eq(BotPendingOperation::getUserId, request.getUserId())
-                .eq(BotPendingOperation::getConversationId, request.getConversationId()).last("LIMIT 1"));
-        if (Objects.isNull(pending) || !"PENDING".equals(pending.getStatus())) {
-            throw new BusinessException("确认码无效或已使用");
-        }
-        if (pending.getExpireTime().isBefore(LocalDateTime.now())) {
-            pending.setStatus("EXPIRED");
-            pendingOperationMapper.updateById(pending);
-            throw new BusinessException("确认码已过期，请重新生成预览");
-        }
-        int updated = pendingOperationMapper.update(null, Wrappers.<BotPendingOperation>lambdaUpdate()
-                .eq(BotPendingOperation::getId, pending.getId())
-                .eq(BotPendingOperation::getStatus, "PENDING")
-                .set(BotPendingOperation::getStatus, "PROCESSING"));
-        if (updated != 1) {
-            throw new BusinessException("确认码正在处理或已使用");
-        }
-        List<BotHoldingInput> inputs = JsonUtils.parseArray(pending.getPayloadJson(), BotHoldingInput.class);
-        PortfolioSummaryResp current = portfolioService.detail(pending.getPortfolioId());
+        PortfolioSummaryResp current = portfolioService.detail(portfolio.getId());
         for (PortfolioHolding holding : current.getHoldings()) {
-            portfolioService.removeHolding(pending.getPortfolioId(), holding.getId());
+            portfolioService.removeHolding(portfolio.getId(), holding.getId());
         }
-        for (BotHoldingInput input : inputs) {
+        for (BotHoldingInput input : request.getHoldings()) {
             PortfolioHoldingSaveReq saveReq = new PortfolioHoldingSaveReq();
             saveReq.setCode(MarketCodeUtils.normalizeHoldingCode(input.getCode()));
             saveReq.setName(input.getName());
             saveReq.setQuantity(input.getQuantity());
             saveReq.setCostPrice(input.getCostPrice());
-            portfolioService.saveHolding(pending.getPortfolioId(), saveReq);
+            portfolioService.saveHolding(portfolio.getId(), saveReq);
         }
-        portfolioService.refreshQuotes(pending.getPortfolioId(), false);
-        portfolioService.snapshot(pending.getPortfolioId());
-        pending.setStatus("CONFIRMED");
-        pending.setConfirmTime(LocalDateTime.now());
-        pendingOperationMapper.updateById(pending);
-        return BotToolResp.builder().requestId(requestId).intent("HOLDING_CONFIRM")
-                .answer("已全量更新组合持仓，并完成行情刷新和今日快照。")
-                .dataLevel("GREEN").operationId(pending.getId()).build();
-    }
-
-    private BotToolResp operationStatus(BotToolReq request, String requestId) {
-        BotPendingOperation pending = pendingOperationMapper.selectOne(Wrappers.<BotPendingOperation>lambdaQuery()
-                .eq(BotPendingOperation::getConfirmationCode, request.getConfirmationCode())
-                .eq(BotPendingOperation::getUserId, request.getUserId())
-                .eq(BotPendingOperation::getConversationId, request.getConversationId()).last("LIMIT 1"));
-        if (Objects.isNull(pending)) {
-            throw new BusinessException("未找到对应操作");
-        }
-        return BotToolResp.builder().requestId(requestId).intent("OPERATION_STATUS")
-                .answer("操作状态：" + pending.getStatus() + "，过期时间：" + pending.getExpireTime())
-                .dataLevel("GREEN").operationId(pending.getId()).build();
+        portfolioService.refreshQuotes(portfolio.getId(), false);
+        portfolioService.snapshot(portfolio.getId());
+        String answer = "已根据截图全量更新「" + portfolio.getName() + "」：共 " + request.getHoldings().size()
+                + " 只，新增 " + added + " 只，移除 " + deleted + " 只；已完成行情刷新和今日快照。";
+        return BotToolResp.builder().requestId(requestId).intent("HOLDING_IMPORT")
+                .answer(answer).dataLevel("GREEN").build();
     }
 
     private PortfolioSummaryResp detailByName(String name) {

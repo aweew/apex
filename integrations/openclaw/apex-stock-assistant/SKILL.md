@@ -21,15 +21,14 @@ For named portfolios and all holding-update workflows, run `scripts/apex_tool.sh
 
 - Portfolio advice: `{"operation":"PORTFOLIO_ADVICE","userId":"<sender>","conversationId":"<conversation>","portfolioName":"疯锅"}`
 - Portfolio status: `{"operation":"PORTFOLIO_STATUS","userId":"<sender>","conversationId":"<conversation>","portfolioName":"疯锅"}`
-- Operation status: `{"operation":"OPERATION_STATUS","userId":"<sender>","conversationId":"<conversation>","confirmationCode":"ABC123"}`
 
 For a WeClaw image attachment, use the configured vision model only to produce JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. Do not infer a code from a non-unique Chinese fund name. If any code, quantity, or cost price is missing or uncertain, ask the user to correct it and do not call a write tool.
 
-Create a preview before any write:
+When the user sends a brokerage screenshot and says `更新郑十万的持仓` (or names another portfolio), extract the visible rows and directly import them:
 
 ```json
 {
-  "operation": "HOLDING_PREVIEW",
+  "operation": "HOLDING_IMPORT",
   "userId": "<sender>",
   "conversationId": "<conversation>",
   "portfolioName": "郑十万",
@@ -40,7 +39,7 @@ Create a preview before any write:
 }
 ```
 
-Return the preview unchanged. Only after the same user and conversation explicitly reply `确认 <confirmationCode>`, call `HOLDING_CONFIRM` with that confirmation code. The confirmation replaces the entire named portfolio and cannot be undone by the agent.
+Call `scripts/apex_tool.sh` with this JSON and return its answer unchanged. `HOLDING_IMPORT` replaces the entire named portfolio immediately, then refreshes prices and writes today's snapshot. Do not query the portfolio instead of calling this tool.
 
 Configure `APEX_BOT_BASE_URL`, `APEX_BOT_CLIENT_KEY`, and `APEX_BOT_CLIENT_SECRET` in the OpenClaw runtime. Never print, persist, or send these credentials anywhere except the configured Apex endpoint.
 

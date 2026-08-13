@@ -97,13 +97,14 @@ public final class PortfolioBriefBuilder {
                         label + "：现价触及止盈 "
                                 + money(holding.getTakeProfit())
                                 + "，建议至少减仓锁定利润，余仓上移止损至成本附近。"));
-            } else if ("逢高减仓".equals(verdict)) {
+            } else if ("反弹减仓".equals(verdict)) {
                 actions.add(tip("warn", code, name,
-                        label + "：技术偏弱且估值偏贵，反弹优先减仓，不宜加仓摊薄。"));
-            } else if ("谨慎持有".equals(verdict) && weight.compareTo(WATCH_WEIGHT) >= 0) {
+                        label + "：反弹按单票建议减仓，未完成减仓前不加仓摊薄。"));
+            } else if (("持有不加仓".equals(verdict) || "止损观察".equals(verdict)
+                    || "等待收复".equals(verdict)) && weight.compareTo(WATCH_WEIGHT) >= 0) {
                 actions.add(tip("info", code, name,
                         label + " 仓位约 " + weight.stripTrailingZeros().toPlainString()
-                                + "% 且评价谨慎，建议收紧止损、降低交易频率。"));
+                                + "%：不加仓，收盘跌破止损按单票建议执行。"));
             }
 
             if ("数据不足".equals(verdict) || StringUtils.isNotBlank(holding.getTechSummary())
@@ -157,7 +158,7 @@ public final class PortfolioBriefBuilder {
 
             // 贵 + 弱 叠加（结构性风险，不与操作建议重复写「减仓」话术）
             if (isRich(holding.getValuationLevel()) && total > 0 && hit < 3
-                    && !"止损卖出".equals(verdict) && !"逢高减仓".equals(verdict)
+                    && !"止损卖出".equals(verdict) && !"反弹减仓".equals(verdict)
                     && !"止盈减仓".equals(verdict)) {
                 risks.add(tip("warn", code, name,
                         "结构风险：" + label + " 估值偏贵且技术偏弱，赔率与胜率双弱。"));

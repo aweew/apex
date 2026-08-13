@@ -14,7 +14,7 @@ import java.util.List;
 @Data
 public class BotToolReq {
 
-    /** 工具名称：PORTFOLIO_ADVICE / PORTFOLIO_STATUS / HOLDING_PREVIEW / HOLDING_CONFIRM / OPERATION_STATUS */
+    /** 工具名称：PORTFOLIO_ADVICE / PORTFOLIO_STATUS / HOLDING_IMPORT */
     @NotBlank(message = "工具名称不能为空")
     private String operation;
 
@@ -39,6 +39,4 @@ public class BotToolReq {
     /** 截图中的证券市值，用于校验 */
     private BigDecimal totalMarketValue;
 
-    /** 一次性确认码 */
-    private String confirmationCode;
 }

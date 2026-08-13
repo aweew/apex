@@ -744,7 +744,9 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
 
         BigDecimal price = holding.getMarketPrice();
         String valLevel = Objects.nonNull(valuation) ? valuation.getLevel() : null;
-        boolean rich = "OVERVALUED".equals(valLevel) || "SLIGHTLY_EXPENSIVE".equals(valLevel);
+        boolean overvalued = "OVERVALUED".equals(valLevel);
+        boolean slightlyExpensive = "SLIGHTLY_EXPENSIVE".equals(valLevel);
+        boolean rich = overvalued || slightlyExpensive;
         boolean cheap = "UNDERVALUED".equals(valLevel) || "SLIGHTLY_CHEAP".equals(valLevel);
 
         if (Objects.nonNull(price) && Objects.nonNull(holding.getStopLoss())
@@ -775,56 +777,53 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
 
         if (TechRegimeEvaluator.REGIME_TREND_HOLD.equals(state)) {
             if (rsBear) {
-                holding.setVerdict(rich ? "谨慎持有" : "继续持有");
-                holding.setAdvice(rich
-                        ? "趋势仍在但相对大盘偏弱且估值偏贵，逢高减仓、止损勿放松"
-                        : "趋势仍在但相对大盘偏弱，按止损纪律持有，勿追高加仓");
+                holding.setVerdict("持有不加仓");
+                holding.setAdvice(overvalued
+                        ? "不加仓；反弹但未创新高时减持1/3，收盘跌破止损 " + moneyText(holding.getStopLoss()) + " 全部卖出"
+                        : "不加仓；收盘跌破止损 " + moneyText(holding.getStopLoss()) + " 全部卖出");
                 return;
             }
-            holding.setVerdict(cheap ? "持有偏多" : "继续持有");
+            holding.setVerdict(cheap ? "持有可加仓" : "持有不加仓");
             holding.setAdvice(cheap
-                    ? "上升结构且估值不贵，可持有；回撤再评估加仓"
-                    : "上升结构，按止损纪律持有，勿追高加仓");
+                    ? "仅在回踩不破20日线时分批加仓，收盘跌破止损 " + moneyText(holding.getStopLoss()) + " 卖出"
+                    : "不追高加仓；收盘跌破止损 " + moneyText(holding.getStopLoss()) + " 全部卖出");
             return;
         }
         if (TechRegimeEvaluator.REGIME_PULLBACK_WATCH.equals(state)) {
-            if (rich) {
-                holding.setVerdict("谨慎持有");
-                holding.setAdvice(rsBear
-                        ? "趋势内回调且相对偏弱、估值偏贵，逢高减仓，止损勿放松"
-                        : "趋势内回调且估值偏贵，逢高减仓，止损勿放松");
+            if (overvalued) {
+                holding.setVerdict("反弹减仓");
+                holding.setAdvice("反弹时减持1/3，不加仓；收盘跌破止损 " + moneyText(holding.getStopLoss()) + " 全部卖出");
             } else {
-                holding.setVerdict("继续持有");
-                holding.setAdvice(rsBull
-                        ? "趋势内回调且相对大盘偏强，持有观察，贴近止损管理"
-                        : "趋势内回调，持有观察，贴近止损管理");
+                holding.setVerdict("持有不加仓");
+                holding.setAdvice("不加仓；回调不破20日线可继续持有，收盘跌破止损 "
+                        + moneyText(holding.getStopLoss()) + " 全部卖出");
             }
             return;
         }
         if (TechRegimeEvaluator.REGIME_REPAIR.equals(state)) {
-            holding.setVerdict("谨慎持有");
-            holding.setAdvice("修复观察，勿盲目摊薄；确认站稳再考虑加仓");
+            holding.setVerdict("等待收复");
+            holding.setAdvice("不加仓；收盘重新站上20日线后再评估，跌破止损 "
+                    + moneyText(holding.getStopLoss()) + " 全部卖出");
             return;
         }
         if (TechRegimeEvaluator.REGIME_BREAKDOWN_CUT.equals(state)) {
             if (rich) {
-                holding.setVerdict("逢高减仓");
-                holding.setAdvice("结构破位且估值偏贵，优先减仓降风险");
+                holding.setVerdict("反弹减仓");
+                holding.setAdvice("反弹时减持1/2；收盘跌破止损 " + moneyText(holding.getStopLoss()) + " 全部卖出");
             } else {
-                holding.setVerdict("谨慎持有");
-                holding.setAdvice("结构破位迹象，收紧止损，确认破位再离场");
+                holding.setVerdict("止损观察");
+                holding.setAdvice("不加仓；反弹未收复20日线时减持1/3，收盘跌破止损 "
+                        + moneyText(holding.getStopLoss()) + " 全部卖出");
             }
             return;
         }
         // 中性震荡
-        if (rich) {
-            holding.setVerdict("谨慎持有");
-            holding.setAdvice("震荡且估值偏贵，逢高减仓，止损勿放松");
+        if (overvalued) {
+            holding.setVerdict("反弹减仓");
+            holding.setAdvice("反弹时减持1/3，不加仓；收盘跌破止损 " + moneyText(holding.getStopLoss()) + " 全部卖出");
         } else {
-            holding.setVerdict("继续持有");
-            holding.setAdvice(rsBull
-                    ? "中性震荡但相对大盘偏强，持有观望，贴近止损管理"
-                    : "中性震荡，持有观望，贴近止损管理");
+            holding.setVerdict("持有不加仓");
+            holding.setAdvice("不加仓；收盘跌破止损 " + moneyText(holding.getStopLoss()) + " 全部卖出");
         }
     }
 
