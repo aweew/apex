@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -111,6 +112,44 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 .orderByDesc(MyHolding::getUpdateTime)
                 .orderByAsc(MyHolding::getCode));
         return enrichHoldings(list);
+    }
+
+    /**
+     * 查询持仓及最新行情，不加载题材、技术和估值信息
+     *
+     * @return 轻量持仓列表
+     */
+    @Override
+    public List<MyHolding> listHoldingsLite() {
+        List<MyHolding> holdings = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
+                .orderByDesc(MyHolding::getUpdateTime)
+                .orderByAsc(MyHolding::getCode));
+        Map<String, StockBasic> basicMap = loadBasics(holdings);
+        for (MyHolding holding : holdings) {
+            String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+            fillPnlFromBasic(holding, basicMap.get(code));
+        }
+        return holdings;
+    }
+
+    /**
+     * 查询持仓证券代码，不加载行情、技术和估值信息
+     *
+     * @return 持仓证券代码
+     */
+    @Override
+    public List<String> listHoldingCodes() {
+        List<MyHolding> holdings = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
+                .select(MyHolding::getCode)
+                .orderByAsc(MyHolding::getCode));
+        Set<String> uniqueCodes = new LinkedHashSet<>();
+        for (MyHolding holding : holdings) {
+            String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+            if (StringUtils.isNotBlank(code)) {
+                uniqueCodes.add(code);
+            }
+        }
+        return new ArrayList<>(uniqueCodes);
     }
 
     /**

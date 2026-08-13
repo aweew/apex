@@ -89,6 +89,21 @@ apex:
     model: kimi-k2.6
     timeout-ms: 45000
     summary-cache-seconds: 600
+  # 微信 ClawBot / OpenClaw 接入，生产环境通过环境变量开启
+  bot:
+    enabled: ${APEX_BOT_ENABLED:false}
+    client-key: ${APEX_BOT_CLIENT_KEY:}
+    client-secret: ${APEX_BOT_CLIENT_SECRET:}
+    timestamp-tolerance-seconds: ${APEX_BOT_TIMESTAMP_TOLERANCE_SECONDS:300}
+    notification-cooldown-seconds: ${APEX_BOT_NOTIFICATION_COOLDOWN_SECONDS:1800}
+    mover-threshold: ${APEX_BOT_MOVER_THRESHOLD:5}
+    watchlist-group: ${APEX_BOT_WATCHLIST_GROUP:我的自选}
+    weclaw:
+      enabled: ${APEX_BOT_WECLAW_ENABLED:false}
+      base-url: ${APEX_BOT_WECLAW_BASE_URL:}
+      recipient: ${APEX_BOT_WECLAW_RECIPIENT:}
+      api-token: ${APEX_BOT_WECLAW_API_TOKEN:}
+      timeout-ms: ${APEX_BOT_WECLAW_TIMEOUT_MS:5000}
   index:
     python-cmd: python
     script-path: ${user.dir}/../scripts/market_data/sync_index.py

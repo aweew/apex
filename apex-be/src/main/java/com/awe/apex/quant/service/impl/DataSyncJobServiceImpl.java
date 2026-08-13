@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.bot.service.IBotNotificationService;
 import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
@@ -90,6 +91,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Resource
     private IDecisionService decisionService;
+
+    @Resource
+    private IBotNotificationService botNotificationService;
 
     @Resource
     private ObjectMapper objectMapper;
@@ -290,6 +294,12 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             appendLog(job, "[decision] " + response.getMessage() + "\n");
             job.setFinishedAt(LocalDateTime.now());
             syncJobMapper.updateById(job);
+            try {
+                botNotificationService.notifyDecision(response);
+            } catch (Exception ex) {
+                log.warn("智能决策微信通知失败 jobId={} runNo={} reason={}",
+                        jobId, response.getRunNo(), ex.getMessage());
+            }
         } catch (Exception ex) {
             job = syncJobMapper.selectById(jobId);
             if (Objects.nonNull(job) && !"CANCELLED".equals(job.getStatus())) {

@@ -90,6 +90,11 @@ openssl rand -hex 32
 如需 AI 摘要，再设置 `APEX_AI_ENABLED=true` 和 `APEX_AI_API_KEY`。真实的
 `.env.production` 已被 Git 忽略，也不会被复制进镜像。
 
+如需接入 OpenClaw，在同一份配置中增加 `APEX_BOT_ENABLED=true`、
+`APEX_BOT_CLIENT_KEY` 和 `APEX_BOT_CLIENT_SECRET`。微信 Channel 尚未确认前，
+保持 `APEX_BOT_WECLAW_ENABLED=false`。OpenClaw 的独立部署步骤见
+`integrations/openclaw/deployment/README.md`。
+
 ## 4. 构建和启动
 
 部署脚本只读取已有的 `.env.production`，不会从模板复制，也不会创建或覆盖生产

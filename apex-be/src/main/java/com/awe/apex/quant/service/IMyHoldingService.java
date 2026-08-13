@@ -19,6 +19,20 @@ public interface IMyHoldingService {
     List<MyHolding> listHoldings();
 
     /**
+     * 查询持仓及最新行情，不加载题材、技术和估值信息
+     *
+     * @return 轻量持仓列表
+     */
+    List<MyHolding> listHoldingsLite();
+
+    /**
+     * 查询持仓证券代码，不加载行情、技术和估值信息
+     *
+     * @return 持仓证券代码
+     */
+    List<String> listHoldingCodes();
+
+    /**
      * 对给定持仓行做行情/题材/技术/估值 enrich（不读写库）
      *
      * @param list 持仓行（需含 code/quantity/cost 等）
