@@ -225,7 +225,7 @@ onMounted(() => {
   <div class="page dash" v-loading="loading">
     <header class="header dash-header">
       <div>
-        <p class="eyebrow">灵枢 · Command</p>
+        <p class="eyebrow">Command</p>
         <h1>看板</h1>
         <p class="sub">
           {{

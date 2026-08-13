@@ -29,3 +29,8 @@ test('opening mobile detail redraws charts after their containers mount', () => 
   assert.match(portfolioSource, /themeChart\.getDom\(\) !== themePieRef\.value/)
   assert.match(portfolioSource, /chart\.getDom\(\) !== chartRef\.value/)
 })
+
+test('portfolio list holding summaries omit market badges', () => {
+  const portfolioListTemplate = portfolioSource.slice(portfolioSource.indexOf('class="pf-card"'), portfolioSource.indexOf('class="side-rail"'))
+  assert.doesNotMatch(portfolioListTemplate, /<SecurityMarketBadge :security="h"/)
+})

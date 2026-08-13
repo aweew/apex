@@ -752,7 +752,7 @@ onBeforeUnmount(() => {
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">灵枢 · Holding</p>
+        <p class="eyebrow">Holding</p>
         <h1>真实持仓</h1>
         <p>手动维护；决策卖出/持有读这里。日常点「刷新行情+日线」更新价格与 K 线。亦可在「组合」中查看默认仓。</p>
       </div>

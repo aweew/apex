@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search } from '@element-plus/icons-vue'
 import {
   archiveObserve,
   autoDecideObserve,
@@ -20,7 +21,6 @@ import {
   shareFilename,
 } from '../utils/shareCapture'
 import { buildObserveShareSheet, mountObserveShareSheet } from '../utils/observeShareSheet'
-import { buildApiUrl } from '../api/baseUrl'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import { useSessionViewState } from '../utils/viewState.js'
 
@@ -650,7 +650,7 @@ onBeforeUnmount(() => {
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
-        <p class="eyebrow">灵枢 · Observe</p>
+        <p class="eyebrow">Observe</p>
         <h1><TermTip term="watchlist">观察池</TermTip></h1>
         <p>买入机会 + 情绪风向标；优先处理「接近 / 可执行」</p>
       </div>
@@ -662,12 +662,6 @@ onBeforeUnmount(() => {
           {{ refreshing ? '评估中…' : '重估' }}
         </button>
         <button type="button" class="btn btn-ghost" @click="openCreate()">手动加</button>
-        <a
-          class="btn btn-text"
-          :href="buildApiUrl('/api/export/observe')"
-          target="_blank"
-          rel="noopener"
-        >导出CSV</a>
         <button type="button" class="btn btn-text" @click="router.push('/decision')">决策明细</button>
       </div>
     </header>
@@ -704,7 +698,8 @@ onBeforeUnmount(() => {
       <el-input
         v-model="keyword"
         clearable
-        placeholder="搜代码/名称"
+        :prefix-icon="Search"
+        placeholder="搜索代码或名称"
         class="search"
       />
     </div>
@@ -1138,6 +1133,34 @@ onBeforeUnmount(() => {
 .search {
   width: 200px;
   margin-left: auto;
+}
+
+.search :deep(.el-input__wrapper) {
+  min-height: 38px;
+  padding: 1px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(100, 116, 139, 0.08);
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search :deep(.el-input__wrapper:hover) {
+  background: rgba(100, 116, 139, 0.12);
+}
+
+.search :deep(.el-input__wrapper.is-focus) {
+  border-color: rgba(0, 113, 227, 0.5);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.search :deep(.el-input__prefix-inner) {
+  color: var(--slate, #64748b);
+}
+
+.search :deep(.el-input__inner) {
+  font-size: 13px;
 }
 
 .list-empty {
@@ -1613,6 +1636,200 @@ onBeforeUnmount(() => {
 
   .header {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 16px 12px 44px;
+  }
+
+  .header {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .header h1 {
+    font-size: 21px;
+  }
+
+  .header p {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .page .header > .actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .page .header > .actions .btn {
+    min-height: 42px;
+    padding: 8px 10px;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .sum {
+    min-width: 0;
+    padding: 10px 12px;
+    column-gap: 8px;
+  }
+
+  .sum span {
+    font-size: 12px;
+  }
+
+  .sum b {
+    font-size: 20px;
+  }
+
+  .sum small {
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .search {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .search :deep(.el-input__wrapper) {
+    min-height: 44px;
+    padding: 1px 12px;
+  }
+
+  .status-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 -12px 14px;
+    padding: 0 12px 4px;
+    scrollbar-width: none;
+  }
+
+  .status-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .status-chips .chip {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 6px 12px;
+  }
+
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .card {
+    padding: 13px 12px 10px;
+    border-radius: 10px;
+  }
+
+  .card-top {
+    margin-bottom: 10px;
+  }
+
+  .title {
+    gap: 5px;
+  }
+
+  .name {
+    max-width: 5.5em;
+    font-size: 12px;
+  }
+
+  .act {
+    padding: 2px 7px;
+    font-size: 11px;
+  }
+
+  .price {
+    min-width: 64px;
+  }
+
+  .price b {
+    font-size: 20px;
+  }
+
+  .pick-head {
+    gap: 5px;
+    margin-bottom: 5px;
+  }
+
+  .pick-head .strategy,
+  .pick-head .setup,
+  .pick-head .val-chip {
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+
+  .pick-head .link-chip,
+  .pick-head .span-muted {
+    font-size: 10px;
+  }
+
+  .pick-reasons,
+  .reason {
+    font-size: 12px;
+  }
+
+  .hint {
+    margin-bottom: 8px;
+  }
+
+  .triple {
+    gap: 4px;
+    margin-bottom: 8px;
+    padding: 4px;
+    border-radius: 10px;
+  }
+
+  .triple > div {
+    padding: 6px;
+  }
+
+  .triple b {
+    font-size: 15px;
+  }
+
+  .triple small,
+  .triple em {
+    font-size: 10px;
+  }
+
+  .tech-block {
+    min-height: 0;
+    margin-bottom: 6px;
+  }
+
+  .tech-chips {
+    max-height: 42px;
+  }
+
+  .card-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    padding-top: 7px;
+  }
+
+  .op {
+    min-height: 34px;
+    padding: 4px 2px;
+    font-size: 11px;
+    white-space: nowrap;
   }
 }
 

@@ -310,7 +310,7 @@ onMounted(loadJobs)
   <div class="page">
     <header class="header">
       <div>
-        <p class="eyebrow">灵枢 · Backtest</p>
+        <p class="eyebrow">Backtest</p>
         <h1>策略回测</h1>
         <p>含佣金/印花税/滑点 · 过去表现不代表未来收益 · 对照决策页策略强度</p>
       </div>

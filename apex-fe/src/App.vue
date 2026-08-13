@@ -40,13 +40,14 @@ function syncMobileModuleTitle() {
     return
   }
   const heading = document.querySelector('.page .header h1')
+  const module = document.querySelector('.page .header .eyebrow')
   const navigation = document.querySelector('.nav')
-  if (!heading || !navigation) {
+  if (!heading || !module || !navigation) {
     mobileModuleTitle.value = ''
     return
   }
   mobileModuleTitle.value = heading.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().bottom
-    ? heading.textContent.trim()
+    ? `${heading.textContent.trim()} · ${module.textContent.trim()}`
     : ''
 }
 
@@ -1119,12 +1120,12 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .mobile-module-title {
     position: absolute;
-    right: 156px;
-    left: 132px;
+    right: 144px;
+    left: 120px;
     display: block;
     overflow: hidden;
     color: var(--ink);
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 650;
     line-height: 1;
     text-align: center;

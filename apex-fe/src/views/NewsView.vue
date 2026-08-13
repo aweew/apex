@@ -164,7 +164,7 @@ onMounted(async () => {
   <div class="page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">灵枢 · News</p>
+        <p class="eyebrow">News</p>
         <h1>消息 · 资讯</h1>
         <p>{{ pulse?.message || data?.message || '消息面 · 资讯 · 热点 · 行情摘要同屏' }}</p>
       </div>

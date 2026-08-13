@@ -175,7 +175,7 @@ onMounted(() => {
   <div class="page" :class="{ 'is-embedded': props.embedded }" v-loading="loading">
     <header v-if="!props.embedded" class="header">
       <div>
-        <p class="eyebrow">灵枢 · Valuation</p>
+        <p class="eyebrow">Valuation</p>
         <h1>估值系统</h1>
         <p>行业相对 PE/PB · PEG · 简化内在价值 · 财务质量 → 低估 / 合理 / 高估</p>
       </div>

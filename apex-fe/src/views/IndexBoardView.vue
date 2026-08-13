@@ -491,7 +491,8 @@ function closeShare() {
 }
 
 onMounted(async () => {
-  await load(true)
+  // 首次进入复用服务端简报快照，避免与首页同时触发全市场截面重建。
+  await load()
   window.addEventListener('resize', onResize)
   if (route.hash === '#heatmap') {
     await nextTick()
@@ -511,7 +512,7 @@ onBeforeUnmount(() => {
   <div class="page mc-page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">灵枢 · Quotation</p>
+        <p class="eyebrow">Quotation</p>
         <h1>行情中心</h1>
         <p>{{ briefing?.message || '沪深市场总览 · 指数 · 涨跌分布 · 板块热力' }}</p>
       </div>
@@ -774,18 +775,22 @@ onBeforeUnmount(() => {
             <button type="button" @click="router.push('/observe')">观察池</button>
             <button type="button" @click="router.push('/dashboard')">决策看板</button>
           </div>
-          <p v-if="hotThemes.length" class="themes">
-            主线
-            <span
-              v-for="t in hotThemes.slice(0, 5)"
-              :key="t.key"
-            >
-              <span class="theme-name">{{ t.name }}</span>
-              <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
-                <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
-              </span>
-            </span>
-          </p>
+          <section v-if="hotThemes.length" class="themes" aria-label="市场主线">
+            <div class="themes-head">
+              <span>市场主线</span>
+              <small>{{ hotThemes.length }} 个方向</small>
+            </div>
+            <div class="theme-list">
+              <div
+                v-for="t in hotThemes.slice(0, 5)"
+                :key="t.key"
+                class="theme-item"
+              >
+                <span class="theme-name">{{ t.name }}</span>
+                <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
+              </div>
+            </div>
+          </section>
         </section>
       </div>
 
@@ -1374,43 +1379,59 @@ onBeforeUnmount(() => {
 }
 
 .themes {
-  margin: 12px 0 0;
-  font-size: 12px;
-  color: var(--mc-muted);
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--mc-line);
+}
+
+.themes-head {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mc-ink);
+}
+
+.themes-head small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mc-muted);
+}
+
+.theme-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  align-items: center;
 }
 
-.themes span {
-  display: inline-flex;
+.theme-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 999px;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 7px;
   background: #f1f5f9;
-  color: var(--mc-ink);
 }
 
-.themes .theme-name {
+.theme-name {
+  overflow: hidden;
   color: var(--mc-ink);
-}
-
-.themes .theme-pct {
-  display: inline-flex;
-  align-items: center;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-  letter-spacing: 0;
-  line-height: 1;
+  font-size: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.themes .theme-sign {
-  display: inline-block;
-  transform: translateY(-0.14em);
+.theme-pct {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .themes .theme-pct.up {
@@ -1574,6 +1595,29 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 560px) {
+  .themes {
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+
+  .themes-head {
+    margin-bottom: 6px;
+  }
+
+  .theme-list {
+    gap: 5px;
+  }
+
+  .theme-item {
+    gap: 4px;
+    padding: 6px 7px;
+  }
+
+  .theme-name,
+  .theme-pct {
+    font-size: 11px;
+  }
+
   .pulse-effect {
     padding: 10px;
   }

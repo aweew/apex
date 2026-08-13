@@ -491,7 +491,7 @@ onBeforeUnmount(() => {
     <DecisionWorkspaceTabs />
     <header class="header dec-header">
       <div class="dec-heading">
-        <p class="eyebrow">灵枢 · Decision</p>
+        <p class="eyebrow">Decision</p>
         <h1>智能决策</h1>
         <p class="sub">
           {{ data?.message || '先看市场立场，再按评分出买卖单' }}

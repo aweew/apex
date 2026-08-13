@@ -66,6 +66,7 @@ const SIZE_OPTS = [
 const colorLabel = computed(() => COLOR_OPTS.find((x) => x.value === colorBy.value)?.label || '涨跌幅')
 const typeLabel = computed(() => TYPE_OPTS.find((x) => x.value === boardType.value)?.label || '行业')
 const nodeCount = computed(() => data.value?.nodes?.length || 0)
+const mobileNodeLimit = 18
 
 const subtitle = computed(() => {
   const d = data.value
@@ -212,7 +213,11 @@ function buildVisualMap(colorKey) {
 }
 
 function toTreeData(nodes, colorKey) {
-  return (nodes || []).map((n) => {
+  const sortedNodes = [...(nodes || [])].sort((left, right) => (Number(right.value) || 0) - (Number(left.value) || 0))
+  const visibleNodes = props.embedded && window.matchMedia('(max-width: 560px)').matches
+    ? sortedNodes.slice(0, mobileNodeLimit)
+    : sortedNodes
+  return visibleNodes.map((n) => {
     const colorVal = n.colorValue != null ? Number(n.colorValue) : Number(n.pctChg)
     const safeColor = Number.isFinite(colorVal) ? colorVal : 0
     const fill = heatColor(colorKey, safeColor)
@@ -259,9 +264,12 @@ function renderChart() {
   const nodes = data.value?.nodes || []
   const colorKey = colorBy.value
   const tree = toTreeData(nodes, colorKey)
+  const isEmbeddedMobile = props.embedded && window.matchMedia('(max-width: 560px)').matches
+  const chartSurface = props.embedded ? '#f2f5f7' : '#0b0f14'
+  const chartGap = props.embedded ? '#f2f5f7' : '#0b0f14'
   chart.setOption(
     {
-      backgroundColor: 'transparent',
+      backgroundColor: chartSurface,
       animationDuration: 280,
       animationEasing: 'cubicOut',
       tooltip: {
@@ -306,8 +314,11 @@ function renderChart() {
           squareRatio: 0.72 * (1 + Math.sqrt(5)),
           label: {
             show: true,
+            visibleMin: isEmbeddedMobile ? 2600 : 1100,
             position: 'inside',
             padding: [4, 6],
+            overflow: 'truncate',
+            ellipsis: '',
             formatter(p) {
               const name = p.data?.labelName || p.name || ''
               const metric = p.data?.labelMetric || ''
@@ -322,7 +333,7 @@ function renderChart() {
           },
           upperLabel: { show: false },
           itemStyle: {
-            borderColor: '#0b0f14',
+            borderColor: chartGap,
             borderWidth: 1.5,
             gapWidth: 1.5,
             borderRadius: 2,
@@ -341,7 +352,7 @@ function renderChart() {
           levels: [
             {
               itemStyle: {
-                borderColor: '#0b0f14',
+                borderColor: chartGap,
                 borderWidth: 0,
                 gapWidth: 2,
               },
@@ -351,7 +362,7 @@ function renderChart() {
               itemStyle: {
                 borderWidth: 1.5,
                 gapWidth: 1.5,
-                borderColor: '#0b0f14',
+                borderColor: chartGap,
                 borderRadius: 2,
               },
             },
@@ -439,6 +450,8 @@ function onChartClick(params) {
 
 function onResize() {
   chart?.resize()
+  renderChart()
+  bindChartEvents()
 }
 
 async function captureHeatmapShare() {
@@ -547,15 +560,15 @@ onBeforeUnmount(() => {
   >
     <header v-if="!embedded" class="header">
       <div>
-        <p class="eyebrow">灵枢 · Heatmap</p>
+        <p class="eyebrow">Heatmap</p>
         <h1><TermTip term="sector">大盘云图</TermTip></h1>
         <p>{{ subtitle }}</p>
       </div>
       <div class="actions">
-        <el-radio-group v-model="boardType" size="small">
+        <el-radio-group v-model="boardType" size="small" class="heatmap-type">
           <el-radio-button v-for="t in TYPE_OPTS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
         </el-radio-group>
-        <el-select v-model="colorBy" size="small" style="width: 110px">
+        <el-select v-model="colorBy" size="small" class="heatmap-select" style="width: 110px">
           <el-option
             v-for="c in COLOR_OPTS"
             :key="c.value"
@@ -564,7 +577,7 @@ onBeforeUnmount(() => {
             :disabled="(boardType === 'INDUSTRY' && c.value === 'netInflow') || (boardType !== 'INDUSTRY' && c.value === 'pe')"
           />
         </el-select>
-        <el-select v-model="sizeBy" size="small" style="width: 110px">
+        <el-select v-model="sizeBy" size="small" class="heatmap-select" style="width: 110px">
           <el-option
             v-for="s in SIZE_OPTS"
             :key="s.value"
@@ -573,7 +586,7 @@ onBeforeUnmount(() => {
             :disabled="(boardType === 'INDUSTRY' && s.value === 'amount') || (boardType !== 'INDUSTRY' && s.value === 'circMv')"
           />
         </el-select>
-        <el-button :loading="loading" @click="load">刷新</el-button>
+        <el-button class="heatmap-refresh" :loading="loading" @click="load">刷新</el-button>
         <el-button plain @click="router.push('/sector')">板块榜</el-button>
       </div>
     </header>
@@ -584,10 +597,10 @@ onBeforeUnmount(() => {
         <p>{{ subtitle }}</p>
       </div>
       <div class="actions">
-        <el-radio-group v-model="boardType" size="small">
+        <el-radio-group v-model="boardType" size="small" class="heatmap-type">
           <el-radio-button v-for="t in TYPE_OPTS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
         </el-radio-group>
-        <el-select v-model="colorBy" size="small" style="width: 110px">
+        <el-select v-model="colorBy" size="small" class="heatmap-select" style="width: 110px">
           <el-option
             v-for="c in COLOR_OPTS"
             :key="c.value"
@@ -596,7 +609,7 @@ onBeforeUnmount(() => {
             :disabled="(boardType === 'INDUSTRY' && c.value === 'netInflow') || (boardType !== 'INDUSTRY' && c.value === 'pe')"
           />
         </el-select>
-        <el-select v-model="sizeBy" size="small" style="width: 110px">
+        <el-select v-model="sizeBy" size="small" class="heatmap-select" style="width: 110px">
           <el-option
             v-for="s in SIZE_OPTS"
             :key="s.value"
@@ -605,7 +618,7 @@ onBeforeUnmount(() => {
             :disabled="(boardType === 'INDUSTRY' && s.value === 'amount') || (boardType !== 'INDUSTRY' && s.value === 'circMv')"
           />
         </el-select>
-        <el-button :loading="loading" @click="load">刷新</el-button>
+        <el-button class="heatmap-refresh" :loading="loading" @click="load">刷新</el-button>
       </div>
     </section>
 
@@ -617,7 +630,7 @@ onBeforeUnmount(() => {
       @click="openShare"
     />
 
-    <div ref="shareCardRef" class="share-card">
+    <div ref="shareCardRef" class="share-card" :class="{ 'is-embedded': embedded }">
       <div class="share-head">
         <div>
           <BrandShareLockup subtitle="大盘云图" theme="dark" :size="44" />
@@ -753,6 +766,53 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
+@media (max-width: 560px) {
+  .embed-head {
+    display: block;
+    padding: 14px 12px 12px;
+  }
+
+  .embed-title p {
+    line-height: 1.45;
+  }
+
+  .embed-head .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .embed-head .heatmap-type {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .embed-head .heatmap-type :deep(.el-radio-button) {
+    width: 100%;
+  }
+
+  .embed-head .heatmap-type :deep(.el-radio-button__inner) {
+    width: 100%;
+    min-height: 40px;
+    padding: 0 6px;
+  }
+
+  .embed-head .heatmap-select {
+    width: 100% !important;
+  }
+
+  .embed-head .heatmap-select :deep(.el-select__wrapper) {
+    min-height: 40px;
+  }
+
+  .embed-head .heatmap-refresh {
+    grid-column: 1 / -1;
+    min-height: 42px;
+  }
+}
+
 .share-card {
   position: relative;
   background:
@@ -763,6 +823,17 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   padding: 14px 14px 10px;
   overflow: hidden;
+}
+
+.share-card.is-embedded {
+  padding: 0;
+  border: 1px solid var(--glass-border, rgba(15, 23, 42, 0.1));
+  background: #f2f5f7;
+}
+
+.share-card.is-embedded .share-head,
+.share-card.is-embedded :deep(.brand-share-foot) {
+  display: none;
 }
 
 .share-head {
@@ -796,6 +867,10 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   overflow: hidden;
   background: #0b0f14;
+}
+
+.share-card.is-embedded .chart {
+  background: #f2f5f7;
 }
 
 .share-tip {

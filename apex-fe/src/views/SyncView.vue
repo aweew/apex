@@ -311,7 +311,7 @@ onUnmounted(stopPoll)
   <div class="page" v-loading="loading">
     <header class="header">
       <div>
-        <p class="eyebrow">灵枢 · Sync</p>
+        <p class="eyebrow">Sync</p>
         <h1>数据同步</h1>
         <p>
           {{ overview?.message || '统一管理数据同步与智能决策任务，可看进度、可启停' }}

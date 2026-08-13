@@ -416,7 +416,7 @@ onBeforeUnmount(() => {
   <div class="page lu-page" v-loading="loading || refreshing">
     <header class="header">
       <div>
-        <p class="eyebrow">灵枢 · Limit-Up</p>
+        <p class="eyebrow">Limit-Up</p>
         <h1>连板天梯</h1>
         <p>{{ snapshotNotice || data?.message || '连板天梯 · 东财涨停池 · 情绪与接力参考' }}</p>
       </div>

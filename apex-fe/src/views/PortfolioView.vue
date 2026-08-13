@@ -1318,7 +1318,7 @@ onBeforeUnmount(() => {
   >
     <header v-if="!mobileDetailOpen" class="header portfolio-header">
       <div>
-        <p class="eyebrow">灵枢 · Portfolio</p>
+        <p class="eyebrow">Portfolio</p>
         <h1>组合</h1>
         <p>跟踪自己的或别人的实盘；详情区与「真实持仓」同风格，可导入与每日浮盈快照。</p>
       </div>
@@ -1431,7 +1431,6 @@ onBeforeUnmount(() => {
             <div v-if="row.topHoldings?.length" class="pf-tops">
               <span v-for="h in row.topHoldings.slice(0, 3)" :key="h.code" class="pf-top-chip">
                 <span class="pf-top-chip-name">{{ h.name || h.code }}</span>
-                <SecurityMarketBadge :security="h" />
                 <em :class="Number(h.pctChg) >= 0 ? 'up' : 'down'">{{ fmtSignedPct(h.pctChg) }}</em>
               </span>
             </div>

@@ -330,7 +330,7 @@ onMounted(load)
   <div class="page">
     <header class="header">
       <div>
-        <p class="eyebrow">灵枢 · Paper</p>
+        <p class="eyebrow">Paper</p>
         <h1>模拟盘</h1>
         <p v-if="account">账户 {{ account.accountName }} · 现金 {{ account.cash }} · 对照决策清单验证执行</p>
         <p v-else>信号建议下单 · 止损止盈 · 再平衡</p>

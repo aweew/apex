@@ -327,7 +327,7 @@ onBeforeUnmount(() => {
     <DecisionWorkspaceTabs />
     <header class="header signal-header">
       <div class="signal-heading">
-        <p class="eyebrow">灵枢 · Signals</p>
+        <p class="eyebrow">Signals</p>
         <h1><TermTip term="strategy_signal">策略信号</TermTip></h1>
         <p class="sub">
           股票池 {{ universeCount }} 只 <span aria-hidden="true">·</span> S1 / S2 / S3
@@ -478,8 +478,10 @@ onBeforeUnmount(() => {
               <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
                 {{ row.code }}
               </el-button>
-              <SecurityMarketBadge :security="row" />
-              <strong>{{ row.name || '-' }}</strong>
+              <span class="signal-stock-name">
+                <strong>{{ row.name || '-' }}</strong>
+                <SecurityMarketBadge :security="row" />
+              </span>
             </div>
             <el-dropdown
               trigger="click"
@@ -524,10 +526,16 @@ onBeforeUnmount(() => {
         <el-table-column prop="code" label="代码" width="96">
           <template #default="{ row }">
             <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-            <SecurityMarketBadge :security="row" />
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" width="110" show-overflow-tooltip />
+        <el-table-column prop="name" label="名称" width="128" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="signal-stock-name">
+              <span class="signal-stock-name-text">{{ row.name || '-' }}</span>
+              <SecurityMarketBadge :security="row" />
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column prop="strategyId" label="策略" width="70" />
         <el-table-column prop="side" label="方向" width="70">
           <template #default="{ row }">
@@ -1170,6 +1178,13 @@ onBeforeUnmount(() => {
     min-width: 0;
   }
 
+  .signal-stock-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+
   .signal-stock :deep(.el-button) {
     min-height: 32px;
     margin: 0;
@@ -1179,7 +1194,8 @@ onBeforeUnmount(() => {
     font-variant-numeric: tabular-nums;
   }
 
-  .signal-stock strong {
+  .signal-stock strong,
+  .signal-stock-name-text {
     overflow: hidden;
     color: var(--ink);
     font-size: 14px;
@@ -1211,19 +1227,28 @@ onBeforeUnmount(() => {
   }
 
   .signal-mobile-meta {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: center;
-    gap: 5px;
+    gap: 5px 8px;
     min-width: 0;
-    margin-top: 1px;
+    margin-top: 3px;
     color: var(--muted);
     font-size: 11px;
   }
 
   .signal-mobile-meta time {
-    margin-right: 2px;
+    min-width: 0;
     font-variant-numeric: tabular-nums;
+  }
+
+  .signal-mobile-meta .strategy-badge,
+  .signal-mobile-meta .side-badge {
+    justify-self: center;
+  }
+
+  .signal-mobile-meta .signal-score {
+    justify-self: end;
   }
 
   .strategy-badge,

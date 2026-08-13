@@ -131,6 +131,35 @@ a {
   text-transform: uppercase;
 }
 
+/* 页面名与模块标识共用标题行，品牌仅保留在全局导航。 */
+.header > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+}
+
+.header > div:first-child > h1 {
+  order: 1;
+  margin: 0;
+}
+
+.header > div:first-child > h1::after {
+  content: "·";
+  margin-left: 6px;
+}
+
+.header > div:first-child > .eyebrow {
+  order: 2;
+  margin: 0 !important;
+  display: block !important;
+}
+
+.header > div:first-child > p:not(.eyebrow) {
+  order: 3;
+  flex-basis: 100%;
+}
+
 .actions,
 .header-actions {
   display: flex;

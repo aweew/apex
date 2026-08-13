@@ -1724,7 +1724,7 @@ function dash(v) {
   <div class="page" v-loading="loading">
     <header class="header">
       <div class="stock-heading">
-        <p class="eyebrow">灵枢 · Stock</p>
+        <p class="eyebrow">Stock</p>
         <h1>
           <span class="stock-name">{{ basic?.name || '股票详情' }}</span>
           <SecurityMarketBadge :security="basic || { code }" />

@@ -345,7 +345,7 @@ onBeforeUnmount(() => {
   <div class="page screener-page">
     <header class="header screener-header">
       <div>
-        <p class="eyebrow">灵枢 · Screener</p>
+        <p class="eyebrow">Screener</p>
         <h1>{{ isMobileViewport ? '股票筛选' : '股票' }}</h1>
         <p class="meta-line">
           <span class="chip">全市场 <b>{{ meta.marketCount ?? '—' }}</b></span>
