@@ -16,6 +16,11 @@ test('mobile portfolio rows keep today performance beside the portfolio name', (
   assert.match(portfolioSource, /v-if="!isMobileViewport" class="pf-pnl"/)
 })
 
+test('mobile portfolio rows use distinct card boundaries for scanning', () => {
+  assert.match(portfolioSource, /\.pf-card\s*\{\s*margin: 10px 0 0;[\s\S]*?border: 1px solid rgba\(0, 0, 0, 0\.1\);/)
+  assert.match(portfolioSource, /\.mobile-list-toolbar \+ \.pf-card\s*\{\s*margin-top: 12px;/)
+})
+
 test('opening mobile detail redraws charts after their containers mount', () => {
   assert.match(
     portfolioSource,

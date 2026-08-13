@@ -471,6 +471,7 @@ onMounted(() => {
           @click="router.push(`/stock/${item.code}`)"
         >
           <b>{{ item.code }}</b>
+          <SecurityMarketBadge :security="item" />
           <span>{{ item.name || '' }}</span>
           <em>{{ item.status === 'TRIGGERED' ? '已触发' : '接近' }}</em>
         </button>
@@ -545,6 +546,7 @@ onMounted(() => {
                   <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
                     {{ row.code }}
                   </button>
+                  <SecurityMarketBadge :security="row" />
                 </template>
               </el-table-column>
               <el-table-column prop="name" label="名称" width="90" />
@@ -604,6 +606,7 @@ onMounted(() => {
                 <span class="mobile-action-primary">
                   <span class="mobile-stock">
                     <strong>{{ row.code }}</strong>
+                    <SecurityMarketBadge :security="row" />
                     <span>{{ row.name || '-' }}</span>
                   </span>
                   <span class="mobile-score">
@@ -677,6 +680,7 @@ onMounted(() => {
                   <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
                     {{ row.code }}
                   </button>
+                  <SecurityMarketBadge :security="row" />
                 </template>
               </el-table-column>
               <el-table-column prop="name" label="名称" width="90" />
@@ -706,6 +710,7 @@ onMounted(() => {
                 <span class="mobile-action-primary">
                   <span class="mobile-stock">
                     <strong>{{ row.code }}</strong>
+                    <SecurityMarketBadge :security="row" />
                     <span>{{ row.name || '-' }}</span>
                   </span>
                   <span class="mobile-score">

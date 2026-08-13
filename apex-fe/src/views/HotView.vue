@@ -191,6 +191,7 @@ onMounted(load)
               <el-button v-if="row.code" link type="primary" @click="router.push(`/stock/${row.code}`)">
                 {{ row.code }}
               </el-button>
+              <SecurityMarketBadge v-if="row.code" :security="row" />
               <span v-else>-</span>
             </template>
           </el-table-column>
@@ -232,6 +233,7 @@ onMounted(load)
               <el-button v-if="row.code" link type="primary" @click="router.push(`/stock/${row.code}`)">
                 {{ row.code }}
               </el-button>
+              <SecurityMarketBadge v-if="row.code" :security="row" />
             </template>
           </el-table-column>
           <el-table-column prop="name" label="名称" width="120" sortable />
@@ -254,6 +256,7 @@ onMounted(load)
               <el-button v-if="row.code" link type="primary" @click="router.push(`/stock/${row.code}`)">
                 {{ row.code }}
               </el-button>
+              <SecurityMarketBadge v-if="row.code" :security="row" />
             </template>
           </el-table-column>
           <el-table-column prop="name" label="名称" width="120" sortable />
@@ -271,6 +274,7 @@ onMounted(load)
               <el-button v-if="row.code" link type="primary" @click="router.push(`/stock/${row.code}`)">
                 {{ row.code }}
               </el-button>
+              <SecurityMarketBadge v-if="row.code" :security="row" />
               <span v-else class="muted">未匹配</span>
             </template>
           </el-table-column>

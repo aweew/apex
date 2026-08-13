@@ -550,6 +550,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="card-name-row">
               <div class="card-name">{{ s.name || s.code }}</div>
+              <SecurityMarketBadge :security="s" />
               <span class="badges">
                 <i v-if="!s.failed && s.yizi" class="badge yizi" title="一字板">一</i>
                 <i v-if="s.lianban > 1" class="badge lb">{{ s.lianban }}</i>

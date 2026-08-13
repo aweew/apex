@@ -464,6 +464,7 @@ onBeforeUnmount(() => {
               <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
                 {{ row.code }}
               </el-button>
+              <SecurityMarketBadge :security="row" />
               <strong>{{ row.name || '-' }}</strong>
             </div>
             <el-dropdown
@@ -509,6 +510,7 @@ onBeforeUnmount(() => {
         <el-table-column prop="code" label="代码" width="96">
           <template #default="{ row }">
             <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+            <SecurityMarketBadge :security="row" />
           </template>
         </el-table-column>
         <el-table-column prop="name" label="名称" width="110" show-overflow-tooltip />
@@ -586,6 +588,7 @@ onBeforeUnmount(() => {
           <article v-for="item in confluence.items" :key="`${item.code}-${item.side}`" class="confluence-mobile-item">
             <div>
               <strong>{{ item.name || item.code }}</strong>
+              <SecurityMarketBadge :security="item" />
               <span>{{ item.code }}</span>
             </div>
             <span class="side-badge" :class="item.side === 'BUY' ? 'is-buy' : 'is-sell'">
@@ -1200,14 +1203,15 @@ onBeforeUnmount(() => {
   }
 
   .strategy-badge,
-  .side-badge,
-  .signal-score {
+  .side-badge {
     display: inline-flex;
     align-items: center;
-    min-height: 24px;
-    padding: 0 7px;
+    min-height: 20px;
+    padding: 0 5px;
     border-radius: 4px;
     background: var(--fill);
+    font-size: 11px;
+    line-height: 1;
   }
 
   .strategy-badge {
@@ -1223,6 +1227,11 @@ onBeforeUnmount(() => {
   .side-badge.is-sell {
     background: rgba(52, 199, 89, 0.1);
     color: var(--down);
+  }
+
+  .signal-score {
+    color: var(--muted);
+    font-size: 12px;
   }
 
   .signal-score b {

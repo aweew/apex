@@ -638,6 +638,7 @@ onBeforeUnmount(() => {
           <el-table-column prop="code" label="代码" width="88">
             <template #default="{ row }">
               <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+              <SecurityMarketBadge :security="row" />
             </template>
           </el-table-column>
           <el-table-column prop="name" label="名称" min-width="96" />

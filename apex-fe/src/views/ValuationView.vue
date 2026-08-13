@@ -197,7 +197,7 @@ onMounted(() => {
     <section v-if="detail" class="hero" :class="levelTone">
       <div class="hero-main">
         <div class="title-row">
-          <h2>{{ detail.name || '—' }} <span class="code">{{ detail.code }}</span></h2>
+          <h2>{{ detail.name || '—' }} <SecurityMarketBadge :security="detail" /> <span class="code">{{ detail.code }}</span></h2>
           <span class="level">{{ detail.levelLabel || '—' }}</span>
         </div>
         <p class="summary">{{ detail.summary }}</p>
@@ -318,8 +318,12 @@ onMounted(() => {
         empty-text="暂无筛选结果，可切换全市场/自选/观察池或档位后刷新"
         @row-click="openRow"
       >
-        <el-table-column prop="code" label="代码" width="90" />
-        <el-table-column prop="name" label="名称" width="100" />
+        <el-table-column prop="code" label="代码" width="90">
+          <template #default="{ row }">{{ row.code }} <SecurityMarketBadge :security="row" /></template>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" width="100">
+          <template #default="{ row }">{{ row.name }} <SecurityMarketBadge :security="row" /></template>
+        </el-table-column>
         <el-table-column prop="industry" label="行业" min-width="110" show-overflow-tooltip />
         <el-table-column prop="score" label="综合分" width="80" sortable>
           <template #default="{ row }">{{ fmt(row.score, 1) }}</template>

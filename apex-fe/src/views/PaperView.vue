@@ -495,6 +495,7 @@ onMounted(load)
       <el-table-column prop="code" label="代码" width="100">
         <template #default="{ row }">
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+          <SecurityMarketBadge :security="row" />
         </template>
       </el-table-column>
       <el-table-column prop="name" label="名称" width="120" />
@@ -708,6 +709,7 @@ onMounted(load)
       <el-table-column prop="code" label="代码" width="100">
         <template #default="{ row }">
           <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+          <SecurityMarketBadge :security="row" />
         </template>
       </el-table-column>
       <el-table-column prop="side" label="方向" width="80" />

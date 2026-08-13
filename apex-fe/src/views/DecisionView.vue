@@ -556,16 +556,18 @@ onBeforeUnmount(() => {
             <p class="advice">{{ briefing.positionAdvice || data?.riskNote }}</p>
             <div v-if="hotThemes.length" class="theme-row theme-inline">
               <span class="side-title inline"><TermTip term="mainline">主线</TermTip></span>
-              <span
-                v-for="t in hotThemes.slice(0, 6)"
-                :key="t.key"
-                class="theme-chip"
-              >
-                <span class="theme-name">{{ t.name }}</span>
-                <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
-                  <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
+              <div class="theme-chip-grid">
+                <span
+                  v-for="t in hotThemes.slice(0, 6)"
+                  :key="t.key"
+                  class="theme-chip"
+                >
+                  <span class="theme-name">{{ t.name }}</span>
+                  <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
+                    <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
+                  </span>
                 </span>
-              </span>
+              </div>
             </div>
           </div>
         </div>
@@ -617,6 +619,7 @@ onBeforeUnmount(() => {
               <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
                 {{ row.name || row.code }}
               </el-button>
+              <SecurityMarketBadge :security="row" />
               <small class="advice-code">{{ row.code }}</small>
             </template>
           </el-table-column>
@@ -768,6 +771,7 @@ onBeforeUnmount(() => {
             <el-table-column prop="code" label="代码" width="96" fixed>
               <template #default="{ row }">
                 <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+                <SecurityMarketBadge :security="row" />
               </template>
             </el-table-column>
             <el-table-column prop="name" label="名称" width="100" />
@@ -862,6 +866,7 @@ onBeforeUnmount(() => {
             <el-table-column prop="code" label="代码" width="96" fixed>
               <template #default="{ row }">
                 <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+                <SecurityMarketBadge :security="row" />
               </template>
             </el-table-column>
             <el-table-column prop="name" label="名称" width="100" />
@@ -902,6 +907,7 @@ onBeforeUnmount(() => {
             <el-table-column prop="code" label="代码" width="96">
               <template #default="{ row }">
                 <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+                <SecurityMarketBadge :security="row" />
               </template>
             </el-table-column>
             <el-table-column prop="name" label="名称" width="110" />
@@ -1295,13 +1301,22 @@ onBeforeUnmount(() => {
 }
 
 .theme-inline {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
   margin-top: 10px;
-  align-items: center;
 }
 
 .side-title.inline {
   margin: 0;
-  margin-right: 2px;
+  padding-top: 5px;
+}
+
+.theme-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 6px;
+  min-width: 0;
 }
 
 .theme-chip {
@@ -1847,13 +1862,41 @@ onBeforeUnmount(() => {
   }
 
   .dec-controls {
+    align-items: center;
     justify-content: space-between;
     width: 100%;
   }
 
-  .market-scope,
+  .market-scope {
+    min-height: 44px;
+    gap: 7px;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .market-scope > span {
+    gap: 4px;
+  }
+
+  .market-scope em {
+    font-size: 11px;
+  }
+
+  .market-scope b {
+    color: var(--ink);
+    font-size: 13px;
+  }
+
+  .market-scope :deep(.el-switch) {
+    --el-switch-on-color: var(--accent);
+    --el-switch-off-color: #d7dbe4;
+  }
+
   .sync-link {
     min-height: 44px;
+    padding: 0 2px;
   }
 
   .action-panel {

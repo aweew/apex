@@ -1431,6 +1431,7 @@ onBeforeUnmount(() => {
             <div v-if="row.topHoldings?.length" class="pf-tops">
               <span v-for="h in row.topHoldings.slice(0, 3)" :key="h.code" class="pf-top-chip">
                 <span class="pf-top-chip-name">{{ h.name || h.code }}</span>
+                <SecurityMarketBadge :security="h" />
                 <em :class="Number(h.pctChg) >= 0 ? 'up' : 'down'">{{ fmtSignedPct(h.pctChg) }}</em>
               </span>
             </div>
@@ -3338,20 +3339,21 @@ onBeforeUnmount(() => {
   }
 
   .pf-card {
-    margin: 0;
-    padding: 10px 2px 11px;
-    border: 0;
-    border-bottom: 1px solid var(--line);
-    border-radius: 0;
-    background: transparent;
+    margin: 10px 0 0;
+    padding: 11px 10px 12px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.025);
   }
 
-  .pf-card:last-child {
-    border-bottom: 0;
+  .mobile-list-toolbar + .pf-card {
+    margin-top: 12px;
   }
 
   .pf-card:active {
-    background: var(--fill);
+    border-color: rgba(0, 113, 227, 0.28);
+    background: rgba(0, 113, 227, 0.05);
   }
 
   .pf-card:focus-visible,
@@ -3445,7 +3447,7 @@ onBeforeUnmount(() => {
     margin-top: 7px;
     overflow: hidden;
     border-radius: 6px;
-    background: rgba(0, 0, 0, 0.035);
+    background: rgba(0, 0, 0, 0.045);
   }
 
   .pf-top-chip {

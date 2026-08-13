@@ -752,6 +752,7 @@ onBeforeUnmount(() => {
             <button type="button" class="code" @click="router.push(`/stock/${row.code}`)">
               {{ row.code }}
             </button>
+            <SecurityMarketBadge :security="row" />
             <span class="name">{{ row.name || '' }}</span>
             <span
               class="act"

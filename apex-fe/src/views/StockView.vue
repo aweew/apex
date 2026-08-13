@@ -1727,6 +1727,7 @@ function dash(v) {
         <p class="eyebrow">灵枢 · Stock</p>
         <h1>
           <span class="stock-name">{{ basic?.name || '股票详情' }}</span>
+          <SecurityMarketBadge :security="basic || { code }" />
           <span class="code">{{ basic?.code || code }}</span>
         </h1>
         <p class="stock-note">{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
