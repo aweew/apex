@@ -13,12 +13,15 @@ services:
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN}
       OPENCLAW_DISABLE_BONJOUR: "1"
       TZ: ${TZ:-Asia/Shanghai}
-      APEX_BOT_BASE_URL: ${APEX_BOT_BASE_URL:-https://apex.aweew.com}
+      APEX_BOT_BASE_URL: ${APEX_BOT_BASE_URL:-http://apex-backend-1:8080}
       APEX_BOT_CLIENT_KEY: ${APEX_BOT_CLIENT_KEY:?Set APEX_BOT_CLIENT_KEY}
       APEX_BOT_CLIENT_SECRET: ${APEX_BOT_CLIENT_SECRET:?Set APEX_BOT_CLIENT_SECRET}
     volumes:
       - ./data/state:/home/node/.openclaw
       - ./data/workspace:/home/node/.openclaw/workspace
+    networks:
+      - default
+      - apex
     ports:
       - "127.0.0.1:${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     cap_drop:
@@ -64,7 +67,7 @@ services:
       OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN}
       TZ: ${TZ:-Asia/Shanghai}
-      APEX_BOT_BASE_URL: ${APEX_BOT_BASE_URL:-https://apex.aweew.com}
+      APEX_BOT_BASE_URL: ${APEX_BOT_BASE_URL:-http://apex-backend-1:8080}
       APEX_BOT_CLIENT_KEY: ${APEX_BOT_CLIENT_KEY:?Set APEX_BOT_CLIENT_KEY}
       APEX_BOT_CLIENT_SECRET: ${APEX_BOT_CLIENT_SECRET:?Set APEX_BOT_CLIENT_SECRET}
     volumes:
@@ -78,3 +81,9 @@ services:
     entrypoint:
       - node
       - dist/index.js
+
+networks:
+  default:
+  apex:
+    external: true
+    name: ${APEX_DOCKER_NETWORK:-apex_default}

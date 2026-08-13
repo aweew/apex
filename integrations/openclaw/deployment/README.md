@@ -30,6 +30,9 @@ vim /volume1/docker/openclaw/.env
 - `APEX_BOT_CLIENT_KEY`：与 Apex `.env.production` 中的值完全一致。
 - `APEX_BOT_CLIENT_SECRET`：执行 `openssl rand -hex 32` 生成，并与 Apex
   `.env.production` 中的值完全一致。
+- `APEX_DOCKER_NETWORK`：Apex Compose 网络，默认 `apex_default`。
+- `APEX_BOT_BASE_URL`：默认通过 Docker 网络直连
+  `http://apex-backend-1:8080`，不经过公网域名或 NAS Tailscale 地址。
 
 不要把真实密钥提交到 Git，也不要在聊天或终端截图中展示。
 
