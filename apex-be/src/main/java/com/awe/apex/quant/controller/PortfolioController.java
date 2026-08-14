@@ -132,7 +132,7 @@ public class PortfolioController {
     }
 
     /**
-     * 一键刷新全部活跃组合行情+日线
+     * 一键刷新全部活跃组合行情
      *
      * @param onlyMissing 是否只刷缺现价
      * @return 结果

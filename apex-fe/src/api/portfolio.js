@@ -47,7 +47,7 @@ export function refreshPortfolioQuotes(portfolioId, onlyMissing = false) {
   })
 }
 
-/** 一键刷新全部活跃组合行情+日线（代码去重） */
+/** 一键刷新全部活跃组合行情（代码去重） */
 export function refreshAllPortfolioQuotes(onlyMissing = false) {
   return http.post('/api/portfolio/refresh-quotes-all', null, {
     params: { onlyMissing },

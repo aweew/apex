@@ -4,8 +4,6 @@ import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
-import com.awe.apex.quant.domain.dto.BarSyncReq;
-import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.PortfolioBriefResp;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportReq;
@@ -28,7 +26,6 @@ import com.awe.apex.quant.mapper.PortfolioHoldingMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
-import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
@@ -93,9 +90,6 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Lazy
     @Resource
     private IMyHoldingService myHoldingService;
-
-    @Resource
-    private IBarDailyService barDailyService;
 
     /**
      * 确保默认组合存在，并完成 my_holding 首次迁移
@@ -603,7 +597,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     }
 
     /**
-     * 一键刷新全部活跃组合行情+日线（代码去重）
+     * 一键刷新全部活跃组合行情（代码去重）
      *
      * @param onlyMissing 是否只刷缺现价的
      * @return 结果
@@ -663,7 +657,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     }
 
     /**
-     * 刷新行情+日线并回填持仓名称
+     * 刷新行情并回填持仓名称
      *
      * @param holdings     持仓行
      * @param codes        去重代码
@@ -691,31 +685,10 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 }
             }
         }
-        int barOk = 0;
-        int barFail = 0;
-        int barCount = 0;
-        if (CollUtil.isNotEmpty(codes)) {
-            try {
-                BarSyncReq syncReq = new BarSyncReq();
-                syncReq.setCodes(codes);
-                BarSyncResp barResp = barDailyService.syncBars(syncReq);
-                barOk = Objects.nonNull(barResp.getSuccessCount()) ? barResp.getSuccessCount() : 0;
-                barFail = Objects.nonNull(barResp.getFailCount()) ? barResp.getFailCount() : 0;
-                barCount = Objects.nonNull(barResp.getBarCount()) ? barResp.getBarCount() : 0;
-            } catch (Exception ex) {
-                log.warn("组合日线同步失败 codes={}, err={}", codes.size(), ex.getMessage());
-                barFail = codes.size();
-            }
-        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", quoteResult.get("success"));
         result.put("fail", quoteResult.get("fail"));
-        result.put("barSuccess", barOk);
-        result.put("barFail", barFail);
-        result.put("barCount", barCount);
-        result.put("message", quoteResult.get("message")
-                + "；日线成功 " + barOk + " / 失败 " + barFail
-                + "（写入 " + barCount + " 根）");
+        result.put("message", quoteResult.get("message"));
         return result;
     }
 
