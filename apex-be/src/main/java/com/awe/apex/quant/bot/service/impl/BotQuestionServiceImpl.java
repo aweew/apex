@@ -117,7 +117,9 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
         if (containsAny(question, "我的持仓", "持仓风险", "组合风险", "总体风险", "仓位", "浮亏", "浮盈")) {
             return answerPortfolioRisk(requestId);
         }
-        if (containsAny(question, "今天买什么", "今天卖什么", "今日决策", "怎么操作", "应该买什么", "应该卖什么")) {
+        if (containsAny(question, "今天买什么", "今天卖什么", "今日决策", "今天策略", "今日策略",
+                "怎么操作", "应该买什么", "应该卖什么")
+                || (containsAny(question, "今天", "今日") && containsAny(question, "策略", "意见", "建议"))) {
             return answerDecision(requestId);
         }
 

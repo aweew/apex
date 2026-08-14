@@ -115,6 +115,10 @@ class BotQuestionServiceImplTest {
         BotAskResp decision = service.ask(request("今天应该买什么"));
         assertEquals("TODAY_DECISION", decision.getIntent());
         assertTrue(decision.getAnswer().contains("控制仓位"));
+
+        BotAskResp strategy = service.ask(request("今天什么策略，有什么意见"));
+        assertEquals("TODAY_DECISION", strategy.getIntent());
+        assertTrue(strategy.getAnswer().contains("控制仓位"));
     }
 
     @Test

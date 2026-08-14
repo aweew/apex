@@ -4,6 +4,7 @@ import com.awe.apex.quant.bot.client.WeClawMessageClient;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.bot.service.impl.BotNotificationServiceImpl;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
 import org.mockito.ArgumentCaptor;
@@ -70,5 +71,28 @@ class BotNotificationServiceImplTest {
         assertTrue(messages.getAllValues().get(0).contains("浦发银行"));
         assertTrue(messages.getAllValues().get(1).contains("宁德时代"));
         assertFalse(messages.getAllValues().get(1).contains("浦发银行"));
+    }
+
+    @Test
+    void sendsMorningBriefingOnlyOncePerDay() {
+        ApexBotProperties properties = new ApexBotProperties();
+        properties.setNotificationCooldownSeconds(1800);
+        WeClawMessageClient messageClient = mock(WeClawMessageClient.class);
+        when(messageClient.sendText(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        BotNotificationServiceImpl service = new BotNotificationServiceImpl();
+        ReflectionTestUtils.setField(service, "properties", properties);
+        ReflectionTestUtils.setField(service, "messageClient", messageClient);
+        MorningBriefingResp briefing = MorningBriefingResp.builder()
+                .generatedAt(LocalDateTime.of(2026, 8, 14, 6, 40))
+                .summary("隔夜美股：纳斯达克 +0.81%。\n夜间新闻：AI 方向偏暖。")
+                .newsTitles(List.of("美联储公布最新经济数据"))
+                .dataLevel("GREEN")
+                .build();
+
+        service.notifyMorningBriefing(briefing);
+        service.notifyMorningBriefing(briefing);
+
+        verify(messageClient).sendText(org.mockito.ArgumentMatchers.contains("纳斯达克 +0.81%"));
+        verifyNoMoreInteractions(messageClient);
     }
 }

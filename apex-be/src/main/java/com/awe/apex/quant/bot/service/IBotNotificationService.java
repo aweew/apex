@@ -1,6 +1,7 @@
 package com.awe.apex.quant.bot.service;
 
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
@@ -18,6 +19,13 @@ public interface IBotNotificationService {
      * @param decision 决策结果
      */
     void notifyDecision(DecisionTodayResp decision);
+
+    /**
+     * 推送盘前晨报。
+     *
+     * @param briefing 盘前晨报
+     */
+    void notifyMorningBriefing(MorningBriefingResp briefing);
 
     /**
      * 推送盘中异动汇总。

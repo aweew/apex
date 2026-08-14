@@ -8,6 +8,7 @@ import com.awe.apex.quant.bot.service.IBotNotificationService;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskItem;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
@@ -61,6 +62,29 @@ public class BotNotificationServiceImpl implements IBotNotificationService {
         }
         message.append("仅供研究，不构成投资建议。");
         sendOnce(eventKey, message.toString());
+    }
+
+    /**
+     * 推送盘前晨报。
+     *
+     * @param briefing 盘前晨报
+     */
+    @Override
+    public void notifyMorningBriefing(MorningBriefingResp briefing) {
+        if (Objects.isNull(briefing) || StringUtils.isBlank(briefing.getSummary())) {
+            return;
+        }
+        String reportDate = Objects.nonNull(briefing.getGeneratedAt())
+                ? briefing.getGeneratedAt().toLocalDate().toString() : "unknown";
+        StringBuilder message = new StringBuilder("[Apex 盘前晨报]\n");
+        message.append(briefing.getSummary()).append("\n");
+        if (CollUtil.isNotEmpty(briefing.getNewsTitles())) {
+            message.append("重点：").append(String.join("；", briefing.getNewsTitles())).append("\n");
+        }
+        if (StringUtils.isNotBlank(briefing.getDataLevel()) && !"GREEN".equals(briefing.getDataLevel())) {
+            message.append("数据完整性：").append(briefing.getDataLevel()).append("\n");
+        }
+        sendOnce("MORNING_BRIEFING:" + reportDate, message.toString());
     }
 
     /**

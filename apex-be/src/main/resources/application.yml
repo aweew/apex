@@ -98,6 +98,9 @@ apex:
     notification-cooldown-seconds: ${APEX_BOT_NOTIFICATION_COOLDOWN_SECONDS:1800}
     mover-threshold: ${APEX_BOT_MOVER_THRESHOLD:5}
     watchlist-group: ${APEX_BOT_WATCHLIST_GROUP:我的自选}
+    morning-briefing:
+      enabled: ${APEX_BOT_MORNING_BRIEFING_ENABLED:true}
+      symbols: ${APEX_BOT_MORNING_BRIEFING_SYMBOLS:usIXIC,usDJI,usINX,usNVDA,usAAPL,usTSLA,usBABA,usPDD}
     weclaw:
       enabled: ${APEX_BOT_WECLAW_ENABLED:false}
       base-url: ${APEX_BOT_WECLAW_BASE_URL:}

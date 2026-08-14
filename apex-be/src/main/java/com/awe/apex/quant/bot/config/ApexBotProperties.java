@@ -46,6 +46,11 @@ public class ApexBotProperties {
     private String watchlistGroup = "我的自选";
 
     /**
+     * 盘前晨报配置。
+     */
+    private MorningBriefingProperties morningBriefing = new MorningBriefingProperties();
+
+    /**
      * WeClaw 主动消息配置。
      */
     private WeClawProperties weclaw = new WeClawProperties();
