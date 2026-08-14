@@ -809,6 +809,13 @@ onBeforeUnmount(() => {
             <el-table-column label="评分" width="110">
               <template #default="{ row }"><ScoreBar :score="row.score" /></template>
             </el-table-column>
+            <el-table-column label="门禁" width="82">
+              <template #default="{ row }">
+                <el-tag v-if="row.entryGatePassed === true" size="small" type="success" effect="plain">通过</el-tag>
+                <el-tag v-else-if="row.entryGatePassed === false" size="small" type="warning" effect="plain">观察</el-tag>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="仓位" width="72">
               <template #default="{ row }">{{ fmtPct(row.suggestedWeight) }}</template>
             </el-table-column>

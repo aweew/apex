@@ -39,4 +39,7 @@ public class DecisionFeatureInput {
 
     /** 是否仅供观察 */
     private boolean observeOnly;
+
+    /** 是否通过开仓门禁，非买入动作不适用 */
+    private Boolean entryGatePassed;
 }

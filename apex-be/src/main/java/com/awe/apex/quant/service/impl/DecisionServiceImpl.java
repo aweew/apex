@@ -13,6 +13,9 @@ import com.awe.apex.quant.decision.DecisionFeature;
 import com.awe.apex.quant.decision.DecisionFeatureBuilder;
 import com.awe.apex.quant.decision.DecisionFeatureInput;
 import com.awe.apex.quant.decision.DecisionFeatureSource;
+import com.awe.apex.quant.decision.DecisionEntryGate;
+import com.awe.apex.quant.decision.DecisionEntryGateReq;
+import com.awe.apex.quant.decision.DecisionEntryGateResp;
 import com.awe.apex.quant.decision.DecisionMode;
 import com.awe.apex.quant.decision.DecisionPerformanceCalibrator;
 import com.awe.apex.quant.decision.DecisionPortfolioSnapshotManager;
@@ -181,6 +184,9 @@ public class DecisionServiceImpl implements IDecisionService {
 
     @Resource
     private DecisionScorer decisionScorer;
+
+    @Resource
+    private DecisionEntryGate decisionEntryGate;
 
     @Resource
     private DecisionFeatureBuilder decisionFeatureBuilder;
@@ -565,6 +571,21 @@ public class DecisionServiceImpl implements IDecisionService {
                     scored.setExecutableHint(false);
                 }
             }
+            DecisionEntryGateResp entryGate = decisionEntryGate.evaluate(DecisionEntryGateReq.builder()
+                    .dataSufficient(Boolean.TRUE.equals(briefing.getDataSufficient()))
+                    .breadthUp(briefing.getBreadthUp())
+                    .mainlineMatch(mainHit.match)
+                    .offMainline(offMainline)
+                    .hotSourceCount(hotCnt)
+                    .build());
+            if (!entryGate.isPassed()) {
+                scored.setExecutableHint(false);
+                for (String blockReason : entryGate.getBlockReasons()) {
+                    if (!scored.getRiskFlags().contains(blockReason)) {
+                        scored.getRiskFlags().add(blockReason);
+                    }
+                }
+            }
             featureInputs.put(featureKey(code, "BUY"), DecisionFeatureInput.builder()
                     .signalScore(scoreReq.getSignalScore())
                     .fundExclude(scoreReq.isFundExclude())
@@ -574,6 +595,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .buyWeightFactor(scoreReq.getBuyWeightFactor())
                     .singleLimit(scoreReq.getSingleLimit())
                     .observeOnly(scoreReq.isObserveOnly())
+                    .entryGatePassed(entryGate.isPassed())
                     .build());
             if (StringUtils.isNotBlank(scored.getLinkHint())) {
                 reason = trimReason(reason + " · " + scored.getLinkHint());
@@ -609,6 +631,7 @@ public class DecisionServiceImpl implements IDecisionService {
                         .valuationSummary(Objects.nonNull(valBrief) ? valBrief.getSummary() : null)
                         .riskFlags(scored.getRiskFlags())
                         .executableHint(false)
+                        .entryGatePassed(entryGate.isPassed())
                         .linkHint(scored.getLinkHint())
                         .build();
                 putFeatureCandidate(featureCandidates, featureSelectionStatus, featureRejectReason,
@@ -643,6 +666,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .valuationSummary(Objects.nonNull(valBrief) ? valBrief.getSummary() : null)
                     .riskFlags(scored.getRiskFlags())
                     .executableHint(scored.isExecutableHint())
+                    .entryGatePassed(entryGate.isPassed())
                     .linkHint(scored.getLinkHint())
                     .build();
             buys.add(item);
@@ -1125,6 +1149,8 @@ public class DecisionServiceImpl implements IDecisionService {
         config.put("linkUndervaluedS2", strategyParams.decisionLinkUndervaluedS2());
         config.put("linkOvervaluedS3", strategyParams.decisionLinkOvervaluedS3());
         config.put("executableScore", strategyParams.decisionExecutableScore());
+        config.put("gateMinimumBreadthUp", strategyParams.decisionGateMinimumBreadthUp());
+        config.put("gateMinimumHotSources", strategyParams.decisionGateMinimumHotSources());
         config.put("performanceCalibration", "COMPLETE_5D_EXCESS_V1");
         return config;
     }
@@ -1254,8 +1280,10 @@ public class DecisionServiceImpl implements IDecisionService {
             if (!Boolean.TRUE.equals(item.getExecutableHint())) {
                 item.setSuggestedWeight(currentWeight.setScale(4, RoundingMode.HALF_UP));
                 featureSelectionStatus.put(featureKey, "WATCH");
-                featureRejectReason.put(featureKey, "评分未达到可执行阈值");
-                appendRiskFlag(item, "仅观察：评分未达到执行阈值");
+                String rejectReason = Boolean.FALSE.equals(item.getEntryGatePassed())
+                        ? "未通过市场或板块开仓门禁" : "评分未达到可执行阈值";
+                featureRejectReason.put(featureKey, rejectReason);
+                appendRiskFlag(item, "仅观察：" + rejectReason);
                 continue;
             }
 

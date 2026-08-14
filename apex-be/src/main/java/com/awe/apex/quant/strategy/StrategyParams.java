@@ -141,4 +141,22 @@ public class StrategyParams {
     public BigDecimal decisionExecutableScore() {
         return getDecimal("decision.executable.score", new BigDecimal("88"));
     }
+
+    /**
+     * 开仓门禁要求的最少上涨家数
+     *
+     * @return 最少上涨家数
+     */
+    public int decisionGateMinimumBreadthUp() {
+        return getInt("decision.gate.minimum_breadth_up", 2000);
+    }
+
+    /**
+     * 非主线标的获得热点确认所需的最少来源数
+     *
+     * @return 最少热点来源数
+     */
+    public int decisionGateMinimumHotSources() {
+        return getInt("decision.gate.minimum_hot_sources", 2);
+    }
 }

@@ -93,6 +93,8 @@ async function ensureAutoSyncKeys() {
     { configKey: 'decision.executable.score', configValue: '88' },
     { configKey: 'decision.confluence.window', configValue: '5' },
     { configKey: 'decision.confluence.min_strategies', configValue: '2' },
+    { configKey: 'decision.gate.minimum_breadth_up', configValue: '2000' },
+    { configKey: 'decision.gate.minimum_hot_sources', configValue: '2' },
   ]
   for (const item of keys) {
     if (!rows.value.find((r) => r.configKey === item.configKey)) {
@@ -241,7 +243,7 @@ onMounted(load)
       :closable="false"
       show-icon
       title="决策评分与估值联动参数"
-      description="系统参数中含 decision.score.* / decision.link.* / decision.executable.score：低估+S2 提权，高估+S3 降权且不可直接 TRIGGERED。改完后重新「一键生成决策」生效。"
+      description="系统参数中含 decision.score.* / decision.link.* / decision.executable.score / decision.gate.*：低估+S2 提权，高估+S3 降权；市场广度与主线/热点确认未通过时仅观察。改完后重新「一键生成决策」生效。"
       style="margin: 16px 0 12px"
     />
 

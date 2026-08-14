@@ -91,4 +91,30 @@ class DecisionFeatureBuilderTest {
         assertEquals(1, selected.getRankNo());
         org.junit.jupiter.api.Assertions.assertNotEquals(selected.getFeatureHash(), rejected.getFeatureHash());
     }
+
+    @Test
+    void entryGateStatusChangesFeatureHash() {
+        DecisionItemResp item = DecisionItemResp.builder()
+                .code("000001")
+                .action("BUY")
+                .strategyId("S1")
+                .score(new BigDecimal("90"))
+                .build();
+        MarketBriefingResp briefing = MarketBriefingResp.builder().dataLevel("GREEN").build();
+
+        DecisionFeature passed = builder.build(item, DecisionFeatureSource.builder()
+                .scoringInput(DecisionFeatureInput.builder().entryGatePassed(true).build())
+                .briefing(briefing)
+                .selectionStatus("SELECTED")
+                .build());
+        DecisionFeature blocked = builder.build(item, DecisionFeatureSource.builder()
+                .scoringInput(DecisionFeatureInput.builder().entryGatePassed(false).build())
+                .briefing(briefing)
+                .selectionStatus("WATCH")
+                .build());
+
+        assertEquals(Boolean.TRUE, passed.getEntryGatePassed());
+        assertEquals(Boolean.FALSE, blocked.getEntryGatePassed());
+        org.junit.jupiter.api.Assertions.assertNotEquals(passed.getFeatureHash(), blocked.getFeatureHash());
+    }
 }

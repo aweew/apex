@@ -154,6 +154,11 @@ public class DecisionItemResp {
     private Boolean executableHint;
 
     /**
+     * 是否通过市场与板块开仓门禁
+     */
+    private Boolean entryGatePassed;
+
+    /**
      * 估值×策略联动提示
      */
     private String linkHint;

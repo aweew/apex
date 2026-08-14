@@ -73,6 +73,7 @@ public class DecisionFeatureBuilder {
                 number(input.getBuyWeightFactor()),
                 number(input.getSingleLimit()),
                 String.valueOf(input.isObserveOnly()),
+                text(input.getEntryGatePassed()),
                 text(source.getSelectionStatus()),
                 text(source.getRejectReason()),
                 text(source.getRankNo()),
@@ -99,6 +100,7 @@ public class DecisionFeatureBuilder {
                 .buyWeightFactor(input.getBuyWeightFactor())
                 .singleLimit(input.getSingleLimit())
                 .observeOnly(input.isObserveOnly())
+                .entryGatePassed(input.getEntryGatePassed())
                 .selectionStatus(source.getSelectionStatus())
                 .rejectReason(source.getRejectReason())
                 .rankNo(source.getRankNo())
