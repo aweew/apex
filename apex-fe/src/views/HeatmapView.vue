@@ -258,6 +258,15 @@ function formatMetric(n, colorKey) {
   return fmtPct(n.pctChg)
 }
 
+function hideSmallTreemapLabel({ rect }) {
+  const minWidth = props.embedded ? 74 : 64
+  const minHeight = props.embedded ? 52 : 46
+  if (rect.width < minWidth || rect.height < minHeight) {
+    return { fontSize: 0, width: 0, height: 0 }
+  }
+  return {}
+}
+
 function renderChart() {
   if (!chartRef.value) return
   if (!chart) chart = echarts.init(chartRef.value, null, { renderer: 'canvas' })
@@ -314,7 +323,7 @@ function renderChart() {
           squareRatio: 0.72 * (1 + Math.sqrt(5)),
           label: {
             show: true,
-            visibleMin: isEmbeddedMobile ? 2600 : 1100,
+            visibleMin: isEmbeddedMobile ? 900 : 1100,
             position: 'inside',
             padding: [4, 6],
             overflow: 'truncate',
@@ -331,6 +340,7 @@ function renderChart() {
             textShadowColor: 'rgba(0,0,0,0.35)',
             textShadowBlur: 2,
           },
+          labelLayout: hideSmallTreemapLabel,
           upperLabel: { show: false },
           itemStyle: {
             borderColor: chartGap,

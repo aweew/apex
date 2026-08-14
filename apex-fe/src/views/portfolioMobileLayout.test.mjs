@@ -30,6 +30,24 @@ test('opening mobile detail redraws charts after their containers mount', () => 
   assert.match(portfolioSource, /chart\.getDom\(\) !== chartRef\.value/)
 })
 
+test('mobile portfolio detail starts at the document top after selection', () => {
+  assert.match(
+    portfolioSource,
+    /await nextTick\(\)\s*window\.scrollTo\(\{ top: 0, behavior: 'auto' \}\)\s*requestAnimationFrame\(\(\) => window\.scrollTo\(\{ top: 0, behavior: 'auto' \}\)\)/,
+  )
+})
+
+test('portfolio summary keeps only action-oriented metrics', () => {
+  const detailTemplate = portfolioSource.slice(
+    portfolioSource.indexOf('class="stat-cards stat-cards--portfolio"'),
+    portfolioSource.indexOf('<section v-if="rows.length && brief"'),
+  )
+  assert.match(detailTemplate, /持仓只数/)
+  assert.match(detailTemplate, /今日盈亏/)
+  assert.match(detailTemplate, /持仓盈亏/)
+  assert.doesNotMatch(detailTemplate, /持仓市值|现金|总权益/)
+})
+
 test('portfolio list holding summaries omit market badges', () => {
   const portfolioListTemplate = portfolioSource.slice(portfolioSource.indexOf('class="pf-card"'), portfolioSource.indexOf('class="side-rail"'))
   assert.doesNotMatch(portfolioListTemplate, /<SecurityMarketBadge :security="h"/)

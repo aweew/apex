@@ -979,8 +979,10 @@ onBeforeUnmount(() => {
     <el-collapse v-model="morePanels" class="more-collapse">
       <el-collapse-item v-if="playbook" name="playbook">
         <template #title>
-          <span class="collapse-title">策略战法与规则</span>
-          <span class="collapse-sub">S1 / S2 / S3 · 评分与仓位</span>
+          <div class="collapse-heading">
+            <span class="collapse-title">策略战法与规则</span>
+            <span class="collapse-sub">S1 / S2 / S3 · 评分与仓位</span>
+          </div>
         </template>
         <div class="strategy-grid">
           <article v-for="s in strategies" :key="s.strategyId" class="strategy-card">
@@ -1021,9 +1023,15 @@ onBeforeUnmount(() => {
 
       <el-collapse-item v-if="attribution" name="attr">
         <template #title>
-          <span class="collapse-title">复盘归因</span>
-          <span class="collapse-sub">{{ attribution.message }}</span>
+          <div class="collapse-heading">
+            <span class="collapse-title">复盘归因</span>
+            <span class="collapse-sub">{{ attribution.message }}</span>
+          </div>
         </template>
+        <div class="attr-explain">
+          <strong>怎么看</strong>
+          <span>样本是建议条数；次日均是有下一交易日行情样本的平均涨跌；胜率是其中次日上涨的占比。共振指同一标的同时命中至少 2 个策略，主线同向指建议与当日市场主线一致；“-”表示尚无有效行情，不参与均值和胜率计算。</span>
+        </div>
         <div class="attr-grid">
           <div v-for="block in [
             { title: '按策略', rows: attribution.byStrategy },
@@ -1032,34 +1040,34 @@ onBeforeUnmount(() => {
             { title: '按市场立场', rows: attribution.byStance },
           ]" :key="block.title">
             <h4>{{ block.title }}</h4>
-            <el-table :data="block.rows || []" size="small" stripe empty-text="暂无">
-              <el-table-column prop="label" label="桶" width="90" />
-              <el-table-column prop="sampleCount" label="样本" width="60" />
-              <el-table-column label="次日均%" width="90">
+            <el-table :data="block.rows || []" size="small" stripe empty-text="暂无" class="attr-table">
+              <el-table-column prop="label" label="桶" min-width="86" />
+              <el-table-column prop="sampleCount" label="样本" min-width="56" />
+              <el-table-column label="次日均%" min-width="86">
                 <template #default="{ row }">
                   <span :class="Number(row.avgNextPct) > 0 ? 'up' : Number(row.avgNextPct) < 0 ? 'down' : ''">
                     {{ row.avgNextPct == null ? '-' : Number(row.avgNextPct).toFixed(2) + '%' }}
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column label="胜率" width="70">
+              <el-table-column label="胜率" min-width="64">
                 <template #default="{ row }">{{ row.winRate == null ? '-' : row.winRate + '%' }}</template>
               </el-table-column>
             </el-table>
           </div>
           <div>
             <h4>成熟五日超额</h4>
-            <el-table :data="attribution.matureStrategyPerformance || []" size="small" stripe empty-text="样本积累中">
-              <el-table-column prop="strategyId" label="策略" width="80" />
-              <el-table-column prop="sampleCount" label="样本" width="60" />
-              <el-table-column label="超额均%" width="90">
+            <el-table :data="attribution.matureStrategyPerformance || []" size="small" stripe empty-text="样本积累中" class="attr-table">
+              <el-table-column prop="strategyId" label="策略" min-width="76" />
+              <el-table-column prop="sampleCount" label="样本" min-width="56" />
+              <el-table-column label="超额均%" min-width="86">
                 <template #default="{ row }">
                   <span :class="Number(row.avgExcess5d) > 0 ? 'up' : Number(row.avgExcess5d) < 0 ? 'down' : ''">
                     {{ row.avgExcess5d == null ? '-' : (Number(row.avgExcess5d) * 100).toFixed(2) + '%' }}
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column label="胜率" width="70">
+              <el-table-column label="胜率" min-width="64">
                 <template #default="{ row }">{{ row.winRate5d == null ? '-' : (Number(row.winRate5d) * 100).toFixed(0) + '%' }}</template>
               </el-table-column>
             </el-table>
@@ -1069,8 +1077,10 @@ onBeforeUnmount(() => {
 
       <el-collapse-item v-if="history.length" name="history">
         <template #title>
-          <span class="collapse-title">决策历史</span>
-          <span class="collapse-sub">点击行回看当日清单</span>
+          <div class="collapse-heading">
+            <span class="collapse-title">决策历史</span>
+            <span class="collapse-sub">点击行回看当日清单</span>
+          </div>
         </template>
         <el-table
           :data="history"
@@ -1745,7 +1755,9 @@ onBeforeUnmount(() => {
 
 .more-collapse :deep(.el-collapse-item__header) {
   padding: 0 16px;
-  height: 48px;
+  min-height: 48px;
+  height: auto;
+  align-items: center;
   background: transparent;
   border-bottom-color: var(--line);
   font-size: 14px;
@@ -1760,14 +1772,25 @@ onBeforeUnmount(() => {
   padding: 14px 16px 18px;
 }
 
+.collapse-heading {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  min-width: 0;
+  gap: 10px;
+  padding: 8px 0;
+}
+
 .collapse-title {
   font-weight: 700;
-  margin-right: 10px;
+  flex: 0 0 auto;
 }
 
 .collapse-sub {
+  min-width: 0;
   font-size: 12px;
   font-weight: 400;
+  line-height: 1.4;
   color: var(--muted);
 }
 
@@ -1834,6 +1857,28 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.attr-explain {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(0, 113, 227, 0.06);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.attr-explain strong {
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.attr-table {
+  width: 100%;
+}
+
 .history-table :deep(.el-table__row) {
   cursor: pointer;
 }
@@ -1892,6 +1937,22 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 560px) {
+  .more-collapse :deep(.el-collapse-item__header) {
+    align-items: flex-start;
+  }
+
+  .collapse-heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .attr-explain {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 9px 10px;
+  }
+
   .dec-header {
     grid-template-columns: 1fr;
     align-items: stretch;

@@ -39,15 +39,26 @@ function syncMobileModuleTitle() {
     mobileModuleTitle.value = ''
     return
   }
+  const detailHeading = document.querySelector('.page.mobile-detail-open .detail-title h2')
   const heading = document.querySelector('.page .header h1')
   const module = document.querySelector('.page .header .eyebrow')
   const navigation = document.querySelector('.nav')
-  if (!heading || !module || !navigation) {
+  if (!navigation) {
+    mobileModuleTitle.value = ''
+    return
+  }
+  if (detailHeading) {
+    mobileModuleTitle.value = detailHeading.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().bottom
+      ? detailHeading.textContent.trim()
+      : ''
+    return
+  }
+  if (!heading || !module) {
     mobileModuleTitle.value = ''
     return
   }
   mobileModuleTitle.value = heading.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().bottom
-    ? `${heading.textContent.trim()} · ${module.textContent.trim()}`
+    ? heading.textContent.trim()
     : ''
 }
 

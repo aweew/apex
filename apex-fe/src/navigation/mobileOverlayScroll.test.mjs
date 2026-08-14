@@ -30,3 +30,8 @@ test('desktop navigation keeps its original horizontal layout', () => {
   const desktopStyles = appSource.slice(0, appSource.indexOf('@media (max-width: 900px)'))
   assert.match(desktopStyles, /\.mobile-menu-scroll\s*\{\s*display:\s*contents;/)
 })
+
+test('mobile sticky title keeps only the page name in the narrow navigation slot', () => {
+  assert.match(appSource, /\? heading\.textContent\.trim\(\)/)
+  assert.doesNotMatch(appSource, /\$\{heading\.textContent\.trim\(\)\} · \$\{module\.textContent\.trim\(\)\}/)
+})

@@ -572,6 +572,7 @@ async function selectPortfolio(row) {
     })
     await nextTick()
     window.scrollTo({ top: 0, behavior: 'auto' })
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }))
   }
 }
 
@@ -1482,7 +1483,7 @@ onBeforeUnmount(() => {
         </div>
         <header class="detail-header">
           <div class="detail-title">
-            <p class="eyebrow share-hide-meta">{{ detail.isDefault ? '灵枢 · Holding' : '灵枢 · Track' }}</p>
+            <p class="eyebrow share-hide-meta">{{ detail.isDefault ? 'Holding' : 'Track' }}</p>
             <h2>{{ detail.name }}</h2>
             <p v-if="detail.ownerLabel || detail.note" class="detail-sub share-hide-meta">
               <template v-if="detail.ownerLabel">{{ detail.ownerLabel }}</template>
@@ -1524,22 +1525,10 @@ onBeforeUnmount(() => {
           </template>
         </el-dropdown>
 
-        <div v-if="rows.length" class="stat-cards" :class="{ 'stat-cards--share': sharingCapture }">
+        <div v-if="rows.length" class="stat-cards stat-cards--portfolio" :class="{ 'stat-cards--share': sharingCapture }">
           <div class="stat-card">
             <label>持仓只数</label>
             <b>{{ rows.length }}</b>
-          </div>
-          <div v-if="!sharingCapture" class="stat-card">
-            <label><TermTip term="total_mv">持仓市值</TermTip></label>
-            <b>{{ fmtMoney(totalMv) }}</b>
-          </div>
-          <div v-if="!sharingCapture" class="stat-card">
-            <label>现金</label>
-            <b>{{ fmtMoney(detail.cashBalance) }}</b>
-          </div>
-          <div v-if="!sharingCapture" class="stat-card">
-            <label>总权益</label>
-            <b>{{ fmtMoney(detail.totalEquity) }}</b>
           </div>
           <div class="stat-card">
             <label>{{ sharingCapture ? '今日涨跌' : '今日盈亏' }}</label>
@@ -2551,6 +2540,10 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   max-width: 420px;
 }
+
+.stat-cards--portfolio {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .brief-panel {
   margin-bottom: 16px;
   padding: 16px 18px 14px;
@@ -3478,8 +3471,56 @@ onBeforeUnmount(() => {
     animation: portfolio-mobile-view-in 0.18s ease-out;
   }
 
+  .mobile-detail-open .detail-header {
+    margin-bottom: 12px;
+  }
+
+  .mobile-detail-open .detail-title .eyebrow {
+    display: none;
+  }
+
+  .mobile-detail-open .detail-sub {
+    margin-top: 3px;
+    font-size: 13px;
+  }
+
   .mobile-detail-open .detail-title h2 {
     font-size: 24px;
+  }
+
+  .mobile-detail-open .stat-cards--portfolio {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .mobile-detail-open .stat-cards--portfolio .stat-card {
+    min-width: 0;
+    min-height: 78px;
+    padding: 11px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  }
+
+  .mobile-detail-open .stat-cards--portfolio .stat-card label {
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+
+  .mobile-detail-open .stat-cards--portfolio .stat-card b {
+    display: block;
+    overflow: hidden;
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-detail-open .stat-cards--portfolio .pct-aside {
+    display: block;
+    margin: 2px 0 0;
+    font-size: 12px;
   }
 }
 
