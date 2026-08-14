@@ -8,6 +8,7 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.decision.MainlineBoardRules;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.MarketEffectResp;
@@ -39,6 +40,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.Charset;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -63,6 +65,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     /** 内存缓存 10 分钟，避免每次进看板都重建 */
     private static final long CACHE_TTL_MS = 600_000L;
+    private static final String BRIEFING_CACHE_KEY = "apex:market-briefing:latest";
 
     private final Object cacheLock = new Object();
     private final AtomicBoolean rebuildScheduled = new AtomicBoolean(false);
@@ -123,6 +126,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     @Resource
     private MarketCrossSectionClient marketCrossSectionClient;
 
+    @Resource
+    private RedisCacheService redisCacheService;
+
     /**
      * 生成市场简报
      *
@@ -148,6 +154,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 cachedBriefing = built;
                 cachedAtMs = System.currentTimeMillis();
                 persistSnapshot(built);
+                redisCacheService.put(BRIEFING_CACHE_KEY, built, Duration.ofMillis(CACHE_TTL_MS));
                 return built;
             }
         }
@@ -156,6 +163,14 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             if (Objects.nonNull(cachedBriefing) && now - cachedAtMs < CACHE_TTL_MS) {
                 return refreshLiveMarketQuotes(cachedBriefing);
             }
+        }
+        MarketBriefingResp sharedCached = redisCacheService.get(BRIEFING_CACHE_KEY, MarketBriefingResp.class);
+        if (Objects.nonNull(sharedCached)) {
+            synchronized (cacheLock) {
+                cachedBriefing = sharedCached;
+                cachedAtMs = System.currentTimeMillis();
+            }
+            return refreshLiveMarketQuotes(sharedCached);
         }
         MarketBriefingResp snap = loadRecentSnapshot();
         if (Objects.nonNull(snap)) {
@@ -166,6 +181,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                     cachedAtMs = System.currentTimeMillis();
                 }
             }
+            redisCacheService.put(BRIEFING_CACHE_KEY, snap, Duration.ofMillis(CACHE_TTL_MS));
             scheduleRebuild();
             return snap;
         }
@@ -177,6 +193,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             cachedBriefing = built;
             cachedAtMs = System.currentTimeMillis();
             persistSnapshot(built);
+            redisCacheService.put(BRIEFING_CACHE_KEY, built, Duration.ofMillis(CACHE_TTL_MS));
             return built;
         }
     }
@@ -205,6 +222,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             cachedMarketEffect = null;
             cachedMarketEffectAtMs = 0L;
         }
+        redisCacheService.evict(BRIEFING_CACHE_KEY);
     }
 
     /**
@@ -1131,6 +1149,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                     cachedBriefing = built;
                     cachedAtMs = System.currentTimeMillis();
                 }
+                redisCacheService.put(BRIEFING_CACHE_KEY, built, Duration.ofMillis(CACHE_TTL_MS));
             } catch (Exception ex) {
                 log.warn("后台重建市场简报失败: {}", ex.getMessage());
             } finally {

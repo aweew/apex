@@ -8,6 +8,7 @@ import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.ai.AiChatProperties;
 import com.awe.apex.quant.ai.KimiChatClient;
+import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
@@ -53,11 +54,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 个股综合研判：聚合技术、估值、板块资金/热点与策略信号
@@ -69,8 +70,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final BigDecimal HUNDRED = new BigDecimal("100");
     private static final String AI_DISCLAIMER = "AI 解读基于本地规则结果与当日快照，非实时全市场资讯；不构成投资建议。";
-
-    private final ConcurrentHashMap<String, CachedAi> aiCache = new ConcurrentHashMap<>();
+    private static final String AI_CACHE_PREFIX = "apex:stock-analysis:ai:";
 
     @Resource
     private IStockService stockService;
@@ -101,6 +101,9 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
 
     @Resource
     private AiChatProperties aiChatProperties;
+
+    @Resource
+    private RedisCacheService redisCacheService;
 
     @Resource
     private MarketNewsMapper marketNewsMapper;
@@ -755,14 +758,9 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
                     .build();
         }
         String cacheKey = buildAiCacheKey(resp);
-        int ttl = Math.max(60, aiChatProperties.getSummaryCacheSeconds());
         if (!forceAi) {
-            CachedAi cached = aiCache.get(cacheKey);
-            if (Objects.nonNull(cached)
-                    && cached.at.plusSeconds(ttl).isAfter(LocalDateTime.now())
-                    && Objects.nonNull(cached.payload)
-                    && StringUtils.isNotBlank(cached.payload.getBrief())) {
-                StockAnalysisAiResp hit = cached.payload;
+            StockAnalysisAiResp hit = redisCacheService.get(cacheKey, StockAnalysisAiResp.class);
+            if (Objects.nonNull(hit) && StringUtils.isNotBlank(hit.getBrief())) {
                 hit.setFromCache(true);
                 hit.setConfigured(true);
                 hit.setQuoteRefreshed(quoteRefreshed);
@@ -851,12 +849,12 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             ai.setBrief("大模型暂无有效输出，请稍后重试或查看上方规则研判。");
             ai.setStance(resp.getStance());
         }
-        aiCache.put(cacheKey, new CachedAi(ai, LocalDateTime.now()));
+        redisCacheService.put(cacheKey, ai, Duration.ofSeconds(Math.max(60, aiChatProperties.getSummaryCacheSeconds())));
         return ai;
     }
 
     private String buildAiCacheKey(StockAnalysisResp resp) {
-        return LocalDate.now() + "|" + resp.getCode() + "|"
+        return AI_CACHE_PREFIX + LocalDate.now() + "|" + resp.getCode() + "|"
                 + resp.getLatestPrice() + "|" + resp.getPctChg() + "|"
                 + resp.getCompositeScore() + "|"
                 + (Objects.nonNull(resp.getTech()) ? resp.getTech().getRegime() : "");
@@ -927,13 +925,4 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         return StockAnalysisAiResp.builder().brief(text).build();
     }
 
-    private static final class CachedAi {
-        private final StockAnalysisAiResp payload;
-        private final LocalDateTime at;
-
-        private CachedAi(StockAnalysisAiResp payload, LocalDateTime at) {
-            this.payload = payload;
-            this.at = at;
-        }
-    }
 }

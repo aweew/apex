@@ -6,6 +6,7 @@ import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.ai.AiChatProperties;
 import com.awe.apex.quant.ai.KimiChatClient;
+import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.decision.DecisionContext;
 import com.awe.apex.quant.decision.DecisionActionPublisher;
 import com.awe.apex.quant.decision.DecisionDataReadiness;
@@ -102,6 +103,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -113,7 +115,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 智能决策：编排股票池 / 策略信号 / 共振 / 热点 / 基本面 / 风控
@@ -221,10 +222,13 @@ public class DecisionServiceImpl implements IDecisionService {
     @Resource
     private AiChatProperties aiChatProperties;
 
+    @Resource
+    private RedisCacheService redisCacheService;
+
     private static final BigDecimal FALLBACK_STOP_PCT = new BigDecimal("0.08");
     private static final BigDecimal FALLBACK_TAKE_PCT = new BigDecimal("0.20");
     private static final String BUY_AI_DISCLAIMER = "AI 总结仅供研究参考，不构成投资建议；请结合本地规则评分与风控自行决策。";
-    private final Map<String, CachedBuyAi> buyAiCache = new ConcurrentHashMap<>();
+    private static final String BUY_AI_CACHE_PREFIX = "apex:decision:buy-ai:";
 
     /**
      * 一键生成今日决策：刷新股票池 → 跑策略 → 共振/基本面/风控 → 落库 → 同步观察池
@@ -2036,15 +2040,10 @@ public class DecisionServiceImpl implements IDecisionService {
         }
 
         String cacheKey = buildBuyAiCacheKey(actionDate, buys);
-        int ttl = Math.max(60, aiChatProperties.getSummaryCacheSeconds());
         boolean forceRefresh = Boolean.TRUE.equals(force);
         if (!forceRefresh) {
-            CachedBuyAi cached = buyAiCache.get(cacheKey);
-            if (Objects.nonNull(cached)
-                    && cached.at.plusSeconds(ttl).isAfter(LocalDateTime.now())
-                    && Objects.nonNull(cached.payload)
-                    && StringUtils.isNotBlank(cached.payload.getSummary())) {
-                DecisionBuyAiResp hit = cached.payload;
+            DecisionBuyAiResp hit = redisCacheService.get(cacheKey, DecisionBuyAiResp.class);
+            if (Objects.nonNull(hit) && StringUtils.isNotBlank(hit.getSummary())) {
                 hit.setFromCache(true);
                 hit.setConfigured(true);
                 return hit;
@@ -2145,14 +2144,14 @@ public class DecisionServiceImpl implements IDecisionService {
                 }
             }
         }
-        buyAiCache.put(cacheKey, new CachedBuyAi(ai, LocalDateTime.now()));
+        redisCacheService.put(cacheKey, ai, Duration.ofSeconds(Math.max(60, aiChatProperties.getSummaryCacheSeconds())));
         log.info("决策买入AI总结完成 date={} buys={} fromCache=false", actionDate, buys.size());
         return ai;
     }
 
     private String buildBuyAiCacheKey(LocalDate actionDate, List<DecisionItemResp> buys) {
         StringBuilder sb = new StringBuilder();
-        sb.append(actionDate).append('|');
+        sb.append(BUY_AI_CACHE_PREFIX).append(actionDate).append('|');
         int n = Math.min(buys.size(), 12);
         for (int i = 0; i < n; i++) {
             DecisionItemResp item = buys.get(i);
@@ -2220,16 +2219,6 @@ public class DecisionServiceImpl implements IDecisionService {
         } catch (Exception ex) {
             log.debug("买入AI JSON 解析失败，回退纯文本: {}", ex.getMessage());
             return DecisionBuyAiResp.builder().summary(text).watchPoints(List.of()).stockNotes(List.of()).build();
-        }
-    }
-
-    private static final class CachedBuyAi {
-        private final DecisionBuyAiResp payload;
-        private final LocalDateTime at;
-
-        private CachedBuyAi(DecisionBuyAiResp payload, LocalDateTime at) {
-            this.payload = payload;
-            this.at = at;
         }
     }
 

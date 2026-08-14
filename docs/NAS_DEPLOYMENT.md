@@ -74,6 +74,7 @@ MYSQL_HOST=mysql
 MYSQL_DOCKER_NETWORK=mysql_default
 MYSQL_USER=apex_app
 MYSQL_PASSWORD=数据库强密码
+REDIS_PASSWORD=Redis强密码
 APEX_LOCAL_PASSWORD=应用登录强密码
 APEX_JWT_SECRET=至少32位随机字符串
 ```

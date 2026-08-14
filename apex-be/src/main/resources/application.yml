@@ -18,6 +18,10 @@ spring:
       maximum-pool-size: 20
       idle-timeout: 10000
     driver-class-name: com.p6spy.engine.spy.P6SpyDriver
+  data:
+    redis:
+      connect-timeout: 1500ms
+      timeout: 1500ms
 
 # mybatis-plus 配置
 mybatis-plus:

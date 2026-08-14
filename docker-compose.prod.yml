@@ -1,4 +1,18 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - apex-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   backend:
     build:
       context: .
@@ -12,6 +26,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:p6spy:mysql://${MYSQL_HOST:?Set MYSQL_HOST}:${MYSQL_PORT:-3306}/${MYSQL_DATABASE:-apex}?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_0900_ai_ci&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:?Set MYSQL_USER}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
       SA_TOKEN_JWT_SECRET_KEY: ${APEX_JWT_SECRET:?Set APEX_JWT_SECRET}
       APEX_LOCAL_USERNAME: ${APEX_LOCAL_USERNAME:-admin}
       APEX_LOCAL_PASSWORD: ${APEX_LOCAL_PASSWORD:?Set APEX_LOCAL_PASSWORD}
@@ -45,6 +62,9 @@ services:
     volumes:
       - apex-output:/app/.mx_output
       - apex-logs:/app/apex-be/logs
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - default
       - mysql
@@ -70,6 +90,7 @@ services:
       - "${APEX_HTTP_PORT:-8088}:80"
 
 volumes:
+  apex-redis-data:
   apex-output:
   apex-logs:
 

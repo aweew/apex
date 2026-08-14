@@ -4,6 +4,7 @@ import com.awe.apex.quant.market.TradingCalendar;
 
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.domain.dto.DashboardHomeResp;
 import com.awe.apex.quant.domain.dto.DashboardResp;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
@@ -43,6 +44,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -62,6 +64,8 @@ import java.util.concurrent.Executors;
 @Slf4j
 @Service
 public class DashboardServiceImpl implements IDashboardService {
+
+    private static final Duration HOME_CACHE_TTL = Duration.ofSeconds(15);
 
     @Resource
     private IPaperService paperService;
@@ -96,6 +100,9 @@ public class DashboardServiceImpl implements IDashboardService {
     @Resource
     private WatchlistMapper watchlistMapper;
 
+    @Resource
+    private RedisCacheService redisCacheService;
+
     private static final ExecutorService HOME_POOL = Executors.newFixedThreadPool(4, r -> {
         Thread t = new Thread(r, "dashboard-home");
         t.setDaemon(true);
@@ -112,6 +119,13 @@ public class DashboardServiceImpl implements IDashboardService {
     @Override
     public DashboardHomeResp home(Long accountId, String groupName, boolean forceRefresh) {
         String group = StringUtils.isNotBlank(groupName) ? groupName.trim() : "我的自选";
+        String cacheKey = "apex:dashboard:home:" + (Objects.nonNull(accountId) ? accountId : "default") + ":" + group;
+        if (!forceRefresh) {
+            DashboardHomeResp cached = redisCacheService.get(cacheKey, DashboardHomeResp.class);
+            if (Objects.nonNull(cached)) {
+                return cached;
+            }
+        }
         if (forceRefresh) {
             marketBriefingService.invalidateCache();
         }
@@ -283,7 +297,7 @@ public class DashboardServiceImpl implements IDashboardService {
         String homeMessage = Objects.isNull(briefing)
                 ? "市场简报加载失败 · " + decisionSummary
                 : market.getStance() + " · " + decisionSummary;
-        return DashboardHomeResp.builder()
+        DashboardHomeResp response = DashboardHomeResp.builder()
                 .market(market)
                 .decision(decision)
                 .observeAlerts(observeAlerts)
@@ -293,6 +307,8 @@ public class DashboardServiceImpl implements IDashboardService {
                 .equityCurve(List.of())
                 .message(homeMessage)
                 .build();
+        redisCacheService.put(cacheKey, response, HOME_CACHE_TTL);
+        return response;
     }
 
     /**

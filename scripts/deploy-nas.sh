@@ -204,6 +204,7 @@ fi
 require_env MYSQL_HOST
 require_env MYSQL_USER
 require_env MYSQL_PASSWORD
+require_env REDIS_PASSWORD
 require_env APEX_LOCAL_PASSWORD
 require_env APEX_JWT_SECRET
 

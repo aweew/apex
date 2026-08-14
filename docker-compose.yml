@@ -1,4 +1,19 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: apex-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - apex-redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   mysql:
     image: mysql:8.0
     container_name: apex-mysql
@@ -23,4 +38,5 @@ services:
       retries: 20
 
 volumes:
+  apex-redis-data:
   apex-mysql-data:
