@@ -533,6 +533,7 @@ onBeforeUnmount(() => {
       <div class="stance-main">
         <div class="kicker">
           <span>市场简报 · {{ briefing.asOf || '-' }}</span>
+          <span class="pill">{{ briefing.stance || '均衡' }}</span>
           <el-tag
             v-if="briefing.dataLevel"
             size="small"
@@ -551,7 +552,6 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="stance-copy">
-            <h2><span class="pill">{{ briefing.stance || '均衡' }}</span></h2>
             <p class="reason">{{ briefing.stanceReason }}</p>
             <p class="advice">{{ briefing.positionAdvice || data?.riskNote }}</p>
             <div v-if="hotThemes.length" class="theme-row theme-inline">
@@ -1266,7 +1266,7 @@ onBeforeUnmount(() => {
 
 .stance-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
 }
 
@@ -1313,15 +1313,12 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 
-.stance-copy h2 {
-  margin: 0 0 8px;
-}
-
 .pill {
   display: inline-flex;
+  align-items: center;
   padding: 3px 12px;
   border-radius: 999px;
-  font-size: 18px;
+  font-size: 12px;
   font-weight: 750;
   background: rgba(0, 0, 0, 0.05);
 }
@@ -1376,7 +1373,7 @@ onBeforeUnmount(() => {
 
 .theme-chip-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, max-content));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   min-width: 0;
 }
@@ -1385,6 +1382,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   font-size: 12px;
   padding: 3px 9px;
   border-radius: 8px;
@@ -1393,6 +1391,10 @@ onBeforeUnmount(() => {
 }
 
 .theme-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--ink-soft);
 }
 
