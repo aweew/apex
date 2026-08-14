@@ -2093,8 +2093,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .floating-share-dropdown {
   position: fixed;
-  right: max(18px, calc((100vw - 1240px) / 2));
-  bottom: max(22px, env(safe-area-inset-bottom));
+  right: max(16px, calc((100vw - 1240px) / 2));
+  bottom: max(18px, env(safe-area-inset-bottom));
   z-index: 850;
 }
 

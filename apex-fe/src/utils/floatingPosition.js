@@ -17,6 +17,14 @@ export function floatingPositionToRatio(position, bounds, gap = 8) {
   }
 }
 
+export function floatingPositionToEdges(position, bounds, gap = 8) {
+  const clamped = clampFloatingPosition(position, bounds, gap)
+  return {
+    right: Math.max(gap, bounds.viewportWidth - clamped.left - bounds.width),
+    bottom: Math.max(gap, bounds.viewportHeight - clamped.top - bounds.height),
+  }
+}
+
 export function floatingPositionFromRatio(ratio, bounds, gap = 8) {
   const horizontalRange = Math.max(0, bounds.viewportWidth - bounds.width - gap * 2)
   const verticalRange = Math.max(0, bounds.viewportHeight - bounds.height - gap * 2)

@@ -4,6 +4,7 @@ import { Loading, Share } from '@element-plus/icons-vue'
 import {
   clampFloatingPosition,
   floatingPositionFromRatio,
+  floatingPositionToEdges,
   floatingPositionToRatio,
 } from '../utils/floatingPosition.js'
 
@@ -29,18 +30,19 @@ function positionTarget() {
 function boundsOf(target) {
   const rect = target.getBoundingClientRect()
   return {
-    viewportWidth: window.visualViewport?.width || window.innerWidth,
-    viewportHeight: window.visualViewport?.height || window.innerHeight,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
     width: rect.width,
     height: rect.height,
   }
 }
 
 function setTargetPosition(target, position) {
-  target.style.left = `${position.left}px`
-  target.style.top = `${position.top}px`
-  target.style.right = 'auto'
-  target.style.bottom = 'auto'
+  const edges = floatingPositionToEdges(position, boundsOf(target))
+  target.style.left = 'auto'
+  target.style.top = 'auto'
+  target.style.right = `${edges.right}px`
+  target.style.bottom = `${edges.bottom}px`
 }
 
 function applySavedPosition() {
@@ -173,19 +175,19 @@ onBeforeUnmount(() => {
 <style scoped>
 .floating-share-button {
   position: fixed;
-  right: max(18px, calc((100vw - 1240px) / 2));
-  bottom: max(22px, env(safe-area-inset-bottom));
+  right: max(16px, calc((100vw - 1240px) / 2));
+  bottom: max(18px, env(safe-area-inset-bottom));
   z-index: 850;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid rgba(0, 113, 227, 0.18);
+  border: 1px solid var(--line, rgba(18, 42, 66, 0.14));
   border-radius: 50%;
-  background: var(--accent, #0071e3);
-  color: #fff;
-  box-shadow: 0 8px 24px rgba(0, 84, 173, 0.28);
+  background: var(--panel, #fff);
+  color: var(--el-color-primary);
+  box-shadow: 0 4px 12px rgba(18, 42, 66, 0.14);
   cursor: pointer;
   touch-action: none;
   user-select: none;
@@ -193,8 +195,10 @@ onBeforeUnmount(() => {
 }
 
 .floating-share-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 11px 28px rgba(0, 84, 173, 0.34);
+  transform: translateY(-1px);
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+  box-shadow: 0 6px 16px rgba(18, 42, 66, 0.18);
 }
 
 .floating-share-button:active {
@@ -221,9 +225,9 @@ onBeforeUnmount(() => {
 }
 
 .floating-share-button .el-icon {
-  width: 22px;
-  height: 22px;
-  font-size: 22px;
+  width: 18px;
+  height: 18px;
+  font-size: 18px;
 }
 
 .spinning {
@@ -238,8 +242,8 @@ onBeforeUnmount(() => {
   .floating-share-button {
     right: 16px;
     bottom: calc(16px + env(safe-area-inset-bottom));
-    width: 46px;
-    height: 46px;
+    width: 40px;
+    height: 40px;
   }
 }
 
