@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const portfolioSource = await readFile(new URL('./PortfolioView.vue', import.meta.url), 'utf8')
+const holdingSource = await readFile(new URL('./HoldingView.vue', import.meta.url), 'utf8')
 
 test('mobile portfolio controls share one compact list toolbar', () => {
   assert.match(portfolioSource, /class="mobile-list-toolbar"/)
@@ -46,6 +47,23 @@ test('portfolio summary keeps only action-oriented metrics', () => {
   assert.match(detailTemplate, /今日盈亏/)
   assert.match(detailTemplate, /持仓盈亏/)
   assert.doesNotMatch(detailTemplate, /持仓市值|现金|总权益/)
+})
+
+test('holding tables keep stock links blue and avoid fixed columns on mobile', () => {
+  assert.match(portfolioSource, /:fixed="sharingCapture \|\| isMobileViewport \? false : 'left'"/)
+  assert.match(holdingSource, /:fixed="mobileRowActions \? false : 'left'"/)
+  const mobileActionsStart = holdingSource.indexOf('v-if="mobileRowActions"')
+  const mobileActionsEnd = holdingSource.indexOf('</el-table-column>', mobileActionsStart)
+  const mobileActionsColumn = holdingSource.slice(mobileActionsStart, mobileActionsEnd)
+  assert.doesNotMatch(mobileActionsColumn, /fixed="right"/)
+  assert.match(portfolioSource, /\.security-link\s*\{[\s\S]*?color: var\(--el-color-primary\);/)
+  assert.match(holdingSource, /\.security-link\s*\{[\s\S]*?color: var\(--el-color-primary\);/)
+})
+
+test('holding quantity headers reserve room for their sort indicator', () => {
+  assert.match(portfolioSource, /prop="quantity"[\s\S]*?label="持仓数量"[\s\S]*?:width="shareCol\.qty"/)
+  assert.match(portfolioSource, /qty: 104/)
+  assert.match(holdingSource, /prop="quantity" label="持仓数量" width="104"/)
 })
 
 test('portfolio list holding summaries omit market badges', () => {

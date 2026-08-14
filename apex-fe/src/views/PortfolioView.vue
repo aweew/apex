@@ -155,7 +155,7 @@ const shareCol = computed(() =>
         val: 176,
         verdict: 80,
         advice: 210,
-        qty: 88,
+        qty: 104,
         cost: 84,
         note: 100,
         ops: 168,
@@ -1666,9 +1666,9 @@ onBeforeUnmount(() => {
               label="个股"
               :width="shareCol.security"
               align="center"
-              :fixed="sharingCapture ? false : 'left'"
-              :class-name="sharingCapture ? '' : 'security-column'"
-              :label-class-name="sharingCapture ? '' : 'security-column'"
+              :fixed="sharingCapture || isMobileViewport ? false : 'left'"
+              :class-name="sharingCapture || isMobileViewport ? '' : 'security-column'"
+              :label-class-name="sharingCapture || isMobileViewport ? '' : 'security-column'"
               :sortable="!sharingCapture"
             >
               <template #default="{ row }">
@@ -2760,7 +2760,7 @@ onBeforeUnmount(() => {
   width: 100%;
   padding: 0;
   border: 0;
-  color: inherit;
+  color: var(--el-color-primary);
   background: transparent;
   font: inherit;
   line-height: 1.15;
@@ -2769,14 +2769,14 @@ onBeforeUnmount(() => {
 }
 .security-link:hover .security-name-text,
 .security-link:focus-visible .security-name-text {
-  color: var(--el-color-primary);
+  color: var(--el-color-primary-dark-2);
 }
 .security-link:focus-visible {
   outline: 2px solid var(--el-color-primary-light-5);
   outline-offset: 2px;
 }
 .security-code {
-  color: var(--muted);
+  color: inherit;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }

@@ -879,9 +879,9 @@ onBeforeUnmount(() => {
           label="个股"
           width="128"
           align="center"
-          fixed
-          class-name="security-column"
-          label-class-name="security-column"
+          :fixed="mobileRowActions ? false : 'left'"
+          :class-name="mobileRowActions ? '' : 'security-column'"
+          :label-class-name="mobileRowActions ? '' : 'security-column'"
           sortable
         >
           <template #default="{ row }">
@@ -945,7 +945,7 @@ onBeforeUnmount(() => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="quantity" label="持仓数量" width="88" align="center" sortable />
+        <el-table-column prop="quantity" label="持仓数量" width="104" align="center" sortable />
         <el-table-column
           prop="positionWeight"
           label="个股仓位"
@@ -1044,10 +1044,9 @@ onBeforeUnmount(() => {
         <el-table-column
           v-if="mobileRowActions"
           width="56"
-          fixed="right"
           align="center"
-          class-name="ops-column mobile-ops-column"
-          label-class-name="ops-column mobile-ops-column"
+          class-name="mobile-ops-column"
+          label-class-name="mobile-ops-column"
         >
           <template #default="{ row }">
             <el-dropdown
@@ -1192,7 +1191,7 @@ onBeforeUnmount(() => {
   width: 100%;
   padding: 0;
   border: 0;
-  color: inherit;
+  color: var(--el-color-primary);
   background: transparent;
   font: inherit;
   line-height: 1.15;
@@ -1202,7 +1201,7 @@ onBeforeUnmount(() => {
 
 .security-link:hover .security-name-text,
 .security-link:focus-visible .security-name-text {
-  color: var(--el-color-primary);
+  color: var(--el-color-primary-dark-2);
 }
 
 .security-link:focus-visible {
@@ -1211,7 +1210,7 @@ onBeforeUnmount(() => {
 }
 
 .security-code {
-  color: var(--muted);
+  color: inherit;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
