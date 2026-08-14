@@ -1,6 +1,5 @@
 package com.awe.apex.quant.domain.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -12,8 +11,7 @@ import java.math.BigDecimal;
 @Data
 public class BotHoldingInput {
 
-    /** 证券代码，必须由视觉模型或用户提供 */
-    @NotBlank(message = "证券代码不能为空")
+    /** 证券代码，可由证券简称唯一匹配后回填 */
     private String code;
 
     /** 证券简称 */

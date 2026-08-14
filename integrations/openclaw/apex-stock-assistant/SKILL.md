@@ -1,6 +1,6 @@
 ---
 name: apex-stock-assistant
-description: Query the Apex read-only Bot API for A-share stock analysis, market summaries, portfolio holdings including today's profit or loss amount, risk, stop-loss levels, portfolio investment advice, and current trading decisions. MUST use when an OpenClaw user asks "我今天亏多少", "今天赚了多少", "今日盈亏", "针对疯锅的持仓有什么投资建议", or any question about a named portfolio or their holdings, instead of answering from general knowledge.
+description: Query Apex for A-share analysis, market summaries, portfolio status, and controlled named-portfolio holding imports. MUST use for questions about a named portfolio or its holdings; for a complete holding update, call HOLDING_IMPORT and report success only from its Apex response.
 ---
 
 # Apex Stock Assistant
@@ -22,9 +22,9 @@ For named portfolios and all holding-update workflows, run `scripts/apex_tool.sh
 - Portfolio advice: `{"operation":"PORTFOLIO_ADVICE","userId":"<sender>","conversationId":"<conversation>","portfolioName":"疯锅"}`
 - Portfolio status: `{"operation":"PORTFOLIO_STATUS","userId":"<sender>","conversationId":"<conversation>","portfolioName":"疯锅"}`
 
-For a WeClaw image attachment, use the configured vision model only to produce JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. Do not infer a code from a non-unique Chinese fund name. If any code, quantity, or cost price is missing or uncertain, ask the user to correct it and do not call a write tool.
+For a WeClaw image attachment or a text table, extract JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. Every row needs a positive quantity and a positive cost price. When a code is missing, pass the exact recognized stock name and leave `code` empty: Apex resolves it only by an exact, unique `stock_basic.name` match. Do not infer a code yourself. If Apex cannot resolve the name or finds more than one match, state that the portfolio was not changed and return its error.
 
-When the user sends a brokerage screenshot and says `更新郑十万的持仓` (or names another portfolio), extract the visible rows and directly import them:
+When the user sends a brokerage screenshot or a text table and says `更新郑十万的持仓` (or names another portfolio), directly import the complete, validated rows:
 
 ```json
 {
@@ -39,7 +39,13 @@ When the user sends a brokerage screenshot and says `更新郑十万的持仓` (
 }
 ```
 
-Call `scripts/apex_tool.sh` with this JSON and return its answer unchanged. `HOLDING_IMPORT` replaces the entire named portfolio immediately, then refreshes prices and writes today's snapshot. Do not query the portfolio instead of calling this tool.
+Call `scripts/apex_tool.sh` with this JSON and return `data.answer` unchanged. `HOLDING_IMPORT` replaces the entire named portfolio immediately, then refreshes prices and writes today's snapshot. Do not query the portfolio instead of calling this tool.
+
+## Holding Update Completion Rule
+
+A portfolio update is successful only when `scripts/apex_tool.sh` returns a successful Apex envelope whose `data.intent` is exactly `HOLDING_IMPORT`. Extraction, a rendered holding table, market observations, an agent-memory write, or an assistant statement are not evidence of a database update.
+
+Before that successful response, never say or imply that the portfolio was updated, saved, recorded, or will be tracked. In particular, never say that data was saved to `memory/...`; agent memory is not the Apex portfolio database. On a validation error, tool error, unavailable attachment, or missing code, clearly state that the portfolio was not changed and return the Apex error when one exists.
 
 Configure `APEX_BOT_BASE_URL`, `APEX_BOT_CLIENT_KEY`, and `APEX_BOT_CLIENT_SECRET` in the OpenClaw runtime. Never print, persist, or send these credentials anywhere except the configured Apex endpoint.
 

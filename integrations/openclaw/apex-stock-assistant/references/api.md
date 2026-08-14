@@ -71,7 +71,9 @@ Treat Apex as the authoritative source. Present `data.answer` and preserve `data
 
 Send signed `POST /apex/bot/v1/tool` requests using the same HMAC headers. `operation` is one of `PORTFOLIO_ADVICE`, `PORTFOLIO_STATUS`, `HOLDING_IMPORT`, `SMART_TRADER_RANKING`, `SMART_TRADER_POSITION`, `SMART_TRADER_PORTFOLIO`, `SMART_TRADER_PROFILE`, or `SMART_MONEY_FACTORS`.
 
-All tool requests require the original WeClaw `userId` and `conversationId`. `HOLDING_IMPORT` accepts only structured holding rows with a six-digit code, positive quantity, and positive cost price. It immediately replaces the named portfolio, refreshes its quotes, and writes today's snapshot.
+All tool requests require the original WeClaw `userId` and `conversationId`. `HOLDING_IMPORT` accepts structured holding rows with a positive quantity and positive cost price. A six-digit code is preferred; when it is absent, Apex resolves the exact stock name against `stock_basic` and imports only if exactly one code matches. It immediately replaces the named portfolio, refreshes its quotes, and writes today's snapshot. An unrecognized or non-unique name rejects the entire import without changing the portfolio.
+
+An import is confirmed only when the successful response has `data.intent: "HOLDING_IMPORT"`. Use `data.answer` verbatim as the user-facing confirmation. Do not treat model extraction, an agent-memory write, or a generated portfolio summary as persistence.
 
 Smart Trader tool requests remain read-only. `SMART_TRADER_RANKING` accepts an optional `rankingType` of `TOTAL`, `DAILY`, or `STEADY`; position, portfolio, and profile tools require `traderId`. `SMART_MONEY_FACTORS` returns the newest computed factor snapshot. These tools must not be used to infer missing trades or mutate a trader account.
 

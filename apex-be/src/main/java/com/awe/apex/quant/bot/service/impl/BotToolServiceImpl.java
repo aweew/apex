@@ -14,8 +14,10 @@ import com.awe.apex.quant.domain.dto.PortfolioTipItem;
 import com.awe.apex.quant.domain.entity.BotCallAudit;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
+import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.mapper.BotCallAuditMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
+import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.ISmartTraderAnalyticsService;
@@ -55,6 +57,9 @@ public class BotToolServiceImpl implements IBotToolService {
 
     @Resource
     private BotCallAuditMapper callAuditMapper;
+
+    @Resource
+    private StockBasicMapper stockBasicMapper;
 
     @Resource
     private ISmartTraderAnalyticsService smartTraderAnalyticsService;
@@ -205,6 +210,7 @@ public class BotToolServiceImpl implements IBotToolService {
 
     private BotToolResp holdingImport(BotToolReq request, String requestId) {
         Portfolio portfolio = portfolioByName(request.getPortfolioName());
+        resolveHoldingCodes(request.getHoldings());
         validateHoldingInputs(request.getHoldings(), request.getTotalMarketValue());
         List<PortfolioHolding> existing = portfolioService.detail(portfolio.getId()).getHoldings();
         Set<String> existingCodes = new HashSet<>();
@@ -296,6 +302,32 @@ public class BotToolServiceImpl implements IBotToolService {
             if (difference.compareTo(new BigDecimal("0.20")) > 0) {
                 throw new BusinessException("截图总市值与逐项市值偏差超过20%，请核对截图识别结果");
             }
+        }
+    }
+
+    private void resolveHoldingCodes(List<BotHoldingInput> inputs) {
+        if (CollUtil.isEmpty(inputs)) {
+            return;
+        }
+        for (BotHoldingInput input : inputs) {
+            if (StringUtils.isNotBlank(input.getCode())) {
+                continue;
+            }
+            if (StringUtils.isBlank(input.getName())) {
+                throw new BusinessException("持仓缺少证券代码和名称");
+            }
+            List<StockBasic> matchedStocks = stockBasicMapper.selectList(
+                    Wrappers.<StockBasic>lambdaQuery()
+                            .eq(StockBasic::getName, input.getName().trim())
+                            .last("LIMIT 2"));
+            if (CollUtil.isEmpty(matchedStocks)) {
+                throw new BusinessException("无法识别证券名称: " + input.getName());
+            }
+            if (matchedStocks.size() > 1 || StringUtils.isBlank(matchedStocks.get(0).getCode())) {
+                throw new BusinessException("证券名称匹配不唯一，请补充代码: " + input.getName());
+            }
+            input.setCode(matchedStocks.get(0).getCode());
+            input.setName(matchedStocks.get(0).getName());
         }
     }
 
