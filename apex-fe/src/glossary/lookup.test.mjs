@@ -45,10 +45,24 @@ test('PE variants resolve to dedicated glossary entries', () => {
 
 test('extra terms are searchable', () => {
   assert.equal(findTerm('stop_loss')?.title, '止损')
+  assert.equal(findTerm('ADX')?.id, 'dmi_adx')
+  assert.equal(findTerm('CCI')?.id, 'cci')
+  assert.equal(findTerm('WR')?.id, 'williams_r')
+  assert.equal(findTerm('SAR')?.id, 'sar')
+  assert.equal(findTerm('OBV')?.id, 'obv')
+  assert.equal(findTerm('MFI')?.id, 'mfi')
   assert.equal(findTerm('情绪周期')?.id, 'emotion_cycle')
   assert.equal(findTerm('安全边际')?.id, 'safety_margin')
   assert.equal(findTerm('智能决策')?.id, 'decision')
   assert.equal(findTerm('筹码峰')?.id, 'chip_distribution')
+})
+
+test('new technical indicators provide plain explanations', () => {
+  for (const termId of ['dmi_adx', 'cci', 'williams_r', 'sar', 'obv', 'mfi']) {
+    const term = findTerm(termId)
+    assert.ok(term?.plain, `${termId} should provide a plain explanation`)
+    assert.ok(term?.highlights?.length, `${termId} should highlight the plain explanation`)
+  }
 })
 
 test('common stock terms stay available even when they are basic', () => {
