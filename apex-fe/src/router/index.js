@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { resolveScrollPosition } from './scrollBehavior.js'
 import { beginNavigationActivity } from '../utils/appActivity'
+import { getAccessToken } from '../api/auth'
 
 const DashboardView = () => import('../views/DashboardView.vue')
 const WatchlistView = () => import('../views/WatchlistView.vue')
@@ -23,6 +24,8 @@ const IndexBoardView = () => import('../views/IndexBoardView.vue')
 const SectorBoardView = () => import('../views/SectorBoardView.vue')
 const LimitUpLadderView = () => import('../views/LimitUpLadderView.vue')
 const SyncView = () => import('../views/SyncView.vue')
+const LoginView = () => import('../views/LoginView.vue')
+const RegisterView = () => import('../views/RegisterView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -34,6 +37,8 @@ const router = createRouter({
     })
   },
   routes: [
+    { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
+    { path: '/register', name: 'register', component: RegisterView, meta: { public: true } },
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'dashboard', component: DashboardView },
     { path: '/decision', name: 'decision', component: DecisionView },
@@ -63,6 +68,12 @@ const router = createRouter({
 const navigationFinishes = new WeakMap()
 
 router.beforeEach((to) => {
+  if (!to.meta.public && !getAccessToken()) {
+    return { name: 'login', query: { redirect: to.fullPath } }
+  }
+  if (to.meta.public && getAccessToken() && to.name === 'login') {
+    return { path: typeof to.query.redirect === 'string' ? to.query.redirect : '/dashboard' }
+  }
   navigationFinishes.set(to, beginNavigationActivity())
 })
 

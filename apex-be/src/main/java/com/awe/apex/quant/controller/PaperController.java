@@ -1,6 +1,7 @@
 package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
+import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.domain.dto.CorrelationMatrixResp;
 import com.awe.apex.quant.domain.dto.AtrStopResp;
 import com.awe.apex.quant.domain.dto.BetaTargetResp;
@@ -30,6 +31,7 @@ import com.awe.apex.quant.domain.entity.PaperAccount;
 import com.awe.apex.quant.domain.entity.PaperOrder;
 import com.awe.apex.quant.domain.entity.PaperPosition;
 import com.awe.apex.quant.service.IPaperService;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -47,12 +49,15 @@ public class PaperController {
     @Resource
     private IPaperService paperService;
 
+    @Resource
+    private ApexUserAuthService apexUserAuthService;
+
     /**
      * 开户或入金
      */
     @PostMapping("/open")
     public Result<PaperAccount> open(@Valid @RequestBody PaperOpenReq req) {
-        return Result.success(paperService.openOrDeposit(req));
+        throw new BusinessException("模拟账户由邀请注册自动创建");
     }
 
     /**
@@ -60,7 +65,7 @@ public class PaperController {
      */
     @GetMapping("/account")
     public Result<PaperAccount> account() {
-        return Result.success(paperService.defaultAccount());
+        return Result.success(paperService.getAccount(apexUserAuthService.currentPaperAccountId()));
     }
 
     /**
@@ -68,6 +73,7 @@ public class PaperController {
      */
     @PostMapping("/order")
     public Result<PaperOrder> order(@Valid @RequestBody PaperOrderReq req) {
+        req.setAccountId(apexUserAuthService.currentPaperAccountId());
         return Result.success(paperService.placeOrder(req));
     }
 
@@ -76,11 +82,7 @@ public class PaperController {
      */
     @GetMapping("/positions")
     public Result<List<PaperPosition>> positions(@RequestParam(required = false) Long accountId) {
-        Long id = accountId;
-        if (id == null) {
-            id = paperService.defaultAccount().getId();
-        }
-        return Result.success(paperService.listPositions(id));
+        return Result.success(paperService.listPositions(apexUserAuthService.currentPaperAccountId()));
     }
 
     /**
@@ -88,11 +90,7 @@ public class PaperController {
      */
     @GetMapping("/orders")
     public Result<List<PaperOrder>> orders(@RequestParam(required = false) Long accountId) {
-        Long id = accountId;
-        if (id == null) {
-            id = paperService.defaultAccount().getId();
-        }
-        return Result.success(paperService.listOrders(id));
+        return Result.success(paperService.listOrders(apexUserAuthService.currentPaperAccountId()));
     }
 
     /**
@@ -154,6 +152,7 @@ public class PaperController {
      */
     @PostMapping("/stops")
     public Result<PaperPosition> updateStops(@Valid @RequestBody PositionStopsReq req) {
+        req.setAccountId(apexUserAuthService.currentPaperAccountId());
         return Result.success(paperService.updateStops(req));
     }
 

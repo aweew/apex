@@ -64,7 +64,8 @@ thread-pool:
 
 # Sa-Token 配置
 sa-token:
-  token-name: satoken
+  token-name: Authorization
+  token-prefix: Bearer
   timeout: 2592000
   active-timeout: -1
   is-concurrent: true

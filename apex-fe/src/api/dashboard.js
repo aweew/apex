@@ -33,7 +33,3 @@ export function listConfig() {
 export function updateConfig(payload) {
   return http.put('/api/config', payload)
 }
-
-export function localLogin(payload) {
-  return http.post('/api/auth/local-login', payload)
-}

@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ArrowRight, MoreFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, MoreFilled, Rank } from '@element-plus/icons-vue'
 import { saveObserve } from '../api/observe'
 import { searchStock } from '../api/stock'
 import {
@@ -17,6 +17,7 @@ import {
   removePortfolioHolding,
   savePortfolio,
   savePortfolioHolding,
+  sortPortfolios,
   snapshotAllPortfolios,
   snapshotPortfolio,
 } from '../api/portfolio'
@@ -79,6 +80,15 @@ const searchLoading = ref(false)
 const searchOptions = ref([])
 const saving = ref(false)
 const snapshotting = ref(false)
+const sorting = ref(false)
+const draggingPortfolioId = ref(null)
+const dropPortfolioId = ref(null)
+const dropAfter = ref(false)
+let sortPressTimer
+let sortPointerId = null
+let sortStartPoint = null
+let sortingActive = false
+let suppressCardClick = false
 
 const sharing = ref(false)
 const shareOpen = ref(false)
@@ -530,6 +540,104 @@ async function loadList(silent = false) {
   } finally {
     loading.value = false
   }
+}
+
+function clearPortfolioSortInteraction() {
+  clearTimeout(sortPressTimer)
+  sortPressTimer = undefined
+  sortPointerId = null
+  sortStartPoint = null
+  sortingActive = false
+  window.removeEventListener('pointermove', onPortfolioSortPointerMove)
+  window.removeEventListener('pointerup', onPortfolioSortPointerUp)
+  window.removeEventListener('pointercancel', onPortfolioSortPointerUp)
+}
+
+function startPortfolioDrag(portfolioId) {
+  if (sorting.value || sortPointerId == null) return
+  sortingActive = true
+  draggingPortfolioId.value = Number(portfolioId)
+  dropPortfolioId.value = null
+  dropAfter.value = false
+}
+
+function onSortHandlePointerDown(row, event) {
+  if (sorting.value || !row?.id) return
+  event.preventDefault()
+  event.stopPropagation()
+  clearPortfolioSortInteraction()
+  sortPointerId = event.pointerId
+  sortStartPoint = { x: event.clientX, y: event.clientY }
+  window.addEventListener('pointermove', onPortfolioSortPointerMove)
+  window.addEventListener('pointerup', onPortfolioSortPointerUp)
+  window.addEventListener('pointercancel', onPortfolioSortPointerUp)
+  if (event.pointerType === 'mouse') {
+    startPortfolioDrag(row.id)
+  } else {
+    sortPressTimer = window.setTimeout(() => startPortfolioDrag(row.id), 350)
+  }
+}
+
+function onPortfolioSortPointerMove(event) {
+  if (event.pointerId !== sortPointerId) return
+  if (!sortingActive) {
+    const distance = Math.hypot(event.clientX - sortStartPoint.x, event.clientY - sortStartPoint.y)
+    if (distance > 8) clearPortfolioSortInteraction()
+    return
+  }
+  event.preventDefault()
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-portfolio-id]')
+  const targetId = Number(target?.dataset.portfolioId)
+  if (!targetId || targetId === draggingPortfolioId.value) {
+    dropPortfolioId.value = null
+    return
+  }
+  const targetRect = target.getBoundingClientRect()
+  dropPortfolioId.value = targetId
+  dropAfter.value = event.clientY >= targetRect.top + targetRect.height / 2
+}
+
+async function onPortfolioSortPointerUp(event) {
+  if (event.pointerId !== sortPointerId) return
+  const fromId = draggingPortfolioId.value
+  const toId = dropPortfolioId.value
+  const placeAfter = dropAfter.value
+  clearPortfolioSortInteraction()
+  draggingPortfolioId.value = null
+  dropPortfolioId.value = null
+  dropAfter.value = false
+  if (!fromId || !toId) return
+  suppressCardClick = true
+  window.setTimeout(() => {
+    suppressCardClick = false
+  }, 0)
+  await persistPortfolioOrder(fromId, toId, placeAfter)
+}
+
+async function persistPortfolioOrder(fromId, toId, placeAfter) {
+  const previousList = list.value.slice()
+  const fromIndex = previousList.findIndex((row) => Number(row.id) === Number(fromId))
+  const movedRow = previousList[fromIndex]
+  const remainingList = previousList.filter((row) => Number(row.id) !== Number(fromId))
+  const targetIndex = remainingList.findIndex((row) => Number(row.id) === Number(toId))
+  if (!movedRow || targetIndex < 0) return
+  remainingList.splice(targetIndex + (placeAfter ? 1 : 0), 0, movedRow)
+  list.value = remainingList
+  sorting.value = true
+  try {
+    await sortPortfolios(list.value.map((row) => row.id))
+    ElMessage.success('组合顺序已保存')
+  } catch (e) {
+    list.value = previousList
+    ElMessage.error(e.message || '组合排序保存失败')
+  } finally {
+    sorting.value = false
+  }
+}
+
+function onPortfolioCardClick(row) {
+  if (suppressCardClick || sorting.value) return
+  selectPortfolio(row)
 }
 
 async function loadDetail(id, silent = false) {
@@ -1401,10 +1509,22 @@ onBeforeUnmount(() => {
               active: !isMobileViewport && row.id === activeId,
               archived: row.status === 'ARCHIVED',
               picked: !isMobileViewport && isSelected(row.id),
+              'is-dragging': Number(row.id) === draggingPortfolioId,
+              'is-drop-target': Number(row.id) === dropPortfolioId,
+              'is-drop-after': Number(row.id) === dropPortfolioId && dropAfter,
             }"
-            @click="selectPortfolio(row)"
+            :data-portfolio-id="row.id"
+            @click="onPortfolioCardClick(row)"
           >
             <div class="pf-top">
+              <span
+                class="pf-sort-handle"
+                title="按住拖动排序"
+                aria-label="按住拖动排序"
+                @pointerdown="onSortHandlePointerDown(row, $event)"
+              >
+                <el-icon><Rank /></el-icon>
+              </span>
               <el-checkbox
                 v-if="!isMobileViewport"
                 :model-value="isSelected(row.id)"
@@ -2362,11 +2482,48 @@ onBeforeUnmount(() => {
 .pf-card.archived {
   opacity: 0.65;
 }
+.pf-card.is-dragging {
+  opacity: 0.42;
+}
+.pf-card.is-drop-target::before {
+  position: absolute;
+  top: -5px;
+  right: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--el-color-primary);
+  content: '';
+}
+.pf-card.is-drop-target.is-drop-after::before {
+  top: auto;
+  bottom: -5px;
+}
 .pf-top {
   display: flex;
   align-items: center;
   gap: 6px;
   padding-right: 72px;
+}
+.pf-sort-handle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  margin-left: -5px;
+  border-radius: 5px;
+  color: #86868b;
+  cursor: grab;
+  touch-action: none;
+}
+.pf-sort-handle:hover {
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--el-color-primary);
+}
+.pf-sort-handle:active {
+  cursor: grabbing;
 }
 .pf-name {
   display: flex;
@@ -3359,13 +3516,19 @@ onBeforeUnmount(() => {
     opacity: 0.58;
   }
 
-  .pf-top {
-    display: grid;
-    grid-template-columns: minmax(64px, 1fr) auto 18px;
-    min-height: 32px;
-    gap: 8px;
-    padding-right: 0;
-  }
+      .pf-top {
+        display: grid;
+        grid-template-columns: 24px minmax(56px, 1fr) auto 18px;
+        min-height: 32px;
+        gap: 8px;
+        padding-right: 0;
+      }
+
+      .pf-sort-handle {
+        width: 24px;
+        height: 32px;
+        margin-left: 0;
+      }
 
   .pf-name {
     overflow: hidden;

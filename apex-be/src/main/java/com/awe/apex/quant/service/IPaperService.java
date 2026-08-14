@@ -38,6 +38,14 @@ import java.util.List;
 public interface IPaperService {
 
     /**
+     * 根据ID获取模拟账户
+     *
+     * @param accountId 账户ID
+     * @return 模拟账户
+     */
+    PaperAccount getAccount(Long accountId);
+
+    /**
      * 开户或入金
      *
      * @param req 请求

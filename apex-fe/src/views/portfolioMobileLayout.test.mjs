@@ -70,3 +70,12 @@ test('portfolio list holding summaries omit market badges', () => {
   const portfolioListTemplate = portfolioSource.slice(portfolioSource.indexOf('class="pf-card"'), portfolioSource.indexOf('class="side-rail"'))
   assert.doesNotMatch(portfolioListTemplate, /<SecurityMarketBadge :security="h"/)
 })
+
+test('portfolio cards support long-press drag ordering with persistent sort numbers', () => {
+  assert.match(portfolioSource, /function onSortHandlePointerDown\(row, event\)/)
+  assert.match(portfolioSource, /window\.setTimeout\(\(\) => startPortfolioDrag\(row\.id\), 350\)/)
+  assert.match(portfolioSource, /async function persistPortfolioOrder\(fromId, toId, placeAfter\)/)
+  assert.match(portfolioSource, /await sortPortfolios\(list\.value\.map\(\(row\) => row\.id\)\)/)
+  assert.match(portfolioSource, /class="pf-sort-handle"/)
+  assert.match(portfolioSource, /:data-portfolio-id="row\.id"/)
+})

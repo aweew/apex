@@ -1,11 +1,16 @@
 package com.awe.apex.common.config;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.dev33.satoken.interceptor.SaInterceptor;
+import cn.dev33.satoken.router.SaRouter;
+import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.convert.LocalDateConverter;
 import com.awe.apex.common.convert.LocalDateTimeConverter;
 import com.awe.apex.common.convert.LocalTimeConverter;
 import com.awe.apex.common.interceptor.LogInterceptor;
+import com.awe.apex.common.interceptor.UserAssetInterceptor;
 import com.awe.apex.common.interceptor.WebInvokeTimeInterceptor;
+import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.format.FormatterRegistry;
@@ -27,6 +32,9 @@ import java.util.List;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    @Resource
+    private UserAssetInterceptor userAssetInterceptor;
+
     private final List<String> defaultPath = CollUtil.newArrayList("/**");
 
     private final List<String> excludePath = Arrays.asList(
@@ -44,6 +52,11 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new SaInterceptor(handle -> SaRouter.match("/api/**")
+                        .notMatch("/api/auth/login", "/api/auth/register", "/api/auth/reset", "/api/health")
+                        .check(r -> StpUtil.checkLogin())))
+                .addPathPatterns("/**").order(-100);
+        registry.addInterceptor(userAssetInterceptor).addPathPatterns("/api/paper/**").order(-90);
         // 日志拦截器
         registry.addInterceptor(new LogInterceptor()).addPathPatterns("/**");
         // 全局访问性能拦截

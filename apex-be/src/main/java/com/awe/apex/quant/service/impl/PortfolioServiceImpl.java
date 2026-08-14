@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
@@ -8,6 +9,7 @@ import com.awe.apex.quant.domain.dto.PortfolioBriefResp;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportResp;
+import com.awe.apex.quant.domain.dto.PortfolioOrderReq;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.dto.PortfolioTopHoldingResp;
@@ -43,10 +45,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -99,12 +103,15 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Portfolio ensureDefaultPortfolio() {
+        Long currentUserId = currentUserId();
         Portfolio def = portfolioMapper.selectOne(Wrappers.<Portfolio>lambdaQuery()
                 .eq(Portfolio::getIsDefault, 1)
+                .eq(Objects.nonNull(currentUserId), Portfolio::getUserId, currentUserId)
                 .last("LIMIT 1"));
         LocalDateTime now = LocalDateTime.now();
         if (Objects.isNull(def)) {
             def = Portfolio.builder()
+                    .userId(currentUserId)
                     .name(DEFAULT_NAME)
                     .note("本地实盘默认组合")
                     .ownerLabel("我")
@@ -123,6 +130,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .eq(PortfolioHolding::getPortfolioId, def.getId()));
         if (Objects.isNull(cnt) || cnt == 0) {
             List<MyHolding> mine = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
+                    .eq(Objects.nonNull(currentUserId), MyHolding::getUserId, currentUserId)
                     .orderByAsc(MyHolding::getCode));
             for (MyHolding row : mine) {
                 String code = MarketCodeUtils.normalizeHoldingCode(row.getCode());
@@ -182,7 +190,10 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     public List<PortfolioSummaryResp> listPortfolios(boolean includeArchived) {
         ensureDefaultPortfolio();
-        var query = Wrappers.<Portfolio>lambdaQuery().orderByAsc(Portfolio::getSortNo).orderByDesc(Portfolio::getUpdateTime);
+        Long currentUserId = currentUserId();
+        var query = Wrappers.<Portfolio>lambdaQuery()
+                .eq(Objects.nonNull(currentUserId), Portfolio::getUserId, currentUserId)
+                .orderByAsc(Portfolio::getSortNo).orderByDesc(Portfolio::getUpdateTime);
         if (!includeArchived) {
             query.eq(Portfolio::getStatus, STATUS_ACTIVE);
         }
@@ -254,6 +265,29 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .build();
         portfolioMapper.insert(created);
         return created;
+    }
+
+    /**
+     * 保存组合展示顺序
+     *
+     * @param req 排序请求
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void sortPortfolios(PortfolioOrderReq req) {
+        if (Objects.isNull(req) || CollUtil.isEmpty(req.getPortfolioIds())) {
+            throw new BusinessException("组合排序不能为空");
+        }
+        Set<Long> portfolioIdSet = new HashSet<>(req.getPortfolioIds());
+        if (portfolioIdSet.size() != req.getPortfolioIds().size() || portfolioIdSet.contains(null)) {
+            throw new BusinessException("组合排序包含重复或无效ID");
+        }
+        for (int index = 0; index < req.getPortfolioIds().size(); index++) {
+            Portfolio portfolio = requirePortfolio(req.getPortfolioIds().get(index));
+            portfolio.setSortNo(index);
+            portfolio.setUpdateTime(LocalDateTime.now());
+            portfolioMapper.updateById(portfolio);
+        }
     }
 
     /**
@@ -1213,11 +1247,16 @@ public class PortfolioServiceImpl implements IPortfolioService {
         if (Objects.isNull(portfolio)) {
             throw new BusinessException("组合不存在");
         }
+        Long currentUserId = currentUserId();
+        if (Objects.nonNull(currentUserId) && !currentUserId.equals(portfolio.getUserId())) {
+            throw new BusinessException("无权访问该组合");
+        }
         return portfolio;
     }
 
     private void assertNameUnique(String name, Long excludeId) {
-        var query = Wrappers.<Portfolio>lambdaQuery().eq(Portfolio::getName, name);
+        var query = Wrappers.<Portfolio>lambdaQuery().eq(Portfolio::getName, name)
+                .eq(Objects.nonNull(currentUserId()), Portfolio::getUserId, currentUserId());
         if (Objects.nonNull(excludeId)) {
             query.ne(Portfolio::getId, excludeId);
         }
@@ -1233,5 +1272,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
             portfolio.setUpdateTime(LocalDateTime.now());
             portfolioMapper.updateById(portfolio);
         }
+    }
+
+    private Long currentUserId() {
+        return StpUtil.isLogin() ? StpUtil.getLoginIdAsLong() : null;
     }
 }

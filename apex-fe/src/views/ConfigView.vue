@@ -6,7 +6,6 @@ import {
   applyRiskPreset,
   listConfig,
   listRiskRules,
-  localLogin,
   updateConfig,
   updateRiskRule,
 } from '../api/dashboard'
@@ -18,8 +17,6 @@ const loading = ref(false)
 const rows = ref([])
 const riskRules = ref([])
 const quality = ref(null)
-const loginForm = ref({ username: 'admin', password: 'admin123' })
-const token = ref(localStorage.getItem('satoken') || '')
 
 function slaLevelLabel(level) {
   if (level === 'GREEN') return '正常'
@@ -134,17 +131,6 @@ async function onPreset(preset) {
   }
 }
 
-async function onLogin() {
-  try {
-    const res = await localLogin(loginForm.value)
-    token.value = res.data.accessToken
-    localStorage.setItem('satoken', token.value)
-    ElMessage.success('登录成功')
-  } catch (e) {
-    ElMessage.error(e.message || '登录失败')
-  }
-}
-
 onMounted(load)
 </script>
 
@@ -153,8 +139,8 @@ onMounted(load)
     <header class="header">
       <div>
         <p class="eyebrow">Config</p>
-        <h1>参数与登录</h1>
-        <p>成本假设 / 撮合模式 · 本地单用户登录 · 定时同步 · 决策评分阈值</p>
+        <h1>参数设置</h1>
+        <p>成本假设 / 撮合模式 · 定时同步 · 决策评分阈值</p>
       </div>
       <div class="actions">
         <el-button @click="ensureAutoSyncKeys">补齐同步/策略参数</el-button>
@@ -192,13 +178,6 @@ onMounted(load)
       :closable="false"
       style="margin-bottom: 12px"
     />
-
-    <el-form :inline="true" style="margin-bottom: 16px">
-      <el-form-item label="用户"><el-input v-model="loginForm.username" style="width: 120px" /></el-form-item>
-      <el-form-item label="密码"><el-input v-model="loginForm.password" type="password" style="width: 140px" /></el-form-item>
-      <el-form-item><el-button type="primary" @click="onLogin">登录</el-button></el-form-item>
-      <el-form-item v-if="token"><span class="token">token 已保存</span></el-form-item>
-    </el-form>
 
     <h3>风控规则</h3>
     <div class="actions" style="margin-bottom: 10px">

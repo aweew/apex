@@ -1,5 +1,6 @@
 package com.awe.apex.quant.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
@@ -109,6 +110,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     @Override
     public List<MyHolding> listHoldings() {
         List<MyHolding> list = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
+                .eq(MyHolding::getUserId, currentUserId())
                 .orderByDesc(MyHolding::getUpdateTime)
                 .orderByAsc(MyHolding::getCode));
         return enrichHoldings(list);
@@ -122,6 +124,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     @Override
     public List<MyHolding> listHoldingsLite() {
         List<MyHolding> holdings = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
+                .eq(MyHolding::getUserId, currentUserId())
                 .orderByDesc(MyHolding::getUpdateTime)
                 .orderByAsc(MyHolding::getCode));
         Map<String, StockBasic> basicMap = loadBasics(holdings);
@@ -141,6 +144,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     public List<String> listHoldingCodes() {
         List<MyHolding> holdings = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
                 .select(MyHolding::getCode)
+                .eq(MyHolding::getUserId, currentUserId())
                 .orderByAsc(MyHolding::getCode));
         Set<String> uniqueCodes = new LinkedHashSet<>();
         for (MyHolding holding : holdings) {
@@ -266,10 +270,14 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         MyHolding exist = null;
         if (Objects.nonNull(req.getId())) {
             exist = myHoldingMapper.selectById(req.getId());
+            if (Objects.nonNull(exist) && !currentUserId().equals(exist.getUserId())) {
+                throw new BusinessException("无权访问该持仓");
+            }
         }
         if (Objects.isNull(exist)) {
             exist = myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
                     .eq(MyHolding::getCode, code)
+                    .eq(MyHolding::getUserId, currentUserId())
                     .last("LIMIT 1"));
         }
 
@@ -289,6 +297,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         }
 
         MyHolding created = MyHolding.builder()
+                .userId(currentUserId())
                 .code(code)
                 .name(name)
                 .quantity(quantity)
@@ -318,6 +327,9 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             throw new BusinessException("持仓ID不能为空");
         }
         MyHolding exist = myHoldingMapper.selectById(id);
+        if (Objects.isNull(exist) || !currentUserId().equals(exist.getUserId())) {
+            throw new BusinessException("无权访问该持仓");
+        }
         myHoldingMapper.deleteById(id);
         if (Objects.nonNull(exist)) {
             portfolioService.mirrorMyHoldingRemove(exist.getCode());
@@ -885,5 +897,9 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         BigDecimal pnl = marketValue.subtract(cost).setScale(2, RoundingMode.HALF_UP);
         holding.setPnl(pnl);
         holding.setPnlPct(pnl.divide(cost, 4, RoundingMode.HALF_UP));
+    }
+
+    private Long currentUserId() {
+        return StpUtil.getLoginIdAsLong();
     }
 }

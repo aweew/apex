@@ -2,6 +2,7 @@ package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.market.TradingCalendar;
 
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.text.csv.CsvData;
@@ -101,6 +102,7 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
     @Override
     public List<WatchlistResp> listWatchlist(String groupName) {
         List<Watchlist> list = list(Wrappers.<Watchlist>lambdaQuery()
+                .eq(Watchlist::getUserId, currentUserId())
                 .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName)
                 .orderByAsc(Watchlist::getCode));
         if (CollUtil.isEmpty(list)) {
@@ -252,10 +254,12 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
         for (Watchlist row : rows) {
             Watchlist existing = getOne(Wrappers.<Watchlist>lambdaQuery()
                     .eq(Watchlist::getCode, row.getCode())
+                    .eq(Watchlist::getUserId, currentUserId())
                     .eq(Watchlist::getGroupName, groupName)
                     .last("limit 1"));
             LocalDateTime now = LocalDateTime.now();
             if (Objects.isNull(existing)) {
+                row.setUserId(currentUserId());
                 row.setCreateTime(now);
                 row.setUpdateTime(now);
                 save(row);
@@ -327,10 +331,12 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
             }
             Watchlist existing = getOne(Wrappers.<Watchlist>lambdaQuery()
                     .eq(Watchlist::getCode, code)
+                    .eq(Watchlist::getUserId, currentUserId())
                     .eq(Watchlist::getGroupName, groupName)
                     .last("LIMIT 1"));
             if (Objects.isNull(existing)) {
                 Watchlist row = Watchlist.builder()
+                        .userId(currentUserId())
                         .code(code)
                         .name(name)
                         .market(market)
@@ -761,6 +767,10 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
             }
         }
         return -1;
+    }
+
+    private Long currentUserId() {
+        return StpUtil.getLoginIdAsLong();
     }
 
     private String safeGet(CsvRow row, int idx) {

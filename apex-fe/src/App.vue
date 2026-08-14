@@ -7,6 +7,7 @@ import GlossaryPanel from './components/GlossaryPanel.vue'
 import { BRAND } from './brand/identity.js'
 import { isNavigating, requestCount } from './utils/appActivity'
 import { MAIN_NAV_GROUPS, PRIMARY_SHORTCUTS } from './navigation/menu.js'
+import { getCurrentUser, logout } from './api/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -28,6 +29,7 @@ const mobileBackPath = ref('')
 const mobileBackLabel = ref('')
 /** 终端紧凑密度：缩小表格与页边距 */
 const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
+const currentUser = ref(getCurrentUser())
 let healthTimer
 let searchSeq = 0
 let debounceTimer
@@ -128,6 +130,12 @@ function goMobileBack() {
 function toggleDense() {
   denseMode.value = !denseMode.value
   localStorage.setItem('apex.ui.dense', denseMode.value ? '1' : '0')
+}
+
+async function logoutCurrentUser() {
+  await logout()
+  currentUser.value = null
+  await router.replace('/login')
 }
 
 function setMobileMenu(open) {
@@ -560,6 +568,17 @@ onBeforeUnmount(() => {
           </svg>
           <span>搜索</span>
         </button>
+        <el-dropdown v-if="currentUser" trigger="click">
+          <button type="button" class="search-btn user-menu" :title="currentUser.phone">
+            <span>{{ currentUser.nickName || currentUser.phone }}</span>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item disabled>{{ currentUser.phone }}</el-dropdown-item>
+              <el-dropdown-item divided @click="logoutCurrentUser">退出登录</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
       <div
         class="app-activity"

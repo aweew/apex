@@ -33,6 +33,9 @@ public class Portfolio implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    /** 所属用户ID */
+    private Long userId;
+
     /**
      * 组合名称
      */

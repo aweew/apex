@@ -3,6 +3,7 @@ package com.awe.apex.quant.service;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportResp;
+import com.awe.apex.quant.domain.dto.PortfolioOrderReq;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.entity.MyHolding;
@@ -40,6 +41,13 @@ public interface IPortfolioService {
      * @return 组合
      */
     Portfolio savePortfolio(PortfolioSaveReq req);
+
+    /**
+     * 保存组合展示顺序
+     *
+     * @param req 排序请求
+     */
+    void sortPortfolios(PortfolioOrderReq req);
 
     /**
      * 删除组合（禁止删默认）

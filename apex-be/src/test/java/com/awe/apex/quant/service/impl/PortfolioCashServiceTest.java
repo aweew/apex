@@ -2,6 +2,7 @@ package com.awe.apex.quant.service.impl;
 
 import cn.hutool.extra.spring.SpringUtil;
 import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.quant.domain.dto.PortfolioOrderReq;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.entity.Portfolio;
@@ -158,6 +159,23 @@ class PortfolioCashServiceTest {
                 () -> portfolioService.savePortfolio(request));
 
         assertEquals("组合现金不能小于0", error.getMessage());
+    }
+
+    @Test
+    void sortPortfoliosUpdatesSortNumbersInRequestedOrder() {
+        Portfolio first = Portfolio.builder().id(2L).name("成长组合").build();
+        Portfolio second = Portfolio.builder().id(3L).name("价值组合").build();
+        when(portfolioMapper.selectById(2L)).thenReturn(first);
+        when(portfolioMapper.selectById(3L)).thenReturn(second);
+
+        PortfolioOrderReq request = new PortfolioOrderReq();
+        request.setPortfolioIds(List.of(3L, 2L));
+        portfolioService.sortPortfolios(request);
+
+        assertEquals(0, second.getSortNo());
+        assertEquals(1, first.getSortNo());
+        verify(portfolioMapper).updateById(second);
+        verify(portfolioMapper).updateById(first);
     }
 
     @Test

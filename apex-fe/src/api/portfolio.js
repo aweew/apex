@@ -8,6 +8,10 @@ export function savePortfolio(payload) {
   return http.post('/api/portfolio/save', payload)
 }
 
+export function sortPortfolios(portfolioIds) {
+  return http.post('/api/portfolio/sort', { portfolioIds })
+}
+
 export function removePortfolio(id) {
   return http.delete(`/api/portfolio/${id}`)
 }

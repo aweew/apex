@@ -39,7 +39,15 @@ test('money effect typography uses the available width at larger mobile sizes', 
 
 test('market board first load reuses the briefing snapshot', () => {
   assert.match(indexSource, /onMounted\(async \(\) => \{\s*\/\/ 首次进入复用服务端简报快照[\s\S]*?await load\(\)/)
-  assert.match(indexSource, /async function onRefreshQuotes\(\)[\s\S]*?await load\(true\)/)
+  assert.match(indexSource, /async function onRefreshQuotes\(\)[\s\S]*?quoteRefreshing\.value = true[\s\S]*?await load\(true, false\)/)
+})
+
+test('market refresh and index sync expose only the action that is running', () => {
+  assert.match(indexSource, /const quoteRefreshing = ref\(false\)/)
+  assert.match(indexSource, /const indexSyncing = ref\(false\)/)
+  assert.match(indexSource, /<div class="page mc-page" v-loading="loading">/)
+  assert.match(indexSource, /:loading="quoteRefreshing" :disabled="indexSyncing"/)
+  assert.match(indexSource, /:loading="indexSyncing" :disabled="quoteRefreshing"/)
 })
 
 test('market mainlines keep the signed percentage in one aligned value', () => {

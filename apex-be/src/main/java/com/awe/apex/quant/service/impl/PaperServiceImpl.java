@@ -1,5 +1,6 @@
 package com.awe.apex.quant.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.AtrStopItem;
@@ -42,6 +43,7 @@ import com.awe.apex.quant.domain.dto.VolTargetResp;
 import com.awe.apex.quant.domain.dto.WeekdayPnlItem;
 import com.awe.apex.quant.domain.dto.WeekdayPnlResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
+import com.awe.apex.quant.domain.entity.ApexUserProfile;
 import com.awe.apex.quant.domain.entity.PaperAccount;
 import com.awe.apex.quant.domain.entity.PaperOrder;
 import com.awe.apex.quant.domain.entity.PaperPosition;
@@ -50,6 +52,7 @@ import com.awe.apex.quant.domain.entity.StrategySignalEntity;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
+import com.awe.apex.quant.mapper.ApexUserProfileMapper;
 import com.awe.apex.quant.mapper.PaperAccountMapper;
 import com.awe.apex.quant.mapper.PaperOrderMapper;
 import com.awe.apex.quant.mapper.PaperPositionMapper;
@@ -99,6 +102,9 @@ public class PaperServiceImpl implements IPaperService {
     private PaperAccountMapper paperAccountMapper;
 
     @Resource
+    private ApexUserProfileMapper apexUserProfileMapper;
+
+    @Resource
     private PaperPositionMapper paperPositionMapper;
 
     @Resource
@@ -131,6 +137,21 @@ public class PaperServiceImpl implements IPaperService {
     @Resource
     private IUniverseService universeService;
 
+    /**
+     * 根据ID获取模拟账户
+     *
+     * @param accountId 账户ID
+     * @return 模拟账户
+     */
+    @Override
+    public PaperAccount getAccount(Long accountId) {
+        PaperAccount account = paperAccountMapper.selectById(accountId);
+        if (Objects.isNull(account)) {
+            throw new BusinessException("账户不存在");
+        }
+        return account;
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PaperAccount openOrDeposit(PaperOpenReq req) {
@@ -160,6 +181,13 @@ public class PaperServiceImpl implements IPaperService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PaperAccount defaultAccount() {
+        if (StpUtil.isLogin()) {
+            ApexUserProfile profile = apexUserProfileMapper.selectOne(Wrappers.<ApexUserProfile>lambdaQuery()
+                    .eq(ApexUserProfile::getUserId, StpUtil.getLoginIdAsLong()).last("LIMIT 1"));
+            if (Objects.nonNull(profile) && Objects.nonNull(profile.getPaperAccountId())) {
+                return getAccount(profile.getPaperAccountId());
+            }
+        }
         PaperAccount account = paperAccountMapper.selectOne(Wrappers.<PaperAccount>lambdaQuery()
                 .eq(PaperAccount::getAccountName, "default")
                 .last("limit 1"));

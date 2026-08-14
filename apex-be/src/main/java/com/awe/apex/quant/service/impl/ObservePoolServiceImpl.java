@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
@@ -94,6 +95,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
     @Override
     public List<ObservePoolResp> list(String status, String side, String keyword) {
         LambdaQueryWrapper<ObservePool> qw = Wrappers.<ObservePool>lambdaQuery()
+                .eq(ObservePool::getUserId, currentUserId())
                 .orderByAsc(ObservePool::getPriority)
                 .orderByDesc(ObservePool::getUpdateTime);
         String statusFilter = StringUtils.isNotBlank(status) ? status.trim().toUpperCase() : null;
@@ -300,10 +302,14 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             if (Objects.isNull(exist)) {
                 throw new BusinessException("观察项不存在");
             }
+            if (!currentUserId().equals(exist.getUserId())) {
+                throw new BusinessException("无权访问该观察项");
+            }
         } else {
             String reqSide = resolveSide(req.getSide(), req.getTags(), req.getReason());
             ObservePool same = observePoolMapper.selectOne(Wrappers.<ObservePool>lambdaQuery()
                     .eq(ObservePool::getCode, code)
+                    .eq(ObservePool::getUserId, currentUserId())
                     .eq(ObservePool::getSide, reqSide)
                     .ne(ObservePool::getStatus, "ARCHIVED")
                     .last("LIMIT 1"));
@@ -340,6 +346,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         }
 
         ObservePool created = ObservePool.builder()
+                .userId(currentUserId())
                 .code(code)
                 .name(name)
                 .market(market)
@@ -380,6 +387,9 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         if (Objects.isNull(row)) {
             throw new BusinessException("观察项不存在");
         }
+        if (!currentUserId().equals(row.getUserId())) {
+            throw new BusinessException("无权访问该观察项");
+        }
         observePoolMapper.deleteById(id);
     }
 
@@ -398,6 +408,9 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         ObservePool row = observePoolMapper.selectById(id);
         if (Objects.isNull(row)) {
             throw new BusinessException("观察项不存在");
+        }
+        if (!currentUserId().equals(row.getUserId())) {
+            throw new BusinessException("无权访问该观察项");
         }
         row.setStatus("ARCHIVED");
         row.setUpdateTime(LocalDateTime.now());
@@ -1767,5 +1780,9 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             return "--";
         }
         return v.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private Long currentUserId() {
+        return StpUtil.getLoginIdAsLong();
     }
 }

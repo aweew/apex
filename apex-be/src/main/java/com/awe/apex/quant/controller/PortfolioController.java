@@ -4,6 +4,7 @@ import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportResp;
+import com.awe.apex.quant.domain.dto.PortfolioOrderReq;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.entity.Portfolio;
@@ -55,6 +56,18 @@ public class PortfolioController {
     @PostMapping("/save")
     public Result<Portfolio> save(@RequestBody PortfolioSaveReq req) {
         return Result.success(portfolioService.savePortfolio(req));
+    }
+
+    /**
+     * 保存组合展示顺序
+     *
+     * @param req 排序请求
+     * @return 空
+     */
+    @PostMapping("/sort")
+    public Result<Void> sort(@RequestBody PortfolioOrderReq req) {
+        portfolioService.sortPortfolios(req);
+        return Result.success(null);
     }
 
     /**

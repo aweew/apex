@@ -31,7 +31,8 @@ import { useSessionViewState } from '../utils/viewState.js'
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
-const refreshing = ref(false)
+const quoteRefreshing = ref(false)
+const indexSyncing = ref(false)
 const marketTab = ref('ab') // ab | global
 const indexData = ref(null)
 const briefing = ref(null)
@@ -212,8 +213,8 @@ function sparkPath(closes) {
     .join(' ')
 }
 
-async function load(forceBriefing = false) {
-  loading.value = true
+async function load(forceBriefing = false, showLoading = true) {
+  if (showLoading) loading.value = true
   try {
     const [idx, brief, board, industry, concept] = await Promise.all([
       fetchIndexBoard(30),
@@ -239,24 +240,24 @@ async function load(forceBriefing = false) {
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
   } finally {
-    loading.value = false
+    if (showLoading) loading.value = false
   }
 }
 
 async function onRefreshQuotes() {
-  refreshing.value = true
+  quoteRefreshing.value = true
   try {
-    await load(true)
+    await load(true, false)
     ElMessage.success('行情已刷新')
   } catch (e) {
     ElMessage.error(e.message || '刷新失败')
   } finally {
-    refreshing.value = false
+    quoteRefreshing.value = false
   }
 }
 
 async function onSyncIndex(start = '20240101') {
-  refreshing.value = true
+  indexSyncing.value = true
   try {
     const res = await refreshIndexBoard(start)
     indexData.value = res.data?.board || indexData.value
@@ -266,7 +267,7 @@ async function onSyncIndex(start = '20240101') {
   } catch (e) {
     ElMessage.error(e.message || '同步失败')
   } finally {
-    refreshing.value = false
+    indexSyncing.value = false
   }
 }
 
@@ -509,7 +510,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page mc-page" v-loading="loading || refreshing">
+  <div class="page mc-page" v-loading="loading">
     <header class="header">
       <div>
         <p class="eyebrow">Quotation</p>
@@ -531,13 +532,13 @@ onBeforeUnmount(() => {
             @click="marketTab = 'global'"
           >全球指数</button>
         </div>
-        <el-button class="market-action" type="primary" :loading="refreshing" aria-label="刷新行情" @click="onRefreshQuotes">
-          <el-icon v-if="!refreshing"><Refresh /></el-icon>
+        <el-button class="market-action" type="primary" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
+          <el-icon v-if="!quoteRefreshing"><Refresh /></el-icon>
           <span class="desktop-action-label">刷新行情</span>
           <span class="mobile-action-label">刷新</span>
         </el-button>
-        <el-button class="market-action" :loading="refreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
-          <el-icon v-if="!refreshing"><Download /></el-icon>
+        <el-button class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
+          <el-icon v-if="!indexSyncing"><Download /></el-icon>
           <span class="desktop-action-label">同步指数</span>
           <span class="mobile-action-label">同步</span>
         </el-button>
