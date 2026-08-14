@@ -18,7 +18,7 @@ import java.util.Objects;
 public class RedisCacheService {
 
     @Resource
-    private StringRedisTemplate redisTemplate;
+    private StringRedisTemplate stringRedisTemplate;
 
     /**
      * 读取缓存对象
@@ -30,7 +30,7 @@ public class RedisCacheService {
      */
     public <T> T get(String cacheKey, Class<T> valueType) {
         try {
-            String payload = redisTemplate.opsForValue().get(cacheKey);
+            String payload = stringRedisTemplate.opsForValue().get(cacheKey);
             if (StringUtils.isBlank(payload)) {
                 return null;
             }
@@ -53,7 +53,7 @@ public class RedisCacheService {
             return;
         }
         try {
-            redisTemplate.opsForValue().set(cacheKey, JsonUtils.toJsonString(value), ttl);
+            stringRedisTemplate.opsForValue().set(cacheKey, JsonUtils.toJsonString(value), ttl);
         } catch (Exception ex) {
             log.debug("Redis 缓存写入失败 key={}: {}", cacheKey, ex.getMessage());
         }
@@ -66,7 +66,7 @@ public class RedisCacheService {
      */
     public void evict(String cacheKey) {
         try {
-            redisTemplate.delete(cacheKey);
+            stringRedisTemplate.delete(cacheKey);
         } catch (Exception ex) {
             log.debug("Redis 缓存删除失败 key={}: {}", cacheKey, ex.getMessage());
         }

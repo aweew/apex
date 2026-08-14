@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { searchStock } from './api/stock'
 import http from './api/http'
@@ -30,6 +30,7 @@ const mobileBackLabel = ref('')
 /** 终端紧凑密度：缩小表格与页边距 */
 const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 const currentUser = ref(getCurrentUser())
+const isPublicRoute = computed(() => Boolean(route.meta.public))
 let healthTimer
 let searchSeq = 0
 let debounceTimer
@@ -133,6 +134,7 @@ function toggleDense() {
 }
 
 async function logoutCurrentUser() {
+  setMobileMenu(false)
   await logout()
   currentUser.value = null
   await router.replace('/login')
@@ -412,6 +414,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="shell" :class="{ dense: denseMode }">
     <nav
+      v-if="!isPublicRoute"
       class="nav"
       :class="{ 'nav--opaque': route.path.startsWith('/portfolio'), 'nav--has-back': mobileBackLabel }"
       aria-label="主导航"
@@ -536,6 +539,7 @@ onBeforeUnmount(() => {
               <span>{{ denseMode ? '紧凑密度' : '舒适密度' }}</span>
             </button>
             <button type="button" class="mobile-action-btn" @click="openGlossary(); setMobileMenu(false)">名词百科</button>
+            <button v-if="currentUser" type="button" class="mobile-action-btn mobile-logout-btn" @click="logoutCurrentUser">退出登录</button>
           </div>
         </div>
       </div>
@@ -589,14 +593,14 @@ onBeforeUnmount(() => {
       </div>
     </nav>
 
-    <span class="sr-only" role="status" aria-live="polite">
+    <span v-if="!isPublicRoute" class="sr-only" role="status" aria-live="polite">
       {{ appActivityVisible ? '正在更新数据' : '' }}
     </span>
 
-    <GlossaryPanel ref="glossaryRef" />
+    <GlossaryPanel v-if="!isPublicRoute" ref="glossaryRef" />
 
     <div
-      v-if="searchOpen"
+      v-if="!isPublicRoute && searchOpen"
       class="search-layer"
       @click.self="closeSearch"
     >

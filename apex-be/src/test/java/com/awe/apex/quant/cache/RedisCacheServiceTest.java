@@ -66,7 +66,7 @@ class RedisCacheServiceTest {
 
     private RedisCacheService cacheService(StringRedisTemplate redisTemplate) {
         RedisCacheService cacheService = new RedisCacheService();
-        ReflectionTestUtils.setField(cacheService, "redisTemplate", redisTemplate);
+        ReflectionTestUtils.setField(cacheService, "stringRedisTemplate", redisTemplate);
         return cacheService;
     }
 
