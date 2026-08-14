@@ -115,16 +115,16 @@ $DOCKER compose --env-file .env -f compose.yaml run --rm openclaw-cli \
 官方镜像已包含 Skill 所需的 Node.js、`curl` 和 `openssl`。如果命令执行失败，先看
 Gateway 日志和 Apex 返回的鉴权错误，不要在运行中的容器里临时安装软件。
 
-更新 Apex 代码中的 Skill 后，需要重新复制到已运行的 OpenClaw 工作目录并重启
-Gateway，旧副本不会自动更新：
+更新 Apex 代码中的 Skill 后，需要同步到已运行的 OpenClaw 工作目录并重启
+Gateway，旧副本不会自动更新。NAS 上可直接运行部署脚本：
 
 ```bash
-cp -R /volume1/docker/apex/integrations/openclaw/apex-stock-assistant \
-  /volume1/docker/openclaw/data/workspace/skills/
-$DOCKER compose --env-file .env -f compose.yaml up -d --force-recreate openclaw-gateway
+/volume1/docker/apex/integrations/openclaw/deployment/deploy-openclaw-skill.sh
 ```
 
-重启后确认新工具脚本已生效：
+脚本会请求 `sudo` 权限，原子替换 Skill、固定容器用户权限、强制重建 Gateway，并
+输出服务状态和最近日志。支持用 `APEX_DIR`、`OPENCLAW_DIR`、`DOCKER` 和
+`SKILL_NAME` 覆盖默认路径。重启后确认新工具脚本已生效：
 
 ```bash
 test -x /volume1/docker/openclaw/data/workspace/skills/apex-stock-assistant/scripts/apex_tool.sh
