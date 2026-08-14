@@ -1,0 +1,4 @@
+import { request } from '../../utils/api'
+interface LadderTier { title: string; count?: number; promoteLabel?: string; promoteRate?: number; stocks?: Array<{ name: string; code: string }> }
+interface Ladder { tradeDate?: string; totalCount?: number; maxLianban?: number; message?: string; tiers?: LadderTier[] }
+Page({ data: { loading: true, error: '', ladder: {} as Ladder }, onShow() { this.loadPage() }, async loadPage() { this.setData({ loading: true, error: '' }); try { this.setData({ ladder: await request<Ladder>('/api/limit-up/ladder') }) } catch (error) { this.setData({ error: error instanceof Error ? error.message : '连板天梯加载失败' }) } finally { this.setData({ loading: false }) } }, openStock(event: WechatMiniprogram.BaseEvent) { const code = event.currentTarget.dataset.code as string; if (code) wx.navigateTo({ url: `/pages/stock/stock?code=${code}` }) } })

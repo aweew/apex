@@ -1,0 +1,37 @@
+<scroll-view class="page" scroll-y enable-back-to-top>
+  <view class="page-header">
+    <view class="header-title">
+      <view class="brand-lockup"><image class="brand-mark" src="../../assets/brand/logo-mark.png" mode="aspectFit"/><text class="brand-en">APEX</text><text class="brand-rule"></text><text class="brand-module">COMMAND</text></view>
+      <text class="page-title">看板</text><text class="page-subtitle">先看市场立场，再处理买卖行动</text>
+    </view>
+    <button class="search" bindtap="openSearch" aria-label="搜索股票">搜索</button>
+  </view>
+  <view wx:if="{{error}}" class="error"><text>{{error}}</text><button bindtap="loadPage">重新加载</button></view>
+  <block wx:elif="{{!loading}}">
+    <view class="stance-panel">
+      <view class="kicker"><text>市场立场 · {{home.market.asOf || '待加载'}}</text><text class="data-tag">数据{{home.market.dataLevel || '—'}}</text></view>
+      <view class="stance-row"><view class="score-ring" style="background: conic-gradient(#1669c9 {{scoreProgress}}%, rgba(0,0,0,.06) 0)"><view class="score-inner"><text>{{home.market.stanceScore || '-'}}</text><text>/100</text></view></view><view class="stance-copy"><text class="pill">{{home.market.stance || '暂无'}}</text><text class="reason">{{home.market.stanceReason || '正在等待市场简报'}}</text><text class="advice">{{home.market.positionAdvice || '同步行情后显示仓位建议'}}</text></view></view>
+      <view class="market-overview"><view class="market-head"><text>市场概览</text><text class="market-link">行情页</text></view><view class="index-lines"><view wx:for="{{indexItems}}" wx:key="name" class="index-line"><text>{{item.name}}</text><text>{{item.close}}</text><text class="{{item.direction}}">{{item.pct}}</text></view></view><view class="market-stats"><view><text>三市</text><b>{{home.market.indexVolumeText || '--'}}</b></view><view><text>涨跌</text><b><i class="up">{{home.market.breadthUp || 0}}</i> / {{home.market.breadthFlat || 0}} / <i class="down">{{home.market.breadthDown || 0}}</i></b></view><view><text>涨跌停</text><b><i class="up">{{home.market.limitUpCount || 0}}</i> / <i class="down">{{home.market.limitDownCount || 0}}</i></b></view></view></view>
+    </view>
+    <view wx:if="{{effectItems.length}}" class="effect-strip"><view class="effect-head"><text>赚钱效应</text><text>{{home.market.effect.hint || '平均股价 · 中位数 · 全A等权'}}</text></view><view class="effect-grid"><view wx:for="{{effectItems}}" wx:key="label" class="effect-cell"><text>{{item.label}}</text><b class="{{item.direction}}">{{item.text}}</b></view></view></view>
+    <view wx:if="{{observeAlerts.length}}" class="observe-panel"><view class="panel-heading"><view><text>观察池提醒</text><text>接近触发 / 已触发，优先处理</text></view></view><view class="observe-chips"><view wx:for="{{observeAlerts}}" wx:key="id" class="observe-chip {{item.status === 'TRIGGERED' ? 'triggered' : 'near'}}" data-code="{{item.code}}" bindtap="openStock" hover-class="observe-chip-hover"><b>{{item.code}}</b><text>{{item.name || ''}}</text><em>{{item.status === 'TRIGGERED' ? '已触发' : '接近'}}</em></view></view></view>
+
+    <view class="section-head"><view><text>今日决策</text><text>买入机会 Top3</text></view><button bindtap="openDecision">全部</button></view>
+    <view class="action-panel"><view class="decision-meta"><view><text>{{home.decision.actionDate || '待生成'}}</text><text>买 {{home.decision.buyCount || 0}} · 卖 {{home.decision.sellCount || 0}} · 可执行 {{home.decision.executableCount || 0}}</text></view><text>{{home.decision.riskNote || '生成决策后显示买入 Top3 与仓位建议'}}</text></view>
+      <view wx:for="{{buyItems}}" wx:key="code" class="action-item" data-code="{{item.code}}" bindtap="openStock" hover-class="action-item-hover"><view class="action-primary"><view class="stock-name"><b>{{item.code}}</b><text>{{item.name}}</text></view><view class="score-box"><text>评分</text><b>{{item.scoreText}}</b></view></view><view class="action-details"><view><text>策略</text><b>{{item.strategyText}}</b></view><view><text>估值</text><b>{{item.valuationText}}</b></view><view><text>仓位</text><b>{{item.weightText}}</b></view></view><view wx:if="{{item.executableHint || item.linkHint || item.mainlineMatch}}" class="action-tags"><text wx:if="{{item.executableHint}}" class="tag-positive">可执行</text><text wx:if="{{item.linkHint}}" class="{{item.linkClass}}">{{item.linkHint}}</text><text wx:if="{{item.mainlineMatch}}" class="tag-mainline">主线 · {{item.mainlineName || '匹配'}}</text></view></view>
+      <text wx:if="{{!buyItems.length}}" class="empty-note">今日暂无买入机会</text>
+    </view>
+
+    <view class="section-head"><view><text>持仓行动</text><text>止损止盈与策略卖出优先</text></view><button bindtap="openPortfolio">组合</button></view>
+    <view class="action-panel">
+      <view wx:for="{{sellItems}}" wx:key="code" class="action-item" data-code="{{item.code}}" bindtap="openStock" hover-class="action-item-hover"><view class="action-primary"><view class="stock-name"><b>{{item.code}}</b><text>{{item.name}}</text></view><view class="score-box"><text>评分</text><b>{{item.scoreText}}</b></view></view><view class="sell-details"><text>策略</text><b>{{item.strategyText}}</b></view><view class="exit-rule"><text>触发</text><text>{{item.triggerText}}</text></view></view>
+      <text wx:if="{{!sellItems.length}}" class="empty-note">持仓暂无卖点</text>
+    </view>
+
+    <view class="section-head"><view><text>主线与情绪</text><text>今日关注题材与操作提示</text></view><button bindtap="openLadder">天梯</button></view>
+    <view class="theme-panel"><view wx:if="{{themeItems.length}}" class="theme-row"><view wx:for="{{themeItems}}" wx:key="name" class="theme-chip"><text>{{item.name}}</text><text class="{{item.direction}}">{{item.pct}}</text></view></view><text wx:else class="empty-note">暂无主线题材</text><view wx:if="{{tips.length}}" class="tip-list"><view wx:for="{{tips}}" wx:key="*this" class="tip-item"><text></text><text>{{item}}</text></view></view></view>
+    <view class="health-panel"><view><text>数据可信度</text><text>{{home.dataHealth.suggestion || '尚未拿到数据健康状态'}}</text></view><text class="health-level">{{home.dataHealth.level || '—'}}</text><view class="health-stats"><text>自选 <b>{{home.dataHealth.watchlistCount || '-'}}</b></text><text>过期 <b>{{home.dataHealth.barsStaleCount || '-'}}</b></text><text>空K <b>{{home.dataHealth.barsEmptyCount || '-'}}</b></text></view></view>
+    <view class="brand-footer"><text>灵枢既定，只问顶峰</text><text>研究数据仅供参考</text></view>
+  </block>
+  <view wx:else class="loading">正在加载市场与决策...</view>
+</scroll-view>

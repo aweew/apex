@@ -1,0 +1,6 @@
+<scroll-view class="apex-page" scroll-y enable-back-to-top>
+  <view class="apex-page-head"><view><text class="apex-eyebrow">PORTFOLIO · CAPITAL</text><text class="apex-title">组合</text><text class="apex-subtitle">先处理需要行动的持仓，再看组合表现</text></view><button class="refresh-button" bindtap="loadPage">刷新</button></view>
+  <view wx:if="{{error}}" class="apex-state apex-error"><text>{{error}}</text><button class="apex-retry" bindtap="loadPage">重新加载</button></view>
+  <view wx:elif="{{!loading && portfolios.length}}" class="portfolio-list apex-panel"><view wx:for="{{portfolios}}" wx:key="name" class="portfolio-card" hover-class="portfolio-card-hover"><view class="portfolio-main"><text class="portfolio-name">{{item.name}}</text><text class="portfolio-meta">{{item.positionCount || 0}} 只持仓 · {{item.note || '暂无备注'}}</text></view><view class="equity"><text class="equity-label">组合权益</text><b>{{numberText(item.totalEquity)}}</b><text class="{{changeClass(item.todayPct)}}">{{percentText(item.todayPct)}} · {{numberText(item.todayPnl)}}</text></view></view></view>
+  <view wx:elif="{{!loading}}" class="apex-state">尚未建立组合</view><view wx:else class="apex-state">正在载入持仓与今日表现...</view>
+</scroll-view>

@@ -1,0 +1,13 @@
+{
+  "name": "miniprogram-ts-quickstart",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "",
+  "devDependencies": {
+    "miniprogram-api-typings": "^2.8.3-1",
+    "typescript": "^5.6.3"
+  }
+}

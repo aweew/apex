@@ -1,0 +1,16 @@
+page { min-height: 100%; background: #f4f6f9; color: #18212f; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif; font-size: 28rpx; }
+button { box-sizing: border-box; }
+button::after { border: 0; }
+.apex-page { box-sizing: border-box; min-height: 100vh; padding: 28rpx 20rpx 152rpx; background: #f4f6f9; }
+.apex-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18rpx; margin: 0 4rpx 24rpx; }
+.apex-eyebrow, .apex-title, .apex-subtitle { display: block; }
+.apex-eyebrow { color: #64748b; font-size: 20rpx; font-weight: 700; letter-spacing: 2rpx; }
+.apex-title { margin-top: 8rpx; color: #18212f; font-size: 42rpx; font-weight: 700; line-height: 1.15; }
+.apex-subtitle { margin-top: 8rpx; color: #64748b; font-size: 23rpx; line-height: 1.45; }
+.apex-panel { box-sizing: border-box; width: 100%; border: 1rpx solid #dce3ed; border-radius: 8rpx; background: #fff; box-shadow: 0 2rpx 8rpx rgba(15, 23, 42, .06); }
+.apex-state { box-sizing: border-box; width: 100%; margin-top: 24rpx; padding: 64rpx 28rpx; border: 1rpx dashed #cbd5e1; border-radius: 8rpx; color: #64748b; background: #fff; text-align: center; font-size: 24rpx; line-height: 1.5; }
+.apex-error { color: #b42318; border-style: solid; border-color: #f5c2be; background: #fff7f6; }
+.apex-retry { display: inline-flex; align-items: center; justify-content: center; min-width: 160rpx; height: 64rpx; margin: 18rpx 0 0; padding: 0 20rpx; border-radius: 6rpx; color: #fff; background: #1669c9; font-size: 23rpx; line-height: 64rpx; }
+.up { color: #e5484d; }
+.down { color: #23855a; }
+.muted { color: #8793a5; }

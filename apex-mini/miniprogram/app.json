@@ -1,0 +1,32 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/decision/decision",
+    "pages/portfolio/portfolio",
+    "pages/ladder/ladder",
+    "pages/search/search",
+    "pages/stock/stock"
+  ],
+  "window": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "灵枢 · Apex",
+    "navigationBarBackgroundColor": "#18212f",
+    "backgroundColor": "#f4f7fb"
+  },
+  "style": "v2",
+  "componentFramework": "glass-easel",
+  "lazyCodeLoading": "requiredComponents",
+  "tabBar": {
+    "position": "bottom",
+    "color": "#7c8798",
+    "selectedColor": "#1669c9",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "看板" },
+      { "pagePath": "pages/decision/decision", "text": "决策" },
+      { "pagePath": "pages/portfolio/portfolio", "text": "组合" },
+      { "pagePath": "pages/ladder/ladder", "text": "连板天梯" }
+    ]
+  }
+}
