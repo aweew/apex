@@ -24,6 +24,8 @@ const mobileMenuCloseRef = ref(null)
 const appActivityVisible = ref(false)
 const appActivityFinishing = ref(false)
 const mobileModuleTitle = ref('')
+const mobileBackPath = ref('')
+const mobileBackLabel = ref('')
 /** 终端紧凑密度：缩小表格与页边距 */
 const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 let healthTimer
@@ -70,6 +72,59 @@ function scheduleMobileModuleTitle() {
   })
 }
 
+function resolveRouteLabel(pathname) {
+  const routeLabels = [
+    ['/dashboard', '看板'],
+    ['/decision', '智能决策'],
+    ['/observe', '观察池'],
+    ['/portfolio', '组合'],
+    ['/paper', '模拟盘'],
+    ['/market', '行情中心'],
+    ['/screener', '股票筛选'],
+    ['/sector', '板块行情'],
+    ['/limit-up', '连板天梯'],
+    ['/news', '财经资讯'],
+    ['/backtest', '回测'],
+    ['/sync', '同步中心'],
+    ['/config', '参数设置'],
+    ['/stock', '股票详情'],
+  ]
+  const hit = routeLabels.find(([path]) => pathname === path || pathname.startsWith(`${path}/`))
+  return hit?.[1] || '上一页'
+}
+
+function syncMobileBackTarget() {
+  if (window.innerWidth > 900) {
+    mobileBackPath.value = ''
+    mobileBackLabel.value = ''
+    return
+  }
+  const historyBack = window.history.state?.back
+  if (typeof historyBack !== 'string' || !historyBack) {
+    mobileBackPath.value = ''
+    mobileBackLabel.value = ''
+    return
+  }
+  try {
+    const target = new URL(historyBack, window.location.origin)
+    if (target.origin !== window.location.origin || target.pathname === route.path) {
+      mobileBackPath.value = ''
+      mobileBackLabel.value = ''
+      return
+    }
+    mobileBackPath.value = `${target.pathname}${target.search}${target.hash}`
+    mobileBackLabel.value = `返回${resolveRouteLabel(target.pathname)}`
+  } catch {
+    mobileBackPath.value = ''
+    mobileBackLabel.value = ''
+  }
+}
+
+function goMobileBack() {
+  if (!mobileBackPath.value) return
+  router.back()
+}
+
 function toggleDense() {
   denseMode.value = !denseMode.value
   localStorage.setItem('apex.ui.dense', denseMode.value ? '1' : '0')
@@ -81,6 +136,7 @@ function setMobileMenu(open) {
 
 function closeMobileMenuOnDesktop() {
   if (window.innerWidth > 900 && mobileMenuOpen.value) setMobileMenu(false)
+  syncMobileBackTarget()
 }
 
 function isNavGroupActive(group) {
@@ -265,7 +321,10 @@ watch(
   () => route.fullPath,
   () => {
     setMobileMenu(false)
-    nextTick(syncMobileModuleTitle)
+    nextTick(() => {
+      syncMobileModuleTitle()
+      syncMobileBackTarget()
+    })
   },
 )
 
@@ -322,7 +381,10 @@ onMounted(() => {
   window.addEventListener('resize', closeMobileMenuOnDesktop)
   window.addEventListener('resize', scheduleMobileModuleTitle)
   window.addEventListener('scroll', scheduleMobileModuleTitle, { passive: true })
-  nextTick(syncMobileModuleTitle)
+  nextTick(() => {
+    syncMobileModuleTitle()
+    syncMobileBackTarget()
+  })
 })
 onBeforeUnmount(() => {
   if (healthTimer) clearInterval(healthTimer)
@@ -343,7 +405,7 @@ onBeforeUnmount(() => {
   <div class="shell" :class="{ dense: denseMode }">
     <nav
       class="nav"
-      :class="{ 'nav--opaque': route.path.startsWith('/portfolio') }"
+      :class="{ 'nav--opaque': route.path.startsWith('/portfolio'), 'nav--has-back': mobileBackLabel }"
       aria-label="主导航"
       :inert="searchOpen"
       :aria-hidden="searchOpen ? 'true' : undefined"
@@ -366,10 +428,18 @@ onBeforeUnmount(() => {
         <span v-if="mobileModuleTitle" class="mobile-module-title">{{ mobileModuleTitle }}</span>
       </Transition>
       <div class="mobile-top-actions">
-        <button type="button" class="nav-icon-btn" aria-label="打开名词百科" title="名词百科" @click="openGlossary()">
+        <button
+          v-if="mobileBackLabel"
+          type="button"
+          class="nav-return-btn"
+          :aria-label="mobileBackLabel"
+          :title="mobileBackLabel"
+          @click="goMobileBack"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5zM20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z" stroke-linejoin="round" />
+            <path d="m14.5 5-7 7 7 7" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
+          <span>{{ mobileBackLabel }}</span>
         </button>
         <button type="button" class="nav-icon-btn" aria-label="搜索股票" title="搜索股票" @click="openSearch">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -728,6 +798,40 @@ onBeforeUnmount(() => {
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
+}
+
+.nav-return-btn {
+  display: inline-flex;
+  align-items: center;
+  min-width: 44px;
+  height: 44px;
+  gap: 1px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-return-btn svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.nav-return-btn span {
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-block {
@@ -1175,8 +1279,18 @@ onBeforeUnmount(() => {
     margin-left: auto;
   }
 
+  .mobile-module-title + .mobile-top-actions .nav-return-btn span {
+    display: none;
+  }
+
   .desktop-nav-actions {
     display: none;
+  }
+
+  @media (max-width: 380px) {
+    .nav-return-btn span {
+      display: none;
+    }
   }
 
   .nav-scrim {

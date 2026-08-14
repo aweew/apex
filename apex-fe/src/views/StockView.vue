@@ -1756,14 +1756,18 @@ function dash(v) {
         <p class="stock-note">{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>
       <div class="actions">
-        <el-button type="primary" :loading="syncingBars || autoRepairingBars" @click="syncStockData">同步数据</el-button>
-        <el-button type="warning" plain @click="activeTab = 'analysis'">综合研判</el-button>
-        <el-button plain @click="router.push('/decision')">决策</el-button>
-        <el-button plain @click="activeTab = 'valuation'">估值</el-button>
-        <el-button plain @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
-        <el-button plain @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">模拟买</el-button>
-        <el-button type="warning" plain :loading="observeSaving" @click="quickAddObserve">加入观察池</el-button>
-        <el-button text @click="router.push({ path: '/observe', query: { code: code.trim() } })">看观察池</el-button>
+        <div class="action-primary">
+          <el-button type="primary" :loading="syncingBars || autoRepairingBars" @click="syncStockData">同步数据</el-button>
+          <el-button type="warning" plain @click="activeTab = 'analysis'">综合研判</el-button>
+          <el-button plain @click="router.push('/decision')">决策</el-button>
+          <el-button plain @click="activeTab = 'valuation'">估值</el-button>
+        </div>
+        <div class="action-secondary">
+          <el-button text @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
+          <el-button text @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">模拟买</el-button>
+          <el-button text type="warning" :loading="observeSaving" @click="quickAddObserve">加入观察池</el-button>
+          <el-button text @click="router.push({ path: '/observe', query: { code: code.trim() } })">看观察池</el-button>
+        </div>
       </div>
     </header>
 
@@ -2876,13 +2880,27 @@ function dash(v) {
   }
 
   .header .actions {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 8px;
     width: 100%;
   }
 
-  .header .actions :deep(.el-button) {
+  .action-primary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .action-secondary {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0 2px;
+    min-height: 28px;
+  }
+
+  .action-primary :deep(.el-button) {
     width: 100%;
     min-width: 0;
     min-height: 44px;
@@ -2892,15 +2910,27 @@ function dash(v) {
     font-size: 13px;
   }
 
-  .header .actions :deep(.el-button:not(.el-button--primary)) {
+  .action-primary :deep(.el-button:not(.el-button--primary)) {
     border-color: var(--line);
     background: rgba(255, 255, 255, 0.62);
     color: var(--ink-soft);
   }
 
-  .header .actions :deep(.el-button:not(.el-button--primary):active) {
+  .action-primary :deep(.el-button:not(.el-button--primary):active) {
     background: rgba(0, 113, 227, 0.08);
     color: var(--accent);
+  }
+
+  .action-secondary :deep(.el-button) {
+    min-height: 30px;
+    margin: 0;
+    padding: 0 8px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .action-secondary :deep(.el-button--warning) {
+    color: #a16600;
   }
 
   .chart-toolbar {
@@ -3019,10 +3049,16 @@ function dash(v) {
 
 @media (max-width: 820px) and (orientation: landscape) {
   .header .actions {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
   }
 
-  .header .actions :deep(.el-button) {
+  .action-primary {
+    flex: 1;
+  }
+
+  .action-secondary :deep(.el-button) {
     font-size: 12px;
   }
 }

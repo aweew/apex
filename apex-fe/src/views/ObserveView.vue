@@ -1709,6 +1709,11 @@ onBeforeUnmount(() => {
     padding: 1px 12px;
   }
 
+  /* iOS 会放大字号小于 16px 的聚焦输入框，导致页面横向裁切。 */
+  .search :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+
   .status-chips {
     flex-wrap: nowrap;
     overflow-x: auto;

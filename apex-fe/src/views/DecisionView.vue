@@ -554,21 +554,21 @@ onBeforeUnmount(() => {
           <div class="stance-copy">
             <p class="reason">{{ briefing.stanceReason }}</p>
             <p class="advice">{{ briefing.positionAdvice || data?.riskNote }}</p>
-            <div v-if="hotThemes.length" class="theme-row theme-inline">
-              <span class="side-title inline"><TermTip term="mainline">主线</TermTip></span>
-              <div class="theme-chip-grid">
-                <span
-                  v-for="t in hotThemes.slice(0, 6)"
-                  :key="t.key"
-                  class="theme-chip"
-                >
-                  <span class="theme-name">{{ t.name }}</span>
-                  <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
-                    <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
-                  </span>
-                </span>
-              </div>
-            </div>
+          </div>
+        </div>
+        <div v-if="hotThemes.length" class="theme-row theme-inline">
+          <span class="side-title inline"><TermTip term="mainline">主线</TermTip></span>
+          <div class="theme-chip-grid">
+            <span
+              v-for="t in hotThemes.slice(0, 6)"
+              :key="t.key"
+              class="theme-chip"
+            >
+              <span class="theme-name">{{ t.name }}</span>
+              <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
+                <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
+              </span>
+            </span>
           </div>
         </div>
       </div>
@@ -1363,7 +1363,9 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
   align-items: start;
-  margin-top: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .side-title.inline {
