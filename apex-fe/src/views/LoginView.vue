@@ -35,7 +35,7 @@ async function submit() {
 </script>
 
 <template>
-  <AuthShell eyebrow="PRIVATE ACCESS" title="登录" description="使用你的私人研究账户继续。">
+  <AuthShell eyebrow="PRIVATE ACCESS" title="PRIVATE ACCESS" accessible-title="登录" title-tone="access" description="使用你的私人研究账户继续。">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
         <el-form-item label="手机号" prop="phone">
           <el-input v-model="form.phone" inputmode="tel" autocomplete="username" placeholder="请输入手机号">
@@ -47,7 +47,7 @@ async function submit() {
             <template #prefix><el-icon><Lock /></el-icon></template>
           </el-input>
         </el-form-item>
-        <el-button type="primary" native-type="submit" :loading="loading" class="submit-btn">登录</el-button>
+        <el-button type="primary" native-type="submit" :loading="loading" class="submit-btn">进入工作台</el-button>
       </el-form>
       <RouterLink class="invite-link" to="/register">
         <span>持有邀请链接？</span>

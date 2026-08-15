@@ -4,6 +4,9 @@ import { BRAND } from '../../brand/identity.js'
 defineProps({
   eyebrow: { type: String, required: true },
   title: { type: String, required: true },
+  accessibleTitle: { type: String, default: '' },
+  titleTone: { type: String, default: 'heading' },
+  compact: { type: Boolean, default: false },
   description: { type: String, required: true },
 })
 </script>
@@ -21,8 +24,12 @@ defineProps({
         </div>
       </section>
 
-      <section class="auth-panel" :aria-labelledby="`${eyebrow}-title`">
-        <h1 :id="`${eyebrow}-title`">{{ title }}</h1>
+      <section class="auth-panel" :class="{ 'auth-panel--compact': compact }" :aria-labelledby="`${eyebrow}-title`">
+        <template v-if="titleTone === 'access'">
+          <h1 :id="`${eyebrow}-title`" class="sr-only">{{ accessibleTitle || title }}</h1>
+          <p class="access-title" aria-hidden="true">{{ title }}</p>
+        </template>
+        <h1 v-else :id="`${eyebrow}-title`">{{ title }}</h1>
         <p class="description">{{ description }}</p>
         <slot />
       </section>
@@ -32,11 +39,11 @@ defineProps({
 
 <style scoped>
 .auth-page {
-  --page-bg: #e8f3f7;
+  --page-bg: #e3f0f5;
   --ink: #172532;
   --muted: rgba(28, 57, 75, .66);
-  --panel-bg: rgba(255, 255, 255, .42);
-  --panel-border: rgba(255, 255, 255, .72);
+  --panel-bg: rgba(251, 254, 255, .74);
+  --panel-border: rgba(79, 122, 145, .2);
   --field-bg: rgba(255, 255, 255, .56);
   --field-border: rgba(24, 62, 83, .16);
   --field-text: #172532;
@@ -94,6 +101,7 @@ defineProps({
 .brand-lockup {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 11px;
 }
 
@@ -107,15 +115,20 @@ defineProps({
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   background: var(--panel-bg);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 22px 50px rgba(27, 56, 75, .14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .72), 0 22px 50px rgba(27, 56, 75, .14);
   backdrop-filter: blur(30px) saturate(150%);
   -webkit-backdrop-filter: blur(30px) saturate(150%);
 }
 
 h1 { margin: 0; color: var(--ink); font-size: 32px; line-height: 1.35; letter-spacing: 0; }
+.access-title { margin: 0; color: #f2b84b; font-size: 12px; font-weight: 700; line-height: 1.4; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .description { margin: 14px 0 34px; color: var(--muted); font-size: 14px; line-height: 1.65; }
 
 :deep(.el-form-item) { margin-bottom: 20px; }
+.auth-panel--compact { padding-top: 30px; padding-bottom: 26px; }
+.auth-panel--compact .description { margin-bottom: 26px; }
+.auth-panel--compact :deep(.el-form-item) { margin-bottom: 16px; }
 :deep(.el-form-item__label) { color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.3; padding-bottom: 9px; }
 :deep(.el-input__wrapper) { min-height: 50px; padding: 1px 14px; border-radius: 6px; background: var(--field-bg); box-shadow: 0 0 0 1px var(--field-border) inset, 0 5px 14px rgba(39, 79, 99, .035) !important; transition: box-shadow .2s ease, background .2s ease; }
 :deep(.el-input__inner) { color: var(--field-text); }
@@ -140,8 +153,8 @@ h1 { margin: 0; color: var(--ink); font-size: 32px; line-height: 1.35; letter-sp
     --page-bg: #0b1722;
     --ink: #f4f8fb;
     --muted: rgba(231, 241, 246, .66);
-    --panel-bg: rgba(23, 45, 61, .56);
-    --panel-border: rgba(219, 241, 246, .2);
+    --panel-bg: rgba(20, 42, 57, .72);
+    --panel-border: rgba(118, 164, 184, .24);
     --field-bg: rgba(4, 16, 25, .38);
     --field-border: rgba(205, 231, 239, .18);
     --field-text: #fff;

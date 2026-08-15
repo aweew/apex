@@ -42,7 +42,7 @@ async function submit() {
 </script>
 
 <template>
-  <AuthShell eyebrow="INVITED ACCESS" title="创建你的账户" description="填写邀请令牌后完成私人研究账户的开通。">
+  <AuthShell eyebrow="INVITED ACCESS" title="创建你的账户" compact description="填写邀请令牌后完成私人研究账户的开通。">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
         <el-form-item label="邀请令牌" prop="token"><el-input v-model="form.token" autocomplete="off" placeholder="粘贴邀请令牌" /></el-form-item>
         <el-form-item label="手机号" prop="phone">
