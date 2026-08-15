@@ -19,20 +19,9 @@ defineProps({
             <span>{{ BRAND.nameEn }}</span>
           </div>
         </div>
-        <div class="brand-copy">
-          <p>{{ BRAND.product }}</p>
-          <h2>{{ BRAND.slogan }}</h2>
-          <span>PRIVATE RESEARCH TERMINAL</span>
-        </div>
-        <div class="signal-lines" aria-hidden="true"><i /><i /><i /></div>
       </section>
 
       <section class="auth-panel" :aria-labelledby="`${eyebrow}-title`">
-        <div class="panel-brand">
-          <img :src="BRAND.assets.mark" alt="" aria-hidden="true" />
-          <span>{{ BRAND.nameZh }} · {{ BRAND.nameEn }}</span>
-        </div>
-        <p class="eyebrow">{{ eyebrow }}</p>
         <h1 :id="`${eyebrow}-title`">{{ title }}</h1>
         <p class="description">{{ description }}</p>
         <slot />
@@ -43,154 +32,140 @@ defineProps({
 
 <style scoped>
 .auth-page {
+  --page-bg: #e8f3f7;
+  --ink: #172532;
+  --muted: rgba(28, 57, 75, .66);
+  --panel-bg: rgba(255, 255, 255, .42);
+  --panel-border: rgba(255, 255, 255, .72);
+  --field-bg: rgba(255, 255, 255, .56);
+  --field-border: rgba(24, 62, 83, .16);
+  --field-text: #172532;
+  --field-placeholder: rgba(28, 57, 75, .42);
+  --field-icon: #1478d4;
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 32px;
+  padding: 40px 24px;
   overflow: hidden;
   position: relative;
   isolation: isolate;
-  background: #07131f;
-  color: #f4f8fb;
+  background: var(--page-bg);
+  color: var(--ink);
+  color-scheme: light;
+}
+
+.auth-page::before,
+.auth-page::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.auth-page::before {
+  width: min(64vw, 640px);
+  aspect-ratio: 1;
+  top: -9%;
+  right: -10%;
+  background: url('/brand/arc-mark.svg') center / contain no-repeat;
+  opacity: .14;
+  transform: rotate(14deg);
+}
+
+.auth-page::after {
+  inset: auto -11% 2% auto;
+  width: min(46vw, 560px);
+  height: min(46vw, 560px);
+  border: 1px solid rgba(20, 120, 212, .16);
+  border-radius: 50%;
+  box-shadow: 0 0 0 42px rgba(255, 255, 255, .24), 0 0 0 100px rgba(97, 209, 215, .06);
 }
 
 .auth-layout {
-  width: min(100%, 1080px);
-  min-height: 620px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(390px, .9fr);
-  border: 1px solid rgba(199, 224, 238, .18);
-  border-radius: 8px;
-  overflow: hidden;
+  width: min(100%, 410px);
   position: relative;
   z-index: 1;
-  background: rgba(14, 34, 49, .64);
-  box-shadow: 0 28px 70px rgba(0, 0, 0, .34);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
 }
 
 .brand-stage {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 48px;
-  border-right: 1px solid rgba(199, 224, 238, .14);
-  background: rgba(7, 23, 35, .42);
+  padding: 0 4px 26px;
 }
 
-.brand-lockup,
-.panel-brand {
+.brand-lockup {
   display: flex;
   align-items: center;
   gap: 11px;
 }
 
-.brand-lockup img { width: 38px; height: 38px; object-fit: contain; }
+.brand-lockup img { width: 34px; height: 34px; object-fit: contain; }
 .brand-lockup div { display: flex; align-items: baseline; gap: 8px; }
-.brand-lockup strong { font-size: 22px; letter-spacing: 0; }
-.brand-lockup span,
-.panel-brand span { color: rgba(230, 241, 247, .64); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-
-.brand-copy { max-width: 390px; }
-.brand-copy p,
-.eyebrow { margin: 0 0 12px; color: #61d1d7; font-size: 12px; font-weight: 700; letter-spacing: .12em; }
-.brand-copy h2 { margin: 0 0 16px; font-size: 38px; line-height: 1.25; letter-spacing: 0; }
-.brand-copy > span { color: rgba(230, 241, 247, .5); font-size: 12px; letter-spacing: .12em; }
-
-.signal-lines { display: grid; gap: 10px; width: 220px; }
-.signal-lines i { display: block; height: 1px; background: rgba(97, 209, 215, .42); }
-.signal-lines i:nth-child(2) { width: 72%; background: rgba(242, 184, 75, .72); }
-.signal-lines i:nth-child(3) { width: 42%; }
+.brand-lockup strong { font-size: 21px; letter-spacing: 0; }
+.brand-lockup span { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 
 .auth-panel {
-  align-self: center;
-  margin: 28px;
-  padding: 42px;
-  border: 1px solid rgba(225, 241, 248, .22);
+  padding: 38px 30px 32px;
+  border: 1px solid var(--panel-border);
   border-radius: 8px;
-  background: rgba(18, 42, 58, .68);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 18px 36px rgba(0, 0, 0, .16);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: var(--panel-bg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 22px 50px rgba(27, 56, 75, .14);
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
 }
 
-.panel-brand { margin-bottom: 34px; }
-.panel-brand img { width: 26px; height: 26px; object-fit: contain; }
-.eyebrow { margin-bottom: 8px; color: #f2b84b; }
-h1 { margin: 0; color: #fff; font-size: 30px; line-height: 1.25; letter-spacing: 0; }
-.description { margin: 12px 0 28px; color: rgba(231, 241, 246, .7); font-size: 14px; line-height: 1.65; }
+h1 { margin: 0; color: var(--ink); font-size: 32px; line-height: 1.35; letter-spacing: 0; }
+.description { margin: 14px 0 34px; color: var(--muted); font-size: 14px; line-height: 1.65; }
 
-:deep(.el-form-item) { margin-bottom: 18px; }
-:deep(.el-form-item__label) { color: rgba(239, 247, 250, .82); font-size: 13px; line-height: 1.3; padding-bottom: 8px; }
-:deep(.el-input__wrapper) { min-height: 42px; border-radius: 6px; background: rgba(3, 15, 25, .38); box-shadow: 0 0 0 1px rgba(200, 226, 238, .18) inset !important; }
-:deep(.el-input__inner) { color: #fff; }
-:deep(.el-input__inner::placeholder) { color: rgba(230, 241, 247, .38); }
-:deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 1px #61d1d7 inset !important; }
+:deep(.el-form-item) { margin-bottom: 20px; }
+:deep(.el-form-item__label) { color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.3; padding-bottom: 9px; }
+:deep(.el-input__wrapper) { min-height: 50px; padding: 1px 14px; border-radius: 6px; background: var(--field-bg); box-shadow: 0 0 0 1px var(--field-border) inset, 0 5px 14px rgba(39, 79, 99, .035) !important; transition: box-shadow .2s ease, background .2s ease; }
+:deep(.el-input__inner) { color: var(--field-text); }
+:deep(.el-input__inner::placeholder) { color: var(--field-placeholder); }
+:deep(.el-input__prefix-inner) { color: var(--field-icon); }
+:deep(.el-input__prefix-inner .el-icon) { font-size: 17px; }
+:deep(.el-input__wrapper:hover) { background: rgba(255, 255, 255, .92); box-shadow: 0 0 0 1px rgba(20, 120, 212, .3) inset, 0 5px 14px rgba(39, 79, 99, .05) !important; }
+:deep(.el-input__wrapper.is-focus) { background: rgba(255, 255, 255, .94); box-shadow: 0 0 0 2px rgba(20, 120, 212, .18), 0 0 0 1px #1478d4 inset !important; }
 
 @media (max-width: 760px) {
-  .auth-page { align-items: start; padding: 16px; }
-  .auth-layout { min-height: 0; grid-template-columns: 1fr; }
-  .brand-stage { min-height: 176px; padding: 24px; border-right: 0; border-bottom: 1px solid rgba(199, 224, 238, .14); }
-  .brand-copy { margin-top: 26px; }
-  .brand-copy h2 { font-size: 24px; }
-  .brand-copy > span, .signal-lines { display: none; }
-  .auth-panel { margin: 0; padding: 30px 24px; border: 0; border-radius: 0; box-shadow: none; }
-  .panel-brand { margin-bottom: 28px; }
-  h1 { font-size: 27px; }
+  .auth-page { padding: 28px 20px; }
+  .auth-panel { padding: 36px 26px 28px; }
 }
 
 @media (max-width: 390px) {
-  .auth-page { padding: 0; }
-  .auth-layout { min-height: 100vh; border: 0; border-radius: 0; }
-  .brand-stage { min-height: 158px; padding: 22px; }
-  .brand-copy { margin-top: 20px; }
-  .auth-panel { padding: 26px 22px 32px; }
+  .auth-page { padding: 24px 16px; }
+  .auth-panel { padding: 34px 22px 26px; }
 }
 
-@media (prefers-color-scheme: light) {
-  .auth-page { background: #edf3f6; color: #172532; }
-  .auth-page::before {
-    content: '';
-    position: absolute;
-    z-index: 0;
-    inset: 0;
-    background-image: url('/brand/arc-mark.svg'), url('/brand/arc-mark.svg');
-    background-repeat: no-repeat;
-    background-position: 13% 76%, 84% 22%;
-    background-size: min(45vw, 480px), min(32vw, 360px);
-    opacity: .22;
-    pointer-events: none;
+@media (prefers-color-scheme: dark) {
+  .auth-page {
+    --page-bg: #0b1722;
+    --ink: #f4f8fb;
+    --muted: rgba(231, 241, 246, .66);
+    --panel-bg: rgba(23, 45, 61, .56);
+    --panel-border: rgba(219, 241, 246, .2);
+    --field-bg: rgba(4, 16, 25, .38);
+    --field-border: rgba(205, 231, 239, .18);
+    --field-text: #fff;
+    --field-placeholder: rgba(231, 241, 246, .42);
+    --field-icon: #61d1d7;
+    color-scheme: dark;
   }
-  .auth-layout {
-    border-color: rgba(24, 62, 83, .16);
-    background: rgba(255, 255, 255, .32);
-    box-shadow: 0 28px 70px rgba(27, 56, 75, .16);
+
+  .auth-page::before { opacity: .16; }
+  .auth-page::after {
+    border-color: rgba(96, 209, 215, .22);
+    box-shadow: 0 0 0 42px rgba(20, 120, 212, .05), 0 0 0 100px rgba(96, 209, 215, .035);
   }
-  .brand-stage {
-    border-color: rgba(24, 62, 83, .12);
-    background: rgba(225, 239, 245, .24);
-  }
-  .brand-lockup span,
-  .panel-brand span { color: rgba(30, 60, 78, .62); }
-  .brand-copy > span { color: rgba(30, 60, 78, .52); }
-  .signal-lines i { background: rgba(22, 185, 196, .46); }
+
   .auth-panel {
-    border-color: rgba(24, 62, 83, .14);
-    background: rgba(255, 255, 255, .34);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 18px 36px rgba(27, 56, 75, .1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 22px 50px rgba(0, 0, 0, .22);
   }
-  h1 { color: #172532; }
-  .description { color: rgba(28, 57, 75, .72); }
-  :deep(.el-form-item__label) { color: rgba(25, 52, 69, .84); }
-  :deep(.el-input__wrapper) {
-    background: rgba(255, 255, 255, .54);
-    box-shadow: 0 0 0 1px rgba(24, 62, 83, .18) inset !important;
+  :deep(.el-input__wrapper:hover) {
+    background: rgba(4, 16, 25, .54);
+    box-shadow: 0 0 0 1px rgba(97, 209, 215, .46) inset, 0 5px 14px rgba(0, 0, 0, .12) !important;
   }
-  :deep(.el-input__inner) { color: #172532; }
-  :deep(.el-input__inner::placeholder) { color: rgba(28, 57, 75, .42); }
-  :deep(.invite-link) { color: #1478d4; }
-  :deep(.invite-link:hover) { color: #a56f12; }
+  :deep(.el-input__wrapper.is-focus) {
+    background: rgba(4, 16, 25, .6);
+    box-shadow: 0 0 0 2px rgba(97, 209, 215, .18), 0 0 0 1px #61d1d7 inset !important;
+  }
 }
 </style>
