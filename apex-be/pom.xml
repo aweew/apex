@@ -137,6 +137,12 @@
             <artifactId>sa-token-jwt</artifactId>
             <version>${saToken.version}</version>
         </dependency>
+        <!-- Sa-Token 会话持久化到 Redis -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-redis-jackson</artifactId>
+            <version>${saToken.version}</version>
+        </dependency>
 
 
     </dependencies>

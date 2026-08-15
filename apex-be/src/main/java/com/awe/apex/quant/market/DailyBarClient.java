@@ -18,7 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 日线行情客户端（东财优先：含成交额/涨跌幅/换手率；新浪兜底）
+ * 日线行情客户端（新浪优先；东财补充成交额、涨跌幅和换手率）
  */
 @Slf4j
 @Component
@@ -41,25 +41,25 @@ public class DailyBarClient {
      */
     public List<BarDaily> fetchDailyBars(String code, String beginDate, String endDate) {
         String pureCode = MarketCodeUtils.normalizeCode(code);
-        Exception eastError = null;
-        try {
-            List<BarDaily> emBars = fetchFromEastMoney(pureCode, beginDate, endDate);
-            if (!emBars.isEmpty()) {
-                return emBars;
-            }
-        } catch (Exception ex) {
-            eastError = ex;
-            log.warn("东财日线失败，尝试新浪兜底，code={}, err={}", pureCode, ex.getMessage());
-            sleepQuiet(600L);
-        }
+        Exception sinaError = null;
         try {
             List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate);
             if (!sinaBars.isEmpty()) {
                 return sinaBars;
             }
-            throw new BusinessException("新浪无数据");
         } catch (Exception ex) {
-            String msg = "eastmoney: " + messageOf(eastError) + " | sina: " + ex.getMessage();
+            sinaError = ex;
+            log.warn("新浪日线失败，尝试东财兜底，code={}, err={}", pureCode, ex.getMessage());
+            sleepQuiet(600L);
+        }
+        try {
+            List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate);
+            if (!eastMoneyBars.isEmpty()) {
+                return eastMoneyBars;
+            }
+            throw new BusinessException("东财无数据");
+        } catch (Exception ex) {
+            String msg = "sina: " + messageOf(sinaError) + " | eastmoney: " + ex.getMessage();
             throw new BusinessException("拉取日线失败: " + pureCode + ", " + msg, ex);
         }
     }

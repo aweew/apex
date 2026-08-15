@@ -355,12 +355,13 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         for (BarDaily existing : existingList) {
             existingMap.put(existing.getTradeDate(), existing);
         }
-        int count = 0;
+        List<BarDaily> insertBars = new ArrayList<>();
+        List<BarDaily> updateBars = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
         for (BarDaily bar : bars) {
             BarDaily existing = existingMap.get(bar.getTradeDate());
             if (Objects.isNull(existing)) {
-                save(bar);
+                insertBars.add(bar);
             } else {
                 // 新浪等源无额/涨跌幅/换手时，保留库内已有值，避免被刷空
                 if (Objects.isNull(bar.getAmount()) && Objects.nonNull(existing.getAmount())) {
@@ -375,11 +376,16 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 bar.setId(existing.getId());
                 bar.setCreateTime(existing.getCreateTime());
                 bar.setUpdateTime(now);
-                updateById(bar);
+                updateBars.add(bar);
             }
-            count++;
         }
-        return count;
+        if (!insertBars.isEmpty()) {
+            saveBatch(insertBars, 200);
+        }
+        if (!updateBars.isEmpty()) {
+            updateBatchById(updateBars, 200);
+        }
+        return bars.size();
     }
 
     private void upsertStockBasic(String code, String market) {

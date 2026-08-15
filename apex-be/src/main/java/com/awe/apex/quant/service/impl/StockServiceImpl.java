@@ -181,7 +181,7 @@ public class StockServiceImpl implements IStockService {
         }
         boolean needSyncBars = !"READY".equals(barStatus);
         String note = needSyncBars
-                ? missingDataReason + " 个股页会自动尝试补齐一次，也可手动点击「同步数据」。"
+                ? missingDataReason + " 可手动点击「同步数据」补齐。"
                 : "数据来自本地库（stock_basic / bar_daily）。点「刷新行情」可更新快照。过去表现不代表未来收益。";
         return StockDetailResp.builder()
                 .basic(basic)
