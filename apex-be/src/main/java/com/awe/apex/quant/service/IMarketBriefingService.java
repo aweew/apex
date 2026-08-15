@@ -23,6 +23,13 @@ public interface IMarketBriefingService {
     MarketBriefingResp briefing(boolean forceRebuild);
 
     /**
+     * 读取已缓存的市场简报，不触发实时行情请求
+     *
+     * @return 已缓存或已落库的简报，无可用快照时返回 null
+     */
+    MarketBriefingResp loadCachedBriefing();
+
+    /**
      * 清除简报内存缓存（指数同步后调用，避免看板仍展示冻住的快照点位）
      */
     void invalidateCache();

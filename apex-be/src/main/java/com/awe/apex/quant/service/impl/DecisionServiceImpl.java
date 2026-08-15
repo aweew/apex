@@ -1383,6 +1383,24 @@ public class DecisionServiceImpl implements IDecisionService {
      */
     @Override
     public DecisionTodayResp today(LocalDate date, String groupName) {
+        return today(date, groupName, null, false);
+    }
+
+    /**
+     * 使用已加载的市场简报读取某日决策清单
+     *
+     * @param date 日期，可空=今天
+     * @param groupName 分组（仅写入 message，可空）
+     * @param briefing 已加载的市场简报，可空
+     * @return 今日决策
+     */
+    @Override
+    public DecisionTodayResp today(LocalDate date, String groupName, MarketBriefingResp briefing) {
+        return today(date, groupName, briefing, true);
+    }
+
+    private DecisionTodayResp today(LocalDate date, String groupName, MarketBriefingResp briefing,
+                                   boolean reuseBriefing) {
         LocalDate actionDate = Objects.nonNull(date) ? date : LocalDate.now();
         String group = StringUtils.isNotBlank(groupName) ? groupName.trim() : "我的自选";
         List<DailyAction> rows = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
@@ -1390,17 +1408,19 @@ public class DecisionServiceImpl implements IDecisionService {
                 .orderByAsc(DailyAction::getAction)
                 .orderByDesc(DailyAction::getScore));
         DecisionRun storedRun = loadDecisionRun(rows);
-        MarketBriefingResp briefing;
         if (actionDate.equals(LocalDate.now())) {
-            // 今日大盘与看板对齐：走实时简报（指数/量能/涨跌家数会覆盖）
-            briefing = marketBriefingService.briefing();
+            if (!reuseBriefing) {
+                // 今日大盘与看板对齐：走实时简报（指数/量能/涨跌家数会覆盖）
+                briefing = marketBriefingService.briefing();
+            }
         } else {
             briefing = loadBriefingSnapshot(actionDate);
             if (Objects.isNull(briefing)) {
                 briefing = unavailableBriefing(actionDate);
             }
         }
-        List<String> mainlineNames = resolveMainlineNames(briefing, actionDate.equals(LocalDate.now()));
+        List<String> mainlineNames = resolveMainlineNames(briefing,
+                actionDate.equals(LocalDate.now()) && !reuseBriefing);
         Set<String> codes = new HashSet<>();
         for (DailyAction row : rows) {
             if (StringUtils.isNotBlank(row.getCode())) {

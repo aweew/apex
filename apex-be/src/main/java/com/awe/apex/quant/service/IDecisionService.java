@@ -6,6 +6,7 @@ import com.awe.apex.quant.domain.dto.DecisionBuyAiResp;
 import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -31,6 +32,16 @@ public interface IDecisionService {
      * @return 今日决策
      */
     DecisionTodayResp today(LocalDate date, String groupName);
+
+    /**
+     * 使用已加载的市场简报读取某日决策清单
+     *
+     * @param date 日期，可空=今天
+     * @param groupName 分组（仅写入 message，可空）
+     * @param briefing 已加载的市场简报，可空
+     * @return 今日决策
+     */
+    DecisionTodayResp today(LocalDate date, String groupName, MarketBriefingResp briefing);
 
     /**
      * 决策历史 + 买入建议事后次日收益

@@ -114,6 +114,7 @@ public class DashboardServiceImpl implements IDashboardService {
      *
      * @param accountId 账户，可空
      * @param groupName 自选分组，可空
+     * @param forceRefresh 是否同步刷新实时行情
      * @return 首页
      */
     @Override
@@ -130,19 +131,33 @@ public class DashboardServiceImpl implements IDashboardService {
             marketBriefingService.invalidateCache();
         }
 
-        // 1. 并行拉取互不依赖的块：简报、决策、观察告警、账户摘要
-        final boolean rebuildBriefing = forceRefresh;
-        CompletableFuture<MarketBriefingResp> briefingFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return marketBriefingService.briefing(rebuildBriefing);
-            } catch (Exception ex) {
-                log.warn("看板简报加载失败: {}", ex.getMessage());
-                return null;
-            }
-        }, HOME_POOL);
+        // 1. 首页只读取已完成的简报；显式刷新才同步重建实时行情
+        MarketBriefingResp briefing = null;
+        try {
+            briefing = forceRefresh ? marketBriefingService.briefing(true)
+                    : marketBriefingService.loadCachedBriefing();
+        } catch (Exception ex) {
+            log.warn("看板简报加载失败: {}", ex.getMessage());
+        }
+        if (Objects.isNull(briefing)) {
+            briefing = MarketBriefingResp.builder()
+                    .asOf(LocalDate.now())
+                    .stance("防守")
+                    .stanceReason("暂无可用市场简报，请在同步中心刷新行情")
+                    .positionAdvice("数据不足：暂缓开仓，先同步指数、板块和涨停池")
+                    .dataLevel("RED")
+                    .hotThemes(List.of())
+                    .hotThemeItems(List.of())
+                    .indexes(List.of())
+                    .tips(List.of())
+                    .build();
+        }
+
+        // 2. 并行拉取互不依赖的块：决策、观察告警、账户摘要、数据健康
+        final MarketBriefingResp cachedBriefing = briefing;
         CompletableFuture<DecisionTodayResp> todayFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return decisionService.today(LocalDate.now(), group);
+                return decisionService.today(LocalDate.now(), group, cachedBriefing);
             } catch (Exception ex) {
                 return null;
             }
@@ -159,7 +174,6 @@ public class DashboardServiceImpl implements IDashboardService {
         CompletableFuture<DashboardHomeResp.DataHealthBlock> healthFuture = CompletableFuture.supplyAsync(
                 () -> buildLightDataHealth(group), HOME_POOL);
 
-        MarketBriefingResp briefing = briefingFuture.join();
         Integer limitUpCount = resolveLimitUpCount(briefing);
         List<String> tips = new ArrayList<>();
         if (Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getTips())) {

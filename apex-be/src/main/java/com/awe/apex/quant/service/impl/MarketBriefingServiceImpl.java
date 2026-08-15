@@ -199,6 +199,37 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     }
 
     /**
+     * 读取已缓存的市场简报，不触发实时行情请求
+     *
+     * @return 已缓存或已落库的简报，无可用快照时返回 null
+     */
+    @Override
+    public MarketBriefingResp loadCachedBriefing() {
+        long now = System.currentTimeMillis();
+        synchronized (cacheLock) {
+            if (Objects.nonNull(cachedBriefing) && now - cachedAtMs < CACHE_TTL_MS) {
+                return cachedBriefing;
+            }
+        }
+        MarketBriefingResp sharedCached = redisCacheService.get(BRIEFING_CACHE_KEY, MarketBriefingResp.class);
+        if (Objects.nonNull(sharedCached)) {
+            synchronized (cacheLock) {
+                cachedBriefing = sharedCached;
+                cachedAtMs = System.currentTimeMillis();
+            }
+            return sharedCached;
+        }
+        MarketBriefingResp snapshot = loadRecentSnapshot();
+        if (Objects.nonNull(snapshot)) {
+            synchronized (cacheLock) {
+                cachedBriefing = snapshot;
+                cachedAtMs = System.currentTimeMillis();
+            }
+        }
+        return snapshot;
+    }
+
+    /**
      * 清除简报内存缓存
      */
     @Override
