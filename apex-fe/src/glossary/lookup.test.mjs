@@ -89,6 +89,9 @@ test('common stock terms stay available even when they are basic', () => {
     营业收入: 'revenue',
     净利润: 'net_profit',
     经营现金流: 'operating_cash_flow',
+    应收账款: 'accounts_receivable',
+    净利润现金含量: 'cash_conversion_ratio',
+    FCF倍数: 'price_to_free_cash_flow',
   }
 
   for (const [alias, expectedId] of Object.entries(expectedTerms)) {

@@ -39,6 +39,11 @@ public class StockFundamentalResp {
     private StockFinIndicator latestIndicator;
 
     /**
+     * 最新财务现金质量指标
+     */
+    private FinancialQualityResp financialQuality;
+
+    /**
      * 分析指标历史（新→旧）
      */
     private List<StockFinIndicator> indicators;

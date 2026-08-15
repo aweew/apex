@@ -807,6 +807,30 @@ export const EXTRA_TERMS = [
       '长期经营现金流与利润匹配，盈利质量通常更可靠。利润增长但现金流持续恶化，可能与应收、存货或收入确认有关；单季现金流也会受回款节奏和季节性影响。',
   },
   {
+    id: 'accounts_receivable',
+    title: '应收账款',
+    aliases: ['应收', '应收款', 'Accounts Receivable', 'AR'],
+    category: '基本面',
+    short: '已经确认收入、但客户尚未付回的货款。',
+    plain: '利润表上已经算赚到的钱，可能还没有真正到账。',
+    detail:
+      '应收账款增长明显快于营收，或长期高企，可能意味着回款变慢、信用政策放宽或收入确认质量需要核验。应和经营现金流、账龄、坏账准备一起看；不同行业的合理账期差别很大。',
+    highlights: ['还没有真正到账'],
+    related: ['operating_cash_flow', 'cash_conversion_ratio', 'net_profit'],
+  },
+  {
+    id: 'cash_conversion_ratio',
+    title: '净利润现金含量',
+    aliases: ['现金含量', '经营现金流净利润比', 'OCF/净利润'],
+    category: '基本面',
+    short: '同报告期经营性现金流 ÷ 净利润，用于核验利润是否兑现为现金。',
+    plain: '接近 1，说明账面利润大体收到了现金；持续偏低，要看应收和存货。',
+    detail:
+      '本系统使用同一报告期的经营活动现金流净额除以净利润。大于或接近 1 通常代表现金回收较好；持续显著低于 1，可能存在应收累积、存货占用或收入确认偏快。单季会受季节性、预收预付和回款节奏影响，不能脱离行业直接下结论。',
+    highlights: ['账面利润大体收到了现金'],
+    related: ['operating_cash_flow', 'accounts_receivable', 'net_profit'],
+  },
+  {
     id: 'financial_report',
     title: '财报',
     aliases: ['财务报告', '年报', '季报', '半年报'],
@@ -826,6 +850,16 @@ export const EXTRA_TERMS = [
       '自由现金流可用于分红、回购、还债或再投资，是估值和盈利质量的重要指标。不同行业资本开支差异很大，单年为负不一定差，需判断是在高回报扩张还是被动烧钱。',
     highlights: ['买完必要设备后', '真正还能自由安排的钱'],
     related: ['operating_cash_flow', 'net_profit', 'dividend'],
+  },
+  {
+    id: 'price_to_free_cash_flow',
+    title: 'P/FCF',
+    aliases: ['FCF倍数', '自由现金流倍数', 'Price to Free Cash Flow'],
+    category: '基本面',
+    short: '总市值 ÷ 自由现金流，是 PE 的现金流补充口径。',
+    detail:
+      '本系统用当前总市值除以同报告期的自由现金流，其中自由现金流=经营性现金流−资本开支。仅在自由现金流为正时展示；越低不必然越便宜，还要判断资本开支是否被低估、现金流是否可持续，以及行业所处周期。',
+    related: ['free_cash_flow', 'operating_cash_flow', 'pe_ttm'],
   },
   {
     id: 'correlation',

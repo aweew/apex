@@ -2201,6 +2201,15 @@ function dash(v) {
       <el-tab-pane label="财务摘要" name="abstract" lazy>
         <div v-loading="fundLoading">
           <p class="fund-note">{{ fund?.note || '加载中…' }}</p>
+          <div class="meta fund-kpi" v-if="fund?.financialQuality">
+            <div><label>现金质量期</label><span>{{ fund.financialQuality.reportDate || '-' }}</span></div>
+            <div><label><TermTip term="operating_cash_flow">经营性现金流</TermTip></label><b>{{ fmtMoney(fund.financialQuality.operatingCashFlow) }}</b></div>
+            <div><label><TermTip term="accounts_receivable">应收账款</TermTip></label><b>{{ fmtMoney(fund.financialQuality.accountsReceivable) }}</b></div>
+            <div><label><TermTip term="cash_conversion_ratio">净利润现金含量</TermTip></label><b :class="Number(fund.financialQuality.cashConversionRatio) >= 1 ? 'up' : 'down'">{{ fmtNum(fund.financialQuality.cashConversionRatio) }}</b></div>
+            <div><label>资本开支</label><b>{{ fmtMoney(fund.financialQuality.capitalExpenditure) }}</b></div>
+            <div><label><TermTip term="free_cash_flow">自由现金流</TermTip></label><b :class="Number(fund.financialQuality.freeCashFlow) >= 0 ? 'up' : 'down'">{{ fmtMoney(fund.financialQuality.freeCashFlow) }}</b></div>
+            <div><label><TermTip term="price_to_free_cash_flow">P/FCF</TermTip></label><b>{{ fmtNum(fund.financialQuality.priceToFreeCashFlow) }}</b></div>
+          </div>
           <div class="meta fund-kpi" v-if="fund?.latestAbstract">
             <div><label>报告期</label><span>{{ fund.latestAbstract.reportDate || '-' }}</span></div>
             <div><label>净利润</label><b>{{ fmtMoney(fund.latestAbstract.netProfit) }}</b></div>
