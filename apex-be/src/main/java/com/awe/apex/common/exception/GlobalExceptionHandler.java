@@ -2,15 +2,18 @@ package com.awe.apex.common.exception;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.common.constant.ErrorCodeEnum;
+import cn.dev33.satoken.exception.NotLoginException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 import java.io.IOException;
@@ -26,6 +29,19 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /**
+     * 处理登录态失效
+     *
+     * @param exception 登录态异常
+     * @return 未授权响应
+    */
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    @ExceptionHandler(NotLoginException.class)
+    public Result<?> handleNotLoginException(NotLoginException exception) {
+        log.info("登录态失效，type={}", exception.getType());
+        return Result.failure(HttpStatus.UNAUTHORIZED.value(), "登录已失效，请重新登录");
+    }
 
     // 业务异常
     @ExceptionHandler(BusinessException.class)
