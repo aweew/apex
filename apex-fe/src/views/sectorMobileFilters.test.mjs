@@ -43,3 +43,29 @@ test('mobile mainline cards keep headings compact and summaries inside each card
   assert.match(compactStyles, /\.mainline-item::after\s*\{[\s\S]*?top:\s*26px;/)
   assert.doesNotMatch(mobileStyles, /\.mainline-item\s*\{[\s\S]*?min-height:\s*116px;/)
 })
+
+test('constituent refresh keeps cached rows visible and reuses the refresh response', () => {
+  assert.match(sectorSource, /v-loading="drawerLoading"/)
+  assert.doesNotMatch(sectorSource, /v-loading="drawerLoading \|\| drawerRefreshing"/)
+  assert.match(
+    sectorSource,
+    /const res = await refreshSectorConstituents\([\s\S]*?const refreshed = res\.data\?\.constituents[\s\S]*?constituents\.value = \{ \.\.\.refreshed, items: sortedItems \}/,
+  )
+  assert.doesNotMatch(
+    sectorSource,
+    /await refreshSectorConstituents\([\s\S]*?await loadConstituents\(\)/,
+  )
+  assert.match(sectorSource, /v-model="drawerSortBy"[^>]*:disabled="drawerRefreshing"/)
+})
+
+test('stale constituent requests cannot overwrite a newly opened sector', () => {
+  assert.match(sectorSource, /let constituentLoadSequence = 0/)
+  assert.match(
+    sectorSource,
+    /const requestSequence = \+\+constituentLoadSequence[\s\S]*?requestSequence !== constituentLoadSequence[\s\S]*?currentSector\.value\?\.code !== sectorCode/,
+  )
+  assert.match(
+    sectorSource,
+    /async function openConstituents\(row\)[\s\S]*?constituentLoadSequence \+= 1[\s\S]*?currentSector\.value = row/,
+  )
+})

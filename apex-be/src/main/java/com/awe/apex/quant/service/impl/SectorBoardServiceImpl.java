@@ -231,10 +231,8 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
         String sectorCode = code.trim().toUpperCase(Locale.ROOT);
         boolean asc = "asc".equalsIgnoreCase(StringUtils.isBlank(order) ? "desc" : order.trim());
 
-        LocalDate resolvedDate = parseTradeDate(tradeDate);
-        if (Objects.isNull(resolvedDate)) {
-            resolvedDate = latestConstituentDate(sectorCode, type);
-        }
+        LocalDate requestedDate = parseTradeDate(tradeDate);
+        LocalDate resolvedDate = latestConstituentDate(sectorCode, type, requestedDate);
         String sectorName = resolveSectorName(sectorCode, type);
         if (Objects.isNull(resolvedDate)) {
             return SectorConstituentResp.builder()
@@ -692,10 +690,11 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
         return latest;
     }
 
-    private LocalDate latestConstituentDate(String sectorCode, String boardType) {
+    private LocalDate latestConstituentDate(String sectorCode, String boardType, LocalDate requestedDate) {
         SectorConstituent latest = sectorConstituentMapper.selectOne(Wrappers.<SectorConstituent>lambdaQuery()
                 .eq(SectorConstituent::getSectorCode, sectorCode)
                 .eq(SectorConstituent::getBoardType, boardType)
+                .le(Objects.nonNull(requestedDate), SectorConstituent::getTradeDate, requestedDate)
                 .orderByDesc(SectorConstituent::getTradeDate)
                 .last("LIMIT 1"));
         return Objects.isNull(latest) ? null : latest.getTradeDate();

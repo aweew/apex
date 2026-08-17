@@ -766,24 +766,114 @@ def replace_constituents(
         return len(params)
 
 
-def fetch_constituents(board_type: str, sector_code: str, sector_name: str) -> List[Dict[str, Any]]:
-    import akshare as ak
+def _constituent_row_from_em_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    raw_code = str(item.get("f12") or "").strip()
+    if not re.fullmatch(r"\d{6}", raw_code):
+        return None
+    code = normalize_code(raw_code)
+    name = str(item.get("f14") or "").strip()
+    if not code or not name:
+        return None
+    return {
+        "stock_code": code,
+        "stock_name": name,
+        "pct_chg": parse_number(item.get("f3")),
+        "latest_price": parse_number(item.get("f2")),
+    }
 
-    symbol = sector_code or sector_name
+
+def _fetch_em_constituents(sector_code: str) -> List[Dict[str, Any]]:
+    """直连东财成分接口；delay 节点通常比 AKShare 默认节点稳定。"""
+    import math
+
+    import requests
+
+    page_size = 200
+    base_params = {
+        "pn": "1",
+        "pz": str(page_size),
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "fid": "f3",
+        "fs": f"b:{sector_code}+f:!50",
+        "fields": "f2,f3,f12,f14",
+        "_": str(int(time.time() * 1000)),
+    }
+    session = requests.Session()
+    session.headers.update(EM_HEADERS)
     last_err = None
-    df = None
-    for attempt in range(3):
+
+    for host in EM_CLIST_HOSTS[:2]:
         try:
-            if board_type in ("CONCEPT", "THEME"):
-                df = ak.stock_board_concept_cons_em(symbol=symbol)
-            else:
-                # 行业/地域均可用 BK 代码走 industry cons 接口
-                df = ak.stock_board_industry_cons_em(symbol=symbol)
-            last_err = None
-            break
+            params = dict(base_params)
+            response = session.get(host, params=params, timeout=6)
+            response.raise_for_status()
+            payload = response.json() or {}
+            data = payload.get("data") or {}
+            diff = data.get("diff") or []
+            total = int(data.get("total") or len(diff))
+            if total == 0:
+                return []
+            if total > 5000:
+                raise RuntimeError(f"unexpected constituent total={total} from {host}")
+            if not diff:
+                raise RuntimeError(f"empty diff from {host}")
+
+            items: List[Dict[str, Any]] = list(diff)
+            pages = max(1, math.ceil(total / page_size))
+            for page in range(2, pages + 1):
+                page_params = dict(base_params)
+                page_params["pn"] = str(page)
+                page_params["_"] = str(int(time.time() * 1000))
+                page_response = session.get(host, params=page_params, timeout=6)
+                page_response.raise_for_status()
+                page_data = (page_response.json() or {}).get("data") or {}
+                items.extend(page_data.get("diff") or [])
+
+            rows: List[Dict[str, Any]] = []
+            seen: Set[str] = set()
+            for item in items:
+                row = _constituent_row_from_em_item(item)
+                if not row or row["stock_code"] in seen:
+                    continue
+                seen.add(row["stock_code"])
+                rows.append(row)
+            if rows:
+                print(f"constituents direct ok code={sector_code} rows={len(rows)}")
+                return rows
+            raise RuntimeError(f"no valid constituents from {host}")
         except Exception as ex:
             last_err = ex
-            time.sleep(1.0 * (attempt + 1))
+            print(f"constituents direct fail host={host} code={sector_code}: {ex}", file=sys.stderr)
+    raise RuntimeError(f"东财成分直连失败 {sector_code}: {last_err}")
+
+
+def fetch_constituents(board_type: str, sector_code: str, sector_name: str) -> List[Dict[str, Any]]:
+    symbol = sector_code or sector_name
+    last_err = None
+    try:
+        rows = _fetch_em_constituents(sector_code)
+        if rows:
+            return rows
+    except Exception as ex:
+        last_err = ex
+        print(f"{board_type}/{symbol} 直连失败，尝试 AKShare: {ex}", file=sys.stderr)
+
+    import akshare as ak
+
+    df = None
+    try:
+        if board_type in ("CONCEPT", "THEME"):
+            df = ak.stock_board_concept_cons_em(symbol=symbol)
+        else:
+            # 行业/地域均可用 BK 代码走 industry cons 接口
+            df = ak.stock_board_industry_cons_em(symbol=symbol)
+        last_err = None
+    except Exception as ex:
+        last_err = ex
     if df is None or getattr(df, "empty", True):
         raise RuntimeError(f"成分股拉取失败 {board_type}/{symbol}: {last_err}")
 

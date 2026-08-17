@@ -46,6 +46,8 @@ const currentSector = ref(null)
 const constituents = ref(null)
 const viewportWidth = ref(window.innerWidth)
 const drawerActionColumnFixed = computed(() => resolveActionColumnFixed(viewportWidth.value))
+let constituentLoadSequence = 0
+let constituentRefreshSequence = 0
 
 useSessionViewState('sector', {
   activeTab,
@@ -281,26 +283,42 @@ async function addObserve(row) {
 
 async function loadConstituents() {
   if (!currentSector.value?.code) return
+  const sectorCode = currentSector.value.code
+  const sectorType = activeTab.value
+  const requestSequence = ++constituentLoadSequence
   drawerLoading.value = true
   try {
-    const res = await fetchSectorConstituents(currentSector.value.code, {
-      type: activeTab.value,
+    const res = await fetchSectorConstituents(sectorCode, {
+      type: sectorType,
       sortBy: drawerSortBy.value,
       order: drawerOrder.value,
       tradeDate: snapshotStamp(board.value) || undefined,
     })
+    if (requestSequence !== constituentLoadSequence
+        || currentSector.value?.code !== sectorCode
+        || activeTab.value !== sectorType) {
+      return null
+    }
     constituents.value = res.data
     return res.data
   } catch (e) {
-    ElMessage.error(e.message || '成分股加载失败')
+    if (requestSequence === constituentLoadSequence) {
+      ElMessage.error(e.message || '成分股加载失败')
+    }
     return null
   } finally {
-    drawerLoading.value = false
+    if (requestSequence === constituentLoadSequence) {
+      drawerLoading.value = false
+    }
   }
 }
 
 async function openConstituents(row) {
   if (!row?.code) return
+  constituentLoadSequence += 1
+  constituentRefreshSequence += 1
+  drawerLoading.value = false
+  drawerRefreshing.value = false
   currentSector.value = row
   constituents.value = null
   suppressDrawerSortWatch = true
@@ -310,11 +328,13 @@ async function openConstituents(row) {
   drawerOpen.value = true
   try {
     const data = await loadConstituents()
-    // 仅当天无成分时自动拉取；历史日不自动刷新以免覆盖当日口径
+    // 当天无缓存或缓存落后时后台刷新，旧快照继续可读
     const isLatest = !tradeDate.value
       || String(board.value?.availableDates?.[0] || '').slice(0, 10) === tradeDate.value
-    if (!(data?.items || []).length && isLatest) {
-      await onRefreshConstituents(false)
+    const boardDate = String(snapshotStamp(board.value) || '').slice(0, 10)
+    const constituentDate = String(data?.tradeDate || '').slice(0, 10)
+    if (isLatest && (!(data?.items || []).length || (boardDate && boardDate !== constituentDate))) {
+      onRefreshConstituents(false)
     }
   } catch {
     // loadConstituents 已提示
@@ -323,15 +343,42 @@ async function openConstituents(row) {
 
 async function onRefreshConstituents(showToast = true) {
   if (!currentSector.value?.code) return
+  const sectorCode = currentSector.value.code
+  const sectorType = activeTab.value
+  const requestSequence = ++constituentRefreshSequence
+  constituentLoadSequence += 1
+  drawerLoading.value = false
   drawerRefreshing.value = true
   try {
-    await refreshSectorConstituents(currentSector.value.code, activeTab.value)
-    await loadConstituents()
-    if (showToast) ElMessage.success('成分已刷新')
+    const res = await refreshSectorConstituents(sectorCode, sectorType)
+    const refreshed = res.data?.constituents
+    if (requestSequence === constituentRefreshSequence
+        && currentSector.value?.code === sectorCode
+        && activeTab.value === sectorType
+        && refreshed) {
+      const sortField = drawerSortBy.value === 'latestPrice' ? 'latestPrice' : 'pctChg'
+      const sortDirection = drawerOrder.value === 'asc' ? 1 : -1
+      const sortedItems = [...(refreshed.items || [])].sort((left, right) => {
+        const leftValue = Number(left?.[sortField])
+        const rightValue = Number(right?.[sortField])
+        const leftMissing = left?.[sortField] == null || Number.isNaN(leftValue)
+        const rightMissing = right?.[sortField] == null || Number.isNaN(rightValue)
+        if (leftMissing && rightMissing) return 0
+        if (leftMissing) return 1
+        if (rightMissing) return -1
+        return (leftValue - rightValue) * sortDirection
+      })
+      constituents.value = { ...refreshed, items: sortedItems }
+      if (showToast) ElMessage.success('成分已刷新')
+    }
   } catch (e) {
-    ElMessage.error(e.message || '成分刷新失败')
+    if (requestSequence === constituentRefreshSequence) {
+      ElMessage.error(e.message || '成分刷新失败')
+    }
   } finally {
-    drawerRefreshing.value = false
+    if (requestSequence === constituentRefreshSequence) {
+      drawerRefreshing.value = false
+    }
   }
 }
 
@@ -689,13 +736,15 @@ onBeforeUnmount(() => {
       destroy-on-close
     >
       <div class="drawer-actions">
-        <span class="muted">{{ fmtTime(constituents?.syncedAt) }}</span>
+        <span class="muted">
+          {{ constituents?.tradeDate || '-' }} · {{ fmtTime(constituents?.syncedAt) }}
+        </span>
         <div class="drawer-controls">
-          <el-select v-model="drawerSortBy" style="width: 100px" size="small">
+          <el-select v-model="drawerSortBy" style="width: 100px" size="small" :disabled="drawerRefreshing">
             <el-option label="涨跌幅" value="pctChg" />
             <el-option label="最新价" value="latestPrice" />
           </el-select>
-          <el-select v-model="drawerOrder" style="width: 88px" size="small">
+          <el-select v-model="drawerOrder" style="width: 88px" size="small" :disabled="drawerRefreshing">
             <el-option label="降序" value="desc" />
             <el-option label="升序" value="asc" />
           </el-select>
@@ -710,11 +759,11 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <el-table
-        v-loading="drawerLoading || drawerRefreshing"
+        v-loading="drawerLoading"
         :data="constituents?.items || []"
         size="small"
         stripe
-        empty-text="暂无成分股，请刷新成分"
+        :empty-text="drawerRefreshing ? '正在获取最新成分股，可关闭抽屉继续浏览' : '暂无成分股，请刷新成分'"
         max-height="70vh"
       >
         <el-table-column prop="code" label="代码" width="90" sortable>
