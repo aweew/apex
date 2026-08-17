@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.DecisionStrategyPerformance;
 import com.awe.apex.quant.mapper.DecisionOutcomeMapper;
+import com.awe.apex.quant.context.ApexUserContext;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Component;
 
@@ -25,13 +26,17 @@ public class DecisionPerformanceCalibrator {
     @Resource
     private DecisionOutcomeMapper decisionOutcomeMapper;
 
+    @Resource
+    private ApexUserContext userContext;
+
     /**
      * 加载策略评分校准值
      *
      * @return 策略ID到评分调整值
      */
     public Map<String, BigDecimal> loadAdjustments() {
-        List<DecisionStrategyPerformance> performanceRows = decisionOutcomeMapper.selectStrategyPerformance();
+        List<DecisionStrategyPerformance> performanceRows = decisionOutcomeMapper
+                .selectStrategyPerformance(userContext.currentUserId());
         Map<String, BigDecimal> adjustments = new HashMap<>();
         if (CollUtil.isEmpty(performanceRows)) {
             return adjustments;

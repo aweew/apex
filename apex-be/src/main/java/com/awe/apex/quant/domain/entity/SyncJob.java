@@ -33,6 +33,11 @@ public class SyncJob implements Serializable {
     private Long id;
 
     /**
+     * 用户私有任务所属用户ID，共享任务为空
+     */
+    private Long userId;
+
+    /**
      * 任务类型编码
      */
     private String taskType;

@@ -2,6 +2,7 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.IndustryHeatItem;
 import com.awe.apex.quant.domain.dto.MarketBoardResp;
 import com.awe.apex.quant.domain.dto.MarketBreadthResp;
@@ -49,6 +50,9 @@ public class MarketBoardController {
 
     @Resource
     private BarDailyMapper barDailyMapper;
+
+    @Resource
+    private ApexUserContext userContext;
 
     /**
      * 自选涨跌榜 + 行业热力 + 信号统计
@@ -115,9 +119,11 @@ public class MarketBoardController {
 
         LocalDate since = LocalDate.now().minusDays(5);
         Long buyCount = strategySignalMapper.selectCount(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .ge(StrategySignalEntity::getSignalDate, since)
                 .eq(StrategySignalEntity::getSide, "BUY"));
         Long sellCount = strategySignalMapper.selectCount(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .ge(StrategySignalEntity::getSignalDate, since)
                 .eq(StrategySignalEntity::getSide, "SELL"));
         List<UniverseSnapshot> universe = universeService.latest();

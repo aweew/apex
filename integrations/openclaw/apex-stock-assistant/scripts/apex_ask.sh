@@ -17,7 +17,7 @@ for command_name in curl node openssl; do
     fi
 done
 
-for variable_name in APEX_BOT_BASE_URL APEX_BOT_CLIENT_KEY APEX_BOT_CLIENT_SECRET; do
+for variable_name in APEX_BOT_BASE_URL APEX_BOT_CLIENT_KEY APEX_BOT_CLIENT_SECRET APEX_BOT_EXTERNAL_USER_ID; do
     if [[ -z "${!variable_name:-}" ]]; then
         echo "Missing required environment variable: ${variable_name}" >&2
         exit 4
@@ -25,7 +25,7 @@ for variable_name in APEX_BOT_BASE_URL APEX_BOT_CLIENT_KEY APEX_BOT_CLIENT_SECRE
 done
 
 readonly question="$*"
-readonly request_body="$(node -e 'process.stdout.write(JSON.stringify({question: process.argv[1]}))' "${question}")"
+readonly request_body="$(node -e 'process.stdout.write(JSON.stringify({question: process.argv[1], userId: process.argv[2]}))' "${question}" "${APEX_BOT_EXTERNAL_USER_ID}")"
 readonly timestamp="$(date +%s)"
 readonly nonce="$(openssl rand -hex 16)"
 readonly content_sha256="$(printf '%s' "${request_body}" | openssl dgst -sha256 | awk '{print $NF}')"

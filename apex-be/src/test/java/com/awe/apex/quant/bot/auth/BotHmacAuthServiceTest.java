@@ -16,6 +16,7 @@ import java.time.ZoneOffset;
 import java.util.HexFormat;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class BotHmacAuthServiceTest {
@@ -25,13 +26,16 @@ class BotHmacAuthServiceTest {
     private static final long NOW = 1786579200L;
 
     private BotHmacAuthService authService;
+    private ApexBotProperties properties;
 
     @BeforeEach
     void setUp() {
-        ApexBotProperties properties = new ApexBotProperties();
+        properties = new ApexBotProperties();
         properties.setEnabled(true);
         properties.setClientKey(CLIENT_KEY);
         properties.setClientSecret(CLIENT_SECRET);
+        properties.setApexUserId(7L);
+        properties.setExternalUserId("wechat-user");
         properties.setTimestampToleranceSeconds(300);
 
         authService = new BotHmacAuthService();
@@ -92,6 +96,34 @@ class BotHmacAuthServiceTest {
         assertThrows(BusinessException.class, () -> authService.validate(
                 "POST", "/apex/bot/v1/ask", CLIENT_KEY, String.valueOf(Long.MAX_VALUE),
                 "nonce-6", digest, futureSignature, body));
+    }
+
+    @Test
+    void rejectsClientWithoutTrustedApexUserBinding() {
+        properties.setApexUserId(null);
+        byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+        String digest = sha256(body);
+        String signature = sign("POST", "/apex/bot/v1/ask", NOW, "nonce-7", digest);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> authService.validate(
+                "POST", "/apex/bot/v1/ask", CLIENT_KEY, String.valueOf(NOW),
+                "nonce-7", digest, signature, body));
+
+        assertEquals("Bot API 未绑定 Apex 用户", exception.getMessage());
+    }
+
+    @Test
+    void rejectsClientWithoutTrustedExternalUserBinding() {
+        properties.setExternalUserId("");
+        byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+        String digest = sha256(body);
+        String signature = sign("POST", "/apex/bot/v1/ask", NOW, "nonce-8", digest);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> authService.validate(
+                "POST", "/apex/bot/v1/ask", CLIENT_KEY, String.valueOf(NOW),
+                "nonce-8", digest, signature, body));
+
+        assertEquals("Bot API 未绑定外部用户", exception.getMessage());
     }
 
     private String sign(String method, String path, long timestamp, String nonce, String contentDigest) {

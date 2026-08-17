@@ -290,6 +290,44 @@ public class ApexUserAuthServiceImpl implements ApexUserAuthService {
     }
 
     /**
+     * 查询启用且已初始化资产档案的用户ID。
+     *
+     * @return 用户ID列表
+     */
+    @Override
+    public List<Long> listEnabledUserIds() {
+        List<User> users = userMapper.selectList(Wrappers.<User>lambdaQuery()
+                .eq(User::getStatus, StatusEnum.ENABLE)
+                .orderByAsc(User::getId));
+        List<Long> userIds = new ArrayList<>();
+        for (User user : users) {
+            Long profileCount = userProfileMapper.selectCount(Wrappers.<ApexUserProfile>lambdaQuery()
+                    .eq(ApexUserProfile::getUserId, user.getId()));
+            if (Objects.nonNull(profileCount) && profileCount > 0) {
+                userIds.add(user.getId());
+            }
+        }
+        return userIds;
+    }
+
+    /**
+     * 校验指定用户存在、已初始化资产档案且处于启用状态。
+     *
+     * @param userId 用户ID
+     */
+    @Override
+    public void requireEnabledUser(Long userId) {
+        if (Objects.isNull(userId)) {
+            throw new BusinessException("账户不存在或已禁用");
+        }
+        User user = userMapper.selectById(userId);
+        if (Objects.isNull(user) || !StatusEnum.ENABLE.equals(user.getStatus())) {
+            throw new BusinessException("账户不存在或已禁用");
+        }
+        requireProfile(userId);
+    }
+
+    /**
      * 启用或禁用用户
      *
      * @param userId 用户ID

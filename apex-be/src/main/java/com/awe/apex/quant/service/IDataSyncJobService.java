@@ -27,6 +27,15 @@ public interface IDataSyncJobService {
     SyncJobResp start(SyncStartReq req);
 
     /**
+     * 为指定用户启动智能决策任务。
+     *
+     * @param req    请求
+     * @param userId 所属用户ID
+     * @return 任务状态
+     */
+    SyncJobResp startForUser(SyncStartReq req, Long userId);
+
+    /**
      * 查询任务
      *
      * @param jobId 任务 ID

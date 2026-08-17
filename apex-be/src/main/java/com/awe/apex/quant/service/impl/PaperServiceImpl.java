@@ -1,8 +1,8 @@
 package com.awe.apex.quant.service.impl;
 
-import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.AtrStopItem;
 import com.awe.apex.quant.domain.dto.AtrStopResp;
 import com.awe.apex.quant.domain.dto.BetaTargetResp;
@@ -137,6 +137,9 @@ public class PaperServiceImpl implements IPaperService {
     @Resource
     private IUniverseService universeService;
 
+    @Resource
+    private ApexUserContext userContext;
+
     /**
      * 根据ID获取模拟账户
      *
@@ -145,8 +148,13 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public PaperAccount getAccount(Long accountId) {
+        if (Objects.isNull(accountId)) {
+            throw new BusinessException("账户不存在");
+        }
+        Long currentUserId = currentUserId();
         PaperAccount account = paperAccountMapper.selectById(accountId);
-        if (Objects.isNull(account)) {
+        if (Objects.isNull(account)
+                || !Objects.equals(currentUserId, account.getUserId())) {
             throw new BusinessException("账户不存在");
         }
         return account;
@@ -155,12 +163,14 @@ public class PaperServiceImpl implements IPaperService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PaperAccount openOrDeposit(PaperOpenReq req) {
+        Long currentUserId = currentUserId();
         PaperAccount account = paperAccountMapper.selectOne(Wrappers.<PaperAccount>lambdaQuery()
-                .eq(PaperAccount::getAccountName, req.getAccountName())
+                .eq(PaperAccount::getUserId, currentUserId)
                 .last("limit 1"));
         LocalDateTime now = LocalDateTime.now();
         if (Objects.isNull(account)) {
             account = PaperAccount.builder()
+                    .userId(currentUserId)
                     .accountName(req.getAccountName())
                     .cash(req.getCash())
                     .initCash(req.getCash())
@@ -181,32 +191,20 @@ public class PaperServiceImpl implements IPaperService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PaperAccount defaultAccount() {
-        if (StpUtil.isLogin()) {
-            ApexUserProfile profile = apexUserProfileMapper.selectOne(Wrappers.<ApexUserProfile>lambdaQuery()
-                    .eq(ApexUserProfile::getUserId, StpUtil.getLoginIdAsLong()).last("LIMIT 1"));
-            if (Objects.nonNull(profile) && Objects.nonNull(profile.getPaperAccountId())) {
-                return getAccount(profile.getPaperAccountId());
-            }
+        Long currentUserId = currentUserId();
+        ApexUserProfile profile = apexUserProfileMapper.selectOne(Wrappers.<ApexUserProfile>lambdaQuery()
+                .eq(ApexUserProfile::getUserId, currentUserId)
+                .last("LIMIT 1"));
+        if (Objects.nonNull(profile) && Objects.nonNull(profile.getPaperAccountId())) {
+            return getAccount(profile.getPaperAccountId());
         }
-        PaperAccount account = paperAccountMapper.selectOne(Wrappers.<PaperAccount>lambdaQuery()
-                .eq(PaperAccount::getAccountName, "default")
-                .last("limit 1"));
-        if (Objects.nonNull(account)) {
-            return account;
-        }
-        PaperOpenReq req = new PaperOpenReq();
-        req.setAccountName("default");
-        req.setCash(new BigDecimal("1000000"));
-        return openOrDeposit(req);
+        throw new BusinessException("用户资产账户不存在");
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PaperOrder placeOrder(PaperOrderReq req) {
-        PaperAccount account = paperAccountMapper.selectById(req.getAccountId());
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(req.getAccountId());
         String code = MarketCodeUtils.normalizeCode(req.getCode());
         String side = req.getSide().toUpperCase();
         if (!"BUY".equals(side) && !"SELL".equals(side)) {
@@ -301,9 +299,10 @@ public class PaperServiceImpl implements IPaperService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PaperPosition updateStops(PositionStopsReq req) {
+        Long accountId = requireOwnedAccount(req.getAccountId()).getId();
         String code = MarketCodeUtils.normalizeCode(req.getCode());
         PaperPosition position = paperPositionMapper.selectOne(Wrappers.<PaperPosition>lambdaQuery()
-                .eq(PaperPosition::getAccountId, req.getAccountId())
+                .eq(PaperPosition::getAccountId, accountId)
                 .eq(PaperPosition::getCode, code)
                 .gt(PaperPosition::getQuantity, 0)
                 .last("limit 1"));
@@ -318,7 +317,7 @@ public class PaperServiceImpl implements IPaperService {
         }
         position.setUpdateTime(LocalDateTime.now());
         paperPositionMapper.updateById(position);
-        List<PaperPosition> marked = listPositions(req.getAccountId());
+        List<PaperPosition> marked = listPositions(accountId);
         for (PaperPosition row : marked) {
             if (code.equals(row.getCode())) {
                 return row;
@@ -360,8 +359,9 @@ public class PaperServiceImpl implements IPaperService {
 
     @Override
     public List<PaperPosition> listPositions(Long accountId) {
+        Long ownedAccountId = requireOwnedAccount(accountId).getId();
         List<PaperPosition> positions = paperPositionMapper.selectList(Wrappers.<PaperPosition>lambdaQuery()
-                .eq(PaperPosition::getAccountId, accountId)
+                .eq(PaperPosition::getAccountId, ownedAccountId)
                 .gt(PaperPosition::getQuantity, 0)
                 .orderByAsc(PaperPosition::getCode));
         if (positions.isEmpty()) {
@@ -438,8 +438,9 @@ public class PaperServiceImpl implements IPaperService {
 
     @Override
     public List<PaperOrder> listOrders(Long accountId) {
+        Long ownedAccountId = requireOwnedAccount(accountId).getId();
         return paperOrderMapper.selectList(Wrappers.<PaperOrder>lambdaQuery()
-                .eq(PaperOrder::getAccountId, accountId)
+                .eq(PaperOrder::getAccountId, ownedAccountId)
                 .orderByDesc(PaperOrder::getId));
     }
 
@@ -555,7 +556,7 @@ public class PaperServiceImpl implements IPaperService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public List<PaperOrder> closeAll(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         List<PaperPosition> positions = paperPositionMapper.selectList(Wrappers.<PaperPosition>lambdaQuery()
                 .eq(PaperPosition::getAccountId, id)
                 .gt(PaperPosition::getQuantity, 0));
@@ -581,7 +582,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public PositionSuggestResp suggestPosition(Long accountId, String code, BigDecimal targetWeight) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         String pure = MarketCodeUtils.normalizeCode(code);
         if (StringUtils.isBlank(pure)) {
             throw new BusinessException("code 不能为空");
@@ -803,7 +804,10 @@ public class PaperServiceImpl implements IPaperService {
         if (Objects.isNull(signalId)) {
             throw new BusinessException("signalId 不能为空");
         }
-        StrategySignalEntity signal = strategySignalMapper.selectById(signalId);
+        StrategySignalEntity signal = strategySignalMapper.selectOne(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getId, signalId)
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
+                .last("LIMIT 1"));
         if (Objects.isNull(signal)) {
             throw new BusinessException("信号不存在");
         }
@@ -811,7 +815,7 @@ public class PaperServiceImpl implements IPaperService {
         if (!"BUY".equals(side) && !"SELL".equals(side)) {
             throw new BusinessException("仅支持 BUY/SELL 信号下单，当前: " + signal.getSide());
         }
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         PaperOrderReq req = new PaperOrderReq();
         req.setAccountId(id);
         req.setCode(signal.getCode());
@@ -849,7 +853,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public List<PaperPosition> refreshMarks(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         List<PaperPosition> positions = paperPositionMapper.selectList(Wrappers.<PaperPosition>lambdaQuery()
                 .eq(PaperPosition::getAccountId, id)
                 .gt(PaperPosition::getQuantity, 0));
@@ -890,10 +894,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public PaperPerformanceResp performance(Long accountId, String benchmarkCode, String altBenchmarkCode) {
-        PaperAccount account = Objects.nonNull(accountId) ? paperAccountMapper.selectById(accountId) : defaultAccount();
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         String bench = StringUtils.isNotBlank(benchmarkCode)
                 ? MarketCodeUtils.normalizeCode(benchmarkCode) : "000300";
         String altBench = StringUtils.isNotBlank(altBenchmarkCode)
@@ -1121,7 +1122,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public GapRiskResp gapRisk(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         List<PaperPosition> positions = listPositions(id);
         List<GapRiskItem> items = new ArrayList<>();
         BigDecimal sumAvg = BigDecimal.ZERO;
@@ -1192,7 +1193,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public FillQualityResp fillQuality(Long accountId, Integer limit) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         int n = Objects.nonNull(limit) ? Math.max(5, Math.min(limit, 100)) : 30;
         List<PaperOrder> orders = listOrders(id);
         List<FillQualityItem> items = new ArrayList<>();
@@ -1295,7 +1296,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public KellySuggestResp kellySuggest(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         RiskOverviewResp risk = riskService.overview(id);
         BigDecimal winRate = BigDecimal.ZERO;
         BigDecimal payoff = BigDecimal.ONE;
@@ -1401,10 +1402,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public PaperCostResp costSummary(Long accountId) {
-        PaperAccount account = Objects.nonNull(accountId) ? paperAccountMapper.selectById(accountId) : defaultAccount();
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         List<PaperOrder> orders = listOrders(account.getId());
         BigDecimal totalFee = BigDecimal.ZERO;
         BigDecimal turnover = BigDecimal.ZERO;
@@ -1451,7 +1449,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public CorrelationMatrixResp positionCorrelation(Long accountId, Integer lookback) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         int days = Objects.nonNull(lookback) ? Math.max(20, Math.min(lookback, 250)) : 60;
         List<PaperPosition> positions = listPositions(id);
         if (positions.size() < 2) {
@@ -1680,7 +1678,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public PaperExposureResp exposure(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         RiskOverviewResp risk = riskService.overview(id);
         List<PaperPosition> positions = listPositions(id);
         BigDecimal total = Objects.nonNull(risk.getTotalAsset()) ? risk.getTotalAsset() : BigDecimal.ZERO;
@@ -1807,7 +1805,7 @@ public class PaperServiceImpl implements IPaperService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public List<PaperOrder> closeTriggered(Long accountId, String type) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         String mode = StringUtils.isNotBlank(type) ? type.toUpperCase() : "BOTH";
         List<PaperPosition> positions = listPositions(id);
         List<PaperOrder> orders = new ArrayList<>();
@@ -1849,10 +1847,11 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public RebalanceSuggestResp signalBuySuggest(Long accountId, Integer limit, BigDecimal minScore) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         int n = Objects.nonNull(limit) ? Math.max(1, Math.min(limit, 20)) : 5;
         BigDecimal scoreFloor = Objects.nonNull(minScore) ? minScore : new BigDecimal("70");
         List<StrategySignalEntity> signals = strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .eq(StrategySignalEntity::getSide, "BUY")
                 .ge(StrategySignalEntity::getScore, scoreFloor)
                 .ge(StrategySignalEntity::getSignalDate, LocalDate.now().minusDays(5))
@@ -1900,10 +1899,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public List<MonthlyReturnResp> monthlyReturns(Long accountId) {
-        PaperAccount account = Objects.nonNull(accountId) ? paperAccountMapper.selectById(accountId) : defaultAccount();
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         List<PaperOrder> orders = listOrders(account.getId());
         RiskOverviewResp risk = riskService.overview(account.getId());
         PaperEquityCalculator.ReplayResult replay = replayOrders(account, orders, risk.getTotalAsset());
@@ -1945,7 +1941,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public RebalanceSuggestResp rebalanceSuggest(Long accountId, Integer limit) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         int n = Objects.nonNull(limit) ? Math.max(2, Math.min(limit, 20)) : 8;
         List<UniverseSnapshot> universe = universeService.latest();
         List<String> targets = new ArrayList<>();
@@ -2021,7 +2017,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public HoldBucketResp holdBuckets(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         List<ClosedTradeSnap> trades = matchClosedTrades(listOrders(id));
         String[] labels = {"1-5日", "6-20日", "21-60日", "60日+"};
         int[] counts = new int[4];
@@ -2073,7 +2069,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public WeekdayPnlResp weekdayPnl(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         List<ClosedTradeSnap> trades = matchClosedTrades(listOrders(id));
         String[] labels = {"周一", "周二", "周三", "周四", "周五"};
         int[] counts = new int[5];
@@ -2123,10 +2119,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public MonteCarloResp monteCarlo(Long accountId, Integer paths, Integer horizonDays) {
-        PaperAccount account = Objects.nonNull(accountId) ? paperAccountMapper.selectById(accountId) : defaultAccount();
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         RiskOverviewResp risk = riskService.overview(account.getId());
         PaperEquityCalculator.ReplayResult replay = replayOrders(account, listOrders(account.getId()), risk.getTotalAsset());
         List<BigDecimal> hist = dailyReturns(replay.getPoints());
@@ -2193,7 +2186,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public FactorExposureResp factorExposure(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         RiskOverviewResp risk = riskService.overview(id);
         BigDecimal total = Objects.nonNull(risk.getTotalAsset()) ? risk.getTotalAsset() : BigDecimal.ZERO;
         BigDecimal cash = Objects.nonNull(risk.getCash()) ? risk.getCash() : BigDecimal.ZERO;
@@ -2257,7 +2250,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public AtrStopResp atrStopSuggest(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         BigDecimal stopMult = configService.getDecimal("atr_stop_mult", new BigDecimal("2.0"));
         BigDecimal takeMult = configService.getDecimal("atr_take_mult", new BigDecimal("3.0"));
         List<AtrStopItem> items = new ArrayList<>();
@@ -2303,10 +2296,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public EquityQualityResp equityQuality(Long accountId) {
-        PaperAccount account = Objects.nonNull(accountId) ? paperAccountMapper.selectById(accountId) : defaultAccount();
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         RiskOverviewResp risk = riskService.overview(account.getId());
         List<EquityPointResp> points = replayOrders(account, listOrders(account.getId()), risk.getTotalAsset()).getPoints();
         List<BigDecimal> rets = dailyReturns(points);
@@ -2368,7 +2358,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public PaperHealthResp healthScore(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         List<String> factors = new ArrayList<>();
         int score = 60;
         StopCoverageResp stop = stopCoverage(id);
@@ -2443,7 +2433,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public StopCoverageResp stopCoverage(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         List<PaperPosition> positions = listPositions(id);
         int withStop = 0;
         int withTake = 0;
@@ -2490,10 +2480,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public BetaTargetResp betaTarget(Long accountId) {
-        PaperAccount account = Objects.nonNull(accountId) ? paperAccountMapper.selectById(accountId) : defaultAccount();
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         BigDecimal target = configService.getDecimal("target_beta", new BigDecimal("1.0"));
         RiskOverviewResp risk = riskService.overview(account.getId());
         PaperPerformanceResp perf = performance(account.getId(), "000300", "000905");
@@ -2543,7 +2530,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public TradeCalendarResp tradeCalendar(Long accountId, Integer days) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         int lookback = Objects.nonNull(days) ? Math.max(7, Math.min(days, 180)) : 60;
         LocalDate begin = LocalDate.now().minusDays(lookback);
         Map<LocalDate, TradeCalendarDay> map = new LinkedHashMap<>();
@@ -2588,10 +2575,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public VolTargetResp volTarget(Long accountId) {
-        PaperAccount account = Objects.nonNull(accountId) ? paperAccountMapper.selectById(accountId) : defaultAccount();
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         RiskOverviewResp risk = riskService.overview(account.getId());
         BigDecimal target = configService.getDecimal("target_ann_vol", new BigDecimal("0.15"));
         PaperEquityCalculator.ReplayResult replay = replayOrders(account, listOrders(account.getId()), risk.getTotalAsset());
@@ -2651,7 +2635,7 @@ public class PaperServiceImpl implements IPaperService {
      */
     @Override
     public ReturnHistResp returnHistogram(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         List<ClosedTradeSnap> trades = matchClosedTrades(listOrders(id));
         String[] labels = {"<-10%", "-10~-5%", "-5~0%", "0~5%", "5~10%", ">10%"};
         int[] counts = new int[6];
@@ -2693,7 +2677,7 @@ public class PaperServiceImpl implements IPaperService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Integer applyAtrStops(Long accountId) {
-        Long id = Objects.nonNull(accountId) ? accountId : defaultAccount().getId();
+        Long id = requireOwnedAccount(accountId).getId();
         AtrStopResp suggest = atrStopSuggest(id);
         int updated = 0;
         LocalDateTime now = LocalDateTime.now();
@@ -2803,6 +2787,18 @@ public class PaperServiceImpl implements IPaperService {
             idx = sortedAsc.size() - 1;
         }
         return sortedAsc.get(idx).setScale(6, RoundingMode.HALF_UP);
+    }
+
+    private PaperAccount requireOwnedAccount(Long accountId) {
+        return Objects.nonNull(accountId) ? getAccount(accountId) : defaultAccount();
+    }
+
+    private Long currentUserId() {
+        Long currentUserId = userContext.currentUserIdOrNull();
+        if (Objects.isNull(currentUserId)) {
+            throw new BusinessException("未获取到当前用户");
+        }
+        return currentUserId;
     }
 
     private List<ClosedTradeSnap> matchClosedTrades(List<PaperOrder> orders) {

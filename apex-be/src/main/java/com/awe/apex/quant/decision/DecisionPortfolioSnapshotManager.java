@@ -58,7 +58,8 @@ public class DecisionPortfolioSnapshotManager {
             throw new BusinessException("决策组合上下文不完整");
         }
         if (DecisionMode.REPLAY.equals(context.getMode())) {
-            DecisionPortfolioSnapshot historical = snapshotMapper.selectHistorical(context.getActionDate());
+            DecisionPortfolioSnapshot historical = snapshotMapper.selectHistorical(
+                    run.getUserId(), context.getActionDate());
             if (Objects.isNull(historical)) {
                 throw new BusinessException("历史回放缺少组合快照: " + context.getActionDate());
             }

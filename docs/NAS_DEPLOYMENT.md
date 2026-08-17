@@ -92,8 +92,11 @@ openssl rand -hex 32
 `.env.production` 已被 Git 忽略，也不会被复制进镜像。
 
 如需接入 OpenClaw，在同一份配置中增加 `APEX_BOT_ENABLED=true`、
-`APEX_BOT_CLIENT_KEY` 和 `APEX_BOT_CLIENT_SECRET`。微信 Channel 尚未确认前，
-保持 `APEX_BOT_WECLAW_ENABLED=false`。OpenClaw 的独立部署步骤见
+`APEX_BOT_CLIENT_KEY`、`APEX_BOT_CLIENT_SECRET`、`APEX_BOT_APEX_USER_ID` 和
+`APEX_BOT_EXTERNAL_USER_ID`。后两项分别填写该 HMAC 客户端唯一授权的 Apex 用户主键
+和对应微信用户标识；任一绑定缺失或请求用户不匹配时，Bot API 都会拒绝请求。
+微信 Channel 尚未确认前，保持
+`APEX_BOT_WECLAW_ENABLED=false`。OpenClaw 的独立部署步骤见
 `integrations/openclaw/deployment/README.md`。
 
 ## 4. 构建和启动
@@ -106,6 +109,12 @@ sh scripts/deploy-nas.sh
 ```
 
 默认会先执行 `git pull --ff-only` 拉取最新代码，再构建、启动并验证服务。
+
+后端启动时会通过 `MarketSchemaBootstrap` 幂等补齐当前版本所需数据库结构，包括
+`docs/sql/32` 至 `39` 对应的回测、股票池、实验历史、后台决策、交易日记、策略
+信号用户隔离字段、用户级唯一索引及回测任务审计字段。迁移失败会直接阻止后端启动，部署脚本的健康检查也会
+失败并输出后端日志，不会让缺列或缺表的版本以“健康”状态继续运行。`docs/sql`
+中的独立脚本继续作为结构审计和手工排障依据，正常更新部署无需重复执行。
 
 按服务部署：
 

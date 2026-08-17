@@ -104,7 +104,7 @@ class DecisionPortfolioSnapshotManagerTest {
 
     @Test
     void replayUsesHistoricalSnapshotAndNeverReadsCurrentPortfolio() {
-        when(snapshotMapper.selectHistorical(ACTION_DATE)).thenReturn(DecisionPortfolioSnapshot.builder()
+        when(snapshotMapper.selectHistorical(7L, ACTION_DATE)).thenReturn(DecisionPortfolioSnapshot.builder()
                 .runId(1L)
                 .portfolioId(3L)
                 .actionDate(ACTION_DATE)
@@ -135,7 +135,7 @@ class DecisionPortfolioSnapshotManagerTest {
 
     @Test
     void replayFailsClosedWhenHistoricalPortfolioSnapshotIsMissing() {
-        when(snapshotMapper.selectHistorical(ACTION_DATE)).thenReturn(null);
+        when(snapshotMapper.selectHistorical(7L, ACTION_DATE)).thenReturn(null);
 
         assertThrows(BusinessException.class,
                 () -> manager.resolve(replayContext(), run(10L), balanceRegime(), null));
@@ -144,7 +144,7 @@ class DecisionPortfolioSnapshotManagerTest {
 
     @Test
     void replayFailsClosedWhenHistoricalAtrParametersAreMissing() {
-        when(snapshotMapper.selectHistorical(ACTION_DATE)).thenReturn(DecisionPortfolioSnapshot.builder()
+        when(snapshotMapper.selectHistorical(7L, ACTION_DATE)).thenReturn(DecisionPortfolioSnapshot.builder()
                 .runId(1L)
                 .portfolioId(3L)
                 .actionDate(ACTION_DATE)
@@ -217,7 +217,7 @@ class DecisionPortfolioSnapshotManagerTest {
     }
 
     private DecisionRun run(Long id) {
-        return DecisionRun.builder().id(id).actionDate(ACTION_DATE).build();
+        return DecisionRun.builder().id(id).userId(7L).actionDate(ACTION_DATE).build();
     }
 
     private MarketRegimeResult balanceRegime() {

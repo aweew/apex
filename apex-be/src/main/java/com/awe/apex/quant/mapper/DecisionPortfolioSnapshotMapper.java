@@ -17,6 +17,7 @@ public interface DecisionPortfolioSnapshotMapper extends BaseMapper<DecisionPort
     /**
      * 查询指定决策日最近一次成功的非回放组合快照
      *
+     * @param userId     所属用户ID
      * @param actionDate 决策日
      * @return 历史组合快照
      */
@@ -29,8 +30,10 @@ public interface DecisionPortfolioSnapshotMapper extends BaseMapper<DecisionPort
               AND t2.mode = 'LIVE'
               AND t2.status = 'SUCCESS'
               AND t2.published = 1
+              AND t2.user_id = #{userId}
             ORDER BY t1.id DESC
             LIMIT 1
             """)
-    DecisionPortfolioSnapshot selectHistorical(@Param("actionDate") LocalDate actionDate);
+    DecisionPortfolioSnapshot selectHistorical(@Param("userId") Long userId,
+                                               @Param("actionDate") LocalDate actionDate);
 }

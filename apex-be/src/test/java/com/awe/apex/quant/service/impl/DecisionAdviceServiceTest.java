@@ -2,6 +2,7 @@ package com.awe.apex.quant.service.impl;
 
 import cn.hutool.extra.spring.SpringUtil;
 import com.awe.apex.quant.ai.KimiChatClient;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.DecisionPortfolioHolding;
 import com.awe.apex.quant.domain.entity.DailyAction;
@@ -66,6 +67,9 @@ class DecisionAdviceServiceTest {
         ReflectionTestUtils.setField(service, "decisionRunMapper", decisionRunMapper);
         ReflectionTestUtils.setField(service, "decisionPortfolioSnapshotMapper", snapshotMapper);
         ReflectionTestUtils.setField(service, "kimiChatClient", kimiChatClient);
+        ApexUserContext userContext = mock(ApexUserContext.class);
+        ReflectionTestUtils.setField(service, "userContext", userContext);
+        when(userContext.currentUserId()).thenReturn(7L);
         when(kimiChatClient.available()).thenReturn(false);
     }
 
@@ -82,7 +86,7 @@ class DecisionAdviceServiceTest {
                 .action("SELL").executableHint(0).reason("触及止损").build();
         when(dailyActionMapper.selectList(any())).thenReturn(List.of(buy, sell));
         when(decisionRunMapper.selectById(9L)).thenReturn(DecisionRun.builder()
-                .id(9L).runNo("RUN-9").actionDate(ACTION_DATE).build());
+                .id(9L).userId(7L).runNo("RUN-9").actionDate(ACTION_DATE).build());
         List<DecisionPortfolioHolding> holdings = List.of(DecisionPortfolioHolding.builder()
                 .code("600000").quantity(500).marketPrice(new BigDecimal("8"))
                 .marketValue(new BigDecimal("4000")).stopLoss(new BigDecimal("7.50"))
@@ -118,7 +122,7 @@ class DecisionAdviceServiceTest {
                 .referencePrice(new BigDecimal("10")).executableHint(1).reason("组合回撤降仓").build();
         when(dailyActionMapper.selectList(any())).thenReturn(List.of(reduce));
         when(decisionRunMapper.selectById(9L)).thenReturn(DecisionRun.builder()
-                .id(9L).runNo("RUN-9").actionDate(ACTION_DATE).build());
+                .id(9L).userId(7L).runNo("RUN-9").actionDate(ACTION_DATE).build());
         List<DecisionPortfolioHolding> holdings = List.of(DecisionPortfolioHolding.builder()
                 .code("600000").quantity(2000).marketPrice(new BigDecimal("10"))
                 .marketValue(new BigDecimal("20000")).build());
@@ -146,7 +150,7 @@ class DecisionAdviceServiceTest {
                 .action("SELL").executableHint(1).reason("触及止损").build();
         when(dailyActionMapper.selectList(any())).thenReturn(List.of(sell));
         when(decisionRunMapper.selectById(9L)).thenReturn(DecisionRun.builder()
-                .id(9L).runNo("RUN-9").actionDate(ACTION_DATE).build());
+                .id(9L).userId(7L).runNo("RUN-9").actionDate(ACTION_DATE).build());
         when(snapshotMapper.selectOne(any())).thenReturn(DecisionPortfolioSnapshot.builder()
                 .runId(9L).actionDate(ACTION_DATE).cash(new BigDecimal("100000"))
                 .marketValue(BigDecimal.ZERO).totalEquity(new BigDecimal("100000"))
@@ -171,7 +175,7 @@ class DecisionAdviceServiceTest {
                 .referencePrice(new BigDecimal("10")).executableHint(1).reason("风险预算通过").build();
         when(dailyActionMapper.selectList(any())).thenReturn(List.of(buy));
         when(decisionRunMapper.selectById(9L)).thenReturn(DecisionRun.builder()
-                .id(9L).runNo("RUN-9").actionDate(ACTION_DATE).build());
+                .id(9L).userId(7L).runNo("RUN-9").actionDate(ACTION_DATE).build());
         when(snapshotMapper.selectOne(any())).thenReturn(DecisionPortfolioSnapshot.builder()
                 .runId(9L).actionDate(ACTION_DATE).cash(new BigDecimal("100000"))
                 .marketValue(BigDecimal.ZERO).totalEquity(new BigDecimal("100000"))
@@ -195,7 +199,7 @@ class DecisionAdviceServiceTest {
                 .executableHint(0).reason("继续持有").build();
         when(dailyActionMapper.selectList(any())).thenReturn(List.of(hold));
         when(decisionRunMapper.selectById(9L)).thenReturn(DecisionRun.builder()
-                .id(9L).runNo("RUN-9").actionDate(ACTION_DATE).build());
+                .id(9L).userId(7L).runNo("RUN-9").actionDate(ACTION_DATE).build());
         List<DecisionPortfolioHolding> holdings = List.of(DecisionPortfolioHolding.builder()
                 .code("600000").quantity(6000).marketPrice(new BigDecimal("10"))
                 .marketValue(new BigDecimal("60000")).build());

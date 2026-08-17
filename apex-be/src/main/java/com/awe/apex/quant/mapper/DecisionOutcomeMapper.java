@@ -104,6 +104,7 @@ public interface DecisionOutcomeMapper extends BaseMapper<DecisionOutcome> {
     /**
      * 查询各策略已成熟的五日超额表现
      *
+     * @param userId 所属用户ID
      * @return 策略表现聚合行
      */
     @Select("""
@@ -124,8 +125,9 @@ public interface DecisionOutcomeMapper extends BaseMapper<DecisionOutcome> {
               AND t3.mode = 'LIVE'
               AND t3.status = 'SUCCESS'
               AND t3.published = 1
+              AND t3.user_id = #{userId}
               AND t1.create_time >= DATE_SUB(NOW(), INTERVAL 365 DAY)
             GROUP BY JSON_UNQUOTE(JSON_EXTRACT(t1.feature_json, '$.strategyId'))
             """)
-    List<DecisionStrategyPerformance> selectStrategyPerformance();
+    List<DecisionStrategyPerformance> selectStrategyPerformance(@org.apache.ibatis.annotations.Param("userId") Long userId);
 }

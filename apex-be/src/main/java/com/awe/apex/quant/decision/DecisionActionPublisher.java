@@ -41,20 +41,23 @@ public class DecisionActionPublisher {
                         String dataLevel, String message) {
         LocalDate actionDate = run.getActionDate();
         decisionRunMapper.selectList(Wrappers.<DecisionRun>lambdaQuery()
+                .eq(DecisionRun::getUserId, run.getUserId())
                 .eq(DecisionRun::getActionDate, actionDate)
                 .last("FOR UPDATE"));
         dailyActionMapper.delete(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getUserId, run.getUserId())
                 .eq(DailyAction::getActionDate, actionDate));
         LocalDateTime now = LocalDateTime.now();
         int rank = 0;
         for (DecisionItemResp item : items) {
-            DailyAction row = toAction(actionDate, run.getId(), ++rank, item, now);
+            DailyAction row = toAction(actionDate, run.getId(), run.getUserId(), ++rank, item, now);
             if (dailyActionMapper.insert(row) != 1) {
                 throw new BusinessException("决策动作发布失败，code=" + item.getCode());
             }
             item.setId(row.getId());
         }
         decisionRunMapper.update(null, new UpdateWrapper<DecisionRun>()
+                .eq("user_id", run.getUserId())
                 .eq("action_date", actionDate)
                 .ne("id", run.getId())
                 .eq("published", 1)
@@ -71,9 +74,10 @@ public class DecisionActionPublisher {
         }
     }
 
-    private DailyAction toAction(LocalDate actionDate, Long runId, int rank,
+    private DailyAction toAction(LocalDate actionDate, Long runId, Long userId, int rank,
                                  DecisionItemResp item, LocalDateTime now) {
         return DailyAction.builder()
+                .userId(userId)
                 .runId(runId)
                 .rankNo(rank)
                 .actionDate(actionDate)

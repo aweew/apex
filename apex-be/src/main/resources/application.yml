@@ -99,6 +99,8 @@ apex:
     enabled: ${APEX_BOT_ENABLED:false}
     client-key: ${APEX_BOT_CLIENT_KEY:}
     client-secret: ${APEX_BOT_CLIENT_SECRET:}
+    apex-user-id: ${APEX_BOT_APEX_USER_ID:}
+    external-user-id: ${APEX_BOT_EXTERNAL_USER_ID:}
     timestamp-tolerance-seconds: ${APEX_BOT_TIMESTAMP_TOLERANCE_SECONDS:300}
     notification-cooldown-seconds: ${APEX_BOT_NOTIFICATION_COOLDOWN_SECONDS:1800}
     mover-threshold: ${APEX_BOT_MOVER_THRESHOLD:5}

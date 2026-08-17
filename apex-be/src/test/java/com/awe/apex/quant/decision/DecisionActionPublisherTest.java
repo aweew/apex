@@ -46,6 +46,7 @@ class DecisionActionPublisherTest {
 
         DecisionRun run = DecisionRun.builder()
                 .id(12L)
+                .userId(7L)
                 .actionDate(LocalDate.of(2026, 8, 7))
                 .build();
         publisher.publish(run, items, "GREEN", "完成");
@@ -53,6 +54,7 @@ class DecisionActionPublisherTest {
         ArgumentCaptor<DailyAction> captor = ArgumentCaptor.forClass(DailyAction.class);
         verify(mapper, times(2)).insert(captor.capture());
         assertEquals(12L, captor.getAllValues().get(0).getRunId());
+        assertEquals(7L, captor.getAllValues().get(0).getUserId());
         assertEquals(1, captor.getAllValues().get(0).getRankNo());
         assertEquals(2, captor.getAllValues().get(1).getRankNo());
         assertEquals("PUBLISHED", captor.getAllValues().get(0).getDecisionStatus());

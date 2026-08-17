@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.mapper.BarDailyMapper;
@@ -49,7 +50,10 @@ class DecisionAttributionServiceTest {
         ReflectionTestUtils.setField(service, "barDailyMapper", barDailyMapper);
         ReflectionTestUtils.setField(service, "marketBriefingSnapshotMapper", marketBriefingSnapshotMapper);
         ReflectionTestUtils.setField(service, "decisionOutcomeMapper", decisionOutcomeMapper);
-        when(decisionOutcomeMapper.selectStrategyPerformance()).thenReturn(List.of());
+        ApexUserContext userContext = mock(ApexUserContext.class);
+        ReflectionTestUtils.setField(service, "userContext", userContext);
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(decisionOutcomeMapper.selectStrategyPerformance(7L)).thenReturn(List.of());
     }
 
     @Test
@@ -63,8 +67,8 @@ class DecisionAttributionServiceTest {
                 .build();
         when(dailyActionMapper.selectList(any())).thenAnswer(invocation -> {
             AbstractWrapper<?, ?, ?> wrapper = invocation.getArgument(0);
-            wrapper.getSqlSegment();
-            if (wrapper.getParamNameValuePairs().isEmpty()) {
+            String sql = wrapper.getSqlSegment();
+            if (sql.contains("GROUP BY")) {
                 return List.of(dateRow);
             }
             if (wrapper.getParamNameValuePairs().containsValue("REDUCE")) {

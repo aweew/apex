@@ -24,6 +24,7 @@ public class JournalTrade implements Serializable {
     @Serial private static final long serialVersionUID = 1L;
     @TableId(type = IdType.AUTO)
     private Long id;
+    /** 所属用户ID */ private Long userId;
     /** 成交日 */ private LocalDate tradeDate;
     /** 证券代码 */ private String code;
     /** BUY/SELL */ private String side;

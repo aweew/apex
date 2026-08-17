@@ -1,6 +1,6 @@
 package com.awe.apex.quant.service.impl;
 
-import cn.dev33.satoken.stp.StpUtil;
+import com.awe.apex.quant.context.ApexUserContext;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
@@ -59,6 +59,9 @@ import java.util.Set;
 @Slf4j
 @Service
 public class MyHoldingServiceImpl implements IMyHoldingService {
+
+    @Resource
+    private ApexUserContext userContext;
 
     private static final int TECH_LOOKBACK_DAYS = 120;
 
@@ -346,6 +349,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     public Map<String, Object> refreshQuotes(Boolean onlyMissing) {
         boolean missingOnly = !Boolean.FALSE.equals(onlyMissing);
         List<MyHolding> list = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
+                .eq(MyHolding::getUserId, currentUserId())
                 .orderByAsc(MyHolding::getCode));
         List<String> codes = new ArrayList<>();
         for (MyHolding holding : list) {
@@ -900,6 +904,6 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     }
 
     private Long currentUserId() {
-        return StpUtil.getLoginIdAsLong();
+        return userContext.currentUserId();
     }
 }

@@ -7,6 +7,7 @@ import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.ai.AiChatProperties;
 import com.awe.apex.quant.ai.KimiChatClient;
 import com.awe.apex.quant.cache.RedisCacheService;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.decision.DecisionContext;
 import com.awe.apex.quant.decision.DecisionActionPublisher;
 import com.awe.apex.quant.decision.DecisionDataReadiness;
@@ -225,6 +226,9 @@ public class DecisionServiceImpl implements IDecisionService {
     @Resource
     private RedisCacheService redisCacheService;
 
+    @Resource
+    private ApexUserContext userContext;
+
     private static final BigDecimal FALLBACK_STOP_PCT = new BigDecimal("0.08");
     private static final BigDecimal FALLBACK_TAKE_PCT = new BigDecimal("0.20");
     private static final String BUY_AI_DISCLAIMER = "AI 总结仅供研究参考，不构成投资建议；请结合本地规则评分与风控自行决策。";
@@ -332,7 +336,7 @@ public class DecisionServiceImpl implements IDecisionService {
         // 3. 跑 S1/S2/S3：全A质量池 + 热点；持仓仅附加以便产出卖出信号（观察池不同步卖出）
         List<String> signalCodes = new ArrayList<>();
         Set<String> signalCodeSet = new HashSet<>();
-        List<UniverseSnapshot> universeList = universeService.latest();
+        List<UniverseSnapshot> universeList = universeService.listByBatchNo(universeResp.getBatchNo());
         if (CollUtil.isNotEmpty(universeList)) {
             for (UniverseSnapshot snapshot : universeList) {
                 if (StringUtils.isNotBlank(snapshot.getCode()) && signalCodeSet.add(snapshot.getCode())) {
@@ -1404,6 +1408,7 @@ public class DecisionServiceImpl implements IDecisionService {
         LocalDate actionDate = Objects.nonNull(date) ? date : LocalDate.now();
         String group = StringUtils.isNotBlank(groupName) ? groupName.trim() : "我的自选";
         List<DailyAction> rows = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getUserId, userContext.currentUserId())
                 .eq(DailyAction::getActionDate, actionDate)
                 .orderByAsc(DailyAction::getAction)
                 .orderByDesc(DailyAction::getScore));
@@ -1555,7 +1560,9 @@ public class DecisionServiceImpl implements IDecisionService {
         }
         for (DailyAction row : rows) {
             if (Objects.nonNull(row.getRunId())) {
-                return decisionRunMapper.selectById(row.getRunId());
+                DecisionRun run = decisionRunMapper.selectById(row.getRunId());
+                return Objects.nonNull(run) && Objects.equals(run.getUserId(), userContext.currentUserId())
+                        ? run : null;
             }
         }
         return null;
@@ -1571,6 +1578,7 @@ public class DecisionServiceImpl implements IDecisionService {
     public DecisionAdviceResp advice(LocalDate date) {
         LocalDate actionDate = Objects.nonNull(date) ? date : LocalDate.now();
         List<DailyAction> actions = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getUserId, userContext.currentUserId())
                 .eq(DailyAction::getActionDate, actionDate)
                 .orderByAsc(DailyAction::getRankNo)
                 .orderByDesc(DailyAction::getScore));
@@ -1815,6 +1823,7 @@ public class DecisionServiceImpl implements IDecisionService {
         // 1. 先取近 N 个不重复 action_date，避免 LIMIT 500 全表扫
         List<DailyAction> dateRows = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
                 .select(DailyAction::getActionDate)
+                .eq(DailyAction::getUserId, userContext.currentUserId())
                 .isNotNull(DailyAction::getActionDate)
                 .groupBy(DailyAction::getActionDate)
                 .orderByDesc(DailyAction::getActionDate)
@@ -1833,6 +1842,7 @@ public class DecisionServiceImpl implements IDecisionService {
         }
         // 2. 按日期 in 查询明细
         List<DailyAction> recent = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getUserId, userContext.currentUserId())
                 .in(DailyAction::getActionDate, dates)
                 .orderByDesc(DailyAction::getActionDate));
         LinkedHashMap<LocalDate, List<DailyAction>> byDate = new LinkedHashMap<>();
@@ -1934,6 +1944,7 @@ public class DecisionServiceImpl implements IDecisionService {
         int size = Objects.isNull(days) || days <= 0 ? 20 : Math.min(days, 60);
         List<DailyAction> dateRows = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
                 .select(DailyAction::getActionDate)
+                .eq(DailyAction::getUserId, userContext.currentUserId())
                 .isNotNull(DailyAction::getActionDate)
                 .groupBy(DailyAction::getActionDate)
                 .orderByDesc(DailyAction::getActionDate)
@@ -1957,9 +1968,11 @@ public class DecisionServiceImpl implements IDecisionService {
             }
         }
         List<DailyAction> buys = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getUserId, userContext.currentUserId())
                 .in(DailyAction::getActionDate, dates)
                 .eq(DailyAction::getAction, "BUY"));
         List<DailyAction> sells = dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getUserId, userContext.currentUserId())
                 .in(DailyAction::getActionDate, dates)
                 .in(DailyAction::getAction, List.of("SELL", "REDUCE")));
 
@@ -2013,7 +2026,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 .byMainline(toBuckets(byMl))
                 .byStance(toBuckets(byStance))
                 .bySellStrategy(toBuckets(bySellStrategy))
-                .matureStrategyPerformance(decisionOutcomeMapper.selectStrategyPerformance())
+                .matureStrategyPerformance(decisionOutcomeMapper.selectStrategyPerformance(userContext.currentUserId()))
                 .message("近 " + dates.size() + " 个决策日 · 买 " + buys.size()
                         + " / 卖 " + sells.size() + " · 按次日涨跌归因（缺日线样本不计入均值）")
                 .build();
@@ -2171,7 +2184,8 @@ public class DecisionServiceImpl implements IDecisionService {
 
     private String buildBuyAiCacheKey(LocalDate actionDate, List<DecisionItemResp> buys) {
         StringBuilder sb = new StringBuilder();
-        sb.append(BUY_AI_CACHE_PREFIX).append(actionDate).append('|');
+        sb.append(BUY_AI_CACHE_PREFIX).append(userContext.currentUserId()).append('|')
+                .append(actionDate).append('|');
         int n = Math.min(buys.size(), 12);
         for (int i = 0; i < n; i++) {
             DecisionItemResp item = buys.get(i);

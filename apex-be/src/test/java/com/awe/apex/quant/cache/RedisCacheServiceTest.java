@@ -2,7 +2,8 @@ package com.awe.apex.quant.cache;
 
 import com.awe.apex.common.util.SpringUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -20,11 +21,19 @@ import static org.mockito.Mockito.when;
 
 class RedisCacheServiceTest {
 
-    @BeforeEach
-    void setUpJsonUtils() {
+    private static ApplicationContext originalApplicationContext;
+
+    @BeforeAll
+    static void setUpJsonUtils() {
+        originalApplicationContext = SpringUtils.getApplicationContext();
         ApplicationContext applicationContext = mock(ApplicationContext.class);
-        when(applicationContext.getBean(ObjectMapper.class)).thenReturn(new ObjectMapper());
+        when(applicationContext.getBean(ObjectMapper.class)).thenReturn(new ObjectMapper().findAndRegisterModules());
         new SpringUtils().setApplicationContext(applicationContext);
+    }
+
+    @AfterAll
+    static void restoreApplicationContext() {
+        new SpringUtils().setApplicationContext(originalApplicationContext);
     }
 
     @Test

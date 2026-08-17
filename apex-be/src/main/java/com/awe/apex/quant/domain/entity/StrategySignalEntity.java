@@ -35,6 +35,11 @@ public class StrategySignalEntity implements Serializable {
     private Long id;
 
     /**
+     * 所属用户ID
+     */
+    private Long userId;
+
+    /**
      * 证券代码
      */
     private String code;

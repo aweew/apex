@@ -24,6 +24,7 @@ public class DailyAction implements Serializable {
     @Serial private static final long serialVersionUID = 1L;
     @TableId(type = IdType.AUTO)
     private Long id;
+    /** 所属用户ID */ private Long userId;
     /** 清单日期 */ private LocalDate actionDate;
     /** 决策运行ID */ private Long runId;
     /** 运行内排序 */ private Integer rankNo;

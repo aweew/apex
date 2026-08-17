@@ -1,12 +1,12 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
-import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.ObserveGuideTemplateResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.ObservePoolSaveReq;
 import com.awe.apex.quant.domain.dto.ObserveTechSignal;
 import com.awe.apex.quant.domain.dto.ValuationBriefResp;
@@ -49,6 +49,9 @@ import java.util.Set;
 @Slf4j
 @Service
 public class ObservePoolServiceImpl implements IObservePoolService {
+
+    @Resource
+    private ApexUserContext userContext;
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final BigDecimal HUNDRED = new BigDecimal("100");
@@ -172,6 +175,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
     public List<ObservePoolResp> listReadyAlerts(int limit) {
         int cap = limit > 0 ? limit : 6;
         List<ObservePool> rows = observePoolMapper.selectList(Wrappers.<ObservePool>lambdaQuery()
+                .eq(ObservePool::getUserId, currentUserId())
                 .ne(ObservePool::getStatus, "ARCHIVED")
                 .orderByAsc(ObservePool::getPriority)
                 .orderByDesc(ObservePool::getUpdateTime));
@@ -427,6 +431,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> refresh() {
         List<ObservePool> rows = observePoolMapper.selectList(Wrappers.<ObservePool>lambdaQuery()
+                .eq(ObservePool::getUserId, currentUserId())
                 .notIn(ObservePool::getStatus, List.of("ARCHIVED"))
                 .orderByAsc(ObservePool::getPriority));
         Map<String, StockBasic> basics = loadBasics(rows);
@@ -673,6 +678,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
      */
     private int archiveAutoSellRows() {
         List<ObservePool> sellRows = observePoolMapper.selectList(Wrappers.<ObservePool>lambdaQuery()
+                .eq(ObservePool::getUserId, currentUserId())
                 .eq(ObservePool::getSide, "SELL")
                 .ne(ObservePool::getStatus, "ARCHIVED")
                 .and(w -> w.like(ObservePool::getTags, "决策")
@@ -812,12 +818,14 @@ public class ObservePoolServiceImpl implements IObservePoolService {
 
         LocalDateTime now = LocalDateTime.now();
         ObservePool exist = observePoolMapper.selectOne(Wrappers.<ObservePool>lambdaQuery()
+                .eq(ObservePool::getUserId, currentUserId())
                 .eq(ObservePool::getCode, code)
                 .eq(ObservePool::getSide, side)
                 .ne(ObservePool::getStatus, "ARCHIVED")
                 .last("LIMIT 1"));
         if (Objects.isNull(exist) && moodSide) {
             ObservePool legacyHot = observePoolMapper.selectOne(Wrappers.<ObservePool>lambdaQuery()
+                    .eq(ObservePool::getUserId, currentUserId())
                     .eq(ObservePool::getCode, code)
                     .eq(ObservePool::getSide, "BUY")
                     .ne(ObservePool::getStatus, "ARCHIVED")
@@ -831,6 +839,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         }
         if (Objects.isNull(exist)) {
             ObservePool legacy = observePoolMapper.selectOne(Wrappers.<ObservePool>lambdaQuery()
+                    .eq(ObservePool::getUserId, currentUserId())
                     .eq(ObservePool::getCode, code)
                     .ne(ObservePool::getStatus, "ARCHIVED")
                     .last("LIMIT 1"));
@@ -871,6 +880,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         }
 
         ObservePool created = ObservePool.builder()
+                .userId(currentUserId())
                 .code(code)
                 .name(name)
                 .market(market)
@@ -1783,6 +1793,6 @@ public class ObservePoolServiceImpl implements IObservePoolService {
     }
 
     private Long currentUserId() {
-        return StpUtil.getLoginIdAsLong();
+        return userContext.currentUserId();
     }
 }

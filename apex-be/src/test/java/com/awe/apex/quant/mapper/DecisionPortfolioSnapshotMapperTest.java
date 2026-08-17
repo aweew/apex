@@ -12,12 +12,13 @@ class DecisionPortfolioSnapshotMapperTest {
     @Test
     void historicalSnapshotUsesPublishedLiveRunOnly() throws Exception {
         Method method = DecisionPortfolioSnapshotMapper.class
-                .getMethod("selectHistorical", java.time.LocalDate.class);
+                .getMethod("selectHistorical", Long.class, java.time.LocalDate.class);
         String sql = String.join(" ", method.getAnnotation(Select.class).value())
                 .replaceAll("\\s+", " ");
 
         assertTrue(sql.contains("t2.mode = 'LIVE'"));
         assertTrue(sql.contains("t2.status = 'SUCCESS'"));
         assertTrue(sql.contains("t2.published = 1"));
+        assertTrue(sql.contains("t2.user_id = #{userId}"));
     }
 }

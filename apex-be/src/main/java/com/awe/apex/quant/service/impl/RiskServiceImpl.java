@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.RiskAlertItem;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
 import com.awe.apex.quant.domain.dto.RiskRuleUpdateReq;
@@ -17,6 +18,7 @@ import com.awe.apex.quant.mapper.RiskRuleMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IRiskService;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -52,12 +54,15 @@ public class RiskServiceImpl implements IRiskService {
     @Resource
     private StockBasicMapper stockBasicMapper;
 
+    @Resource
+    private ApexUserContext userContext;
+
+    @Resource
+    private ApexUserAuthService userAuthService;
+
     @Override
     public RiskOverviewResp overview(Long accountId) {
-        PaperAccount account = paperAccountMapper.selectById(accountId);
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         BigDecimal totalLimit = ruleDecimal("total_position_limit", new BigDecimal("0.80"));
         BigDecimal singleLimit = ruleDecimal("single_stock_limit", new BigDecimal("0.15"));
         BigDecimal industryLimit = ruleDecimal("industry_limit", new BigDecimal("0.30"));
@@ -175,10 +180,7 @@ public class RiskServiceImpl implements IRiskService {
         if (!"BUY".equalsIgnoreCase(side)) {
             return;
         }
-        PaperAccount account = paperAccountMapper.selectById(accountId);
-        if (Objects.isNull(account)) {
-            throw new BusinessException("账户不存在");
-        }
+        PaperAccount account = requireOwnedAccount(accountId);
         BigDecimal amount = price.multiply(BigDecimal.valueOf(quantity));
         if (account.getCash().compareTo(amount) < 0) {
             throw new BusinessException("资金不足");
@@ -246,6 +248,7 @@ public class RiskServiceImpl implements IRiskService {
      */
     @Override
     public RiskRule updateRule(RiskRuleUpdateReq req) {
+        userAuthService.requireAdmin();
         if (Objects.isNull(req) || StringUtils.isBlank(req.getRuleKey()) || StringUtils.isBlank(req.getRuleValue())) {
             throw new BusinessException("规则键值不能为空");
         }
@@ -284,6 +287,7 @@ public class RiskServiceImpl implements IRiskService {
      */
     @Override
     public List<RiskRule> applyPreset(String preset) {
+        userAuthService.requireAdmin();
         String name = StringUtils.isBlank(preset) ? "balanced" : preset.trim().toLowerCase();
         Map<String, String> values = new LinkedHashMap<>();
         if ("conservative".equals(name) || "保守".equals(preset)) {
@@ -324,6 +328,19 @@ public class RiskServiceImpl implements IRiskService {
             return defaultValue;
         }
         return new BigDecimal(rule.getRuleValue());
+    }
+
+    private PaperAccount requireOwnedAccount(Long accountId) {
+        Long currentUserId = userContext.currentUserIdOrNull();
+        if (Objects.isNull(currentUserId)) {
+            throw new BusinessException("未获取到当前用户");
+        }
+        PaperAccount account = paperAccountMapper.selectById(accountId);
+        if (Objects.isNull(account)
+                || !Objects.equals(currentUserId, account.getUserId())) {
+            throw new BusinessException("账户不存在");
+        }
+        return account;
     }
 
     private BigDecimal latestClose(String code) {

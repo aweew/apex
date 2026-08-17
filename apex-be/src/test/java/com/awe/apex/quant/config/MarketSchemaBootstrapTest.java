@@ -94,6 +94,18 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "ALTER TABLE backtest_experiment ADD COLUMN price_adjustment");
         assertContains(executed, "ALTER TABLE backtest_experiment ADD COLUMN init_cash");
         assertContains(executed, "KEY idx_backtest_experiment_user_id (user_id, id)");
+        assertContains(executed, "ALTER TABLE sync_job ADD COLUMN user_id");
+        assertContains(executed, "ADD KEY idx_sync_job_user_type_status");
+        assertContains(executed, "ALTER TABLE decision_run ADD COLUMN user_id");
+        assertContains(executed, "ADD KEY idx_decision_run_user_publish");
+        assertContains(executed, "ALTER TABLE daily_action ADD COLUMN user_id");
+        assertContains(executed, "ADD KEY idx_daily_action_user_date");
+        assertContains(executed, "ALTER TABLE journal_trade ADD COLUMN user_id");
+        assertContains(executed, "ADD KEY idx_journal_trade_user_date");
+        assertContains(executed, "ALTER TABLE strategy_signal ADD COLUMN user_id");
+        assertContains(executed, "ADD KEY idx_strategy_signal_user_date");
+        assertContains(executed, "ADD UNIQUE KEY uk_watchlist_user_code_group");
+        assertContains(executed, "ADD UNIQUE KEY uk_my_holding_user_code");
     }
 
     @Test
@@ -108,6 +120,8 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "CREATE TABLE IF NOT EXISTS decision_outcome");
         assertContains(executed, "CREATE TABLE IF NOT EXISTS decision_portfolio_snapshot");
         assertContains(executed, "CREATE TABLE IF NOT EXISTS backtest_experiment");
+        assertContains(executed, "DROP INDEX uk_watchlist_code_group");
+        assertContains(executed, "DROP INDEX uk_my_holding_code");
     }
 
     @Test

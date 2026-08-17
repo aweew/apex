@@ -47,7 +47,7 @@ A portfolio update is successful only when `scripts/apex_tool.sh` returns a succ
 
 Before that successful response, never say or imply that the portfolio was updated, saved, recorded, or will be tracked. In particular, never say that data was saved to `memory/...`; agent memory is not the Apex portfolio database. On a validation error, tool error, unavailable attachment, or missing code, clearly state that the portfolio was not changed and return the Apex error when one exists.
 
-Configure `APEX_BOT_BASE_URL`, `APEX_BOT_CLIENT_KEY`, and `APEX_BOT_CLIENT_SECRET` in the OpenClaw runtime. Never print, persist, or send these credentials anywhere except the configured Apex endpoint.
+Configure `APEX_BOT_BASE_URL`, `APEX_BOT_CLIENT_KEY`, `APEX_BOT_CLIENT_SECRET`, and `APEX_BOT_EXTERNAL_USER_ID` in the OpenClaw runtime. Never print, persist, or send these credentials anywhere except the configured Apex endpoint. The external user ID must be the actual sender identity bound to this HMAC client in Apex; never replace it with another sender ID.
 
 ## Record A Trade Event
 

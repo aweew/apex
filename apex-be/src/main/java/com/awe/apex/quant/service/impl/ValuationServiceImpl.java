@@ -2,6 +2,7 @@ package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.ValuationBriefResp;
 import com.awe.apex.quant.domain.dto.ValuationDimensionResp;
 import com.awe.apex.quant.domain.dto.ValuationResp;
@@ -59,6 +60,9 @@ public class ValuationServiceImpl implements IValuationService {
 
     @Resource
     private ObservePoolMapper observePoolMapper;
+
+    @Resource
+    private ApexUserContext userContext;
 
     /**
      * 个股完整估值
@@ -997,7 +1001,9 @@ public class ValuationServiceImpl implements IValuationService {
     private List<String> resolveUniverseCodes(String universe, int max) {
         if ("watchlist".equals(universe)) {
             List<Watchlist> list = watchlistMapper.selectList(
-                    new LambdaQueryWrapper<Watchlist>().last("LIMIT " + max));
+                    new LambdaQueryWrapper<Watchlist>()
+                            .eq(Watchlist::getUserId, userContext.currentUserId())
+                            .last("LIMIT " + max));
             List<String> codes = new ArrayList<>();
             for (Watchlist w : list) {
                 if (Objects.nonNull(w) && StringUtils.isNotBlank(w.getCode())) {
@@ -1009,6 +1015,7 @@ public class ValuationServiceImpl implements IValuationService {
         if ("observe".equals(universe)) {
             List<ObservePool> list = observePoolMapper.selectList(
                     new LambdaQueryWrapper<ObservePool>()
+                            .eq(ObservePool::getUserId, userContext.currentUserId())
                             .ne(ObservePool::getStatus, "ARCHIVED")
                             .last("LIMIT " + max));
             List<String> codes = new ArrayList<>();

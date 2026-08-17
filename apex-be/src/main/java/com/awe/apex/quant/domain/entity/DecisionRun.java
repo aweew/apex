@@ -29,6 +29,8 @@ public class DecisionRun implements Serializable {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    /** 所属用户ID */
+    private Long userId;
     private String runNo;
     private LocalDate actionDate;
     private LocalDateTime asOfTime;

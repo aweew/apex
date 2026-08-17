@@ -85,6 +85,8 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     "ALTER TABLE daily_action ADD COLUMN executable_hint TINYINT NULL");
             log.info("schema ready: daily_action attribution/valuation columns");
             ensureStrategyLabSchema();
+            ensureUserIsolationSchema();
+            ensureUserScopedAssetIndexes();
             jdbcTemplate.execute("""
                     CREATE TABLE IF NOT EXISTS observe_pool (
                         id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -261,6 +263,49 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
         log.info("schema ready: strategy lab");
     }
 
+    /**
+     * 后台任务、决策、日记和策略信号的用户隔离结构
+     */
+    private void ensureUserIsolationSchema() {
+        ensureColumn("sync_job", "user_id",
+                "ALTER TABLE sync_job ADD COLUMN user_id BIGINT NULL COMMENT '用户私有任务所属用户ID，共享任务为空' AFTER id");
+        ensureIndex("sync_job", "idx_sync_job_user_type_status",
+                "ALTER TABLE sync_job ADD KEY idx_sync_job_user_type_status (user_id, task_type, status, id)");
+
+        ensureColumn("decision_run", "user_id",
+                "ALTER TABLE decision_run ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
+        ensureIndex("decision_run", "idx_decision_run_user_publish",
+                "ALTER TABLE decision_run ADD KEY idx_decision_run_user_publish (user_id, action_date, published, status)");
+
+        ensureColumn("daily_action", "user_id",
+                "ALTER TABLE daily_action ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
+        ensureIndex("daily_action", "idx_daily_action_user_date",
+                "ALTER TABLE daily_action ADD KEY idx_daily_action_user_date (user_id, action_date, rank_no)");
+
+        ensureColumn("journal_trade", "user_id",
+                "ALTER TABLE journal_trade ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
+        ensureIndex("journal_trade", "idx_journal_trade_user_date",
+                "ALTER TABLE journal_trade ADD KEY idx_journal_trade_user_date (user_id, trade_date, id)");
+
+        ensureColumn("strategy_signal", "user_id",
+                "ALTER TABLE strategy_signal ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
+        ensureIndex("strategy_signal", "idx_strategy_signal_user_date",
+                "ALTER TABLE strategy_signal ADD KEY idx_strategy_signal_user_date (user_id, signal_date, id)");
+        log.info("schema ready: user isolation");
+    }
+
+    /**
+     * 自选和兼容持仓表的唯一约束按用户分区
+     */
+    private void ensureUserScopedAssetIndexes() {
+        ensureIndex("watchlist", "uk_watchlist_user_code_group",
+                "ALTER TABLE watchlist ADD UNIQUE KEY uk_watchlist_user_code_group (user_id, code, group_name)");
+        ensureIndex("my_holding", "uk_my_holding_user_code",
+                "ALTER TABLE my_holding ADD UNIQUE KEY uk_my_holding_user_code (user_id, code)");
+        dropIndex("watchlist", "uk_watchlist_code_group");
+        dropIndex("my_holding", "uk_my_holding_code");
+        log.info("schema ready: user scoped asset unique indexes");
+    }
 
     /**
      * 个股三种市盈率口径
@@ -679,6 +724,17 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
         }
     }
 
+    /**
+     * 删除不再适用的索引
+     *
+     * @param table     表名
+     * @param indexName 索引名
+     */
+    private void dropIndex(String table, String indexName) {
+        if (indexExists(table, indexName)) {
+            jdbcTemplate.execute("ALTER TABLE " + table + " DROP INDEX " + indexName);
+        }
+    }
 
     /**
      * 将完成回填的业务列收紧为非空

@@ -5,6 +5,7 @@ import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.bot.service.IBotToolService;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BotHoldingInput;
 import com.awe.apex.quant.domain.dto.BotToolReq;
 import com.awe.apex.quant.domain.dto.BotToolResp;
@@ -60,6 +61,9 @@ public class BotToolServiceImpl implements IBotToolService {
 
     @Resource
     private StockBasicMapper stockBasicMapper;
+
+    @Resource
+    private ApexUserContext userContext;
 
     @Resource
     private ISmartTraderAnalyticsService smartTraderAnalyticsService;
@@ -262,7 +266,9 @@ public class BotToolServiceImpl implements IBotToolService {
             throw new BusinessException("请指定组合名称");
         }
         List<Portfolio> portfolios = portfolioMapper.selectList(Wrappers.<Portfolio>lambdaQuery()
-                .eq(Portfolio::getName, name.trim()).eq(Portfolio::getStatus, "ACTIVE"));
+                .eq(Portfolio::getUserId, userContext.currentUserId())
+                .eq(Portfolio::getName, name.trim())
+                .eq(Portfolio::getStatus, "ACTIVE"));
         if (CollUtil.isEmpty(portfolios)) {
             throw new BusinessException("未找到组合: " + name);
         }

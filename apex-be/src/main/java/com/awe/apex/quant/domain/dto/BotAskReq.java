@@ -23,8 +23,9 @@ public class BotAskReq {
     private String requestId;
 
     /**
-     * 微信用户标识，可空。
+     * 微信用户标识。
      */
+    @NotBlank(message = "微信用户不能为空")
     @Size(max = 120)
     private String userId;
 

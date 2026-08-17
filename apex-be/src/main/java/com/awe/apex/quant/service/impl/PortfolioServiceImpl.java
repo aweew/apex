@@ -1,7 +1,6 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
-import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
@@ -12,6 +11,7 @@ import com.awe.apex.quant.domain.dto.PortfolioImportResp;
 import com.awe.apex.quant.domain.dto.PortfolioOrderReq;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.PortfolioTopHoldingResp;
 import com.awe.apex.quant.domain.dto.ObserveTechSignal;
 import com.awe.apex.quant.domain.entity.BarDaily;
@@ -60,6 +60,9 @@ import java.util.regex.Pattern;
 @Service
 public class PortfolioServiceImpl implements IPortfolioService {
 
+    @Resource
+    private ApexUserContext userContext;
+
     private static final String STATUS_ACTIVE = "ACTIVE";
     private static final String STATUS_ARCHIVED = "ARCHIVED";
     private static final String DEFAULT_NAME = "我的持仓";
@@ -106,7 +109,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
         Long currentUserId = currentUserId();
         Portfolio def = portfolioMapper.selectOne(Wrappers.<Portfolio>lambdaQuery()
                 .eq(Portfolio::getIsDefault, 1)
-                .eq(Objects.nonNull(currentUserId), Portfolio::getUserId, currentUserId)
+                .eq(Portfolio::getUserId, currentUserId)
                 .last("LIMIT 1"));
         LocalDateTime now = LocalDateTime.now();
         if (Objects.isNull(def)) {
@@ -130,7 +133,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .eq(PortfolioHolding::getPortfolioId, def.getId()));
         if (Objects.isNull(cnt) || cnt == 0) {
             List<MyHolding> mine = myHoldingMapper.selectList(Wrappers.<MyHolding>lambdaQuery()
-                    .eq(Objects.nonNull(currentUserId), MyHolding::getUserId, currentUserId)
+                    .eq(MyHolding::getUserId, currentUserId)
                     .orderByAsc(MyHolding::getCode));
             for (MyHolding row : mine) {
                 String code = MarketCodeUtils.normalizeHoldingCode(row.getCode());
@@ -192,7 +195,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
         ensureDefaultPortfolio();
         Long currentUserId = currentUserId();
         var query = Wrappers.<Portfolio>lambdaQuery()
-                .eq(Objects.nonNull(currentUserId), Portfolio::getUserId, currentUserId)
+                .eq(Portfolio::getUserId, currentUserId)
                 .orderByAsc(Portfolio::getSortNo).orderByDesc(Portfolio::getUpdateTime);
         if (!includeArchived) {
             query.eq(Portfolio::getStatus, STATUS_ACTIVE);
@@ -252,6 +255,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
         }
         assertNameUnique(name, null);
         Portfolio created = Portfolio.builder()
+                .userId(currentUserId())
                 .name(name)
                 .note(StringUtils.trim(req.getNote()))
                 .ownerLabel(StringUtils.trim(req.getOwnerLabel()))
@@ -433,6 +437,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
         portfolioHoldingMapper.deleteById(holdingId);
         if (Objects.equals(portfolio.getIsDefault(), 1) && StringUtils.isNotBlank(holding.getCode())) {
             MyHolding mine = myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
+                    .eq(MyHolding::getUserId, currentUserId())
                     .eq(MyHolding::getCode, holding.getCode())
                     .last("LIMIT 1"));
             if (Objects.nonNull(mine)) {
@@ -581,6 +586,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     public int snapshotAll() {
         ensureDefaultPortfolio();
         List<Portfolio> list = portfolioMapper.selectList(Wrappers.<Portfolio>lambdaQuery()
+                .eq(Portfolio::getUserId, currentUserId())
                 .eq(Portfolio::getStatus, STATUS_ACTIVE));
         int ok = 0;
         for (Portfolio portfolio : list) {
@@ -640,6 +646,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     public Map<String, Object> refreshQuotesAll(Boolean onlyMissing) {
         ensureDefaultPortfolio();
         List<Portfolio> portfolios = portfolioMapper.selectList(Wrappers.<Portfolio>lambdaQuery()
+                .eq(Portfolio::getUserId, currentUserId())
                 .eq(Portfolio::getStatus, STATUS_ACTIVE));
         if (CollUtil.isEmpty(portfolios)) {
             Map<String, Object> empty = new LinkedHashMap<>();
@@ -1212,6 +1219,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
         String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
         LocalDateTime now = LocalDateTime.now();
         MyHolding exist = myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
+                .eq(MyHolding::getUserId, currentUserId())
                 .eq(MyHolding::getCode, code)
                 .last("LIMIT 1"));
         if (Objects.nonNull(exist)) {
@@ -1226,6 +1234,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
             return;
         }
         myHoldingMapper.insert(MyHolding.builder()
+                .userId(currentUserId())
                 .code(code)
                 .name(holding.getName())
                 .quantity(holding.getQuantity())
@@ -1248,15 +1257,16 @@ public class PortfolioServiceImpl implements IPortfolioService {
             throw new BusinessException("组合不存在");
         }
         Long currentUserId = currentUserId();
-        if (Objects.nonNull(currentUserId) && !currentUserId.equals(portfolio.getUserId())) {
+        if (!Objects.equals(currentUserId, portfolio.getUserId())) {
             throw new BusinessException("无权访问该组合");
         }
         return portfolio;
     }
 
     private void assertNameUnique(String name, Long excludeId) {
+        Long currentUserId = currentUserId();
         var query = Wrappers.<Portfolio>lambdaQuery().eq(Portfolio::getName, name)
-                .eq(Objects.nonNull(currentUserId()), Portfolio::getUserId, currentUserId());
+                .eq(Portfolio::getUserId, currentUserId);
         if (Objects.nonNull(excludeId)) {
             query.ne(Portfolio::getId, excludeId);
         }
@@ -1275,6 +1285,10 @@ public class PortfolioServiceImpl implements IPortfolioService {
     }
 
     private Long currentUserId() {
-        return StpUtil.isLogin() ? StpUtil.getLoginIdAsLong() : null;
+        Long currentUserId = userContext.currentUserIdOrNull();
+        if (Objects.isNull(currentUserId)) {
+            throw new BusinessException("未获取到当前用户");
+        }
+        return currentUserId;
     }
 }

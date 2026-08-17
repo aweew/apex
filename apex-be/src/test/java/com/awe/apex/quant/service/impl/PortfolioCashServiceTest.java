@@ -4,6 +4,7 @@ import cn.hutool.extra.spring.SpringUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.domain.dto.PortfolioOrderReq;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioDaily;
@@ -45,6 +46,7 @@ class PortfolioCashServiceTest {
     private PortfolioHoldingMapper portfolioHoldingMapper;
     private PortfolioDailyMapper portfolioDailyMapper;
     private StockBasicMapper stockBasicMapper;
+    private ApexUserContext userContext;
 
     @BeforeAll
     static void initJsonUtilsContext() {
@@ -67,7 +69,10 @@ class PortfolioCashServiceTest {
         portfolioHoldingMapper = mock(PortfolioHoldingMapper.class);
         portfolioDailyMapper = mock(PortfolioDailyMapper.class);
         stockBasicMapper = mock(StockBasicMapper.class);
+        userContext = mock(ApexUserContext.class);
+        when(userContext.currentUserIdOrNull()).thenReturn(7L);
         portfolioService = spy(new PortfolioServiceImpl());
+        ReflectionTestUtils.setField(portfolioService, "userContext", userContext);
         ReflectionTestUtils.setField(portfolioService, "portfolioMapper", portfolioMapper);
         ReflectionTestUtils.setField(portfolioService, "portfolioHoldingMapper", portfolioHoldingMapper);
         ReflectionTestUtils.setField(portfolioService, "portfolioDailyMapper", portfolioDailyMapper);
@@ -90,6 +95,7 @@ class PortfolioCashServiceTest {
     void savePortfolioKeepsExistingCashWhenUpdateOmitsCash() {
         Portfolio existing = Portfolio.builder()
                 .id(2L)
+                .userId(7L)
                 .name("成长组合")
                 .status("ACTIVE")
                 .isDefault(0)
@@ -110,6 +116,7 @@ class PortfolioCashServiceTest {
     void savePortfolioUpdatesCashWhenProvided() {
         Portfolio existing = Portfolio.builder()
                 .id(1L)
+                .userId(7L)
                 .name("我的持仓")
                 .status("ACTIVE")
                 .isDefault(1)
@@ -131,6 +138,7 @@ class PortfolioCashServiceTest {
     void savePortfolioRefreshesExistingTodaySnapshotAfterCashChange() {
         Portfolio existing = Portfolio.builder()
                 .id(1L)
+                .userId(7L)
                 .name("我的持仓")
                 .status("ACTIVE")
                 .isDefault(1)
@@ -163,8 +171,8 @@ class PortfolioCashServiceTest {
 
     @Test
     void sortPortfoliosUpdatesSortNumbersInRequestedOrder() {
-        Portfolio first = Portfolio.builder().id(2L).name("成长组合").build();
-        Portfolio second = Portfolio.builder().id(3L).name("价值组合").build();
+        Portfolio first = Portfolio.builder().id(2L).userId(7L).name("成长组合").build();
+        Portfolio second = Portfolio.builder().id(3L).userId(7L).name("价值组合").build();
         when(portfolioMapper.selectById(2L)).thenReturn(first);
         when(portfolioMapper.selectById(3L)).thenReturn(second);
 

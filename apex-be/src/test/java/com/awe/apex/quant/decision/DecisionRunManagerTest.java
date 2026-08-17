@@ -4,6 +4,7 @@ import cn.hutool.extra.spring.SpringUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.domain.entity.DecisionFeatureSnapshot;
 import com.awe.apex.quant.domain.entity.DecisionRun;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.mapper.DecisionFeatureSnapshotMapper;
 import com.awe.apex.quant.mapper.DecisionRunMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,6 +38,7 @@ class DecisionRunManagerTest {
     private final DecisionRunMapper runMapper = mock(DecisionRunMapper.class);
     private final DecisionFeatureSnapshotMapper featureMapper = mock(DecisionFeatureSnapshotMapper.class);
     private final DecisionRunManager manager = new DecisionRunManager();
+    private final ApexUserContext userContext = mock(ApexUserContext.class);
 
     @BeforeAll
     static void initJsonUtilsContext() {
@@ -57,6 +59,8 @@ class DecisionRunManagerTest {
     void setUp() {
         ReflectionTestUtils.setField(manager, "decisionRunMapper", runMapper);
         ReflectionTestUtils.setField(manager, "featureSnapshotMapper", featureMapper);
+        ReflectionTestUtils.setField(manager, "userContext", userContext);
+        when(userContext.currentUserId()).thenReturn(7L);
         when(runMapper.insert(any(DecisionRun.class))).thenReturn(1);
         when(runMapper.updateById(any(DecisionRun.class))).thenReturn(1);
         when(featureMapper.insert(any(DecisionFeatureSnapshot.class))).thenReturn(1);
@@ -76,6 +80,7 @@ class DecisionRunManagerTest {
         manager.completeUnpublished(run, "GREEN", "完成");
 
         assertNotNull(run.getRunNo());
+        assertEquals(7L, run.getUserId());
         assertEquals("RULE_V1", run.getRuleVersion());
         assertEquals("SUCCESS", run.getStatus());
         assertEquals(0, run.getPublished());

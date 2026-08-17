@@ -26,6 +26,16 @@ public class ApexBotProperties {
     private String clientSecret = "";
 
     /**
+     * HMAC 客户端固定绑定的 Apex 用户ID。
+     */
+    private Long apexUserId;
+
+    /**
+     * HMAC 客户端固定绑定的外部用户标识。
+     */
+    private String externalUserId = "";
+
+    /**
      * 请求时间允许偏差秒数。
      */
     private int timestampToleranceSeconds = 300;

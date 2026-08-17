@@ -6,7 +6,9 @@ import com.awe.apex.quant.domain.dto.IndexRefreshResp;
 import com.awe.apex.quant.domain.dto.LimitUpRefreshResp;
 import com.awe.apex.quant.domain.dto.NewsRefreshResp;
 import com.awe.apex.quant.domain.dto.SectorRefreshResp;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.market.TradingCalendar;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IHotService;
@@ -27,6 +29,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * 可选定时同步（默认关闭，配置 auto_sync_enabled=true 开启）
@@ -68,6 +71,12 @@ public class DataSyncScheduler {
     @Resource
     private IObservePoolService observePoolService;
 
+    @Resource
+    private ApexUserAuthService userAuthService;
+
+    @Resource
+    private ApexUserContext userContext;
+
     /**
      * 交易时段按本地行情快照重估观察池，不依赖外部同步开关
      */
@@ -85,12 +94,14 @@ public class DataSyncScheduler {
         if (!TradingCalendar.isTradingDay(tradeDate)) {
             return;
         }
-        try {
-            Map<String, Object> stats = observePoolService.refresh();
-            log.info("定时重估观察池 total={} near={} triggered={} archived={}",
-                    stats.get("total"), stats.get("near"), stats.get("triggered"), stats.get("archived"));
-        } catch (Exception ex) {
-            log.warn("定时重估观察池失败: {}", ex.getMessage());
+        for (Long userId : queryEnabledUserIds("定时重估观察池")) {
+            try {
+                Map<String, Object> stats = userContext.runAsUser(userId, observePoolService::refresh);
+                log.info("定时重估观察池完成 userId={} total={} near={} triggered={} archived={}",
+                        userId, stats.get("total"), stats.get("near"), stats.get("triggered"), stats.get("archived"));
+            } catch (Exception ex) {
+                log.warn("定时重估观察池失败 userId={} reason={}", userId, ex.getMessage());
+            }
         }
     }
 
@@ -103,12 +114,15 @@ public class DataSyncScheduler {
             return;
         }
         String group = configService.getString("auto_sync_group", "我的自选");
-        try {
-            BarSyncResp resp = barDailyService.syncStaleWatchlist(group, 40);
-            log.info("定时同步日线完成 group={}, success={}, fail={}",
-                    group, resp.getSuccessCount(), resp.getFailCount());
-        } catch (Exception ex) {
-            log.warn("定时同步日线失败: {}", ex.getMessage());
+        for (Long userId : queryEnabledUserIds("定时同步日线")) {
+            try {
+                BarSyncResp resp = userContext.runAsUser(userId,
+                        () -> barDailyService.syncStaleWatchlist(group, 40));
+                log.info("定时同步日线完成 userId={} group={} success={} fail={}",
+                        userId, group, resp.getSuccessCount(), resp.getFailCount());
+            } catch (Exception ex) {
+                log.warn("定时同步日线失败 userId={} group={} reason={}", userId, group, ex.getMessage());
+            }
         }
     }
 
@@ -121,19 +135,26 @@ public class DataSyncScheduler {
             return;
         }
         String group = configService.getString("auto_sync_group", "我的自选");
-        try {
-            Map<String, Object> resp = watchlistService.refreshQuotes(group, 80, false);
-            log.info("定时刷新行情完成 group={}, success={}", group, resp.get("successCount"));
-        } catch (Exception ex) {
-            log.warn("定时刷新行情失败: {}", ex.getMessage());
-        }
-        try {
-            Map<String, Object> resp = portfolioService.refreshQuotesAll(false);
-            portfolioService.snapshotAll();
-            log.info("定时刷新全部组合行情完成 portfolios={}, success={}, fail={}",
-                    resp.get("portfolioCount"), resp.get("success"), resp.get("fail"));
-        } catch (Exception ex) {
-            log.warn("定时刷新全部组合行情失败: {}", ex.getMessage());
+        for (Long userId : queryEnabledUserIds("定时刷新用户行情")) {
+            try {
+                Map<String, Object> resp = userContext.runAsUser(userId,
+                        () -> watchlistService.refreshQuotes(group, 80, false));
+                log.info("定时刷新自选行情完成 userId={} group={} success={}",
+                        userId, group, resp.get("successCount"));
+            } catch (Exception ex) {
+                log.warn("定时刷新自选行情失败 userId={} group={} reason={}", userId, group, ex.getMessage());
+            }
+            try {
+                Map<String, Object> resp = userContext.runAsUser(userId, () -> {
+                    Map<String, Object> refreshResult = portfolioService.refreshQuotesAll(false);
+                    portfolioService.snapshotAll();
+                    return refreshResult;
+                });
+                log.info("定时刷新全部组合行情完成 userId={} portfolios={} success={} fail={}",
+                        userId, resp.get("portfolioCount"), resp.get("success"), resp.get("fail"));
+            } catch (Exception ex) {
+                log.warn("定时刷新全部组合行情失败 userId={} reason={}", userId, ex.getMessage());
+            }
         }
     }
 
@@ -198,33 +219,39 @@ public class DataSyncScheduler {
         } catch (Exception ex) {
             log.debug("收盘包·清简报缓存失败: {}", ex.getMessage());
         }
-        // 自选快照 + 缺当日日线（一键收盘必须带个股）
-        try {
-            Map<String, Object> quoteResp = watchlistService.refreshQuotes(group, 80, false);
-            ok++;
-            log.info("收盘包·自选行情完成 success={}", quoteResp.get("successCount"));
-        } catch (Exception ex) {
-            fail++;
-            log.warn("收盘包·自选行情失败: {}", ex.getMessage());
-        }
-        try {
-            BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);
-            ok++;
-            log.info("收盘包·自选日线完成 success={}, fail={}",
-                    barResp.getSuccessCount(), barResp.getFailCount());
-        } catch (Exception ex) {
-            fail++;
-            log.warn("收盘包·自选日线失败: {}", ex.getMessage());
-        }
-        try {
-            Map<String, Object> portfolioResp = portfolioService.refreshQuotesAll(false);
-            int snapshotCount = portfolioService.snapshotAll();
-            ok++;
-            log.info("收盘包·全部组合完成 portfolios={}, success={}, fail={}, snapshot={}",
-                    portfolioResp.get("portfolioCount"), portfolioResp.get("success"), portfolioResp.get("fail"), snapshotCount);
-        } catch (Exception ex) {
-            fail++;
-            log.warn("收盘包·全部组合失败: {}", ex.getMessage());
+        // 自选、日线和组合属于用户私有数据，逐用户绑定上下文执行。
+        for (Long userId : queryEnabledUserIds("收盘包用户数据")) {
+            try {
+                Map<String, Object> quoteResp = userContext.runAsUser(userId,
+                        () -> watchlistService.refreshQuotes(group, 80, false));
+                ok++;
+                log.info("收盘包·自选行情完成 userId={} success={}", userId, quoteResp.get("successCount"));
+            } catch (Exception ex) {
+                fail++;
+                log.warn("收盘包·自选行情失败 userId={} reason={}", userId, ex.getMessage());
+            }
+            try {
+                BarSyncResp barResp = userContext.runAsUser(userId,
+                        () -> barDailyService.syncStaleWatchlist(group, 80));
+                ok++;
+                log.info("收盘包·自选日线完成 userId={} success={} fail={}",
+                        userId, barResp.getSuccessCount(), barResp.getFailCount());
+            } catch (Exception ex) {
+                fail++;
+                log.warn("收盘包·自选日线失败 userId={} reason={}", userId, ex.getMessage());
+            }
+            try {
+                Map<String, Object> portfolioResp = userContext.runAsUser(userId,
+                        () -> portfolioService.refreshQuotesAll(false));
+                int snapshotCount = userContext.runAsUser(userId, portfolioService::snapshotAll);
+                ok++;
+                log.info("收盘包·全部组合完成 userId={} portfolios={} success={} fail={} snapshot={}",
+                        userId, portfolioResp.get("portfolioCount"), portfolioResp.get("success"),
+                        portfolioResp.get("fail"), snapshotCount);
+            } catch (Exception ex) {
+                fail++;
+                log.warn("收盘包·全部组合失败 userId={} reason={}", userId, ex.getMessage());
+            }
         }
         log.info("收盘包汇总 success={}, fail={}", ok, fail);
     }
@@ -258,6 +285,15 @@ public class DataSyncScheduler {
             log.info("定时板块刷新完成 message={}", resp.getMessage());
         } catch (Exception ex) {
             log.warn("定时板块刷新失败: {}", ex.getMessage());
+        }
+    }
+
+    private List<Long> queryEnabledUserIds(String taskName) {
+        try {
+            return userAuthService.listEnabledUserIds();
+        } catch (Exception ex) {
+            log.warn("{}读取启用用户失败 reason={}", taskName, ex.getMessage());
+            return List.of();
         }
     }
 }

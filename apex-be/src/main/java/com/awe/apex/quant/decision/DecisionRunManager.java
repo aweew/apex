@@ -4,6 +4,7 @@ import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.domain.entity.DecisionFeatureSnapshot;
 import com.awe.apex.quant.domain.entity.DecisionRun;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.mapper.DecisionFeatureSnapshotMapper;
 import com.awe.apex.quant.mapper.DecisionRunMapper;
 import jakarta.annotation.Resource;
@@ -32,6 +33,9 @@ public class DecisionRunManager {
     @Resource
     private DecisionFeatureSnapshotMapper featureSnapshotMapper;
 
+    @Resource
+    private ApexUserContext userContext;
+
     /**
      * 创建决策运行
      *
@@ -56,6 +60,7 @@ public class DecisionRunManager {
     public DecisionRun start(DecisionContext context, String groupName, Map<String, Object> configSnapshot) {
         LocalDateTime now = LocalDateTime.now();
         DecisionRun run = DecisionRun.builder()
+                .userId(userContext.currentUserId())
                 .runNo(createRunNo(now))
                 .actionDate(context.getActionDate())
                 .asOfTime(context.getAsOfTime())

@@ -2,7 +2,6 @@ package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.market.TradingCalendar;
 
-import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.text.csv.CsvData;
@@ -21,6 +20,7 @@ import com.awe.apex.quant.domain.dto.WatchlistImportReq;
 import com.awe.apex.quant.domain.dto.WatchlistImportResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.Watchlist;
@@ -66,6 +66,9 @@ import java.util.concurrent.Executors;
 @Slf4j
 @Service
 public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist> implements IWatchlistService {
+
+    @Resource
+    private ApexUserContext userContext;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -274,16 +277,20 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
         }
 
         // 导入完成后后台预热：先补行情快照，再分批补日线，不阻塞导入接口
+        Long preheatUserId = currentUserId();
         final String preheatGroup = groupName;
         TransactionalAsyncExecutor.runAfterCommit(() -> {
-            try {
-                log.info("自选导入后开始后台预热 groupName={}", preheatGroup);
-                fillQuotes(preheatGroup, 5, 40);
-                barDailyService.fillWatchlist(preheatGroup, 5, 40);
-                log.info("自选导入后后台预热完成 groupName={}", preheatGroup);
-            } catch (Exception ex) {
-                log.warn("自选导入后后台预热失败 groupName={}, err={}", preheatGroup, ex.getMessage());
-            }
+            userContext.runAsUser(preheatUserId, () -> {
+                try {
+                    log.info("自选导入后开始后台预热 userId={} groupName={}", preheatUserId, preheatGroup);
+                    fillQuotes(preheatGroup, 5, 40);
+                    barDailyService.fillWatchlist(preheatGroup, 5, 40);
+                    log.info("自选导入后后台预热完成 userId={} groupName={}", preheatUserId, preheatGroup);
+                } catch (Exception ex) {
+                    log.warn("自选导入后后台预热失败 userId={} groupName={} err={}",
+                            preheatUserId, preheatGroup, ex.getMessage());
+                }
+            });
         }, preheatExecutor);
 
         return WatchlistImportResp.builder()
@@ -770,7 +777,7 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
     }
 
     private Long currentUserId() {
-        return StpUtil.getLoginIdAsLong();
+        return userContext.currentUserId();
     }
 
     private String safeGet(CsvRow row, int idx) {

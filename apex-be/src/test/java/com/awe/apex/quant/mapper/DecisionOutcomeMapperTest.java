@@ -13,7 +13,7 @@ class DecisionOutcomeMapperTest {
     void outcomeLearningUsesSelectedBuyActionsFromPublishedLiveRunsOnly() throws Exception {
         Method pendingMethod = DecisionOutcomeMapper.class.getMethod("selectPendingOutcomes");
         String pendingSql = sqlOf(pendingMethod);
-        Method performanceMethod = DecisionOutcomeMapper.class.getMethod("selectStrategyPerformance");
+        Method performanceMethod = DecisionOutcomeMapper.class.getMethod("selectStrategyPerformance", Long.class);
         String performanceSql = sqlOf(performanceMethod);
 
         assertTrue(pendingSql.contains("t1.selection_status = 'SELECTED'"));
@@ -24,6 +24,7 @@ class DecisionOutcomeMapperTest {
         assertTrue(performanceSql.contains("t3.mode = 'LIVE'"));
         assertTrue(performanceSql.contains("t3.status = 'SUCCESS'"));
         assertTrue(performanceSql.contains("t3.published = 1"));
+        assertTrue(performanceSql.contains("t3.user_id = #{userId}"));
     }
 
     private String sqlOf(Method method) {

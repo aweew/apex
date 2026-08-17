@@ -6,13 +6,14 @@ Send `POST /apex/bot/v1/ask` with JSON:
 
 ```json
 {
+  "userId": "trusted-wechat-user-id",
   "question": "宁德时代现在风险大吗？"
 }
 ```
 
-`question` is required and must contain the user's original question. The endpoint is read-only and supports stock analysis, market summaries, default-portfolio today's profit or loss, portfolio risk, and current decision queries. For example, `我今天亏多少` returns the default portfolio's current-day profit or loss when holdings and quotes are available.
+`question` and `userId` are required. `question` must contain the user's original question, while `userId` must match the external identity bound to this HMAC client in Apex. The endpoint is read-only and supports stock analysis, market summaries, default-portfolio today's profit or loss, portfolio risk, and current decision queries. For example, `我今天亏多少` returns the default portfolio's current-day profit or loss when holdings and quotes are available.
 
-`requestId`, `userId`, and `conversationId` are optional request fields. The bundled script intentionally sends only `question`; Apex generates a request ID when one is not supplied.
+`requestId` and `conversationId` are optional request fields. The bundled script reads `userId` from `APEX_BOT_EXTERNAL_USER_ID`; Apex generates a request ID when one is not supplied.
 
 ## Authentication
 
@@ -41,6 +42,7 @@ For this endpoint, `METHOD` is `POST` and `SERVLET_PATH` is `/apex/bot/v1/ask`. 
 | `APEX_BOT_BASE_URL` | `https://apex.example.com` |
 | `APEX_BOT_CLIENT_KEY` | Client key issued by Apex |
 | `APEX_BOT_CLIENT_SECRET` | Client secret issued by Apex |
+| `APEX_BOT_EXTERNAL_USER_ID` | External user bound to this client in Apex |
 
 Keep the key and secret in OpenClaw's secret or environment configuration. Do not place real credentials in this skill.
 

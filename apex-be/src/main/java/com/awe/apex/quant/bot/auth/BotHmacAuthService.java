@@ -55,6 +55,12 @@ public class BotHmacAuthService {
         if (StringUtils.isBlank(properties.getClientKey()) || StringUtils.isBlank(properties.getClientSecret())) {
             throw new BusinessException("Bot API 鉴权未配置");
         }
+        if (Objects.isNull(properties.getApexUserId()) || properties.getApexUserId() <= 0) {
+            throw new BusinessException("Bot API 未绑定 Apex 用户");
+        }
+        if (StringUtils.isBlank(properties.getExternalUserId())) {
+            throw new BusinessException("Bot API 未绑定外部用户");
+        }
         if (!properties.getClientKey().equals(clientKey)) {
             throw new BusinessException("Bot API 客户端无效");
         }

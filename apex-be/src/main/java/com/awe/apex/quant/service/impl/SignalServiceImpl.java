@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.CodeCountItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceResp;
@@ -77,6 +78,9 @@ public class SignalServiceImpl implements ISignalService {
     @Resource
     private TransactionTemplate transactionTemplate;
 
+    @Resource
+    private ApexUserContext userContext;
+
     /**
      * 运行信号
      *
@@ -124,6 +128,7 @@ public class SignalServiceImpl implements ISignalService {
             for (StrategySignalEntity entity : bestByCodeSide.values()) {
                 // 同代码+策略+信号日去重，避免重复堆积
                 strategySignalMapper.delete(Wrappers.<StrategySignalEntity>lambdaQuery()
+                        .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                         .eq(StrategySignalEntity::getCode, entity.getCode())
                         .eq(StrategySignalEntity::getStrategyId, entity.getStrategyId())
                         .eq(StrategySignalEntity::getSignalDate, entity.getSignalDate()));
@@ -147,10 +152,12 @@ public class SignalServiceImpl implements ISignalService {
         int size = Math.max(1, Math.min(limit, 200));
         if (!dedupeByCode) {
             return strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
+                    .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                     .orderByDesc(StrategySignalEntity::getId)
                     .last("limit " + size));
         }
         List<StrategySignalEntity> raw = strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .orderByDesc(StrategySignalEntity::getId)
                 .last("limit 500"));
         Map<String, StrategySignalEntity> unique = new HashMap<>();
@@ -213,6 +220,7 @@ public class SignalServiceImpl implements ISignalService {
     public SignalStatsResp stats(int days) {
         int n = Math.max(1, Math.min(days, 30));
         List<StrategySignalEntity> list = strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .ge(StrategySignalEntity::getSignalDate, LocalDate.now().minusDays(n))
                 .orderByDesc(StrategySignalEntity::getId)
                 .last("limit 1000"));
@@ -266,6 +274,7 @@ public class SignalServiceImpl implements ISignalService {
         int minS = Math.max(2, Math.min(minStrategies, 10));
         LocalDate cutoff = Objects.nonNull(asOfDate) ? asOfDate : LocalDate.now();
         List<StrategySignalEntity> list = strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .ge(StrategySignalEntity::getSignalDate, cutoff.minusDays(n))
                 .le(StrategySignalEntity::getSignalDate, cutoff)
                 .orderByDesc(StrategySignalEntity::getId)
@@ -356,6 +365,7 @@ public class SignalServiceImpl implements ISignalService {
         int lookback = Math.max(5, Math.min(lookbackDays, 120));
         int horizon = Math.max(1, Math.min(horizonDays, 20));
         List<StrategySignalEntity> signals = strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .ge(StrategySignalEntity::getSignalDate, LocalDate.now().minusDays(lookback))
                 .le(StrategySignalEntity::getSignalDate, LocalDate.now().minusDays(horizon))
                 .orderByDesc(StrategySignalEntity::getId)
@@ -541,7 +551,8 @@ public class SignalServiceImpl implements ISignalService {
                 return codes;
             }
         }
-        List<Watchlist> watchlists = watchlistMapper.selectList(Wrappers.emptyWrapper());
+        List<Watchlist> watchlists = watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
+                .eq(Watchlist::getUserId, userContext.currentUserId()));
         for (Watchlist item : watchlists) {
             codes.add(item.getCode());
         }
@@ -586,6 +597,7 @@ public class SignalServiceImpl implements ISignalService {
         }
         LocalDateTime now = LocalDateTime.now();
         return StrategySignalEntity.builder()
+                .userId(userContext.currentUserId())
                 .code(result.getCode())
                 .strategyId(result.getStrategyId())
                 .signalDate(result.getSignalDate())

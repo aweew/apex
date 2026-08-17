@@ -5,6 +5,7 @@ import com.awe.apex.quant.market.TradingCalendar;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.cache.RedisCacheService;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.DashboardHomeResp;
 import com.awe.apex.quant.domain.dto.DashboardResp;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
@@ -103,6 +104,9 @@ public class DashboardServiceImpl implements IDashboardService {
     @Resource
     private RedisCacheService redisCacheService;
 
+    @Resource
+    private ApexUserContext userContext;
+
     private static final ExecutorService HOME_POOL = Executors.newFixedThreadPool(4, r -> {
         Thread t = new Thread(r, "dashboard-home");
         t.setDaemon(true);
@@ -119,8 +123,10 @@ public class DashboardServiceImpl implements IDashboardService {
      */
     @Override
     public DashboardHomeResp home(Long accountId, String groupName, boolean forceRefresh) {
+        Long currentUserId = userContext.currentUserId();
         String group = StringUtils.isNotBlank(groupName) ? groupName.trim() : "我的自选";
-        String cacheKey = "apex:dashboard:home:" + (Objects.nonNull(accountId) ? accountId : "default") + ":" + group;
+        String cacheKey = "apex:dashboard:home:" + currentUserId + ":"
+                + (Objects.nonNull(accountId) ? accountId : "default") + ":" + group;
         if (!forceRefresh) {
             DashboardHomeResp cached = redisCacheService.get(cacheKey, DashboardHomeResp.class);
             if (Objects.nonNull(cached)) {
@@ -155,24 +161,26 @@ public class DashboardServiceImpl implements IDashboardService {
 
         // 2. 并行拉取互不依赖的块：决策、观察告警、账户摘要、数据健康
         final MarketBriefingResp cachedBriefing = briefing;
-        CompletableFuture<DecisionTodayResp> todayFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return decisionService.today(LocalDate.now(), group, cachedBriefing);
-            } catch (Exception ex) {
-                return null;
-            }
-        }, HOME_POOL);
-        CompletableFuture<List<ObservePoolResp>> alertsFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return observePoolService.listReadyAlerts(6);
-            } catch (Exception ex) {
-                return List.of();
-            }
-        }, HOME_POOL);
+        CompletableFuture<DecisionTodayResp> todayFuture = CompletableFuture.supplyAsync(
+                () -> userContext.runAsUser(currentUserId, () -> {
+                    try {
+                        return decisionService.today(LocalDate.now(), group, cachedBriefing);
+                    } catch (Exception ex) {
+                        return null;
+                    }
+                }), HOME_POOL);
+        CompletableFuture<List<ObservePoolResp>> alertsFuture = CompletableFuture.supplyAsync(
+                () -> userContext.runAsUser(currentUserId, () -> {
+                    try {
+                        return observePoolService.listReadyAlerts(6);
+                    } catch (Exception ex) {
+                        return List.of();
+                    }
+                }), HOME_POOL);
         CompletableFuture<DashboardHomeResp.AccountBlock> accountFuture = CompletableFuture.supplyAsync(
-                () -> buildLightAccount(accountId), HOME_POOL);
+                () -> userContext.runAsUser(currentUserId, () -> buildLightAccount(accountId)), HOME_POOL);
         CompletableFuture<DashboardHomeResp.DataHealthBlock> healthFuture = CompletableFuture.supplyAsync(
-                () -> buildLightDataHealth(group), HOME_POOL);
+                () -> userContext.runAsUser(currentUserId, () -> buildLightDataHealth(group)), HOME_POOL);
 
         Integer limitUpCount = resolveLimitUpCount(briefing);
         List<String> tips = new ArrayList<>();
@@ -405,6 +413,7 @@ public class DashboardServiceImpl implements IDashboardService {
         int total = 0;
         try {
             List<Watchlist> list = watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
+                    .eq(Watchlist::getUserId, userContext.currentUserId())
                     .eq(StringUtils.isNotBlank(group), Watchlist::getGroupName, group)
                     .select(Watchlist::getCode));
             total = list.size();
@@ -501,6 +510,7 @@ public class DashboardServiceImpl implements IDashboardService {
         List<PaperPosition> positions = paperService.listPositions(id);
         List<PaperOrder> orders = paperService.listOrders(id);
         List<StrategySignalEntity> signals = strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .ge(StrategySignalEntity::getSignalDate, LocalDate.now().minusDays(5))
                 .orderByDesc(StrategySignalEntity::getId)
                 .last("limit 50"));

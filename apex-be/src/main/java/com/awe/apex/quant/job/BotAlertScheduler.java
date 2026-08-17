@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.bot.service.IBotHoldingRiskService;
 import com.awe.apex.quant.bot.service.IBotNotificationService;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
@@ -23,6 +24,7 @@ import java.time.Clock;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * ClawBot 盘中告警扫描任务。
@@ -53,6 +55,9 @@ public class BotAlertScheduler {
     @Resource
     private IBotNotificationService notificationService;
 
+    @Resource
+    private ApexUserContext userContext;
+
     /**
      * 交易时段每三分钟扫描自选、观察池和持仓风险。
      */
@@ -69,24 +74,32 @@ public class BotAlertScheduler {
         }
 
         String group = properties.getWatchlistGroup();
+        Long userId = properties.getApexUserId();
+        if (Objects.isNull(userId) || userId <= 0) {
+            log.warn("ClawBot 盘中告警跳过：未配置有效的绑定用户 group={}", group);
+            return;
+        }
         try {
-            // 1. 刷新自选和持仓的轻量行情快照
-            watchlistService.refreshQuotes(group, 20, false);
-            List<String> holdingCodes = myHoldingService.listHoldingCodes();
-            if (CollUtil.isNotEmpty(holdingCodes)) {
-                myHoldingService.refreshQuotesForCodes(holdingCodes, false);
-            }
+            userContext.runAsUser(userId, () -> {
+                // 1. 刷新绑定用户自选和持仓的轻量行情快照
+                watchlistService.refreshQuotes(group, 20, false);
+                List<String> holdingCodes = myHoldingService.listHoldingCodes();
+                if (CollUtil.isNotEmpty(holdingCodes)) {
+                    myHoldingService.refreshQuotesForCodes(holdingCodes, false);
+                }
 
-            // 2. 基于同一轮最新快照计算三类告警
-            WatchlistMoverResp movers = watchlistService.movers(
-                    group, BigDecimal.valueOf(properties.getMoverThreshold()), 8);
-            List<ObservePoolResp> observeItems = observePoolService.listReadyAlerts(8);
-            BotHoldingRiskResp holdingRisk = botHoldingRiskService.analyze();
+                // 2. 基于同一轮最新快照计算三类告警
+                WatchlistMoverResp movers = watchlistService.movers(
+                        group, BigDecimal.valueOf(properties.getMoverThreshold()), 8);
+                List<ObservePoolResp> observeItems = observePoolService.listReadyAlerts(8);
+                BotHoldingRiskResp holdingRisk = botHoldingRiskService.analyze();
 
-            // 3. 合并推送并在通知服务中做冷却去重
-            notificationService.notifyMarketAlerts(movers, observeItems, holdingRisk);
+                // 3. 合并推送并在通知服务中做冷却去重
+                notificationService.notifyMarketAlerts(movers, observeItems, holdingRisk);
+            });
         } catch (Exception ex) {
-            log.warn("ClawBot 盘中告警扫描失败 group={} reason={}", group, ex.getMessage());
+            log.warn("ClawBot 盘中告警扫描失败 userId={} group={} reason={}",
+                    userId, group, ex.getMessage());
         }
     }
 

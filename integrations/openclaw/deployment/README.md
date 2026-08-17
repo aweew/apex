@@ -31,6 +31,8 @@ vim /volume1/docker/openclaw/.env
 - `APEX_BOT_CLIENT_KEY`：与 Apex `.env.production` 中的值完全一致。
 - `APEX_BOT_CLIENT_SECRET`：执行 `openssl rand -hex 32` 生成，并与 Apex
   `.env.production` 中的值完全一致。
+- `APEX_BOT_EXTERNAL_USER_ID`：该客户端唯一授权的微信用户标识，与 Apex
+  `.env.production` 中的值完全一致。
 - `APEX_DOCKER_NETWORK`：Apex Compose 网络，默认 `apex_default`。
 - `APEX_BOT_BASE_URL`：默认通过 Docker 网络直连
   `http://apex-backend-1:8080`，不经过公网域名或 NAS Tailscale 地址。
@@ -51,8 +53,14 @@ vim /volume1/docker/apex/.env.production
 APEX_BOT_ENABLED=true
 APEX_BOT_CLIENT_KEY=与OpenClaw一致
 APEX_BOT_CLIENT_SECRET=与OpenClaw一致
+APEX_BOT_APEX_USER_ID=该客户端唯一授权的Apex用户主键
+APEX_BOT_EXTERNAL_USER_ID=该客户端唯一授权的微信用户标识
 APEX_BOT_WECLAW_ENABLED=false
 ```
+
+`APEX_BOT_APEX_USER_ID` 必须从 Apex 用户记录中确认，不能填写微信用户标识，也不能
+根据组合名称猜测。`APEX_BOT_EXTERNAL_USER_ID` 必须来自实际微信 Channel 身份；任一
+绑定缺失或请求身份不匹配时，Apex 会拒绝 Bot 请求。
 
 之后由你按现有流程重建 Apex 后端。
 

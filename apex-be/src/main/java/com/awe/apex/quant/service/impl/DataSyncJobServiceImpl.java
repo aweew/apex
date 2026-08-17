@@ -3,8 +3,8 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
-import com.awe.apex.quant.bot.service.IBotNotificationService;
 import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
@@ -18,6 +18,7 @@ import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDecisionService;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
@@ -97,7 +98,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private IDecisionService decisionService;
 
     @Resource
-    private IBotNotificationService botNotificationService;
+    private ApexUserContext userContext;
+
+    @Resource
+    private ApexUserAuthService userAuthService;
 
     @Resource
     private ObjectMapper objectMapper;
@@ -150,6 +154,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
      */
     @Override
     public SyncOverviewResp overview() {
+        Long userId = userContext.currentUserId();
         List<SyncJobResp> recent = recentJobs(20);
         Map<String, SyncJobResp> latestByType = new ConcurrentHashMap<>();
         for (SyncJobResp job : recent) {
@@ -158,8 +163,12 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         // 补充各类型最新（含更早）
         for (SyncTaskSpec spec : syncTaskRegistry.all()) {
             if (!latestByType.containsKey(spec.getTaskType())) {
-                SyncJob one = syncJobMapper.selectOne(Wrappers.<SyncJob>lambdaQuery()
-                        .eq(SyncJob::getTaskType, spec.getTaskType())
+                var latestQuery = Wrappers.<SyncJob>lambdaQuery()
+                        .eq(SyncJob::getTaskType, spec.getTaskType());
+                if ("DECISION".equals(spec.getTaskType())) {
+                    latestQuery.eq(SyncJob::getUserId, userId);
+                }
+                SyncJob one = syncJobMapper.selectOne(latestQuery
                         .orderByDesc(SyncJob::getId)
                         .last("LIMIT 1"));
                 if (Objects.nonNull(one)) {
@@ -177,9 +186,13 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 running++;
             }
             LocalDateTime lastSuccessAt = null;
-            SyncJob success = syncJobMapper.selectOne(Wrappers.<SyncJob>lambdaQuery()
+            var successQuery = Wrappers.<SyncJob>lambdaQuery()
                     .eq(SyncJob::getTaskType, spec.getTaskType())
-                    .eq(SyncJob::getStatus, "SUCCESS")
+                    .eq(SyncJob::getStatus, "SUCCESS");
+            if ("DECISION".equals(spec.getTaskType())) {
+                successQuery.eq(SyncJob::getUserId, userId);
+            }
+            SyncJob success = syncJobMapper.selectOne(successQuery
                     .orderByDesc(SyncJob::getFinishedAt)
                     .last("LIMIT 1"));
             if (Objects.nonNull(success)) {
@@ -215,14 +228,47 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
      * @return 任务
      */
     @Override
-    public synchronized SyncJobResp start(SyncStartReq req) {
+    public SyncJobResp start(SyncStartReq req) {
+        if (!isDecisionRequest(req)) {
+            userAuthService.requireAdmin();
+        }
+        Long userId = isDecisionRequest(req) ? userContext.currentUserId() : null;
+        return startInternal(req, userId);
+    }
+
+    /**
+     * 为指定用户启动智能决策任务。
+     *
+     * @param req    请求
+     * @param userId 所属用户ID
+     * @return 任务
+     */
+    @Override
+    public SyncJobResp startForUser(SyncStartReq req, Long userId) {
+        if (!isDecisionRequest(req)) {
+            throw new BusinessException("仅智能决策支持指定用户启动");
+        }
+        if (Objects.isNull(userId)) {
+            throw new BusinessException("智能决策缺少所属用户");
+        }
+        return startInternal(req, userId);
+    }
+
+    private synchronized SyncJobResp startInternal(SyncStartReq req, Long userId) {
         if (Objects.isNull(req) || StringUtils.isBlank(req.getTaskType())) {
             throw new BusinessException("请指定 taskType");
         }
         SyncTaskSpec spec = syncTaskRegistry.require(req.getTaskType());
-        SyncJob running = syncJobMapper.selectOne(Wrappers.<SyncJob>lambdaQuery()
+        var runningQuery = Wrappers.<SyncJob>lambdaQuery()
                 .eq(SyncJob::getTaskType, spec.getTaskType())
-                .in(SyncJob::getStatus, List.of("PENDING", "RUNNING"))
+                .in(SyncJob::getStatus, List.of("PENDING", "RUNNING"));
+        if ("DECISION".equals(spec.getTaskType())) {
+            if (Objects.isNull(userId)) {
+                throw new BusinessException("智能决策缺少所属用户");
+            }
+            runningQuery.eq(SyncJob::getUserId, userId);
+        }
+        SyncJob running = syncJobMapper.selectOne(runningQuery
                 .orderByDesc(SyncJob::getId)
                 .last("LIMIT 1"));
         if (Objects.nonNull(running)) {
@@ -246,6 +292,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
 
         SyncJob job = SyncJob.builder()
+                .userId("DECISION".equals(spec.getTaskType()) ? userId : null)
                 .taskType(spec.getTaskType())
                 .taskName(spec.getName())
                 .status("PENDING")
@@ -267,7 +314,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             future = executor.submit(() -> runJob(job.getId(), spec, jobScript, scriptArgs, cancelled));
         }
         runningFutures.put(job.getId(), future);
-        return getJob(job.getId());
+        return toResp(job);
     }
 
     private void runDecisionJob(Long jobId, SyncStartReq syncRequest, AtomicBoolean cancelled) {
@@ -276,44 +323,41 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             return;
         }
         try {
-            job.setStatus("RUNNING");
-            job.setMessage("正在生成智能决策");
-            job.setStartedAt(LocalDateTime.now());
-            appendLog(job, "[decision] started\n");
-            syncJobMapper.updateById(job);
+            userContext.runAsUser(job.getUserId(), () -> {
+                job.setStatus("RUNNING");
+                job.setMessage("正在生成智能决策");
+                job.setStartedAt(LocalDateTime.now());
+                appendLog(job, "[decision] started\n");
+                syncJobMapper.updateById(job);
 
-            DecisionRunReq request = new DecisionRunReq();
-            request.setGroupName(configService.getString("auto_sync_group", "我的自选"));
-            request.setIncludeBj(Boolean.TRUE.equals(syncRequest.getIncludeBj()));
-            DecisionTodayResp response = decisionService.run(request);
+                DecisionRunReq request = new DecisionRunReq();
+                request.setGroupName(configService.getString("auto_sync_group", "我的自选"));
+                request.setIncludeBj(Boolean.TRUE.equals(syncRequest.getIncludeBj()));
+                DecisionTodayResp response = decisionService.run(request);
 
-            if (cancelled.get()) {
-                return;
-            }
-            job.setStatus("SUCCESS");
-            job.setProgressPct(100);
-            job.setMessage("完成：买入 " + response.getBuyCount() + "，卖出 " + response.getSellCount()
-                    + "，持有 " + response.getHoldCount());
-            appendLog(job, "[decision] runNo=" + response.getRunNo() + "\n");
-            appendLog(job, "[decision] " + response.getMessage() + "\n");
-            job.setFinishedAt(LocalDateTime.now());
-            syncJobMapper.updateById(job);
-            try {
-                botNotificationService.notifyDecision(response);
-            } catch (Exception ex) {
-                log.warn("智能决策微信通知失败 jobId={} runNo={} reason={}",
-                        jobId, response.getRunNo(), ex.getMessage());
-            }
-        } catch (Exception ex) {
-            job = syncJobMapper.selectById(jobId);
-            if (Objects.nonNull(job) && !"CANCELLED".equals(job.getStatus())) {
-                job.setStatus("FAILED");
-                job.setMessage(clip(StringUtils.isNotBlank(ex.getMessage()) ? ex.getMessage() : "智能决策失败", 400));
-                appendLog(job, "[error] " + ex + "\n");
+                if (cancelled.get()) {
+                    return;
+                }
+                job.setStatus("SUCCESS");
+                job.setProgressPct(100);
+                job.setMessage("完成：买入 " + response.getBuyCount() + "，卖出 " + response.getSellCount()
+                        + "，持有 " + response.getHoldCount());
+                appendLog(job, "[decision] runNo=" + response.getRunNo() + "\n");
+                appendLog(job, "[decision] " + response.getMessage() + "\n");
                 job.setFinishedAt(LocalDateTime.now());
                 syncJobMapper.updateById(job);
+            });
+        } catch (Exception ex) {
+            SyncJob failedJob = syncJobMapper.selectById(jobId);
+            if (Objects.nonNull(failedJob) && !"CANCELLED".equals(failedJob.getStatus())) {
+                failedJob.setStatus("FAILED");
+                failedJob.setMessage(clip(StringUtils.isNotBlank(ex.getMessage())
+                        ? ex.getMessage() : "智能决策失败", 400));
+                appendLog(failedJob, "[error] " + ex + "\n");
+                failedJob.setFinishedAt(LocalDateTime.now());
+                syncJobMapper.updateById(failedJob);
             }
-            log.warn("智能决策任务失败 jobId={} err={}", jobId, ex.toString());
+            log.warn("智能决策任务失败 jobId={} userId={} err={}", jobId, job.getUserId(), ex.toString());
         } finally {
             cleanup(jobId);
         }
@@ -334,6 +378,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         if (Objects.isNull(job)) {
             throw new BusinessException("任务不存在: " + jobId);
         }
+        requireJobAccess(job);
         // 运行中补充进度文件
         if ("RUNNING".equals(job.getStatus())) {
             enrichProgressFromFile(job);
@@ -354,6 +399,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         if (Objects.isNull(job)) {
             throw new BusinessException("任务不存在: " + jobId);
         }
+        if (!"DECISION".equals(job.getTaskType())) {
+            userAuthService.requireAdmin();
+        }
+        requireJobAccess(job);
         if ("DECISION".equals(job.getTaskType())
                 && ("RUNNING".equals(job.getStatus()) || "PENDING".equals(job.getStatus()))) {
             throw new BusinessException("智能决策运行后不可停止，请等待后台完成");
@@ -391,7 +440,11 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     @Override
     public List<SyncJobResp> recentJobs(Integer limit) {
         int size = Objects.isNull(limit) || limit <= 0 ? 20 : Math.min(limit, 100);
+        Long userId = userContext.currentUserId();
         List<SyncJob> rows = syncJobMapper.selectList(Wrappers.<SyncJob>lambdaQuery()
+                .and(query -> query.ne(SyncJob::getTaskType, "DECISION")
+                        .or(decisionQuery -> decisionQuery.eq(SyncJob::getTaskType, "DECISION")
+                                .eq(SyncJob::getUserId, userId)))
                 .orderByDesc(SyncJob::getId)
                 .last("LIMIT " + size));
         List<SyncJobResp> list = new ArrayList<>();
@@ -614,33 +667,52 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             } catch (Exception ignored) {
                 // keep default
             }
+            List<Long> userIds;
             try {
-                Map<String, Object> quoteResp = watchlistService.refreshQuotes(group, 80, false);
-                log.info("CLOSE_BUNDLE 后刷自选行情 success={}", quoteResp.get("successCount"));
+                userIds = userAuthService.listEnabledUserIds();
             } catch (Exception ex) {
-                log.warn("CLOSE_BUNDLE 后刷自选行情失败: {}", ex.getMessage());
+                log.warn("CLOSE_BUNDLE 后处理读取启用用户失败 reason={}", ex.getMessage());
+                return;
             }
-            try {
-                myHoldingService.refreshQuotes(false);
-                log.info("CLOSE_BUNDLE 后刷持仓行情完成");
-            } catch (Exception ex) {
-                log.warn("CLOSE_BUNDLE 后刷持仓行情失败: {}", ex.getMessage());
+            String syncGroup = group;
+            for (Long userId : userIds) {
+                try {
+                    userContext.runAsUser(userId, () -> runCloseBundlePostProcessing(syncGroup, userId));
+                } catch (Exception ex) {
+                    log.warn("CLOSE_BUNDLE 用户后处理失败 userId={} reason={}", userId, ex.getMessage());
+                }
             }
-            try {
-                Map<String, Object> portfolioResp = portfolioService.refreshQuotesAll(false);
-                int snapshotCount = portfolioService.snapshotAll();
-                log.info("CLOSE_BUNDLE 后刷全部组合完成 portfolios={}, success={}, fail={}, snapshot={}",
-                        portfolioResp.get("portfolioCount"), portfolioResp.get("success"), portfolioResp.get("fail"), snapshotCount);
-            } catch (Exception ex) {
-                log.warn("CLOSE_BUNDLE 后刷全部组合失败: {}", ex.getMessage());
-            }
-            try {
-                BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);
-                log.info("CLOSE_BUNDLE 后刷自选日线 success={}, fail={}",
-                        barResp.getSuccessCount(), barResp.getFailCount());
-            } catch (Exception ex) {
-                log.warn("CLOSE_BUNDLE 后刷自选日线失败: {}", ex.getMessage());
-            }
+        }
+    }
+
+    private void runCloseBundlePostProcessing(String group, Long userId) {
+        try {
+            Map<String, Object> quoteResp = watchlistService.refreshQuotes(group, 80, false);
+            log.info("CLOSE_BUNDLE 后刷自选行情 userId={} success={}", userId, quoteResp.get("successCount"));
+        } catch (Exception ex) {
+            log.warn("CLOSE_BUNDLE 后刷自选行情失败 userId={} reason={}", userId, ex.getMessage());
+        }
+        try {
+            myHoldingService.refreshQuotes(false);
+            log.info("CLOSE_BUNDLE 后刷持仓行情完成 userId={}", userId);
+        } catch (Exception ex) {
+            log.warn("CLOSE_BUNDLE 后刷持仓行情失败 userId={} reason={}", userId, ex.getMessage());
+        }
+        try {
+            Map<String, Object> portfolioResp = portfolioService.refreshQuotesAll(false);
+            int snapshotCount = portfolioService.snapshotAll();
+            log.info("CLOSE_BUNDLE 后刷全部组合完成 userId={} portfolios={} success={} fail={} snapshot={}",
+                    userId, portfolioResp.get("portfolioCount"), portfolioResp.get("success"),
+                    portfolioResp.get("fail"), snapshotCount);
+        } catch (Exception ex) {
+            log.warn("CLOSE_BUNDLE 后刷全部组合失败 userId={} reason={}", userId, ex.getMessage());
+        }
+        try {
+            BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);
+            log.info("CLOSE_BUNDLE 后刷自选日线 userId={} success={} fail={}",
+                    userId, barResp.getSuccessCount(), barResp.getFailCount());
+        } catch (Exception ex) {
+            log.warn("CLOSE_BUNDLE 后刷自选日线失败 userId={} reason={}", userId, ex.getMessage());
         }
     }
 
@@ -780,6 +852,18 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         runningProcesses.remove(jobId);
         runningFutures.remove(jobId);
         cancelFlags.remove(jobId);
+    }
+
+    private boolean isDecisionRequest(SyncStartReq req) {
+        return Objects.nonNull(req) && StringUtils.isNotBlank(req.getTaskType())
+                && "DECISION".equalsIgnoreCase(req.getTaskType().trim());
+    }
+
+    private void requireJobAccess(SyncJob job) {
+        if ("DECISION".equals(job.getTaskType())
+                && !Objects.equals(job.getUserId(), userContext.currentUserId())) {
+            throw new BusinessException("任务不存在: " + job.getId());
+        }
     }
 
     private SyncJobResp toResp(SyncJob job) {

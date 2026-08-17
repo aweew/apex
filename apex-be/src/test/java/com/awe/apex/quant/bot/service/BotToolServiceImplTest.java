@@ -1,6 +1,7 @@
 package com.awe.apex.quant.bot.service;
 
 import com.awe.apex.quant.bot.service.impl.BotToolServiceImpl;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BotHoldingInput;
 import com.awe.apex.quant.domain.dto.BotToolReq;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
@@ -10,6 +11,12 @@ import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.service.IPortfolioService;
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -19,6 +26,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -27,10 +35,16 @@ import static org.mockito.Mockito.when;
 
 class BotToolServiceImplTest {
 
+    @BeforeAll
+    static void initTableInfo() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), Portfolio.class);
+    }
+
     private BotToolServiceImpl service;
     private IPortfolioService portfolioService;
     private PortfolioMapper portfolioMapper;
     private StockBasicMapper stockBasicMapper;
+    private ApexUserContext userContext;
 
     @BeforeEach
     void setUp() {
@@ -38,9 +52,12 @@ class BotToolServiceImplTest {
         portfolioService = mock(IPortfolioService.class);
         portfolioMapper = mock(PortfolioMapper.class);
         stockBasicMapper = mock(StockBasicMapper.class);
+        userContext = mock(ApexUserContext.class);
+        when(userContext.currentUserId()).thenReturn(7L);
         ReflectionTestUtils.setField(service, "portfolioService", portfolioService);
         ReflectionTestUtils.setField(service, "portfolioMapper", portfolioMapper);
         ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(service, "userContext", userContext);
         ReflectionTestUtils.setField(service, "callAuditMapper", mock(com.awe.apex.quant.mapper.BotCallAuditMapper.class));
         ReflectionTestUtils.setField(service, "smartTraderAnalyticsService", mock(com.awe.apex.quant.service.ISmartTraderAnalyticsService.class));
     }
@@ -71,5 +88,10 @@ class BotToolServiceImplTest {
         verify(portfolioService).refreshQuotes(8L, false);
         assertEquals("603456", requestCaptor.getValue().getCode());
         assertEquals("九洲药业", requestCaptor.getValue().getName());
+        ArgumentCaptor<Wrapper<Portfolio>> portfolioQueryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(portfolioMapper).selectList(portfolioQueryCaptor.capture());
+        AbstractWrapper<?, ?, ?> portfolioQuery = (AbstractWrapper<?, ?, ?>) portfolioQueryCaptor.getValue();
+        assertTrue(portfolioQuery.getSqlSegment().contains("user_id"));
+        assertTrue(portfolioQuery.getParamNameValuePairs().containsValue(7L));
     }
 }

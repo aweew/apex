@@ -4,6 +4,7 @@ import com.awe.apex.quant.market.TradingCalendar;
 
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BarSyncReq;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.FillBarsResp;
@@ -62,6 +63,9 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     @Resource
     private WatchlistMapper watchlistMapper;
 
+    @Resource
+    private ApexUserContext userContext;
+
     /**
      * 同步日线并落库
      *
@@ -100,6 +104,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     @Override
     public BarSyncResp syncWatchlistGroup(String groupName, String beginDate, String endDate) {
         List<Watchlist> list = watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
+                .eq(Watchlist::getUserId, userContext.currentUserId())
                 .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName)
                 .orderByAsc(Watchlist::getCode));
         if (list.isEmpty()) {
@@ -128,6 +133,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     public BarSyncResp syncStaleWatchlist(String groupName, Integer limit) {
         int max = Objects.isNull(limit) ? 40 : Math.max(1, Math.min(limit, MAX_SYNC_CODES));
         List<Watchlist> list = watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
+                .eq(Watchlist::getUserId, userContext.currentUserId())
                 .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName)
                 .orderByAsc(Watchlist::getCode));
         if (list.isEmpty()) {

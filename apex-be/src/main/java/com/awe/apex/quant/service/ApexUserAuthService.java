@@ -76,6 +76,20 @@ public interface ApexUserAuthService {
     List<ApexAdminUserResp> listUsers();
 
     /**
+     * 查询启用且已初始化资产档案的用户ID。
+     *
+     * @return 用户ID列表
+     */
+    List<Long> listEnabledUserIds();
+
+    /**
+     * 校验指定用户存在、已初始化资产档案且处于启用状态。
+     *
+     * @param userId 用户ID
+     */
+    void requireEnabledUser(Long userId);
+
+    /**
      * 启用或禁用用户
      *
      * @param userId 用户ID

@@ -1,6 +1,7 @@
 package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.DataQualityResp;
 import com.awe.apex.quant.domain.dto.DataSourceHealthItem;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
@@ -55,6 +56,9 @@ public class DataQualityController {
     @Resource
     private LimitUpPoolMapper limitUpPoolMapper;
 
+    @Resource
+    private ApexUserContext userContext;
+
     /**
      * 自选数据健康度
      */
@@ -87,6 +91,7 @@ public class DataQualityController {
         }
         List<UniverseSnapshot> universe = universeService.latest();
         Long signalCount = strategySignalMapper.selectCount(Wrappers.<StrategySignalEntity>lambdaQuery()
+                .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .ge(StrategySignalEntity::getSignalDate, LocalDate.now().minusDays(5)));
         String suggestion;
         if (empty > list.size() / 2) {

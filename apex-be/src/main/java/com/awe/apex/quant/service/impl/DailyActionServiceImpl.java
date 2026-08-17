@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.quant.domain.dto.SignalRunReq;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.domain.entity.PaperPosition;
 import com.awe.apex.quant.domain.entity.StockBasic;
@@ -55,9 +56,13 @@ public class DailyActionServiceImpl implements IDailyActionService {
     @Resource
     private StockBasicMapper stockBasicMapper;
 
+    @Resource
+    private ApexUserContext userContext;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public List<DailyAction> run(LocalDate date) {
+        Long currentUserId = userContext.currentUserId();
         LocalDate actionDate = Objects.nonNull(date) ? date : LocalDate.now();
         List<DailyAction> publishedActions = listByDate(actionDate);
         for (DailyAction publishedAction : publishedActions) {
@@ -65,7 +70,9 @@ public class DailyActionServiceImpl implements IDailyActionService {
                 return publishedActions;
             }
         }
-        dailyActionMapper.delete(Wrappers.<DailyAction>lambdaQuery().eq(DailyAction::getActionDate, actionDate));
+        dailyActionMapper.delete(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getUserId, currentUserId)
+                .eq(DailyAction::getActionDate, actionDate));
 
         SignalRunReq req = new SignalRunReq();
         req.setUseUniverse(false);
@@ -85,7 +92,8 @@ public class DailyActionServiceImpl implements IDailyActionService {
                 nameMap.put(basic.getCode(), basic.getName());
             }
         }
-        for (Watchlist watchlist : watchlistMapper.selectList(Wrappers.emptyWrapper())) {
+        for (Watchlist watchlist : watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
+                .eq(Watchlist::getUserId, currentUserId))) {
             if (StringUtils.isNotBlank(watchlist.getName())) {
                 nameMap.putIfAbsent(watchlist.getCode(), watchlist.getName());
             }
@@ -116,6 +124,7 @@ public class DailyActionServiceImpl implements IDailyActionService {
                 continue;
             }
             DailyAction row = DailyAction.builder()
+                    .userId(currentUserId)
                     .actionDate(actionDate)
                     .code(signal.getCode())
                     .name(nameMap.get(signal.getCode()))
@@ -138,6 +147,7 @@ public class DailyActionServiceImpl implements IDailyActionService {
                 continue;
             }
             DailyAction hold = DailyAction.builder()
+                    .userId(currentUserId)
                     .actionDate(actionDate)
                     .code(position.getCode())
                     .name(nameMap.get(position.getCode()))
@@ -164,6 +174,7 @@ public class DailyActionServiceImpl implements IDailyActionService {
     @Override
     public List<DailyAction> listByDate(LocalDate date) {
         return dailyActionMapper.selectList(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getUserId, userContext.currentUserId())
                 .eq(DailyAction::getActionDate, date)
                 .orderByAsc(DailyAction::getAction)
                 .orderByAsc(DailyAction::getCode));

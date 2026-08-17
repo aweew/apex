@@ -16,6 +16,7 @@ services:
       APEX_BOT_BASE_URL: ${APEX_BOT_BASE_URL:-http://apex-backend-1:8080}
       APEX_BOT_CLIENT_KEY: ${APEX_BOT_CLIENT_KEY:?Set APEX_BOT_CLIENT_KEY}
       APEX_BOT_CLIENT_SECRET: ${APEX_BOT_CLIENT_SECRET:?Set APEX_BOT_CLIENT_SECRET}
+      APEX_BOT_EXTERNAL_USER_ID: ${APEX_BOT_EXTERNAL_USER_ID:?Set APEX_BOT_EXTERNAL_USER_ID}
     volumes:
       - ./data/state:/home/node/.openclaw
       - ./data/workspace:/home/node/.openclaw/workspace
@@ -70,6 +71,7 @@ services:
       APEX_BOT_BASE_URL: ${APEX_BOT_BASE_URL:-http://apex-backend-1:8080}
       APEX_BOT_CLIENT_KEY: ${APEX_BOT_CLIENT_KEY:?Set APEX_BOT_CLIENT_KEY}
       APEX_BOT_CLIENT_SECRET: ${APEX_BOT_CLIENT_SECRET:?Set APEX_BOT_CLIENT_SECRET}
+      APEX_BOT_EXTERNAL_USER_ID: ${APEX_BOT_EXTERNAL_USER_ID:?Set APEX_BOT_EXTERNAL_USER_ID}
     volumes:
       - ./data/state:/home/node/.openclaw
       - ./data/workspace:/home/node/.openclaw/workspace
