@@ -83,6 +83,8 @@ a {
 
 /* —— page —— */
 .page {
+  --page-title-size: 28px;
+  --page-module-size: 16px;
   position: relative;
   min-height: calc(100vh - 56px);
   padding: 24px 28px 48px;
@@ -106,8 +108,8 @@ a {
 .header h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(26px, 3.4vw, 34px);
-  font-weight: 700;
+  font-size: var(--page-title-size);
+  font-weight: 650;
   letter-spacing: 0;
   color: var(--ink);
   line-height: 1.15;
@@ -124,10 +126,11 @@ a {
 .header .eyebrow,
 .eyebrow {
   margin: 0 0 4px;
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--page-module-size);
+  font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--accent);
+  line-height: 1;
   text-transform: uppercase;
 }
 
@@ -144,6 +147,11 @@ a {
   margin: 0;
 }
 
+.page .header > div:first-child > h1 {
+  font-size: var(--page-title-size) !important;
+  font-weight: 650 !important;
+}
+
 .header > div:first-child > h1::after {
   content: "·";
   margin-left: 6px;
@@ -153,6 +161,13 @@ a {
   order: 2;
   margin: 0 !important;
   display: block !important;
+}
+
+.page .header > div:first-child > .eyebrow {
+  font-size: var(--page-module-size) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  line-height: 1 !important;
 }
 
 .header > div:first-child > p:not(.eyebrow) {
@@ -601,6 +616,8 @@ textarea {
 
 /* 终端紧凑密度（App.vue shell.dense） */
 .shell.dense .page {
+  --page-title-size: 26px;
+  --page-module-size: 15px;
   padding: 14px 16px 28px;
 }
 
@@ -609,7 +626,7 @@ textarea {
 }
 
 .shell.dense .header h1 {
-  font-size: clamp(22px, 2.8vw, 28px);
+  font-size: var(--page-title-size);
 }
 
 .shell.dense .header p {
@@ -686,6 +703,8 @@ textarea {
 @media (max-width: 560px) {
   .page,
   .shell.dense .page {
+    --page-title-size: 23px;
+    --page-module-size: 14px;
     min-height: calc(100vh - 56px);
     padding: 12px 10px calc(28px + env(safe-area-inset-bottom));
   }

@@ -10,3 +10,30 @@ test('shared page title and module label use visual center alignment', () => {
     /\.header > div:first-child\s*\{[^}]*align-items:\s*center;/,
   )
 })
+
+test('shared page headers use balanced title and module label sizes', () => {
+  assert.match(
+    globalStyles,
+    /\.page\s*\{[^}]*--page-title-size:\s*28px;[^}]*--page-module-size:\s*16px;/,
+  )
+  assert.match(
+    globalStyles,
+    /\.page \.header > div:first-child > h1\s*\{[^}]*font-size:\s*var\(--page-title-size\) !important;[^}]*font-weight:\s*650 !important;/,
+  )
+  assert.match(
+    globalStyles,
+    /\.page \.header > div:first-child > \.eyebrow\s*\{[^}]*font-size:\s*var\(--page-module-size\) !important;[^}]*font-weight:\s*700 !important;/,
+  )
+  assert.doesNotMatch(globalStyles, /\.header h1\s*\{[^}]*font-size:\s*clamp\(/)
+})
+
+test('dense and mobile page headers keep the same visual hierarchy', () => {
+  assert.match(
+    globalStyles,
+    /\.shell\.dense \.page\s*\{[^}]*--page-title-size:\s*26px;[^}]*--page-module-size:\s*15px;/,
+  )
+  assert.match(
+    globalStyles,
+    /@media \(max-width: 560px\)\s*\{[\s\S]*?\.page,\s*\.shell\.dense \.page\s*\{[^}]*--page-title-size:\s*23px;[^}]*--page-module-size:\s*14px;/,
+  )
+})
