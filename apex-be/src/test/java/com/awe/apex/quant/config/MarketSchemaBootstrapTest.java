@@ -88,6 +88,10 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "ADD KEY idx_universe_as_of_id");
         assertContains(executed, "ADD KEY idx_universe_creator_id");
         assertContains(executed, "CREATE TABLE IF NOT EXISTS backtest_experiment");
+        assertContains(executed, "CREATE TABLE IF NOT EXISTS screener_strategy");
+        assertContains(executed, "CREATE TABLE IF NOT EXISTS screener_strategy_rule");
+        assertContains(executed, "idx_screener_strategy_user_sort");
+        assertContains(executed, "idx_screener_rule_strategy_sort");
         assertContains(executed, "init_cash DECIMAL(20, 2) NULL COMMENT '初始资金'");
         assertContains(executed, "execution_model_version VARCHAR(32) NULL COMMENT '成交语义版本'");
         assertContains(executed, "price_adjustment VARCHAR(16) NULL COMMENT '行情复权口径'");
