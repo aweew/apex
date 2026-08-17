@@ -2,7 +2,11 @@ package com.awe.apex.quant.job;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.quant.context.ApexUserContext;
+import com.awe.apex.quant.domain.dto.SyncJobResp;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.ApexUserAuthService;
+import com.awe.apex.quant.service.IConfigService;
+import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IObservePoolService;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -68,5 +72,27 @@ class DataSyncSchedulerTest {
         scheduler.refreshObservePool(LocalDate.of(2026, 8, 15));
 
         verify(observePoolService, never()).refresh();
+    }
+
+    @Test
+    void closeBundleUsesTrackedSyncJob() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.startSystemTask(org.mockito.ArgumentMatchers.any())).thenReturn(
+                SyncJobResp.builder().id(301L).status("PENDING").build());
+
+        try (MockedStatic<TradingCalendar> tradingCalendar = mockStatic(TradingCalendar.class)) {
+            tradingCalendar.when(() -> TradingCalendar.isTradingDay(LocalDate.now())).thenReturn(true);
+
+            scheduler.closeBundleAfternoon();
+
+            verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
+                    "CLOSE_BUNDLE".equals(request.getTaskType())
+                            && "INDUSTRY,CONCEPT,THEME".equals(request.getTypes())));
+        }
     }
 }

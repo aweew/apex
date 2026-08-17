@@ -2,27 +2,22 @@ package com.awe.apex.quant.job;
 
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.HotRefreshResp;
-import com.awe.apex.quant.domain.dto.IndexRefreshResp;
-import com.awe.apex.quant.domain.dto.LimitUpRefreshResp;
-import com.awe.apex.quant.domain.dto.NewsRefreshResp;
 import com.awe.apex.quant.domain.dto.SectorRefreshResp;
+import com.awe.apex.quant.domain.dto.SyncJobResp;
+import com.awe.apex.quant.domain.dto.SyncStartReq;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
+import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IHotService;
-import com.awe.apex.quant.service.IIndexBoardService;
-import com.awe.apex.quant.service.ILimitUpLadderService;
-import com.awe.apex.quant.service.IMarketBriefingService;
-import com.awe.apex.quant.service.INewsService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IWatchlistService;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -54,16 +49,7 @@ public class DataSyncScheduler {
     private ISectorBoardService sectorBoardService;
 
     @Resource
-    private IIndexBoardService indexBoardService;
-
-    @Resource
-    private ILimitUpLadderService limitUpLadderService;
-
-    @Resource
-    private INewsService newsService;
-
-    @Resource
-    private IMarketBriefingService marketBriefingService;
+    private IDataSyncJobService dataSyncJobService;
 
     @Resource
     private IPortfolioService portfolioService;
@@ -170,90 +156,15 @@ public class DataSyncScheduler {
             log.info("收盘包跳过：今日非交易日");
             return;
         }
-        String group = configService.getString("auto_sync_group", "我的自选");
-        int ok = 0;
-        int fail = 0;
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("CLOSE_BUNDLE");
+        request.setTypes("INDUSTRY,CONCEPT,THEME");
         try {
-            IndexRefreshResp indexResp = indexBoardService.refresh(
-                    LocalDate.now().minusDays(60).format(DateTimeFormatter.BASIC_ISO_DATE));
-            ok++;
-            log.info("收盘包·指数完成 message={}", indexResp.getMessage());
+            SyncJobResp job = dataSyncJobService.startSystemTask(request);
+            log.info("收盘包已提交统一任务 jobId={} status={}", job.getId(), job.getStatus());
         } catch (Exception ex) {
-            fail++;
-            log.warn("收盘包·指数失败: {}", ex.getMessage());
+            log.warn("收盘包提交失败 reason={}", ex.getMessage());
         }
-        try {
-            SectorRefreshResp sectorResp = sectorBoardService.refresh("INDUSTRY,CONCEPT,THEME");
-            ok++;
-            log.info("收盘包·板块完成 message={}", sectorResp.getMessage());
-        } catch (Exception ex) {
-            fail++;
-            log.warn("收盘包·板块失败: {}", ex.getMessage());
-        }
-        try {
-            LimitUpRefreshResp luResp = limitUpLadderService.refresh(null);
-            ok++;
-            log.info("收盘包·涨停完成 message={}", luResp.getMessage());
-        } catch (Exception ex) {
-            fail++;
-            log.warn("收盘包·涨停失败: {}", ex.getMessage());
-        }
-        try {
-            HotRefreshResp hotResp = hotService.refresh("eastmoney,baidu", 50);
-            ok++;
-            log.info("收盘包·热点完成 message={}", hotResp.getMessage());
-        } catch (Exception ex) {
-            fail++;
-            log.warn("收盘包·热点失败: {}", ex.getMessage());
-        }
-        try {
-            NewsRefreshResp newsResp = newsService.refresh("eastmoney,cls,ths,sina", 80);
-            ok++;
-            log.info("收盘包·资讯完成 message={}", newsResp.getMessage());
-        } catch (Exception ex) {
-            fail++;
-            log.warn("收盘包·资讯失败: {}", ex.getMessage());
-        }
-        try {
-            marketBriefingService.invalidateCache();
-        } catch (Exception ex) {
-            log.debug("收盘包·清简报缓存失败: {}", ex.getMessage());
-        }
-        // 自选、日线和组合属于用户私有数据，逐用户绑定上下文执行。
-        for (Long userId : queryEnabledUserIds("收盘包用户数据")) {
-            try {
-                Map<String, Object> quoteResp = userContext.runAsUser(userId,
-                        () -> watchlistService.refreshQuotes(group, 80, false));
-                ok++;
-                log.info("收盘包·自选行情完成 userId={} success={}", userId, quoteResp.get("successCount"));
-            } catch (Exception ex) {
-                fail++;
-                log.warn("收盘包·自选行情失败 userId={} reason={}", userId, ex.getMessage());
-            }
-            try {
-                BarSyncResp barResp = userContext.runAsUser(userId,
-                        () -> barDailyService.syncStaleWatchlist(group, 80));
-                ok++;
-                log.info("收盘包·自选日线完成 userId={} success={} fail={}",
-                        userId, barResp.getSuccessCount(), barResp.getFailCount());
-            } catch (Exception ex) {
-                fail++;
-                log.warn("收盘包·自选日线失败 userId={} reason={}", userId, ex.getMessage());
-            }
-            try {
-                Map<String, Object> portfolioResp = userContext.runAsUser(userId,
-                        () -> portfolioService.refreshQuotesAll(false));
-                int snapshotCount = userContext.runAsUser(userId, portfolioService::snapshotAll);
-                ok++;
-                log.info("收盘包·全部组合完成 userId={} portfolios={} success={} fail={} snapshot={}",
-                        userId, portfolioResp.get("portfolioCount"), portfolioResp.get("success"),
-                        portfolioResp.get("fail"), snapshotCount);
-            } catch (Exception ex) {
-                fail++;
-                log.warn("收盘包·全部组合失败 userId={} reason={}", userId, ex.getMessage());
-            }
-        }
-        log.info("收盘包汇总 success={}, fail={}", ok, fail);
     }
 
     /**

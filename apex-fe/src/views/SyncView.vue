@@ -8,6 +8,12 @@ import {
   startSyncJob,
   stopSyncJob,
 } from '../api/sync'
+import {
+  createLatestLoader,
+  createSerialPoller,
+  findRunningSyncJob,
+  shouldSwitchToRunningJob,
+} from './syncPolling.mjs'
 
 const router = useRouter()
 const loading = ref(false)
@@ -15,7 +21,7 @@ const overview = ref(null)
 const activeJob = ref(null)
 /** 用户当前盯着的任务，避免轮询用列表摘要冲掉详情日志 */
 const pinnedJobId = ref(null)
-const pollTimer = ref(null)
+let detailRequestId = 0
 
 const startForm = ref({
   taskType: '',
@@ -42,9 +48,11 @@ const groups = computed(() => {
   return [...map.entries()]
 })
 
-const runningJobs = computed(() =>
-  recentJobs.value.filter((j) => j.status === 'RUNNING' || j.status === 'PENDING'),
+const runningCount = computed(
+  () => overview.value?.runningCount ?? tasks.value.filter((task) => task.running).length,
 )
+const loadLatestOverview = createLatestLoader(fetchSyncOverview)
+const poller = createSerialPoller(pollSyncStatus)
 
 /** 详情日志；库内为空时用 message/exit/params 兜底，避免「闪一下暂无」 */
 const activeLogText = computed(() => {
@@ -110,17 +118,16 @@ function defaultLimit(taskType) {
 async function load() {
   loading.value = true
   try {
-    const res = await fetchSyncOverview()
-    overview.value = res.data
-    const running = (res.data?.recentJobs || []).find((j) => j.status === 'RUNNING')
+    const snapshot = await refreshOverview()
+    if (!snapshot) return
+    const running = findRunningSyncJob(snapshot)
     if (running) {
-      // 有运行中任务：拉详情（含完整日志），不要用列表摘要覆盖
-      if (!pinnedJobId.value || pinnedJobId.value === running.id) {
+      if (shouldSwitchToRunningJob(activeJob.value, pinnedJobId.value)) {
         pinnedJobId.value = running.id
-        await refreshPinnedJob()
       }
+      await refreshPinnedJob()
       ensurePoll()
-    } else if (!runningJobs.value.length) {
+    } else {
       stopPoll()
       if (pinnedJobId.value) {
         await refreshPinnedJob()
@@ -133,53 +140,58 @@ async function load() {
   }
 }
 
+async function refreshOverview() {
+  const response = await loadLatestOverview()
+  if (!response) return null
+  overview.value = response.data
+  return response.data
+}
+
 /** 按钉住的 jobId 拉完整详情（含 logTail） */
 async function refreshPinnedJob() {
   if (!pinnedJobId.value) return
+  const jobId = pinnedJobId.value
+  const requestId = ++detailRequestId
   try {
-    const detail = await fetchSyncJob(pinnedJobId.value)
+    const detail = await fetchSyncJob(jobId)
+    if (requestId !== detailRequestId || pinnedJobId.value !== jobId) return
     activeJob.value = detail.data
   } catch {
     // 详情失败时保留现有面板
   }
 }
 
-function ensurePoll() {
-  if (pollTimer.value) return
-  pollTimer.value = setInterval(async () => {
-    try {
-      const res = await fetchSyncOverview()
-      overview.value = res.data
-      const running = (res.data?.recentJobs || []).find(
-        (j) => j.status === 'RUNNING' || j.status === 'PENDING',
-      )
-      if (running) {
-        // 运行中默认钉住当前任务；用户若点了别的任务则尊重 pinnedJobId
-        if (!pinnedJobId.value) pinnedJobId.value = running.id
-        const watchId = pinnedJobId.value
-        const detail = await fetchSyncJob(watchId)
-        activeJob.value = detail.data
-      } else {
-        // 任务结束：再拉一次钉住任务的完整日志，绝不用 overview 摘要覆盖
-        if (pinnedJobId.value) {
-          await refreshPinnedJob()
-        } else if (res.data?.recentJobs?.[0]?.id) {
-          pinnedJobId.value = res.data.recentJobs[0].id
-          await refreshPinnedJob()
-        }
-        stopPoll()
+async function pollSyncStatus() {
+  try {
+    const snapshot = await refreshOverview()
+    if (!snapshot) return true
+    const running = findRunningSyncJob(snapshot)
+    if (running) {
+      if (shouldSwitchToRunningJob(activeJob.value, pinnedJobId.value)) {
+        pinnedJobId.value = running.id
       }
-    } catch {
-      // 轮询失败不打断
+      await refreshPinnedJob()
+      return true
     }
-  }, 2000)
+
+    if (pinnedJobId.value) {
+      await refreshPinnedJob()
+    } else if (snapshot.recentJobs?.[0]?.id) {
+      pinnedJobId.value = snapshot.recentJobs[0].id
+      await refreshPinnedJob()
+    }
+    return false
+  } catch {
+    return true
+  }
+}
+
+function ensurePoll() {
+  poller.start()
 }
 
 function stopPoll() {
-  if (pollTimer.value) {
-    clearInterval(pollTimer.value)
-    pollTimer.value = null
-  }
+  poller.stop()
 }
 
 async function onStart(task) {
@@ -318,7 +330,7 @@ onUnmounted(stopPoll)
         </p>
       </div>
       <div class="actions">
-        <el-tag v-if="runningJobs.length" type="warning">运行中 {{ runningJobs.length }}</el-tag>
+        <el-tag v-if="runningCount" type="warning">运行中 {{ runningCount }}</el-tag>
         <el-button
           type="primary"
           :disabled="!!closeBundleTask?.running"

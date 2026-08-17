@@ -54,6 +54,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -178,7 +179,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         List<SyncTaskDefResp> tasks = new ArrayList<>();
         for (SyncTaskSpec spec : syncTaskRegistry.all()) {
             SyncJobResp latest = latestByType.get(spec.getTaskType());
-            boolean isRunning = Objects.nonNull(latest) && "RUNNING".equals(latest.getStatus());
+            boolean isRunning = Objects.nonNull(latest)
+                    && ("RUNNING".equals(latest.getStatus()) || "PENDING".equals(latest.getStatus()));
             if (isRunning) {
                 running++;
             }
@@ -187,7 +189,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     .eq(SyncJob::getTaskType, spec.getTaskType())
                     .eq(SyncJob::getStatus, "SUCCESS");
             SyncJob success = syncJobMapper.selectOne(successQuery
-                    .orderByDesc(SyncJob::getFinishedAt)
+                    .orderByDesc(SyncJob::getId)
                     .last("LIMIT 1"));
             if (Objects.nonNull(success)) {
                 lastSuccessAt = Objects.nonNull(success.getFinishedAt())
@@ -228,6 +230,20 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
         Long userId = isDecisionRequest(req) ? userContext.currentUserId() : null;
         return startInternal(req, userId);
+    }
+
+    /**
+     * 由系统调度启动共享同步任务
+     *
+     * @param req 请求
+     * @return 任务状态
+     */
+    @Override
+    public SyncJobResp startSystemTask(SyncStartReq req) {
+        if (isDecisionRequest(req)) {
+            throw new BusinessException("智能决策任务必须指定运行用户");
+        }
+        return startInternal(req, null);
     }
 
     /**
@@ -568,18 +584,34 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             job.setLogTail(logText);
             enrichProgressFromFile(job);
+            if (!cancelled.get()) {
+                invalidateMarketBriefingCache(job, spec.getTaskType());
+            }
             if (cancelled.get()) {
                 job.setStatus("CANCELLED");
                 job.setMessage("用户停止");
-            } else if (exit == 0) {
-                job.setStatus("SUCCESS");
-                job.setProgressPct(100);
-                job.setMessage("完成");
-                onMarketDataSynced(spec.getTaskType());
-            } else {
+            } else if (exit != 0) {
                 job.setStatus("FAILED");
                 job.setMessage("脚本退出码 " + exit);
-                onMarketDataSynced(spec.getTaskType());
+            } else {
+                if ("CLOSE_BUNDLE".equals(spec.getTaskType())) {
+                    job.setProgressPct(Math.min(99, Math.max(90,
+                            Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0)));
+                    job.setDoneItems(0);
+                    job.setTotalItems(null);
+                    job.setMessage("脚本完成，正在执行收盘后处理");
+                    appendLog(job, "[post] close bundle post-processing started\n");
+                    syncJobMapper.updateById(job);
+                }
+                onMarketDataSynced(job, cancelled);
+                if (cancelled.get()) {
+                    job.setStatus("CANCELLED");
+                    job.setMessage("用户停止");
+                } else {
+                    job.setStatus("SUCCESS");
+                    job.setProgressPct(100);
+                    job.setMessage("完成");
+                }
             }
             job.setFinishedAt(LocalDateTime.now());
             syncJobMapper.updateById(job);
@@ -607,12 +639,14 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 job.setStatus(cancelled.get() ? "CANCELLED" : "FAILED");
                 job.setMessage(clip(errMsg, 400));
                 job.setExitCode(exit);
-                String mergedLog;
+                String processLog;
                 synchronized (logBuf) {
-                    mergedLog = logBuf.toString();
+                    processLog = logBuf.toString();
                 }
                 String fallback = buildFallbackLog(command, exit, errMsg);
-                String merged = StringUtils.isNotBlank(mergedLog) ? (mergedLog + "\n" + fallback) : fallback;
+                String persistedLog = job.getLogTail();
+                String existingLog = StringUtils.isNotBlank(persistedLog) ? persistedLog : processLog;
+                String merged = StringUtils.isNotBlank(existingLog) ? (existingLog + "\n" + fallback) : fallback;
                 job.setLogTail(trimLog(merged));
                 job.setFinishedAt(LocalDateTime.now());
                 syncJobMapper.updateById(job);
@@ -636,78 +670,164 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     }
 
     /**
-     * 市场相关同步结束后清看板简报缓存（成功/失败都清，避免冻住旧立场）
+     * 市场相关同步成功后刷新依赖数据
      */
-    private void onMarketDataSynced(String taskType) {
+    private void onMarketDataSynced(SyncJob job, AtomicBoolean cancelled) {
+        if (Objects.isNull(job) || StringUtils.isBlank(job.getTaskType())) {
+            return;
+        }
+        String type = job.getTaskType().trim().toUpperCase(Locale.ROOT);
+        if (!"CLOSE_BUNDLE".equals(type)) {
+            return;
+        }
+
+        ensurePostProcessingActive(cancelled);
+        String group = "我的自选";
+        try {
+            if (Objects.nonNull(configService)) {
+                group = configService.getString("auto_sync_group", group);
+            }
+        } catch (Exception ex) {
+            appendLog(job, "[warning] load sync group failed, use default: " + ex.getMessage() + "\n");
+        }
+
+        List<Long> userIds;
+        try {
+            userIds = userAuthService.listEnabledUserIds();
+        } catch (Exception ex) {
+            throw new BusinessException("收盘后处理失败：读取启用用户失败：" + errorMessage(ex), ex);
+        }
+        if (CollUtil.isEmpty(userIds)) {
+            job.setProgressPct(99);
+            job.setDoneItems(0);
+            job.setTotalItems(0);
+            job.setMessage("收盘后处理：无启用用户，已跳过用户数据刷新");
+            appendLog(job, "[post] no enabled users, skipped user data refresh\n");
+            syncJobMapper.updateById(job);
+            return;
+        }
+
+        String syncGroup = group;
+        int totalStages = userIds.size() * 4;
+        AtomicInteger completedStages = new AtomicInteger();
+        for (Long userId : userIds) {
+            ensurePostProcessingActive(cancelled);
+            userContext.runAsUser(userId, () -> runCloseBundlePostProcessing(
+                    job, syncGroup, userId, cancelled, completedStages, totalStages));
+        }
+    }
+
+    private void invalidateMarketBriefingCache(SyncJob job, String taskType) {
         if (StringUtils.isBlank(taskType)) {
             return;
         }
         String type = taskType.trim().toUpperCase(Locale.ROOT);
-        if ("CLOSE_BUNDLE".equals(type) || "INDEX".equals(type) || "SECTOR_QUOTE".equals(type)
-                || "LIMIT_UP".equals(type)) {
-            try {
-                marketBriefingService.invalidateCache();
-            } catch (Exception ex) {
-                log.debug("清简报缓存失败 type={} err={}", type, ex.getMessage());
-            }
+        if (!"CLOSE_BUNDLE".equals(type) && !"INDEX".equals(type) && !"SECTOR_QUOTE".equals(type)
+                && !"LIMIT_UP".equals(type)) {
+            return;
         }
-        // Web「一键收盘」脚本不含个股：成功后补刷自选/持仓快照与缺日 K
-        if ("CLOSE_BUNDLE".equals(type)) {
-            String group = "我的自选";
-            try {
-                if (Objects.nonNull(configService)) {
-                    group = configService.getString("auto_sync_group", group);
-                }
-            } catch (Exception ignored) {
-                // keep default
-            }
-            List<Long> userIds;
-            try {
-                userIds = userAuthService.listEnabledUserIds();
-            } catch (Exception ex) {
-                log.warn("CLOSE_BUNDLE 后处理读取启用用户失败 reason={}", ex.getMessage());
-                return;
-            }
-            String syncGroup = group;
-            for (Long userId : userIds) {
-                try {
-                    userContext.runAsUser(userId, () -> runCloseBundlePostProcessing(syncGroup, userId));
-                } catch (Exception ex) {
-                    log.warn("CLOSE_BUNDLE 用户后处理失败 userId={} reason={}", userId, ex.getMessage());
-                }
-            }
+        try {
+            marketBriefingService.invalidateCache();
+        } catch (Exception ex) {
+            appendLog(job, "[warning] invalidate briefing cache failed: " + ex.getMessage() + "\n");
+            log.warn("清简报缓存失败 type={} err={}", type, ex.getMessage());
         }
     }
 
-    private void runCloseBundlePostProcessing(String group, Long userId) {
+    private void runCloseBundlePostProcessing(SyncJob job, String group, Long userId, AtomicBoolean cancelled,
+                                              AtomicInteger completedStages, int totalStages) {
+        persistPostProcessingStage(job, userId, "自选行情", completedStages.get(), totalStages, cancelled);
         try {
             Map<String, Object> quoteResp = watchlistService.refreshQuotes(group, 80, false);
+            int failCount = resultCount(quoteResp, "failCount");
+            if (failCount > 0) {
+                throw new BusinessException("自选行情刷新失败 " + failCount + " 项");
+            }
             log.info("CLOSE_BUNDLE 后刷自选行情 userId={} success={}", userId, quoteResp.get("successCount"));
         } catch (Exception ex) {
-            log.warn("CLOSE_BUNDLE 后刷自选行情失败 userId={} reason={}", userId, ex.getMessage());
+            throw postProcessingFailure(userId, "自选行情", ex);
         }
+        persistPostProcessingStage(job, userId, "自选行情完成", completedStages.incrementAndGet(), totalStages, cancelled);
+
+        persistPostProcessingStage(job, userId, "持仓行情", completedStages.get(), totalStages, cancelled);
         try {
-            myHoldingService.refreshQuotes(false);
+            Map<String, Object> holdingResp = myHoldingService.refreshQuotes(false);
+            int failCount = resultCount(holdingResp, "fail") + resultCount(holdingResp, "barFail");
+            if (failCount > 0) {
+                throw new BusinessException("持仓行情刷新失败 " + failCount + " 项");
+            }
             log.info("CLOSE_BUNDLE 后刷持仓行情完成 userId={}", userId);
         } catch (Exception ex) {
-            log.warn("CLOSE_BUNDLE 后刷持仓行情失败 userId={} reason={}", userId, ex.getMessage());
+            throw postProcessingFailure(userId, "持仓行情", ex);
         }
+        persistPostProcessingStage(job, userId, "持仓行情完成", completedStages.incrementAndGet(), totalStages, cancelled);
+
+        persistPostProcessingStage(job, userId, "组合行情与快照", completedStages.get(), totalStages, cancelled);
         try {
             Map<String, Object> portfolioResp = portfolioService.refreshQuotesAll(false);
+            int failCount = resultCount(portfolioResp, "fail") + resultCount(portfolioResp, "barFail");
+            if (failCount > 0) {
+                throw new BusinessException("组合行情刷新失败 " + failCount + " 项");
+            }
             int snapshotCount = portfolioService.snapshotAll();
             log.info("CLOSE_BUNDLE 后刷全部组合完成 userId={} portfolios={} success={} fail={} snapshot={}",
                     userId, portfolioResp.get("portfolioCount"), portfolioResp.get("success"),
                     portfolioResp.get("fail"), snapshotCount);
         } catch (Exception ex) {
-            log.warn("CLOSE_BUNDLE 后刷全部组合失败 userId={} reason={}", userId, ex.getMessage());
+            throw postProcessingFailure(userId, "组合行情与快照", ex);
         }
+        persistPostProcessingStage(job, userId, "组合行情与快照完成",
+                completedStages.incrementAndGet(), totalStages, cancelled);
+
+        persistPostProcessingStage(job, userId, "自选日线", completedStages.get(), totalStages, cancelled);
         try {
             BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);
+            int failCount = Objects.nonNull(barResp.getFailCount()) ? barResp.getFailCount() : 0;
+            if (failCount > 0) {
+                throw new BusinessException("自选日线刷新失败 " + failCount + " 项");
+            }
             log.info("CLOSE_BUNDLE 后刷自选日线 userId={} success={} fail={}",
                     userId, barResp.getSuccessCount(), barResp.getFailCount());
         } catch (Exception ex) {
-            log.warn("CLOSE_BUNDLE 后刷自选日线失败 userId={} reason={}", userId, ex.getMessage());
+            throw postProcessingFailure(userId, "自选日线", ex);
         }
+        persistPostProcessingStage(job, userId, "自选日线完成", completedStages.incrementAndGet(), totalStages, cancelled);
+    }
+
+    private void persistPostProcessingStage(SyncJob job, Long userId, String stage, int completedStages,
+                                            int totalStages, AtomicBoolean cancelled) {
+        ensurePostProcessingActive(cancelled);
+        int progress = 90 + Math.min(9, completedStages * 9 / Math.max(totalStages, 1));
+        job.setProgressPct(progress);
+        job.setDoneItems(completedStages);
+        job.setTotalItems(totalStages);
+        job.setMessage("收盘后处理：用户 " + userId + " · " + stage);
+        appendLog(job, "[post] userId=" + userId + " stage=" + stage + " progress=" + progress + "%\n");
+        syncJobMapper.updateById(job);
+    }
+
+    private void ensurePostProcessingActive(AtomicBoolean cancelled) {
+        if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+            throw new BusinessException("收盘后处理已取消");
+        }
+    }
+
+    private BusinessException postProcessingFailure(Long userId, String stage, Exception ex) {
+        String message = "收盘后处理失败：用户 " + userId + " · " + stage + "：" + errorMessage(ex);
+        log.warn("CLOSE_BUNDLE 后处理失败 userId={} stage={} reason={}", userId, stage, errorMessage(ex));
+        return new BusinessException(message, ex);
+    }
+
+    private String errorMessage(Exception ex) {
+        return StringUtils.isNotBlank(ex.getMessage()) ? ex.getMessage() : ex.getClass().getSimpleName();
+    }
+
+    private int resultCount(Map<String, Object> result, String key) {
+        if (Objects.isNull(result)) {
+            throw new BusinessException("后处理返回结果为空");
+        }
+        Object value = result.get(key);
+        return value instanceof Number count ? count.intValue() : 0;
     }
 
     private void updateProgressFromLine(SyncJob job, String line, long lineNo) {

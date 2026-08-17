@@ -27,6 +27,14 @@ public interface IDataSyncJobService {
     SyncJobResp start(SyncStartReq req);
 
     /**
+     * 由系统调度启动共享同步任务
+     *
+     * @param req 请求
+     * @return 任务状态
+     */
+    SyncJobResp startSystemTask(SyncStartReq req);
+
+    /**
      * 为指定用户启动智能决策任务。
      *
      * @param req    请求

@@ -3,7 +3,9 @@ package com.awe.apex.quant.service.impl;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.SyncOverviewResp;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
+import com.awe.apex.quant.domain.dto.SyncTaskDefResp;
 import com.awe.apex.quant.domain.entity.SyncJob;
 import com.awe.apex.quant.mapper.SyncJobMapper;
 import com.awe.apex.quant.service.IConfigService;
@@ -27,10 +29,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doThrow;
@@ -147,6 +152,50 @@ class DataSyncJobServiceOwnershipTest {
         verify(syncJobMapper).selectList(queryCaptor.capture());
         Wrapper<SyncJob> query = queryCaptor.getValue();
         assertTrue(query.getSqlSegment().contains("id"));
+    }
+
+    @Test
+    void overviewSelectsLatestSuccessByJobId() {
+        when(syncJobMapper.selectList(any())).thenReturn(java.util.List.of());
+
+        service.overview();
+
+        ArgumentCaptor<Wrapper<SyncJob>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(syncJobMapper, atLeastOnce()).selectOne(queryCaptor.capture());
+        java.util.List<String> successQueries = new java.util.ArrayList<>();
+        for (Wrapper<SyncJob> query : queryCaptor.getAllValues()) {
+            String sql = query.getSqlSegment();
+            if (sql.contains("status")) {
+                successQueries.add(sql);
+            }
+        }
+        assertFalse(successQueries.isEmpty());
+        assertTrue(successQueries.stream().allMatch(sql -> sql.contains("id")));
+        assertTrue(successQueries.stream().noneMatch(sql -> sql.contains("finished_at")));
+    }
+
+    @Test
+    void overviewTreatsPendingTaskAsRunning() {
+        SyncJob pendingJob = SyncJob.builder()
+                .id(301L)
+                .taskType("CLOSE_BUNDLE")
+                .taskName("一键收盘同步")
+                .status("PENDING")
+                .build();
+        when(syncJobMapper.selectList(any())).thenReturn(java.util.List.of(pendingJob));
+
+        SyncOverviewResp overview = service.overview();
+
+        SyncTaskDefResp closeBundleTask = null;
+        for (SyncTaskDefResp task : overview.getTasks()) {
+            if ("CLOSE_BUNDLE".equals(task.getTaskType())) {
+                closeBundleTask = task;
+                break;
+            }
+        }
+        assertNotNull(closeBundleTask);
+        assertTrue(closeBundleTask.getRunning());
+        assertEquals(1, overview.getRunningCount());
     }
 
     @Test
