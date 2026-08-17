@@ -3,7 +3,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ArrowRight, MoreFilled, Rank } from '@element-plus/icons-vue'
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  FolderAdd,
+  MoreFilled,
+  Plus,
+  Rank,
+  Refresh,
+  Upload,
+} from '@element-plus/icons-vue'
 import { saveObserve } from '../api/observe'
 import { searchStock } from '../api/stock'
 import {
@@ -691,6 +701,10 @@ async function closeMobileDetail() {
 }
 
 function handleMobileListAction(command) {
+  if (command === 'trades') {
+    router.push('/trades')
+    return
+  }
   if (command === 'today-share') {
     selectedIds.value = (list.value || []).map((row) => Number(row.id))
     nextTick(() => openShare('today'))
@@ -712,6 +726,10 @@ function handleMobileListAction(command) {
 }
 
 function handleMobileDetailAction(command) {
+  if (command === 'trades') {
+    router.push('/trades')
+    return
+  }
   if (command === 'edit') {
     if (activeSummary.value) openEditPf(activeSummary.value)
     return
@@ -733,6 +751,22 @@ function handleMobileDetailAction(command) {
     return
   }
   if (command === 'holding') router.push('/holding')
+}
+
+function handleDesktopToolbarAction(command) {
+  if (command === 'snapshot') {
+    onSnapshot()
+    return
+  }
+  handleMobileListAction(command)
+}
+
+function handlePortfolioCardAction(row, command) {
+  if (command === 'edit') {
+    openEditPf(row)
+    return
+  }
+  if (command === 'remove') onRemovePf(row)
 }
 
 watch(activeId, (id) => {
@@ -1409,6 +1443,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  clearPortfolioSortInteraction()
   revokeSharePreview()
   chart?.dispose()
   industryChart?.dispose()
@@ -1431,12 +1466,41 @@ onBeforeUnmount(() => {
         <h1>组合</h1>
         <p>跟踪自己的或别人的实盘；详情区与「真实持仓」同风格，可导入与每日浮盈快照。</p>
       </div>
-      <div class="actions desktop-header-actions">
-        <el-button type="primary" @click="openCreatePf">新建组合</el-button>
-        <el-button plain :loading="refreshing" @click="onRefreshQuotesAll">刷新全部行情</el-button>
-        <el-button plain :loading="snapshotting" @click="onSnapshotAll">全部打快照</el-button>
-        <el-button plain @click="router.push('/holding')">真实持仓</el-button>
-        <el-button text :loading="loading" @click="loadList(true)">刷新</el-button>
+      <div class="portfolio-desktop-toolbar" aria-label="组合操作">
+        <el-button type="primary" :icon="Plus" :disabled="!detail" @click="openCreate">添加持仓</el-button>
+        <el-button plain :icon="FolderAdd" @click="openCreatePf">新建组合</el-button>
+        <span class="portfolio-toolbar-divider" aria-hidden="true"></span>
+        <el-button plain :icon="Upload" :disabled="!detail" @click="openImport">导入</el-button>
+        <el-button
+          plain
+          :icon="Refresh"
+          :loading="refreshing"
+          :disabled="!rows.length"
+          title="刷新当前组合行情与日线"
+          @click="onRefreshQuotes"
+        >
+          刷新当前
+        </el-button>
+        <el-dropdown trigger="click" placement="bottom-end" @command="handleDesktopToolbarAction">
+          <el-button plain class="portfolio-toolbar-more">
+            更多
+            <el-icon class="portfolio-toolbar-more-icon"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="trades">交易记录</el-dropdown-item>
+              <el-dropdown-item command="snapshot" :disabled="!detail || snapshotting">打今日快照</el-dropdown-item>
+              <el-dropdown-item command="refresh-all" :disabled="!list.length || refreshing" divided>
+                刷新全部行情
+              </el-dropdown-item>
+              <el-dropdown-item command="snapshot-all" :disabled="!list.length || snapshotting">
+                全部打快照
+              </el-dropdown-item>
+              <el-dropdown-item command="holding">打开真实持仓</el-dropdown-item>
+              <el-dropdown-item command="refresh-list" :disabled="loading" divided>刷新组合列表</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </header>
 
@@ -1459,6 +1523,7 @@ onBeforeUnmount(() => {
             </button>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="trades">交易记录</el-dropdown-item>
                 <el-dropdown-item command="today-share" :disabled="!list.length">今日战绩拼图</el-dropdown-item>
                 <el-dropdown-item command="refresh-all">刷新全部行情</el-dropdown-item>
                 <el-dropdown-item command="snapshot-all">全部打快照</el-dropdown-item>
@@ -1500,11 +1565,12 @@ onBeforeUnmount(() => {
             </el-button>
           </div>
           <div v-if="!list.length" class="side-empty">暂无组合</div>
-          <button
+          <article
             v-for="row in list"
             :key="row.id"
-            type="button"
             class="pf-card"
+            role="button"
+            tabindex="0"
             :class="{
               active: !isMobileViewport && row.id === activeId,
               archived: row.status === 'ARCHIVED',
@@ -1514,17 +1580,22 @@ onBeforeUnmount(() => {
               'is-drop-after': Number(row.id) === dropPortfolioId && dropAfter,
             }"
             :data-portfolio-id="row.id"
+            :aria-current="!isMobileViewport && row.id === activeId ? 'true' : undefined"
             @click="onPortfolioCardClick(row)"
+            @keydown.enter.self.prevent="onPortfolioCardClick(row)"
+            @keydown.space.self.prevent="onPortfolioCardClick(row)"
           >
             <div class="pf-top">
-              <span
+              <button
+                type="button"
                 class="pf-sort-handle"
-                title="按住拖动排序"
-                aria-label="按住拖动排序"
+                title="拖动调整组合顺序"
+                aria-label="拖动调整组合顺序"
+                @click.stop
                 @pointerdown="onSortHandlePointerDown(row, $event)"
               >
                 <el-icon><Rank /></el-icon>
-              </span>
+              </button>
               <el-checkbox
                 v-if="!isMobileViewport"
                 :model-value="isSelected(row.id)"
@@ -1541,13 +1612,37 @@ onBeforeUnmount(() => {
                 <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
               </span>
               <el-icon v-if="isMobileViewport" class="pf-card-arrow"><ArrowRight /></el-icon>
+              <el-dropdown
+                v-else
+                class="pf-card-menu"
+                trigger="click"
+                placement="bottom-end"
+                @click.stop
+                @command="(command) => handlePortfolioCardAction(row, command)"
+              >
+                <button
+                  type="button"
+                  class="pf-card-menu-trigger"
+                  :aria-label="`${row.name}更多操作`"
+                  title="更多操作"
+                  @click.stop
+                >
+                  <el-icon><MoreFilled /></el-icon>
+                </button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="edit">编辑组合</el-dropdown-item>
+                    <el-dropdown-item command="remove" :disabled="row.isDefault" divided>删除组合</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
-            <div v-if="!isMobileViewport" class="pf-meta">
-              <span>{{ row.positionCount || 0 }} 只</span>
-            </div>
-            <div v-if="!isMobileViewport" class="pf-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
-              今日 {{ fmtSignedMoney(row.todayPnl) }}
-              <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
+            <div v-if="!isMobileViewport" class="pf-summary">
+              <span class="pf-meta">{{ row.positionCount || 0 }} 只</span>
+              <span class="pf-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
+                今日 <b>{{ fmtSignedMoney(row.todayPnl) }}</b>
+                <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
+              </span>
             </div>
             <div v-if="row.topHoldings?.length" class="pf-tops">
               <span v-for="h in row.topHoldings.slice(0, 3)" :key="h.code" class="pf-top-chip">
@@ -1555,11 +1650,7 @@ onBeforeUnmount(() => {
                 <em :class="Number(h.pctChg) >= 0 ? 'up' : 'down'">{{ fmtSignedPct(h.pctChg) }}</em>
               </span>
             </div>
-            <div v-if="!isMobileViewport" class="pf-ops" @click.stop>
-              <el-button link type="primary" @click="openEditPf(row)">编辑</el-button>
-              <el-button link type="danger" :disabled="row.isDefault" @click="onRemovePf(row)">删除</el-button>
-            </div>
-          </button>
+          </article>
         </template>
         <div v-else-if="!isMobileViewport" class="side-rail">
           <button
@@ -1588,6 +1679,7 @@ onBeforeUnmount(() => {
             </button>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="trades">交易记录</el-dropdown-item>
                 <el-dropdown-item command="edit">编辑组合</el-dropdown-item>
                 <el-dropdown-item command="refresh" :disabled="!rows.length">刷新行情和日线</el-dropdown-item>
                 <el-dropdown-item command="import">导入持仓</el-dropdown-item>
@@ -1610,15 +1702,6 @@ onBeforeUnmount(() => {
               <template v-if="detail.ownerLabel && detail.note"> · </template>
               <template v-if="detail.note">{{ detail.note }}</template>
             </p>
-          </div>
-          <div class="actions detail-actions">
-            <el-button type="primary" @click="openCreate">添加持仓</el-button>
-            <el-button plain :loading="refreshing" :disabled="!rows.length" @click="onRefreshQuotes">
-              刷新当前行情+日线
-            </el-button>
-            <el-button plain @click="openImport">导入</el-button>
-            <el-button plain :loading="snapshotting" @click="onSnapshot">打今日快照</el-button>
-            <el-button v-if="detail.isDefault" plain @click="router.push('/holding')">打开持仓页</el-button>
           </div>
         </header>
 
@@ -2241,7 +2324,7 @@ onBeforeUnmount(() => {
     display: none;
   }
 
-  .desktop-header-actions {
+  .portfolio-desktop-toolbar {
     display: none !important;
   }
 
@@ -2289,10 +2372,6 @@ onBeforeUnmount(() => {
 
   .mobile-back-button .el-icon {
     font-size: 18px;
-  }
-
-  .portfolio-page.mobile-detail-open .detail-actions {
-    display: none;
   }
 
   .portfolio-page.mobile-detail-open .detail-header {
@@ -2351,14 +2430,38 @@ onBeforeUnmount(() => {
   margin: 4px 0 6px;
   font-size: 26px;
 }
-.actions {
+.portfolio-header {
+  align-items: flex-end;
+}
+.portfolio-desktop-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 2px 8px rgba(29, 29, 31, 0.04);
+}
+.portfolio-desktop-toolbar :deep(.el-button) {
+  min-height: 38px;
+  margin-left: 0;
+  border-radius: 6px;
+}
+.portfolio-toolbar-divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 2px;
+  background: rgba(0, 0, 0, 0.1);
+}
+.portfolio-toolbar-more-icon {
+  margin-left: 5px;
+  font-size: 12px;
 }
 .layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
   transition: grid-template-columns 0.2s ease;
@@ -2369,7 +2472,7 @@ onBeforeUnmount(() => {
 .side {
   background: var(--glass, #faf8f4);
   border: 1px solid var(--glass-border, rgba(0, 0, 0, 0.06));
-  border-radius: var(--radius, 12px);
+  border-radius: 8px;
   padding: 12px;
   min-height: 420px;
   position: sticky;
@@ -2459,15 +2562,18 @@ onBeforeUnmount(() => {
 }
 .pf-card {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   text-align: left;
   border: 1px solid transparent;
   background: #fff;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 8px;
   cursor: pointer;
   position: relative;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 .pf-card:hover {
   border-color: rgba(0, 0, 0, 0.08);
@@ -2475,6 +2581,10 @@ onBeforeUnmount(() => {
 .pf-card.active {
   border-color: rgba(0, 113, 227, 0.35);
   box-shadow: 0 0 0 1px rgba(0, 113, 227, 0.12);
+}
+.pf-card:focus-visible {
+  border-color: rgba(0, 113, 227, 0.48);
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.14);
 }
 .pf-card.picked {
   background: rgba(0, 113, 227, 0.04);
@@ -2500,21 +2610,24 @@ onBeforeUnmount(() => {
   bottom: -5px;
 }
 .pf-top {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px 18px minmax(0, 1fr) 32px;
   align-items: center;
   gap: 6px;
-  padding-right: 72px;
+  min-height: 34px;
 }
 .pf-sort-handle {
   display: inline-flex;
-  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 28px;
-  margin-left: -5px;
-  border-radius: 5px;
+  width: 32px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: #86868b;
+  font-size: 15px;
   cursor: grab;
   touch-action: none;
 }
@@ -2527,35 +2640,83 @@ onBeforeUnmount(() => {
 }
 .pf-name {
   display: flex;
-  flex: 1;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
 }
-.pf-top strong {
+.pf-name strong {
+  min-width: 0;
+  overflow: hidden;
   font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tag {
+  flex: 0 0 auto;
   font-size: 11px;
   color: #0071e3;
   background: rgba(0, 113, 227, 0.1);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: 5px;
+}
+.pf-card :deep(.el-checkbox) {
+  margin-right: 0;
+}
+.pf-card-menu {
+  width: 32px;
+  height: 32px;
+}
+.pf-card-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #86868b;
+  font-size: 17px;
+  cursor: pointer;
+}
+.pf-card-menu-trigger:hover,
+.pf-card-menu-trigger:focus-visible {
+  background: rgba(0, 0, 0, 0.045);
+  color: var(--ink-soft);
+  outline: none;
+}
+.pf-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-left: 62px;
 }
 .pf-meta {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: 4px;
+  flex: 0 0 auto;
   font-size: 12px;
   color: #86868b;
 }
 .pf-pnl {
-  margin-top: 6px;
-  font-size: 13px;
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
+}
+.pf-pnl b {
+  font-size: 13px;
+  font-weight: 700;
 }
 .pf-pnl small {
-  margin-left: 6px;
+  margin-left: 2px;
   font-weight: 500;
 }
 .pf-tops {
@@ -2592,22 +2753,6 @@ onBeforeUnmount(() => {
 .pf-top-chip em.down {
   color: #1f7a4d;
 }
-.pf-ops {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-}
-.pf-card:hover .pf-ops,
-.pf-card:focus-within .pf-ops {
-  opacity: 1;
-  pointer-events: auto;
-}
 .main {
   min-width: 0;
   background: transparent;
@@ -2621,7 +2766,6 @@ onBeforeUnmount(() => {
 .share-brand-strip {
   margin-bottom: 12px;
 }
-.main.is-sharing-capture :deep(.detail-header .actions),
 .main.is-sharing-capture :deep(.share-hide-meta),
 .main.is-sharing-capture :deep(.brief-foot),
 .main.is-sharing-capture :deep(.industry-toggle),
@@ -2864,6 +3008,17 @@ onBeforeUnmount(() => {
   font-size: 11px;
   color: #8e8e93;
 }
+@media (max-width: 1180px) {
+  .portfolio-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .portfolio-desktop-toolbar {
+    align-self: flex-end;
+  }
+}
+
 @media (max-width: 960px) {
   .brief-grid {
     grid-template-columns: 1fr;
@@ -3516,19 +3671,19 @@ onBeforeUnmount(() => {
     opacity: 0.58;
   }
 
-      .pf-top {
-        display: grid;
-        grid-template-columns: 24px minmax(56px, 1fr) auto 18px;
-        min-height: 32px;
-        gap: 8px;
-        padding-right: 0;
-      }
+  .pf-top {
+    display: grid;
+    grid-template-columns: 24px minmax(56px, 1fr) auto 18px;
+    min-height: 32px;
+    gap: 8px;
+    padding-right: 0;
+  }
 
-      .pf-sort-handle {
-        width: 24px;
-        height: 32px;
-        margin-left: 0;
-      }
+  .pf-sort-handle {
+    width: 24px;
+    height: 32px;
+    margin-left: 0;
+  }
 
   .pf-name {
     overflow: hidden;

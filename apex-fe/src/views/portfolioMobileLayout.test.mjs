@@ -14,7 +14,7 @@ test('mobile portfolio controls share one compact list toolbar', () => {
 
 test('mobile portfolio rows keep today performance beside the portfolio name', () => {
   assert.match(portfolioSource, /v-if="isMobileViewport" class="pf-mobile-pnl"/)
-  assert.match(portfolioSource, /v-if="!isMobileViewport" class="pf-pnl"/)
+  assert.match(portfolioSource, /v-if="!isMobileViewport" class="pf-summary"[\s\S]*?class="pf-pnl"/)
 })
 
 test('mobile portfolio rows use distinct card boundaries for scanning', () => {
@@ -78,4 +78,24 @@ test('portfolio cards support long-press drag ordering with persistent sort numb
   assert.match(portfolioSource, /await sortPortfolios\(list\.value\.map\(\(row\) => row\.id\)\)/)
   assert.match(portfolioSource, /class="pf-sort-handle"/)
   assert.match(portfolioSource, /:data-portfolio-id="row\.id"/)
+})
+
+test('desktop portfolio actions use one grouped toolbar', () => {
+  assert.match(portfolioSource, /class="portfolio-desktop-toolbar"/)
+  assert.match(portfolioSource, /function handleDesktopToolbarAction\(command\)/)
+  assert.doesNotMatch(portfolioSource, /class="actions desktop-header-actions"/)
+  assert.doesNotMatch(portfolioSource, /class="actions detail-actions"/)
+})
+
+test('desktop portfolio cards keep drag, selection, name, and menu in stable columns', () => {
+  assert.match(portfolioSource, /<article[\s\S]*?class="pf-card"[\s\S]*?role="button"/)
+  assert.match(
+    portfolioSource,
+    /\.pf-top\s*\{[\s\S]*?grid-template-columns:\s*32px 18px minmax\(0, 1fr\) 32px;/,
+  )
+  assert.match(portfolioSource, /class="pf-card-menu-trigger"/)
+  assert.match(portfolioSource, /@keydown\.enter\.self\.prevent="onPortfolioCardClick\(row\)"/)
+  assert.match(portfolioSource, /@keydown\.space\.self\.prevent="onPortfolioCardClick\(row\)"/)
+  assert.match(portfolioSource, /\.pf-name strong\s*\{[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/)
+  assert.doesNotMatch(portfolioSource, /\.pf-top\s*\{[\s\S]*?padding-right:\s*72px;/)
 })
