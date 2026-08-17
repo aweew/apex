@@ -1,5 +1,5 @@
 /**
- * 名词百科分享画布：关键样式走 inline，避免截图克隆丢失 class CSS；必须带灵枢 Apex 品牌信息。
+ * 名词百科分享画布：关键样式走 inline，避免截图克隆丢失 class CSS；必须带灵极 Apex 品牌信息。
  */
 
 import { BRAND, shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'

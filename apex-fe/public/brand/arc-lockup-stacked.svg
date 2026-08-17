@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 865" fill="none">
-  <title>灵枢 Apex Stacked</title>
+  <title>灵极 Apex Stacked</title>
   <g transform="translate(120 70) scale(2)">
     <path d="M52 182 106 58c3-7 8-11 14-11s12 4 15 11l53 124h-29l-39-94-39 94H52Z" fill="#1478D4"/>
     <path d="M81 174c15-29 43-45 76-45" stroke="#16B9C4" stroke-width="15" stroke-linecap="round"/>
     <circle cx="163" cy="126" r="12" fill="#F2B84B"/>
   </g>
   <text x="360" y="635" text-anchor="middle" fill="#18212F" font-family="Arial, 'Plus Jakarta Sans', sans-serif" font-size="76" font-weight="750" letter-spacing="12">APEX</text>
-  <text x="360" y="704" text-anchor="middle" fill="#64748B" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-size="35" font-weight="600" letter-spacing="10">灵枢</text>
+  <text x="360" y="704" text-anchor="middle" fill="#64748B" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-size="35" font-weight="600" letter-spacing="10">灵极</text>
   <text x="360" y="756" text-anchor="middle" fill="#8793A5" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-size="22" font-weight="500" letter-spacing="4">市场信号的智能中枢</text>
 </svg>

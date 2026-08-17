@@ -1,6 +1,6 @@
 /**
- * 灵枢 Apex 品牌标识（单一事实源）
- * 中文名：灵枢 · 英文名：Apex · Slogan：灵枢既定，只问顶峰
+ * 灵极 Apex 品牌标识（单一事实源）
+ * 中文名：灵极 · 英文名：Apex · Slogan：灵极既定，只问顶峰
  *
  * 资源：
  * - mark：Arc 标志（透明底，导航）
@@ -10,12 +10,12 @@
  */
 
 export const BRAND = {
-  nameZh: '灵枢',
+  nameZh: '灵极',
   nameEn: 'Apex',
-  slogan: '灵枢既定，只问顶峰',
+  slogan: '灵极既定，只问顶峰',
   product: '本地量化台',
   /** 文档 / 浏览器标题 */
-  documentTitle: '灵枢 Apex · 本地量化',
+  documentTitle: '灵极 Apex · 本地量化',
   /** 页眉短标语（导航窄位） */
   taglineShort: '只问顶峰',
   assets: {
@@ -58,11 +58,11 @@ export function preloadBrandAssets(keys = ['markShare']) {
 }
 
 /**
- * 页面 eyebrow：灵枢 · Module
+ * 页面 eyebrow：灵极 · Module
  * @param {string} moduleLabel
  */
 export function brandEyebrow(moduleLabel) {
-  return `灵枢 · ${moduleLabel}`
+  return `${BRAND.nameZh} · ${moduleLabel}`
 }
 
 /**

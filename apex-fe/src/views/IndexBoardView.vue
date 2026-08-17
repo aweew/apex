@@ -855,7 +855,7 @@ onBeforeUnmount(() => {
       class="market-share-dialog"
       @closed="revokeSharePreview"
     >
-      <p class="share-tip">含灵枢 Apex 品牌与赚钱效应；可复制或下载 PNG 后发微信/社群。</p>
+      <p class="share-tip">含灵极 Apex 品牌与赚钱效应；可复制或下载 PNG 后发微信/社群。</p>
       <div class="share-stage">
         <img v-if="sharePreviewUrl" :src="sharePreviewUrl" alt="行情分享预览" />
       </div>

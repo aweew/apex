@@ -31,7 +31,7 @@
     <view class="section-head"><view><text>主线与情绪</text><text>今日关注题材与操作提示</text></view><button bindtap="openLadder">天梯</button></view>
     <view class="theme-panel"><view wx:if="{{themeItems.length}}" class="theme-row"><view wx:for="{{themeItems}}" wx:key="name" class="theme-chip"><text>{{item.name}}</text><text class="{{item.direction}}">{{item.pct}}</text></view></view><text wx:else class="empty-note">暂无主线题材</text><view wx:if="{{tips.length}}" class="tip-list"><view wx:for="{{tips}}" wx:key="*this" class="tip-item"><text></text><text>{{item}}</text></view></view></view>
     <view class="health-panel"><view><text>数据可信度</text><text>{{home.dataHealth.suggestion || '尚未拿到数据健康状态'}}</text></view><text class="health-level">{{home.dataHealth.level || '—'}}</text><view class="health-stats"><text>自选 <b>{{home.dataHealth.watchlistCount || '-'}}</b></text><text>过期 <b>{{home.dataHealth.barsStaleCount || '-'}}</b></text><text>空K <b>{{home.dataHealth.barsEmptyCount || '-'}}</b></text></view></view>
-    <view class="brand-footer"><text>灵枢既定，只问顶峰</text><text>研究数据仅供参考</text></view>
+    <view class="brand-footer"><text>灵极既定，只问顶峰</text><text>研究数据仅供参考</text></view>
   </block>
   <view wx:else class="loading">正在加载市场与决策...</view>
 </scroll-view>

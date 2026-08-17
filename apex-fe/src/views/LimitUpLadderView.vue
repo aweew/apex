@@ -578,7 +578,7 @@ onBeforeUnmount(() => {
       </section>
 
       <footer class="board-foot">
-        <span>灵枢 · 连板天梯</span>
+        <span>灵极 · 连板天梯</span>
         <span>{{ snapshotStamp(data) || '日期待同步' }} · 仅供研究</span>
       </footer>
     </div>

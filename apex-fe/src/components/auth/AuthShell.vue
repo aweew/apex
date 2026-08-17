@@ -102,6 +102,7 @@ h1 { margin: 0; color: var(--ink); font-size: 27px; font-weight: 600; line-heigh
 :deep(.el-form-item) { margin-bottom: 12px; }
 .auth-panel--compact :deep(.el-form-item) { margin-bottom: 16px; }
 :deep(.el-form-item__label) { color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.3; padding-bottom: 8px; }
+:deep(.el-form-item__error) { position: static; width: 100%; padding-top: 4px; line-height: 1.3; }
 :deep(.el-input__wrapper) { min-height: 54px; padding: 1px 15px; border-radius: 6px; background: var(--field-bg); box-shadow: 0 0 0 1px rgba(42, 78, 108, .2) inset !important; transition: box-shadow .18s ease, background .18s ease; }
 :deep(.el-input__inner) { color: var(--field-text); font-size: 16px; }
 :deep(.el-input__inner::placeholder) { color: var(--field-placeholder); }

@@ -1,5 +1,5 @@
 /**
- * 行情中心分享画布：inline 样式截图；品牌统一为灵枢 Apex。
+ * 行情中心分享画布：inline 样式截图；品牌统一为灵极 Apex。
  */
 
 import { shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js'

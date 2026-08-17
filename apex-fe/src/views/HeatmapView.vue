@@ -689,7 +689,7 @@ onBeforeUnmount(() => {
       class="heatmap-share-dialog"
       @closed="revokeSharePreview"
     >
-      <p class="share-tip">含灵枢 Apex 品牌；可复制或下载 PNG 后发微信/社群。</p>
+      <p class="share-tip">含灵极 Apex 品牌；可复制或下载 PNG 后发微信/社群。</p>
       <div v-if="sharePreviewUrl" class="share-preview">
         <img :src="sharePreviewUrl" alt="大盘云图分享预览" />
       </div>

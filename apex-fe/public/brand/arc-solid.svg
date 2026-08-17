@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" fill="none">
-  <title>灵枢 Apex Solid</title>
+  <title>灵极 Apex Solid</title>
   <rect width="720" height="720" rx="120" fill="#1478D4"/>
   <g transform="translate(120 70) scale(2)">
     <path d="M52 182 106 58c3-7 8-11 14-11s12 4 15 11l53 124h-29l-39-94-39 94H52Z" fill="#FFFFFF"/>
@@ -7,5 +7,5 @@
     <circle cx="163" cy="126" r="12" fill="#F7CB69"/>
   </g>
   <text x="360" y="615" text-anchor="middle" fill="#FFFFFF" font-family="Arial, 'Plus Jakarta Sans', sans-serif" font-size="56" font-weight="750" letter-spacing="9">APEX</text>
-  <text x="360" y="662" text-anchor="middle" fill="#D9F0F7" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-size="26" font-weight="600" letter-spacing="7">灵枢</text>
+  <text x="360" y="662" text-anchor="middle" fill="#D9F0F7" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-size="26" font-weight="600" letter-spacing="7">灵极</text>
 </svg>
