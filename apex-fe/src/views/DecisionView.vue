@@ -565,9 +565,7 @@ onBeforeUnmount(() => {
               class="theme-chip"
             >
               <span class="theme-name">{{ t.name }}</span>
-              <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
-                <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
-              </span>
+              <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
             </span>
           </div>
         </div>
@@ -1409,13 +1407,6 @@ onBeforeUnmount(() => {
   line-height: 1;
   white-space: nowrap;
   color: var(--ink-soft);
-}
-
-.theme-sign {
-  display: inline-block;
-  /* 中文字体里 +/− 视觉中心偏低，上移与数字光学对齐 */
-  transform: translateY(-0.14em);
-  line-height: 1;
 }
 
 .theme-pct.up {

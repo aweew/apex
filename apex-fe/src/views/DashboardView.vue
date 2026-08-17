@@ -757,9 +757,7 @@ onMounted(() => {
           :style="{ '--i': i }"
         >
           <span class="theme-name">{{ t.name }}</span>
-          <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
-            <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
-          </span>
+          <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
         </span>
       </div>
       <div v-else class="empty-guide">
@@ -1615,12 +1613,6 @@ onMounted(() => {
   line-height: 1;
   white-space: nowrap;
   color: var(--ink-soft);
-}
-
-.theme-sign {
-  display: inline-block;
-  transform: translateY(-0.14em);
-  line-height: 1;
 }
 
 .theme-pct.up {

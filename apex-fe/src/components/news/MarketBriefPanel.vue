@@ -78,9 +78,7 @@ defineExpose({ load })
         :key="t.key"
       >
         <span class="theme-name">{{ t.name }}</span>
-        <span v-if="t.abs" class="theme-pct" :class="t.pctDir">
-          <span v-if="t.sign" class="theme-sign">{{ t.sign }}</span>{{ t.abs }}%
-        </span>
+        <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
       </span>
     </div>
 
@@ -175,7 +173,7 @@ defineExpose({ load })
   font-size: 11px;
   color: var(--muted);
 }
-.themes span {
+.themes > span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -199,12 +197,6 @@ defineExpose({ load })
   letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
-}
-
-.themes .theme-sign {
-  display: inline-block;
-  transform: translateY(-0.14em);
-  line-height: 1;
 }
 
 .themes .theme-pct.up {
