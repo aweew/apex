@@ -1372,17 +1372,20 @@ onBeforeUnmount(() => {
 }
 
 .theme-chip-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
 .theme-chip {
   display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  max-width: min(100%, 240px);
   font-size: 12px;
   padding: 3px 9px;
   border-radius: 8px;
@@ -1510,8 +1513,12 @@ onBeforeUnmount(() => {
 /* —— 因子条 —— */
 .factor-strip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+
+.factor-cell:nth-child(7):last-child {
+  grid-column: span 2;
 }
 
 .factor-cell {
@@ -1901,6 +1908,10 @@ onBeforeUnmount(() => {
 @media (max-width: 1100px) {
   .factor-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .factor-cell:nth-child(7):last-child {
+    grid-column: 1 / -1;
   }
 }
 

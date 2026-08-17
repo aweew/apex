@@ -23,3 +23,25 @@ test('market brief styles only the outer theme chip as a surface', () => {
   assert.match(marketBriefSource, /\.themes > span\s*\{/)
   assert.doesNotMatch(marketBriefSource, /\.themes span\s*\{/)
 })
+
+test('decision mainline themes use compact content-width chips', () => {
+  assert.match(
+    decisionSource,
+    /\.theme-chip-grid\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/,
+  )
+  assert.match(
+    decisionSource,
+    /\.theme-chip\s*\{[^}]*flex:\s*0 1 auto;[^}]*max-width:\s*min\(100%, 240px\);/,
+  )
+})
+
+test('decision factors balance seven cards across two complete rows', () => {
+  assert.match(
+    decisionSource,
+    /\.factor-strip\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/,
+  )
+  assert.match(
+    decisionSource,
+    /\.factor-cell:nth-child\(7\):last-child\s*\{[^}]*grid-column:\s*span 2;/,
+  )
+})
