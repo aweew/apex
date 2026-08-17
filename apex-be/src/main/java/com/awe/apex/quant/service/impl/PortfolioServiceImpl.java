@@ -20,6 +20,7 @@ import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioDaily;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.domain.entity.StockBasic;
+import com.awe.apex.quant.domain.enums.PortfolioTradeSourceEnum;
 import com.awe.apex.quant.holding.PortfolioBriefBuilder;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.MyHoldingMapper;
@@ -31,6 +32,7 @@ import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
+import com.awe.apex.quant.service.IPortfolioTradeRecordService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -93,6 +95,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
 
     @Resource
     private IConfigService configService;
+
+    @Resource
+    private IPortfolioTradeRecordService tradeRecordService;
 
     @Lazy
     @Resource
@@ -336,6 +341,22 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PortfolioHolding saveHolding(Long portfolioId, PortfolioHoldingSaveReq req) {
+        return saveHolding(portfolioId, req, PortfolioTradeSourceEnum.PORTFOLIO_WEB, null);
+    }
+
+    /**
+     * 按指定来源保存持仓并生成交易流水。
+     *
+     * @param portfolioId 组合ID
+     * @param req         请求
+     * @param source      变动来源
+     * @param sourceRef   来源幂等引用
+     * @return 持仓
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PortfolioHolding saveHolding(Long portfolioId, PortfolioHoldingSaveReq req,
+                                        PortfolioTradeSourceEnum source, String sourceRef) {
         Portfolio portfolio = requirePortfolio(portfolioId);
         if (Objects.isNull(req) || StringUtils.isBlank(req.getCode())) {
             throw new BusinessException("证券代码不能为空");
@@ -370,6 +391,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
                     .last("LIMIT 1"));
         }
         if (Objects.nonNull(exist)) {
+            String beforeCode = exist.getCode();
+            String beforeName = exist.getName();
+            int beforeQuantity = Objects.nonNull(exist.getQuantity()) ? exist.getQuantity() : 0;
             exist.setCode(code);
             exist.setName(name);
             exist.setQuantity(quantity);
@@ -389,6 +413,15 @@ public class PortfolioServiceImpl implements IPortfolioService {
                     .set(PortfolioHolding::getTakeProfit, req.getTakeProfit())
                     .set(PortfolioHolding::getNote, StringUtils.trim(req.getNote()))
                     .set(PortfolioHolding::getUpdateTime, now));
+            if (StringUtils.isNotBlank(beforeCode) && !beforeCode.equals(code)) {
+                tradeRecordService.recordChange(portfolio, beforeCode, beforeName, beforeQuantity, 0,
+                        req.getTradePrice(), req.getTradeTime(), source, sourceRef);
+                tradeRecordService.recordChange(portfolio, code, name, 0, quantity,
+                        req.getTradePrice(), req.getTradeTime(), source, sourceRef);
+            } else {
+                tradeRecordService.recordChange(portfolio, code, name, beforeQuantity, quantity,
+                        req.getTradePrice(), req.getTradeTime(), source, sourceRef);
+            }
             fillPnl(exist, basic);
             if (Objects.equals(portfolio.getIsDefault(), 1)) {
                 mirrorToMyHolding(exist);
@@ -411,6 +444,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .deleted(0)
                 .build();
         portfolioHoldingMapper.insert(created);
+        tradeRecordService.recordChange(portfolio, code, name, 0, quantity,
+                req.getTradePrice(), req.getTradeTime(), source, sourceRef);
         fillPnl(created, basic);
         if (Objects.equals(portfolio.getIsDefault(), 1)) {
             mirrorToMyHolding(created);
@@ -429,12 +464,29 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void removeHolding(Long portfolioId, Long holdingId) {
+        removeHolding(portfolioId, holdingId, PortfolioTradeSourceEnum.PORTFOLIO_WEB, null);
+    }
+
+    /**
+     * 按指定来源删除持仓并生成清仓流水。
+     *
+     * @param portfolioId 组合ID
+     * @param holdingId   持仓ID
+     * @param source      变动来源
+     * @param sourceRef   来源幂等引用
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void removeHolding(Long portfolioId, Long holdingId,
+                              PortfolioTradeSourceEnum source, String sourceRef) {
         Portfolio portfolio = requirePortfolio(portfolioId);
         PortfolioHolding holding = portfolioHoldingMapper.selectById(holdingId);
         if (Objects.isNull(holding) || !Objects.equals(holding.getPortfolioId(), portfolioId)) {
             throw new BusinessException("持仓不存在");
         }
         portfolioHoldingMapper.deleteById(holdingId);
+        tradeRecordService.recordChange(portfolio, holding.getCode(), holding.getName(),
+                holding.getQuantity(), 0, null, null, source, sourceRef);
         if (Objects.equals(portfolio.getIsDefault(), 1) && StringUtils.isNotBlank(holding.getCode())) {
             MyHolding mine = myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
                     .eq(MyHolding::getUserId, currentUserId())
@@ -475,7 +527,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 }
                 try {
                     PortfolioHoldingSaveReq saveReq = parseImportLine(raw);
-                    saveHolding(portfolioId, saveReq);
+                    saveHolding(portfolioId, saveReq, PortfolioTradeSourceEnum.PORTFOLIO_IMPORT, null);
                     success++;
                 } catch (Exception ex) {
                     fail++;
@@ -741,6 +793,19 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void mirrorMyHoldingSave(MyHolding holding) {
+        mirrorMyHoldingSave(holding, null, null);
+    }
+
+    /**
+     * 我的持仓变更后携带成交信息同步到默认组合。
+     *
+     * @param holding    持仓
+     * @param tradePrice 实际成交价
+     * @param tradeTime  实际成交时间
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void mirrorMyHoldingSave(MyHolding holding, BigDecimal tradePrice, LocalDateTime tradeTime) {
         if (Objects.isNull(holding) || StringUtils.isBlank(holding.getCode())) {
             return;
         }
@@ -751,6 +816,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .eq(PortfolioHolding::getPortfolioId, def.getId())
                 .eq(PortfolioHolding::getCode, code)
                 .last("LIMIT 1"));
+        int beforeQuantity = Objects.nonNull(exist) && Objects.nonNull(exist.getQuantity())
+                ? exist.getQuantity() : 0;
         if (Objects.nonNull(exist)) {
             exist.setName(holding.getName());
             exist.setQuantity(holding.getQuantity());
@@ -783,6 +850,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
                     .deleted(0)
                     .build());
         }
+        tradeRecordService.recordChange(def, code, holding.getName(), beforeQuantity, holding.getQuantity(),
+                tradePrice, tradeTime, PortfolioTradeSourceEnum.HOLDING_WEB, null);
         touchPortfolio(def.getId());
         refreshTodaySnapshotQuietly(def.getId());
     }
@@ -806,6 +875,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .last("LIMIT 1"));
         if (Objects.nonNull(exist)) {
             portfolioHoldingMapper.deleteById(exist.getId());
+            tradeRecordService.recordChange(def, pure, exist.getName(), exist.getQuantity(), 0,
+                    null, null, PortfolioTradeSourceEnum.HOLDING_WEB, null);
             touchPortfolio(def.getId());
         }
     }

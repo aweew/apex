@@ -16,6 +16,7 @@ import com.awe.apex.quant.domain.entity.BotCallAudit;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.domain.entity.StockBasic;
+import com.awe.apex.quant.domain.enums.PortfolioTradeSourceEnum;
 import com.awe.apex.quant.mapper.BotCallAuditMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
@@ -35,6 +36,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -217,9 +220,12 @@ public class BotToolServiceImpl implements IBotToolService {
         resolveHoldingCodes(request.getHoldings());
         validateHoldingInputs(request.getHoldings(), request.getTotalMarketValue());
         List<PortfolioHolding> existing = portfolioService.detail(portfolio.getId()).getHoldings();
+        Map<String, PortfolioHolding> existingByCode = new LinkedHashMap<>();
         Set<String> existingCodes = new HashSet<>();
         for (PortfolioHolding holding : existing) {
-            existingCodes.add(holding.getCode());
+            String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+            existingCodes.add(code);
+            existingByCode.put(code, holding);
         }
         Set<String> inputCodes = new HashSet<>();
         for (BotHoldingInput holding : request.getHoldings()) {
@@ -237,17 +243,39 @@ public class BotToolServiceImpl implements IBotToolService {
                 deleted++;
             }
         }
-        PortfolioSummaryResp current = portfolioService.detail(portfolio.getId());
-        for (PortfolioHolding holding : current.getHoldings()) {
-            portfolioService.removeHolding(portfolio.getId(), holding.getId());
+        for (PortfolioHolding holding : existing) {
+            String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+            if (!inputCodes.contains(code)) {
+                portfolioService.removeHolding(portfolio.getId(), holding.getId(),
+                        PortfolioTradeSourceEnum.WECHAT_BOT, requestId + ":" + code);
+            }
         }
         for (BotHoldingInput input : request.getHoldings()) {
+            String code = MarketCodeUtils.normalizeHoldingCode(input.getCode());
+            PortfolioHolding currentHolding = existingByCode.get(code);
+            boolean sameCost = Objects.nonNull(currentHolding)
+                    && Objects.nonNull(currentHolding.getCostPrice())
+                    && Objects.nonNull(input.getCostPrice())
+                    && currentHolding.getCostPrice().compareTo(input.getCostPrice()) == 0;
+            boolean sameName = Objects.nonNull(currentHolding)
+                    && (StringUtils.isBlank(input.getName()) || Objects.equals(currentHolding.getName(), input.getName()));
+            if (Objects.nonNull(currentHolding)
+                    && Objects.equals(currentHolding.getQuantity(), input.getQuantity())
+                    && sameCost && sameName) {
+                continue;
+            }
             PortfolioHoldingSaveReq saveReq = new PortfolioHoldingSaveReq();
-            saveReq.setCode(MarketCodeUtils.normalizeHoldingCode(input.getCode()));
+            if (Objects.nonNull(currentHolding)) {
+                saveReq.setId(currentHolding.getId());
+            }
+            saveReq.setCode(code);
             saveReq.setName(input.getName());
             saveReq.setQuantity(input.getQuantity());
             saveReq.setCostPrice(input.getCostPrice());
-            portfolioService.saveHolding(portfolio.getId(), saveReq);
+            saveReq.setTradePrice(input.getTradePrice());
+            saveReq.setTradeTime(input.getTradeTime());
+            portfolioService.saveHolding(portfolio.getId(), saveReq,
+                    PortfolioTradeSourceEnum.WECHAT_BOT, requestId + ":" + code);
         }
         portfolioService.refreshQuotes(portfolio.getId(), false);
         portfolioService.snapshot(portfolio.getId());

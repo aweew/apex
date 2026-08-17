@@ -3,6 +3,7 @@ package com.awe.apex.quant.domain.dto;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 保存组合持仓
@@ -49,4 +50,14 @@ public class PortfolioHoldingSaveReq {
      * 备注
      */
     private String note;
+
+    /**
+     * 本次持仓变化的实际成交价，可空。
+     */
+    private BigDecimal tradePrice;
+
+    /**
+     * 本次持仓变化的实际成交时间，可空。
+     */
+    private LocalDateTime tradeTime;
 }

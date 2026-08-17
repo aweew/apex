@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 视觉模型提取的单条持仓。
@@ -29,4 +30,14 @@ public class BotHoldingInput {
      * 截图中的该证券市值，可空
      */
     private BigDecimal marketValue;
+
+    /**
+     * 指令明确提供的本次成交价，可空。
+     */
+    private BigDecimal tradePrice;
+
+    /**
+     * 指令明确提供的本次成交时间，可空。
+     */
+    private LocalDateTime tradeTime;
 }

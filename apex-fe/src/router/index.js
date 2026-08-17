@@ -17,6 +17,7 @@ const ValuationView = () => import('../views/ValuationView.vue')
 const DecisionView = () => import('../views/DecisionView.vue')
 const HoldingView = () => import('../views/HoldingView.vue')
 const PortfolioView = () => import('../views/PortfolioView.vue')
+const TradeRecordView = () => import('../views/TradeRecordView.vue')
 const ObserveView = () => import('../views/ObserveView.vue')
 const HotView = () => import('../views/HotView.vue')
 const NewsView = () => import('../views/NewsView.vue')
@@ -51,6 +52,7 @@ const router = createRouter({
     { path: '/news', name: 'news', component: NewsView },
     { path: '/holding', name: 'holding', component: HoldingView },
     { path: '/portfolio', name: 'portfolio', component: PortfolioView },
+    { path: '/trades', name: 'trades', component: TradeRecordView },
     { path: '/observe', name: 'observe', component: ObserveView },
     { path: '/pipeline', name: 'pipeline', component: PipelineView },
     { path: '/screener', name: 'screener', component: ScreenerView },

@@ -7,7 +7,9 @@ import com.awe.apex.quant.domain.dto.BotToolReq;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.entity.Portfolio;
+import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.domain.entity.StockBasic;
+import com.awe.apex.quant.domain.enums.PortfolioTradeSourceEnum;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.service.IPortfolioService;
@@ -78,13 +80,16 @@ class BotToolServiceImplTest {
         request.setOperation("HOLDING_IMPORT");
         request.setUserId("wechat-user");
         request.setConversationId("wechat-conversation");
+        request.setRequestId("req-import-1");
         request.setPortfolioName("来哥");
         request.setHoldings(List.of(holding));
 
         service.execute(request);
 
         ArgumentCaptor<PortfolioHoldingSaveReq> requestCaptor = ArgumentCaptor.forClass(PortfolioHoldingSaveReq.class);
-        verify(portfolioService).saveHolding(anyLong(), requestCaptor.capture());
+        verify(portfolioService).saveHolding(anyLong(), requestCaptor.capture(),
+                org.mockito.ArgumentMatchers.eq(PortfolioTradeSourceEnum.WECHAT_BOT),
+                org.mockito.ArgumentMatchers.eq("req-import-1:603456"));
         verify(portfolioService).refreshQuotes(8L, false);
         assertEquals("603456", requestCaptor.getValue().getCode());
         assertEquals("九洲药业", requestCaptor.getValue().getName());
@@ -93,5 +98,48 @@ class BotToolServiceImplTest {
         AbstractWrapper<?, ?, ?> portfolioQuery = (AbstractWrapper<?, ?, ?>) portfolioQueryCaptor.getValue();
         assertTrue(portfolioQuery.getSqlSegment().contains("user_id"));
         assertTrue(portfolioQuery.getParamNameValuePairs().containsValue(7L));
+    }
+
+    @Test
+    void botImportUpdatesByDifferenceWithoutReplacingUnchangedHolding() {
+        Portfolio portfolio = Portfolio.builder().id(8L).name("来哥").status("ACTIVE").build();
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(portfolio));
+        PortfolioHolding unchanged = PortfolioHolding.builder()
+                .id(1L).portfolioId(8L).code("600519").name("贵州茅台")
+                .quantity(100).costPrice(new BigDecimal("1500")).build();
+        PortfolioHolding reduced = PortfolioHolding.builder()
+                .id(2L).portfolioId(8L).code("000001").name("平安银行")
+                .quantity(500).costPrice(new BigDecimal("12")).build();
+        when(portfolioService.detail(8L)).thenReturn(PortfolioSummaryResp.builder()
+                .holdings(List.of(unchanged, reduced)).build());
+
+        BotHoldingInput first = new BotHoldingInput();
+        first.setCode("600519");
+        first.setName("贵州茅台");
+        first.setQuantity(100);
+        first.setCostPrice(new BigDecimal("1500"));
+        BotHoldingInput second = new BotHoldingInput();
+        second.setCode("000001");
+        second.setName("平安银行");
+        second.setQuantity(200);
+        second.setCostPrice(new BigDecimal("12"));
+        BotToolReq request = new BotToolReq();
+        request.setOperation("HOLDING_IMPORT");
+        request.setUserId("wechat-user");
+        request.setConversationId("wechat-conversation");
+        request.setRequestId("req-import-2");
+        request.setPortfolioName("来哥");
+        request.setHoldings(List.of(first, second));
+
+        service.execute(request);
+
+        ArgumentCaptor<PortfolioHoldingSaveReq> requestCaptor = ArgumentCaptor.forClass(PortfolioHoldingSaveReq.class);
+        verify(portfolioService).saveHolding(org.mockito.ArgumentMatchers.eq(8L), requestCaptor.capture(),
+                org.mockito.ArgumentMatchers.eq(PortfolioTradeSourceEnum.WECHAT_BOT),
+                org.mockito.ArgumentMatchers.eq("req-import-2:000001"));
+        assertEquals(2L, requestCaptor.getValue().getId());
+        assertEquals(200, requestCaptor.getValue().getQuantity());
+        verify(portfolioService, org.mockito.Mockito.never()).removeHolding(anyLong(), anyLong(),
+                any(), any());
     }
 }

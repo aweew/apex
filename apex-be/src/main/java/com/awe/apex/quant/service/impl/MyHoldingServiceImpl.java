@@ -295,7 +295,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             exist.setUpdateTime(now);
             myHoldingMapper.updateById(exist);
             fillPnlFromBasic(exist, basic);
-            portfolioService.mirrorMyHoldingSave(exist);
+            portfolioService.mirrorMyHoldingSave(exist, req.getTradePrice(), req.getTradeTime());
             return exist;
         }
 
@@ -314,7 +314,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 .build();
         myHoldingMapper.insert(created);
         fillPnlFromBasic(created, basic);
-        portfolioService.mirrorMyHoldingSave(created);
+        portfolioService.mirrorMyHoldingSave(created, req.getTradePrice(), req.getTradeTime());
         return created;
     }
 

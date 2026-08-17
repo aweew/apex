@@ -11,6 +11,7 @@ import com.awe.apex.quant.mapper.MyHoldingMapper;
 import com.awe.apex.quant.mapper.PortfolioDailyMapper;
 import com.awe.apex.quant.mapper.PortfolioHoldingMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
+import com.awe.apex.quant.service.IPortfolioTradeRecordService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -44,6 +45,7 @@ class PortfolioUserIsolationTest {
     private final PortfolioDailyMapper portfolioDailyMapper = mock(PortfolioDailyMapper.class);
     private final MyHoldingMapper myHoldingMapper = mock(MyHoldingMapper.class);
     private final ApexUserContext userContext = mock(ApexUserContext.class);
+    private final IPortfolioTradeRecordService tradeRecordService = mock(IPortfolioTradeRecordService.class);
     private final PortfolioServiceImpl service = spy(new PortfolioServiceImpl());
 
     @BeforeAll
@@ -59,6 +61,7 @@ class PortfolioUserIsolationTest {
         ReflectionTestUtils.setField(service, "portfolioHoldingMapper", portfolioHoldingMapper);
         ReflectionTestUtils.setField(service, "portfolioDailyMapper", portfolioDailyMapper);
         ReflectionTestUtils.setField(service, "myHoldingMapper", myHoldingMapper);
+        ReflectionTestUtils.setField(service, "tradeRecordService", tradeRecordService);
         ReflectionTestUtils.setField(service, "userContext", userContext);
         when(userContext.currentUserIdOrNull()).thenReturn(7L);
     }

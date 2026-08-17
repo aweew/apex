@@ -101,6 +101,12 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "ADD KEY idx_daily_action_user_date");
         assertContains(executed, "ALTER TABLE journal_trade ADD COLUMN user_id");
         assertContains(executed, "ADD KEY idx_journal_trade_user_date");
+        assertContains(executed, "ALTER TABLE journal_trade ADD COLUMN stock_name");
+        assertContains(executed, "ALTER TABLE journal_trade ADD COLUMN portfolio_id");
+        assertContains(executed, "ALTER TABLE journal_trade ADD COLUMN before_quantity");
+        assertContains(executed, "ALTER TABLE journal_trade ADD COLUMN source_ref");
+        assertContains(executed, "MODIFY COLUMN price DECIMAL(16, 4) NULL");
+        assertContains(executed, "ADD UNIQUE KEY uk_journal_trade_source_ref");
         assertContains(executed, "ALTER TABLE strategy_signal ADD COLUMN user_id");
         assertContains(executed, "ADD KEY idx_strategy_signal_user_date");
         assertContains(executed, "ADD UNIQUE KEY uk_watchlist_user_code_group");

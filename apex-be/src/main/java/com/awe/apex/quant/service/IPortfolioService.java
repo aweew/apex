@@ -10,7 +10,10 @@ import com.awe.apex.quant.domain.entity.MyHolding;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioDaily;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
+import com.awe.apex.quant.domain.enums.PortfolioTradeSourceEnum;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -74,12 +77,35 @@ public interface IPortfolioService {
     PortfolioHolding saveHolding(Long portfolioId, PortfolioHoldingSaveReq req);
 
     /**
+     * 按指定来源保存持仓并生成交易流水。
+     *
+     * @param portfolioId 组合ID
+     * @param req         请求
+     * @param source      变动来源
+     * @param sourceRef   来源幂等引用
+     * @return 持仓
+     */
+    PortfolioHolding saveHolding(Long portfolioId, PortfolioHoldingSaveReq req,
+                                 PortfolioTradeSourceEnum source, String sourceRef);
+
+    /**
      * 删除持仓
      *
      * @param portfolioId 组合ID
      * @param holdingId   持仓ID
      */
     void removeHolding(Long portfolioId, Long holdingId);
+
+    /**
+     * 按指定来源删除持仓并生成清仓流水。
+     *
+     * @param portfolioId 组合ID
+     * @param holdingId   持仓ID
+     * @param source      变动来源
+     * @param sourceRef   来源幂等引用
+     */
+    void removeHolding(Long portfolioId, Long holdingId,
+                       PortfolioTradeSourceEnum source, String sourceRef);
 
     /**
      * 文本导入持仓
@@ -137,6 +163,15 @@ public interface IPortfolioService {
      * @param holding 持仓
      */
     void mirrorMyHoldingSave(MyHolding holding);
+
+    /**
+     * 我的持仓变更后携带成交信息同步到默认组合。
+     *
+     * @param holding   持仓
+     * @param tradePrice 实际成交价
+     * @param tradeTime 实际成交时间
+     */
+    void mirrorMyHoldingSave(MyHolding holding, BigDecimal tradePrice, LocalDateTime tradeTime);
 
     /**
      * 我的持仓删除后同步默认组合

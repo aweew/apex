@@ -13,7 +13,9 @@ import {
 } from '../api/stock'
 import { syncBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
+import { fetchTradeMarkers } from '../api/trade'
 import { aggregateBars, defaultVisibleStart, tdSequential } from '../utils/kline'
+import { buildTradeMarkerSeries } from '../utils/tradeMarkers'
 import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceStructure'
 import { bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
@@ -34,6 +36,7 @@ const code = ref(String(route.params.code || route.query.code || '600519'))
 const basic = ref(null)
 const note = ref('')
 const bars = ref([])
+const tradeRecords = ref([])
 const needSyncBars = ref(false)
 const barCount = ref(0)
 const rs20 = ref(null)
@@ -747,6 +750,35 @@ function fmtSignedPct(v) {
   return `${sign}${v.toFixed(2)}%`
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function tradeMarkerTooltip(groups) {
+  if (!groups.length) return ''
+  const rows = []
+  for (const group of groups) {
+    for (const record of group.records || []) {
+      const owner = record.ownerLabel || record.portfolioName || '交易记录'
+      const portfolio = record.ownerLabel && record.portfolioName ? ` · ${record.portfolioName}` : ''
+      const quantity = record.quantity == null ? '' : ` · ${Number(record.quantity).toLocaleString('zh-CN')}股`
+      const price = record.price == null ? '价格待补' : `¥${fmtNum(record.price, 3)}`
+      rows.push(`
+        <div class="kline-tip__trade-row">
+          <span class="kline-tip__trade-side kline-tip__trade-side--${record.side === 'BUY' ? 'buy' : 'sell'}">${record.side === 'BUY' ? 'B' : 'S'}</span>
+          <span>${escapeHtml(owner)}${escapeHtml(portfolio)}</span>
+          <b>${price}${quantity}${record.estimated ? ' · 估算' : ''}</b>
+        </div>`)
+    }
+  }
+  return `<div class="kline-tip__trades">${rows.join('')}</div>`
+}
+
 async function renderChart(list) {
   if (!list.length) {
     macdTip.value = ''
@@ -766,6 +798,7 @@ async function renderChart(list) {
   const closes = list.map((b) => +b.closePrice)
   const highs = list.map((b) => +b.highPrice)
   const lows = list.map((b) => +b.lowPrice)
+  const userTradeMarkers = buildTradeMarkerSeries(tradeRecords.value, list)
   chartPayload = { dates, highs, lows }
   const ma5 = ma(closes, 5)
   const ma10 = ma(closes, 10)
@@ -1030,6 +1063,9 @@ async function renderChart(list) {
           badges.push('<span class="kline-tip__badge kline-tip__badge--down">下跌九转</span>')
         }
         const crossBadge = badges.join('')
+        const markerGroups = [...userTradeMarkers.buy, ...userTradeMarkers.sell]
+          .filter((marker) => marker.value?.[0] === date)
+        const tradeHtml = tradeMarkerTooltip(markerGroups)
 
         const maVals = { MA5: ma5[idx], MA10: ma10[idx], MA20: ma20[idx], MA60: ma60[idx] }
         const maChips = ['MA5', 'MA10', 'MA20', 'MA60']
@@ -1114,6 +1150,7 @@ async function renderChart(list) {
   ${maChips ? `<div class="kline-tip__row">${maChips}</div>` : ''}
   ${macdChips ? `<div class="kline-tip__row">${macdChips}</div>` : ''}
   ${kdjChips ? `<div class="kline-tip__row">${kdjChips}</div>` : ''}
+  ${tradeHtml}
 </div>`
       },
     },
@@ -1277,6 +1314,63 @@ async function renderChart(list) {
         tooltip: { show: false },
       },
       {
+        id: 'user-trade-buy',
+        name: '买入记录',
+        type: 'scatter',
+        data: userTradeMarkers.buy,
+        symbol: 'triangle',
+        symbolSize: 14,
+        z: 30,
+        clip: false,
+        legendHoverLink: false,
+        tooltip: { show: false },
+        labelLayout: { hideOverlap: true },
+        itemStyle: { color: '#c43d4a', borderColor: '#ffffff', borderWidth: 1 },
+        label: {
+          show: true,
+          position: 'bottom',
+          distance: 5,
+          formatter: (params) => params.data?.labelText || 'B',
+          color: '#9f2f3b',
+          backgroundColor: 'rgba(255, 247, 248, 0.94)',
+          borderColor: 'rgba(196, 61, 74, 0.22)',
+          borderWidth: 1,
+          borderRadius: 4,
+          padding: [3, 5],
+          fontSize: 10,
+          fontWeight: 700,
+        },
+      },
+      {
+        id: 'user-trade-sell',
+        name: '卖出记录',
+        type: 'scatter',
+        data: userTradeMarkers.sell,
+        symbol: 'triangle',
+        symbolRotate: 180,
+        symbolSize: 14,
+        z: 30,
+        clip: false,
+        legendHoverLink: false,
+        tooltip: { show: false },
+        labelLayout: { hideOverlap: true },
+        itemStyle: { color: '#16775d', borderColor: '#ffffff', borderWidth: 1 },
+        label: {
+          show: true,
+          position: 'top',
+          distance: 5,
+          formatter: (params) => params.data?.labelText || 'S',
+          color: '#11634d',
+          backgroundColor: 'rgba(245, 252, 249, 0.94)',
+          borderColor: 'rgba(22, 119, 93, 0.22)',
+          borderWidth: 1,
+          borderRadius: 4,
+          padding: [3, 5],
+          fontSize: 10,
+          fontWeight: 700,
+        },
+      },
+      {
         name: '成交量',
         type: 'bar',
         xAxisIndex: 1,
@@ -1414,6 +1508,7 @@ async function load(refreshQuote = false) {
   try {
     const res = await fetchStockDetail(code.value.trim(), BAR_LIMIT, false)
     applyDetail(res.data)
+    loadTradeRecords()
     await loadFundamental()
     // 静默拉概况：回填东财二级行业到 meta，并同步 stock_basic.industry
     loadProfile(false).then(() => {
@@ -1430,6 +1525,21 @@ async function load(refreshQuote = false) {
     ElMessage.error(e.message || '加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadTradeRecords() {
+  const requestedCode = code.value.trim()
+  if (!requestedCode) return
+  try {
+    const result = await fetchTradeMarkers(requestedCode)
+    if (requestedCode !== code.value.trim()) return
+    tradeRecords.value = result?.data || []
+    if (!isIntraday.value && bars.value.length && activeTab.value === 'chart') refreshChart()
+  } catch (error) {
+    if (requestedCode !== code.value.trim()) return
+    tradeRecords.value = []
+    console.warn('加载交易标记失败', error)
   }
 }
 
@@ -1579,6 +1689,7 @@ watch(
       code.value = String(v)
       resetZoomNext = true
       profile.value = null
+      tradeRecords.value = []
       intraday.value = null
       intradayAsOf.value = ''
       load(false)
@@ -3259,6 +3370,56 @@ function dash(v) {
 .kline-tip__chip b {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.kline-tip__trades {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.kline-tip__trade-row {
+  display: grid;
+  grid-template-columns: 18px minmax(72px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.kline-tip__trade-row > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #515154;
+}
+
+.kline-tip__trade-row b {
+  color: #1d1d1f;
+  font-weight: 650;
+}
+
+.kline-tip__trade-side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.kline-tip__trade-side--buy {
+  color: #9f2f3b;
+  background: rgba(196, 61, 74, 0.1);
+}
+
+.kline-tip__trade-side--sell {
+  color: #11634d;
+  background: rgba(22, 119, 93, 0.1);
 }
 
 @media (max-width: 820px) {

@@ -22,7 +22,7 @@ For named portfolios and all holding-update workflows, run `scripts/apex_tool.sh
 - Portfolio advice: `{"operation":"PORTFOLIO_ADVICE","userId":"<sender>","conversationId":"<conversation>","portfolioName":"疯锅"}`
 - Portfolio status: `{"operation":"PORTFOLIO_STATUS","userId":"<sender>","conversationId":"<conversation>","portfolioName":"疯锅"}`
 
-For a WeClaw image attachment or a text table, extract JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. Every row needs a positive quantity and a positive cost price. When a code is missing, pass the exact recognized stock name and leave `code` empty: Apex resolves it only by an exact, unique `stock_basic.name` match. Do not infer a code yourself. If Apex cannot resolve the name or finds more than one match, state that the portfolio was not changed and return its error.
+For a WeClaw image attachment or a text table, extract JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. When the message explicitly provides them, also pass `tradePrice` and ISO-8601 `tradeTime`; otherwise leave them absent. Every row needs a positive quantity and a positive cost price. When a code is missing, pass the exact recognized stock name and leave `code` empty: Apex resolves it only by an exact, unique `stock_basic.name` match. Do not infer a code, trade price, or trade time yourself. If Apex cannot resolve the name or finds more than one match, state that the portfolio was not changed and return its error.
 
 When the user sends a brokerage screenshot or a text table and says `更新郑十万的持仓` (or names another portfolio), directly import the complete, validated rows:
 
@@ -33,13 +33,13 @@ When the user sends a brokerage screenshot or a text table and says `更新郑�
   "conversationId": "<conversation>",
   "portfolioName": "郑十万",
   "holdings": [
-    {"code": "000063", "name": "中兴通讯", "quantity": 500, "costPrice": 34.21, "marketValue": 17540.00}
+    {"code": "000063", "name": "中兴通讯", "quantity": 500, "costPrice": 34.21, "marketValue": 17540.00, "tradePrice": 35.08, "tradeTime": "2026-08-18T10:26:00"}
   ],
   "totalMarketValue": 17540.00
 }
 ```
 
-Call `scripts/apex_tool.sh` with this JSON and return `data.answer` unchanged. `HOLDING_IMPORT` replaces the entire named portfolio immediately, then refreshes prices and writes today's snapshot. Do not query the portfolio instead of calling this tool.
+Call `scripts/apex_tool.sh` with this JSON and return `data.answer` unchanged. `HOLDING_IMPORT` treats the input as the complete named-portfolio state and applies only its additions, removals, and changed rows. Apex records quantity differences as trades, then refreshes prices and writes today's snapshot. Do not query the portfolio instead of calling this tool.
 
 ## Holding Update Completion Rule
 

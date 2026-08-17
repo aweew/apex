@@ -4,6 +4,9 @@ import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.domain.entity.JournalTrade;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.JournalCreateReq;
+import com.awe.apex.quant.domain.enums.PortfolioTradeChangeTypeEnum;
+import com.awe.apex.quant.domain.enums.PortfolioTradePriceSourceEnum;
+import com.awe.apex.quant.domain.enums.PortfolioTradeSourceEnum;
 import com.awe.apex.quant.mapper.DailyActionMapper;
 import com.awe.apex.quant.mapper.JournalTradeMapper;
 import com.awe.apex.common.exception.BusinessException;
@@ -69,6 +72,10 @@ class JournalServiceImplTest {
         assertEquals(new BigDecimal("3060.00"), trade.getAmount());
         assertEquals(8L, trade.getRelatedActionId());
         assertEquals(7L, trade.getUserId());
+        assertEquals(PortfolioTradeSourceEnum.DAILY_ACTION.getCode(), trade.getSource());
+        assertEquals(PortfolioTradeChangeTypeEnum.MANUAL.getCode(), trade.getChangeType());
+        assertEquals(PortfolioTradePriceSourceEnum.USER_REPORTED.getCode(), trade.getPriceSource());
+        assertEquals(0, trade.getEstimated());
     }
 
     @Test
@@ -83,6 +90,10 @@ class JournalServiceImplTest {
         JournalTrade trade = service.create(request);
 
         assertEquals(7L, trade.getUserId());
+        assertEquals(PortfolioTradeSourceEnum.MANUAL.getCode(), trade.getSource());
+        assertEquals(PortfolioTradeChangeTypeEnum.MANUAL.getCode(), trade.getChangeType());
+        assertEquals(PortfolioTradePriceSourceEnum.USER_REPORTED.getCode(), trade.getPriceSource());
+        assertEquals(0, trade.getEstimated());
     }
 
     @Test

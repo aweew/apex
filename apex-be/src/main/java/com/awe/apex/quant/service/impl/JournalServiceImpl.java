@@ -5,6 +5,9 @@ import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.JournalCreateReq;
 import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.domain.entity.JournalTrade;
+import com.awe.apex.quant.domain.enums.PortfolioTradeChangeTypeEnum;
+import com.awe.apex.quant.domain.enums.PortfolioTradePriceSourceEnum;
+import com.awe.apex.quant.domain.enums.PortfolioTradeSourceEnum;
 import com.awe.apex.quant.mapper.DailyActionMapper;
 import com.awe.apex.quant.mapper.JournalTradeMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
@@ -38,6 +41,12 @@ public class JournalServiceImpl implements IJournalService {
     @Resource
     private ApexUserContext userContext;
 
+    /**
+     * 创建当前用户的人工成交记录。
+     *
+     * @param req 人工成交请求
+     * @return 成交记录
+     */
     @Override
     public JournalTrade create(JournalCreateReq req) {
         if (Objects.nonNull(req.getRelatedActionId())) {
@@ -45,15 +54,21 @@ public class JournalServiceImpl implements IJournalService {
         }
         LocalDateTime now = LocalDateTime.now();
         BigDecimal amount = req.getPrice().multiply(BigDecimal.valueOf(req.getQuantity())).setScale(2, RoundingMode.HALF_UP);
+        PortfolioTradeSourceEnum source = Objects.nonNull(req.getRelatedActionId())
+                ? PortfolioTradeSourceEnum.DAILY_ACTION : PortfolioTradeSourceEnum.MANUAL;
         JournalTrade trade = JournalTrade.builder()
                 .userId(userContext.currentUserId())
                 .tradeDate(LocalDate.parse(req.getTradeDate(), DAY))
                 .code(MarketCodeUtils.normalizeCode(req.getCode()))
                 .side(req.getSide().toUpperCase())
+                .changeType(PortfolioTradeChangeTypeEnum.MANUAL.getCode())
                 .price(req.getPrice())
+                .priceSource(PortfolioTradePriceSourceEnum.USER_REPORTED.getCode())
+                .estimated(0)
                 .quantity(req.getQuantity())
                 .amount(amount)
                 .relatedActionId(req.getRelatedActionId())
+                .source(source.getCode())
                 .note(req.getNote())
                 .createTime(now)
                 .updateTime(now)
@@ -63,6 +78,12 @@ public class JournalServiceImpl implements IJournalService {
         return trade;
     }
 
+    /**
+     * 查询当前用户最近的人工成交记录。
+     *
+     * @param limit 返回条数
+     * @return 成交记录
+     */
     @Override
     public List<JournalTrade> latest(int limit) {
         return journalTradeMapper.selectList(Wrappers.<JournalTrade>lambdaQuery()
@@ -71,6 +92,14 @@ public class JournalServiceImpl implements IJournalService {
                 .last("limit " + Math.max(1, Math.min(limit, 200))));
     }
 
+    /**
+     * 根据日终清单创建当前用户的成交记录。
+     *
+     * @param actionId 日终清单ID
+     * @param price    成交价
+     * @param quantity 成交数量
+     * @return 成交记录
+     */
     @Override
     public JournalTrade fromAction(Long actionId, BigDecimal price, Integer quantity) {
         DailyAction action = requireAction(actionId);

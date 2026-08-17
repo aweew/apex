@@ -129,6 +129,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                       AND tags LIKE '%自动%'
                     """);
             ensurePortfolioTables();
+            ensureTradeRecordSchema();
             ensurePortfolioDecisionColumns();
             ensureBotTables();
             ensureSmartTraderTables();
@@ -591,6 +592,47 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='组合每日快照'
                 """);
         log.info("schema ready: portfolio / portfolio_holding / portfolio_daily");
+    }
+
+    /**
+     * 将人工成交日记扩展为统一的用户交易流水。
+     */
+    private void ensureTradeRecordSchema() {
+        ensureColumn("journal_trade", "stock_name",
+                "ALTER TABLE journal_trade ADD COLUMN stock_name VARCHAR(64) NULL COMMENT '证券简称' AFTER code");
+        ensureColumn("journal_trade", "portfolio_id",
+                "ALTER TABLE journal_trade ADD COLUMN portfolio_id BIGINT NULL COMMENT '组合ID' AFTER user_id");
+        ensureColumn("journal_trade", "portfolio_name",
+                "ALTER TABLE journal_trade ADD COLUMN portfolio_name VARCHAR(64) NULL COMMENT '交易发生时的组合名称' AFTER portfolio_id");
+        ensureColumn("journal_trade", "owner_label",
+                "ALTER TABLE journal_trade ADD COLUMN owner_label VARCHAR(64) NULL COMMENT '交易发生时的组合归属人标签' AFTER portfolio_name");
+        ensureColumn("journal_trade", "trade_time",
+                "ALTER TABLE journal_trade ADD COLUMN trade_time DATETIME NULL COMMENT '成交或持仓变动时间' AFTER trade_date");
+        ensureColumn("journal_trade", "change_type",
+                "ALTER TABLE journal_trade ADD COLUMN change_type VARCHAR(16) NOT NULL DEFAULT 'MANUAL' COMMENT '变动类型OPEN/ADD/REDUCE/CLEAR/MANUAL' AFTER side");
+        ensureColumn("journal_trade", "before_quantity",
+                "ALTER TABLE journal_trade ADD COLUMN before_quantity INT NULL COMMENT '变动前持仓数量' AFTER quantity");
+        ensureColumn("journal_trade", "after_quantity",
+                "ALTER TABLE journal_trade ADD COLUMN after_quantity INT NULL COMMENT '变动后持仓数量' AFTER before_quantity");
+        ensureColumn("journal_trade", "price_source",
+                "ALTER TABLE journal_trade ADD COLUMN price_source VARCHAR(24) NOT NULL DEFAULT 'USER_REPORTED' COMMENT '价格来源' AFTER price");
+        ensureColumn("journal_trade", "estimated",
+                "ALTER TABLE journal_trade ADD COLUMN estimated TINYINT NOT NULL DEFAULT 0 COMMENT '价格是否为估算值，0否1是' AFTER price_source");
+        ensureColumn("journal_trade", "source",
+                "ALTER TABLE journal_trade ADD COLUMN source VARCHAR(24) NOT NULL DEFAULT 'MANUAL' COMMENT '记录来源' AFTER related_action_id");
+        ensureColumn("journal_trade", "source_ref",
+                "ALTER TABLE journal_trade ADD COLUMN source_ref VARCHAR(128) NULL COMMENT '来源请求或业务引用，用于幂等' AFTER source");
+        ensureNullableColumn("journal_trade", "price",
+                "ALTER TABLE journal_trade MODIFY COLUMN price DECIMAL(16, 4) NULL COMMENT '成交价或估算参考价'");
+        ensureNullableColumn("journal_trade", "amount",
+                "ALTER TABLE journal_trade MODIFY COLUMN amount DECIMAL(18, 2) NULL COMMENT '成交额或估算金额'");
+        ensureIndex("journal_trade", "idx_journal_trade_user_code_time",
+                "ALTER TABLE journal_trade ADD KEY idx_journal_trade_user_code_time (user_id, code, trade_time, id)");
+        ensureIndex("journal_trade", "idx_journal_trade_user_portfolio_time",
+                "ALTER TABLE journal_trade ADD KEY idx_journal_trade_user_portfolio_time (user_id, portfolio_id, trade_time, id)");
+        ensureIndex("journal_trade", "uk_journal_trade_source_ref",
+                "ALTER TABLE journal_trade ADD UNIQUE KEY uk_journal_trade_source_ref (user_id, source, source_ref, code)");
+        log.info("schema ready: unified trade records");
     }
 
     /**
