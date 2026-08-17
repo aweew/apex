@@ -1,6 +1,7 @@
 package com.awe.apex.quant.domain.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.DecimalMin;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -36,5 +37,6 @@ public class BacktestRunReq {
     /**
      * 初始资金
      */
+    @DecimalMin(value = "0.01", message = "初始资金必须大于0")
     private BigDecimal initCash;
 }

@@ -13,6 +13,8 @@ import com.awe.apex.quant.domain.dto.StrategyLeaderboardItemResp;
 import com.awe.apex.quant.domain.dto.MonteCarloResp;
 import com.awe.apex.quant.domain.dto.MonthlyReturnResp;
 import com.awe.apex.quant.domain.dto.WalkForwardResp;
+import com.awe.apex.quant.domain.dto.RollingBacktestReq;
+import com.awe.apex.quant.domain.dto.RollingBacktestResp;
 import com.awe.apex.quant.domain.entity.BacktestEquity;
 import com.awe.apex.quant.domain.entity.BacktestJob;
 import com.awe.apex.quant.domain.entity.BacktestTrade;
@@ -99,9 +101,9 @@ public interface IBacktestService {
     BenchmarkCompareResp compareBenchmark(BacktestRunReq req, String benchmarkCode);
 
     /**
-     * 历史回测策略绩效榜
+     * 完整同口径对比批次的策略绩效榜
      *
-     * @param limit 最近任务样本量上限
+     * @param limit 最近对比任务样本量上限
      * @return 按平均夏普排序
      */
     List<StrategyLeaderboardItemResp> strategyLeaderboard(Integer limit);
@@ -122,6 +124,14 @@ public interface IBacktestService {
      * @return 结果
      */
     WalkForwardResp walkForward(BacktestRunReq req, BigDecimal inSampleRatio);
+
+    /**
+     * 执行多窗口滚动样本外评估
+     *
+     * @param req 实验请求
+     * @return 滚动评估结果
+     */
+    RollingBacktestResp rollingEvaluate(RollingBacktestReq req);
 
     /**
      * 回测任务月度收益

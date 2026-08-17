@@ -33,3 +33,10 @@ test('mobile stock cards keep key metrics in stable responsive tracks', () => {
   assert.match(screenerSource, /\.mobile-stock-metrics\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/)
   assert.doesNotMatch(screenerSource, /\.mobile-stock-metrics\.is-screening\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/)
 })
+
+test('batch backtest uses a current trailing two-year range', () => {
+  assert.match(screenerSource, /buildTrailingDateRange\(2\)/)
+  assert.match(screenerSource, /beginDate:\s*backtestRange\.beginDate/)
+  assert.match(screenerSource, /endDate:\s*backtestRange\.endDate/)
+  assert.doesNotMatch(screenerSource, /endDate:\s*'2026-08-01'/)
+})

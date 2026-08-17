@@ -35,6 +35,11 @@ public class BacktestJob implements Serializable {
     private Long id;
 
     /**
+     * 所属用户ID
+     */
+    private Long userId;
+
+    /**
      * 证券代码
      */
     private String code;
@@ -43,6 +48,26 @@ public class BacktestJob implements Serializable {
      * 策略ID
      */
     private String strategyId;
+
+    /**
+     * 策略对比批次ID
+     */
+    private String comparisonBatchId;
+
+    /**
+     * 策略对比集合，按策略ID排序并以逗号分隔
+     */
+    private String comparisonStrategyIds;
+
+    /**
+     * 当前策略参数快照
+     */
+    private String strategyParameters;
+
+    /**
+     * 对比策略配置SHA-256指纹
+     */
+    private String comparisonConfigFingerprint;
 
     /**
      * 开始日期
@@ -58,6 +83,41 @@ public class BacktestJob implements Serializable {
      * 初始资金
      */
     private BigDecimal initCash;
+
+    /**
+     * 单边佣金比例
+     */
+    private BigDecimal commissionRate;
+
+    /**
+     * 卖出印花税比例
+     */
+    private BigDecimal stampTaxRate;
+
+    /**
+     * 买入滑点比例
+     */
+    private BigDecimal buySlippage;
+
+    /**
+     * 卖出滑点比例
+     */
+    private BigDecimal sellSlippage;
+
+    /**
+     * 成交语义版本
+     */
+    private String executionModelVersion;
+
+    /**
+     * 行情复权口径
+     */
+    private String priceAdjustment;
+
+    /**
+     * 实际行情输入SHA-256指纹
+     */
+    private String dataFingerprint;
 
     /**
      * 期末权益

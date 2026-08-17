@@ -12,7 +12,7 @@ A 股日频波段决策助手：自选 → 信号 → 回测 → 模拟盘 → �
 - JDK 17+
 - Maven 3.8+
 - MySQL `localhost:3306`，库名 `apex`
-- Node.js 18+
+- Node.js 20+
 
 ## 数据库
 

@@ -20,6 +20,13 @@ public interface Strategy {
     String strategyName();
 
     /**
+     * 策略逻辑版本
+     *
+     * @return 逻辑版本
+     */
+    String logicVersion();
+
+    /**
      * 评估最新一根 K 线是否产生信号
      *
      * @param code   证券代码

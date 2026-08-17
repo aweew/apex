@@ -6,6 +6,7 @@ import { ArrowDown, Refresh, RefreshRight, Search } from '@element-plus/icons-vu
 import { fetchScreenerMarket, fetchScreenerMeta, runScreener } from '../api/screener'
 import { batchBacktest } from '../api/backtest'
 import { saveObserve } from '../api/observe'
+import { buildTrailingDateRange } from '../utils/backtestLab.js'
 import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 import { securityMarketBadge } from '../utils/securityMarket.js'
 import { useSessionViewState } from '../utils/viewState.js'
@@ -314,11 +315,12 @@ async function onBatchBacktest() {
   loading.value = true
   try {
     const codes = displayRows.value.slice(0, 8).map((r) => r.code)
+    const backtestRange = buildTrailingDateRange(2)
     const res = await batchBacktest({
       codes,
       strategyId: 'S1',
-      beginDate: '2025-01-01',
-      endDate: '2026-08-01',
+      beginDate: backtestRange.beginDate,
+      endDate: backtestRange.endDate,
       limit: 8,
     })
     batchRows.value = res.data || []

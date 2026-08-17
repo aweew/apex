@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -33,9 +34,19 @@ public class UniverseSnapshot implements Serializable {
     private Long id;
 
     /**
+     * 所属用户ID
+     */
+    private Long userId;
+
+    /**
      * 批次号
      */
     private String batchNo;
+
+    /**
+     * 数据截止日
+     */
+    private LocalDate asOfDate;
 
     /**
      * 证券代码

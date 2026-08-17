@@ -1,9 +1,11 @@
 package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.IdUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.UniverseRefreshReq;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.UniverseRefreshResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.StockBasic;
@@ -24,7 +26,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -37,6 +38,9 @@ import java.util.Objects;
  */
 @Service
 public class UniverseServiceImpl implements IUniverseService {
+
+    @Resource
+    private ApexUserContext userContext;
 
     private static final int MIN_BARS = 60;
     private static final BigDecimal MAX_PE = new BigDecimal("80");
@@ -64,8 +68,20 @@ public class UniverseServiceImpl implements IUniverseService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UniverseRefreshResp refresh(UniverseRefreshReq req) {
+        Long currentUserId = currentUserId();
         LocalDate asOfDate = Objects.nonNull(req) ? req.getAsOfDate() : null;
-        List<Watchlist> candidates = resolveCandidates(req);
+        LocalDate currentDate = LocalDate.now();
+        if (Objects.nonNull(asOfDate) && asOfDate.isAfter(currentDate)) {
+            throw new BusinessException("股票池截止日期不能晚于今天");
+        }
+        if (Objects.nonNull(asOfDate) && asOfDate.isBefore(currentDate)) {
+            String scope = req.getScope();
+            if (!"MARKET".equalsIgnoreCase(scope) || CollUtil.isNotEmpty(req.getCodes())) {
+                throw new BusinessException("历史股票池只能基于截止日行情生成，请将 scope 设为 MARKET");
+            }
+        }
+        LocalDate snapshotDate = Objects.nonNull(asOfDate) ? asOfDate : currentDate;
+        List<Watchlist> candidates = resolveCandidates(req, currentUserId);
         if (CollUtil.isEmpty(candidates)) {
             throw new BusinessException("无候选股票，请先导入自选或传入 codes");
         }
@@ -110,7 +126,7 @@ public class UniverseServiceImpl implements IUniverseService {
         }
 
         List<Scored> scoredList = new ArrayList<>();
-        boolean pointInTime = Objects.nonNull(asOfDate);
+        boolean asOfSnapshot = Objects.nonNull(asOfDate);
         for (Watchlist item : candidates) {
             String code = MarketCodeUtils.normalizeCode(item.getCode());
             String name = item.getName();
@@ -118,7 +134,7 @@ public class UniverseServiceImpl implements IUniverseService {
             if (Objects.nonNull(basic) && StringUtils.isBlank(name)) {
                 name = basic.getName();
             }
-            if (!pointInTime && isSt(name, basic)) {
+            if (!asOfSnapshot && isSt(name, basic)) {
                 continue;
             }
             // 决策等场景可显式 includeBj=false 剔除北交所；未传则不过滤（避免影响信号页股票池）
@@ -132,8 +148,8 @@ public class UniverseServiceImpl implements IUniverseService {
             boolean loose = Objects.nonNull(req) && Boolean.TRUE.equals(req.getLooseFilter());
             List<String> tags = new ArrayList<>();
             tags.add("BARS_OK");
-            if (pointInTime) {
-                tags.add("POINT_IN_TIME");
+            if (asOfSnapshot) {
+                tags.add("RECONSTRUCTED_AS_OF");
                 scoredList.add(new Scored(code, name, String.join(",", tags), new BigDecimal("60")));
                 continue;
             }
@@ -202,12 +218,14 @@ public class UniverseServiceImpl implements IUniverseService {
 
         scoredList.sort(Comparator.comparing((Scored s) -> s.score).reversed());
 
-        String batchNo = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        String batchNo = IdUtil.fastSimpleUUID();
         int count = 0;
         LocalDateTime now = LocalDateTime.now();
         for (Scored scored : scoredList) {
             universeSnapshotMapper.insert(UniverseSnapshot.builder()
+                    .userId(currentUserId)
                     .batchNo(batchNo)
+                    .asOfDate(snapshotDate)
                     .code(scored.code)
                     .name(scored.name)
                     .reasonTags(scored.tags)
@@ -228,14 +246,54 @@ public class UniverseServiceImpl implements IUniverseService {
     @Override
     public List<UniverseSnapshot> latest() {
         UniverseSnapshot latest = universeSnapshotMapper.selectOne(Wrappers.<UniverseSnapshot>lambdaQuery()
+                .eq(UniverseSnapshot::getUserId, currentUserId())
+                .orderByDesc(UniverseSnapshot::getAsOfDate)
                 .orderByDesc(UniverseSnapshot::getId)
                 .last("limit 1"));
         if (Objects.isNull(latest)) {
             return List.of();
         }
+        return listByBatchNo(latest.getBatchNo());
+    }
+
+    /**
+     * 查询指定股票池批次
+     *
+     * @param batchNo 批次号
+     * @return 列表
+     */
+    @Override
+    public List<UniverseSnapshot> listByBatchNo(String batchNo) {
+        if (StringUtils.isBlank(batchNo)) {
+            throw new BusinessException("股票池批次号不能为空");
+        }
         return universeSnapshotMapper.selectList(Wrappers.<UniverseSnapshot>lambdaQuery()
-                .eq(UniverseSnapshot::getBatchNo, latest.getBatchNo())
+                .eq(UniverseSnapshot::getUserId, currentUserId())
+                .eq(UniverseSnapshot::getBatchNo, batchNo)
                 .orderByAsc(UniverseSnapshot::getCode));
+    }
+
+    /**
+     * 查询截止日期当时可用的最新批次
+     *
+     * @param asOfDate 截止日期
+     * @return 列表
+     */
+    @Override
+    public List<UniverseSnapshot> latestAsOf(LocalDate asOfDate) {
+        if (Objects.isNull(asOfDate)) {
+            throw new BusinessException("股票池截止日期不能为空");
+        }
+        UniverseSnapshot latest = universeSnapshotMapper.selectOne(Wrappers.<UniverseSnapshot>lambdaQuery()
+                .eq(UniverseSnapshot::getUserId, currentUserId())
+                .le(UniverseSnapshot::getAsOfDate, asOfDate)
+                .orderByDesc(UniverseSnapshot::getAsOfDate)
+                .orderByDesc(UniverseSnapshot::getId)
+                .last("limit 1"));
+        if (Objects.isNull(latest)) {
+            return List.of();
+        }
+        return listByBatchNo(latest.getBatchNo());
     }
 
     private boolean isSt(String name, StockBasic basic) {
@@ -245,7 +303,7 @@ public class UniverseServiceImpl implements IUniverseService {
         return StringUtils.isNotBlank(name) && name.toUpperCase().contains("ST");
     }
 
-    private List<Watchlist> resolveCandidates(UniverseRefreshReq req) {
+    private List<Watchlist> resolveCandidates(UniverseRefreshReq req, Long currentUserId) {
         if (Objects.nonNull(req) && CollUtil.isNotEmpty(req.getCodes())) {
             List<Watchlist> list = new ArrayList<>();
             for (String code : req.getCodes()) {
@@ -262,7 +320,12 @@ public class UniverseServiceImpl implements IUniverseService {
         }
         String groupName = Objects.nonNull(req) ? req.getGroupName() : null;
         return watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
+                .eq(Watchlist::getUserId, currentUserId)
                 .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName));
+    }
+
+    private Long currentUserId() {
+        return userContext.currentUserId();
     }
 
     /**

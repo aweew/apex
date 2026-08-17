@@ -84,6 +84,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             ensureColumn("daily_action", "executable_hint",
                     "ALTER TABLE daily_action ADD COLUMN executable_hint TINYINT NULL");
             log.info("schema ready: daily_action attribution/valuation columns");
+            ensureStrategyLabSchema();
             jdbcTemplate.execute("""
                     CREATE TABLE IF NOT EXISTS observe_pool (
                         id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -132,9 +133,134 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             ensureCompanyProfileRevenueColumns();
             ensureStockBasicPeColumns();
         } catch (Exception ex) {
-            log.warn("schema bootstrap skipped: {}", ex.getMessage());
+            log.error("schema bootstrap failed", ex);
+            throw new IllegalStateException("关键数据库结构初始化失败", ex);
         }
     }
+
+    /**
+     * 策略实验室用户隔离、时点股票池和实验历史结构
+     */
+    private void ensureStrategyLabSchema() {
+        boolean backtestUserAdded = ensureColumn("backtest_job", "user_id",
+                "ALTER TABLE backtest_job ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
+        jdbcTemplate.update("""
+                UPDATE backtest_job t1
+                JOIN (
+                    SELECT MIN(user_id) AS user_id
+                    FROM apex_user_profile
+                    WHERE role = 'ADMIN'
+                ) t2 ON 1 = 1
+                SET t1.user_id = t2.user_id
+                WHERE t1.user_id IS NULL
+                """);
+        ensureRequiredColumn("backtest_job", "user_id", backtestUserAdded,
+                "ALTER TABLE backtest_job MODIFY COLUMN user_id BIGINT NOT NULL COMMENT '所属用户ID'");
+        ensureIndex("backtest_job", "idx_backtest_user_status_id",
+                "ALTER TABLE backtest_job ADD KEY idx_backtest_user_status_id (user_id, status, id)");
+        ensureColumn("backtest_job", "comparison_batch_id",
+                "ALTER TABLE backtest_job ADD COLUMN comparison_batch_id VARCHAR(32) NULL COMMENT '策略对比批次ID' AFTER strategy_id");
+        ensureColumn("backtest_job", "comparison_strategy_ids",
+                "ALTER TABLE backtest_job ADD COLUMN comparison_strategy_ids VARCHAR(256) NULL COMMENT '策略对比集合' AFTER comparison_batch_id");
+        ensureColumn("backtest_job", "strategy_parameters",
+                "ALTER TABLE backtest_job ADD COLUMN strategy_parameters VARCHAR(512) NULL COMMENT '当前策略参数快照' AFTER comparison_strategy_ids");
+        ensureColumn("backtest_job", "comparison_config_fingerprint",
+                "ALTER TABLE backtest_job ADD COLUMN comparison_config_fingerprint CHAR(64) NULL COMMENT '对比策略配置SHA-256指纹' AFTER strategy_parameters");
+        ensureColumn("backtest_job", "commission_rate",
+                "ALTER TABLE backtest_job ADD COLUMN commission_rate DECIMAL(12, 8) NULL COMMENT '单边佣金比例' AFTER init_cash");
+        ensureColumn("backtest_job", "stamp_tax_rate",
+                "ALTER TABLE backtest_job ADD COLUMN stamp_tax_rate DECIMAL(12, 8) NULL COMMENT '卖出印花税比例' AFTER commission_rate");
+        ensureColumn("backtest_job", "buy_slippage",
+                "ALTER TABLE backtest_job ADD COLUMN buy_slippage DECIMAL(12, 8) NULL COMMENT '买入滑点比例' AFTER stamp_tax_rate");
+        ensureColumn("backtest_job", "sell_slippage",
+                "ALTER TABLE backtest_job ADD COLUMN sell_slippage DECIMAL(12, 8) NULL COMMENT '卖出滑点比例' AFTER buy_slippage");
+        ensureColumn("backtest_job", "execution_model_version",
+                "ALTER TABLE backtest_job ADD COLUMN execution_model_version VARCHAR(32) NULL COMMENT '成交语义版本' AFTER sell_slippage");
+        ensureColumn("backtest_job", "price_adjustment",
+                "ALTER TABLE backtest_job ADD COLUMN price_adjustment VARCHAR(16) NULL COMMENT '行情复权口径' AFTER execution_model_version");
+        ensureColumn("backtest_job", "data_fingerprint",
+                "ALTER TABLE backtest_job ADD COLUMN data_fingerprint CHAR(64) NULL COMMENT '行情数据SHA-256指纹' AFTER price_adjustment");
+        ensureIndex("backtest_job", "idx_backtest_user_comparison_batch",
+                "ALTER TABLE backtest_job ADD KEY idx_backtest_user_comparison_batch (user_id, comparison_batch_id)");
+
+        boolean universeUserAdded = ensureColumn("universe_snapshot", "user_id",
+                "ALTER TABLE universe_snapshot ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
+        boolean universeDateAdded = ensureColumn("universe_snapshot", "as_of_date",
+                "ALTER TABLE universe_snapshot ADD COLUMN as_of_date DATE NULL COMMENT '数据截止日' AFTER batch_no");
+        jdbcTemplate.update("""
+                UPDATE universe_snapshot t1
+                JOIN (
+                    SELECT MIN(user_id) AS user_id
+                    FROM apex_user_profile
+                    WHERE role = 'ADMIN'
+                ) t2 ON 1 = 1
+                SET t1.user_id = t2.user_id
+                WHERE t1.user_id IS NULL
+                """);
+        jdbcTemplate.update("""
+                UPDATE universe_snapshot t1
+                SET t1.as_of_date = DATE(t1.create_time)
+                WHERE t1.as_of_date IS NULL
+                """);
+        ensureRequiredColumn("universe_snapshot", "user_id", universeUserAdded,
+                "ALTER TABLE universe_snapshot MODIFY COLUMN user_id BIGINT NOT NULL COMMENT '所属用户ID'");
+        ensureRequiredColumn("universe_snapshot", "as_of_date", universeDateAdded,
+                "ALTER TABLE universe_snapshot MODIFY COLUMN as_of_date DATE NOT NULL COMMENT '数据截止日'");
+        ensureIndex("universe_snapshot", "idx_universe_user_batch",
+                "ALTER TABLE universe_snapshot ADD KEY idx_universe_user_batch (user_id, batch_no)");
+        ensureIndex("universe_snapshot", "idx_universe_user_as_of_id",
+                "ALTER TABLE universe_snapshot ADD KEY idx_universe_user_as_of_id (user_id, as_of_date, id)");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS backtest_experiment (
+                    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+                    user_id BIGINT NOT NULL COMMENT '所属用户ID',
+                    code VARCHAR(16) NOT NULL COMMENT '证券代码',
+                    strategy_id VARCHAR(64) NOT NULL COMMENT '策略ID',
+                    strategy_name VARCHAR(128) NOT NULL COMMENT '策略名称',
+                    strategy_parameters VARCHAR(512) NOT NULL COMMENT '实际策略参数',
+                    benchmark_code VARCHAR(16) NOT NULL COMMENT '基准代码',
+                    window_mode VARCHAR(16) NOT NULL COMMENT '窗口模式',
+                    data_begin_date DATE NOT NULL COMMENT '实际数据开始日',
+                    data_end_date DATE NOT NULL COMMENT '实际数据结束日',
+                    out_sample_begin_date DATE NOT NULL COMMENT '首个样本外窗口开始日',
+                    out_sample_end_date DATE NOT NULL COMMENT '最后样本外窗口结束日',
+                    train_days INT NOT NULL COMMENT '样本内交易日数',
+                    test_days INT NOT NULL COMMENT '样本外交易日数',
+                    step_days INT NOT NULL COMMENT '相邻样本外窗口步长',
+                    init_cash DECIMAL(20, 2) NULL COMMENT '初始资金',
+                    fold_count INT NOT NULL COMMENT '样本外窗口数量',
+                    compounded_out_sample_return DECIMAL(18, 8) NOT NULL COMMENT '样本外复合收益',
+                    compounded_benchmark_return DECIMAL(18, 8) NOT NULL COMMENT '基准复合收益',
+                    compounded_excess_return DECIMAL(18, 8) NOT NULL COMMENT '复合超额收益',
+                    out_sample_sharpe DECIMAL(18, 8) NOT NULL COMMENT '样本外整体夏普',
+                    worst_out_sample_drawdown DECIMAL(18, 8) NOT NULL COMMENT '样本外最差最大回撤',
+                    commission_rate DECIMAL(12, 8) NOT NULL COMMENT '单边佣金比例',
+                    stamp_tax_rate DECIMAL(12, 8) NOT NULL COMMENT '卖出印花税比例',
+                    buy_slippage DECIMAL(12, 8) NOT NULL COMMENT '买入滑点比例',
+                    sell_slippage DECIMAL(12, 8) NOT NULL COMMENT '卖出滑点比例',
+                    execution_model_version VARCHAR(32) NULL COMMENT '成交语义版本',
+                    price_adjustment VARCHAR(16) NULL COMMENT '行情复权口径',
+                    data_fingerprint CHAR(64) NOT NULL COMMENT '行情数据SHA-256指纹',
+                    request_json MEDIUMTEXT NOT NULL COMMENT '实际请求JSON',
+                    result_json MEDIUMTEXT NOT NULL COMMENT '完整结果JSON',
+                    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                    deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+                    PRIMARY KEY (id),
+                    KEY idx_backtest_experiment_user_id (user_id, id),
+                    KEY idx_backtest_experiment_user_code (user_id, code, id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='回测实验历史'
+                """);
+        ensureColumn("backtest_experiment", "init_cash",
+                "ALTER TABLE backtest_experiment ADD COLUMN init_cash DECIMAL(20, 2) NULL COMMENT '初始资金' AFTER step_days");
+        ensureColumn("backtest_experiment", "execution_model_version",
+                "ALTER TABLE backtest_experiment ADD COLUMN execution_model_version VARCHAR(32) NULL COMMENT '成交语义版本' AFTER sell_slippage");
+        ensureColumn("backtest_experiment", "price_adjustment",
+                "ALTER TABLE backtest_experiment ADD COLUMN price_adjustment VARCHAR(16) NULL COMMENT '行情复权口径' AFTER execution_model_version");
+        log.info("schema ready: strategy lab");
+    }
+
 
     /**
      * 个股三种市盈率口径
@@ -538,6 +664,44 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                         """,
                 Integer.class, table, indexName);
         return Objects.nonNull(count) && count > 0;
+    }
+
+    /**
+     * 缺索引则补齐
+     *
+     * @param table     表名
+     * @param indexName 索引名
+     * @param ddl       ALTER 语句
+     */
+    private void ensureIndex(String table, String indexName, String ddl) {
+        if (!indexExists(table, indexName)) {
+            jdbcTemplate.execute(ddl);
+        }
+    }
+
+
+    /**
+     * 将完成回填的业务列收紧为非空
+     *
+     * @param table       表名
+     * @param column      列名
+     * @param columnAdded 本次是否新增列
+     * @param ddl         ALTER 语句
+     */
+    private void ensureRequiredColumn(String table, String column, boolean columnAdded, String ddl) {
+        if (columnAdded) {
+            jdbcTemplate.execute(ddl);
+            return;
+        }
+        String nullable = jdbcTemplate.queryForObject(
+                """
+                        SELECT IS_NULLABLE FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+                        """,
+                String.class, table, column);
+        if (!"NO".equalsIgnoreCase(nullable)) {
+            jdbcTemplate.execute(ddl);
+        }
     }
 
     /**

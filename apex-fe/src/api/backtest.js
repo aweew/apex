@@ -40,6 +40,22 @@ export function walkForward(payload, inSampleRatio = 0.7) {
   return http.post('/api/backtest/walk-forward', payload || {}, { params: { inSampleRatio } })
 }
 
+export function rollingEvaluate(payload) {
+  return http.post('/api/backtest/rolling-evaluate', payload || {})
+}
+
+export function listBacktestExperiments(limit = 20) {
+  return http.get('/api/backtest/experiments', { params: { limit } })
+}
+
+export function getBacktestExperiment(id) {
+  return http.get(`/api/backtest/experiments/${id}`)
+}
+
+export function removeBacktestExperiment(id) {
+  return http.delete(`/api/backtest/experiments/${id}`)
+}
+
 export function monthlyReturns(jobId) {
   return http.get(`/api/backtest/${jobId}/monthly`)
 }

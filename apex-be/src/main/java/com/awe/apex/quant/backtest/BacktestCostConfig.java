@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 /**
  * 回测成本假设
@@ -13,7 +14,7 @@ import java.math.BigDecimal;
 public class BacktestCostConfig {
 
     /**
-     * 双边佣金合计比例（默认 0.05%）
+     * 单边佣金比例（默认 0.05%）
      */
     @Builder.Default
     private BigDecimal commissionRate = new BigDecimal("0.0005");
@@ -57,16 +58,16 @@ public class BacktestCostConfig {
     public static BacktestCostConfig of(BigDecimal commission, BigDecimal stampTax,
                                        BigDecimal buySlip, BigDecimal sellSlip) {
         BacktestCostConfig.BacktestCostConfigBuilder builder = BacktestCostConfig.builder();
-        if (commission != null) {
+        if (Objects.nonNull(commission)) {
             builder.commissionRate(commission);
         }
-        if (stampTax != null) {
+        if (Objects.nonNull(stampTax)) {
             builder.stampTaxRate(stampTax);
         }
-        if (buySlip != null) {
+        if (Objects.nonNull(buySlip)) {
             builder.buySlippage(buySlip);
         }
-        if (sellSlip != null) {
+        if (Objects.nonNull(sellSlip)) {
             builder.sellSlippage(sellSlip);
         }
         return builder.build();

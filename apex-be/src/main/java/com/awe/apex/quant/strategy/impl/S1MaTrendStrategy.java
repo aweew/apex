@@ -23,12 +23,42 @@ public class S1MaTrendStrategy implements Strategy {
 
     public static final String ID = "S1";
 
+    /**
+     * 策略逻辑版本，交易规则变化时递增
+     */
+    public static final String LOGIC_VERSION = "S1_V1";
+
     private static final BigDecimal SCORE_MIN = new BigDecimal("65");
     private static final BigDecimal SCORE_MAX = new BigDecimal("92");
     private static final BigDecimal BUY_BASE = new BigDecimal("68");
 
     @Resource
     private StrategyParams strategyParams;
+
+    private Integer fixedFastMa;
+
+    private Integer fixedSlowMa;
+
+    private Integer fixedVolumeMa;
+
+    /**
+     * 创建使用系统参数的S1策略
+     */
+    public S1MaTrendStrategy() {
+    }
+
+    /**
+     * 创建使用实验快照参数的S1策略
+     *
+     * @param fastMa   快均线周期
+     * @param slowMa   慢均线周期
+     * @param volumeMa 成交量均线周期
+     */
+    public S1MaTrendStrategy(int fastMa, int slowMa, int volumeMa) {
+        this.fixedFastMa = fastMa;
+        this.fixedSlowMa = slowMa;
+        this.fixedVolumeMa = volumeMa;
+    }
 
     @Override
     public String strategyId() {
@@ -40,16 +70,24 @@ public class S1MaTrendStrategy implements Strategy {
         return "均线趋势";
     }
 
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public String logicVersion() {
+        return LOGIC_VERSION;
+    }
+
     @Override
     public StrategySignalResult evaluate(String code, BarSeries series) {
         int index = series.size() - 1;
-        int slow = strategyParams.s1SlowMa();
+        int slow = slowMa();
         if (index < slow) {
             return null;
         }
         if (shouldEnter(series, index)) {
-            int fast = strategyParams.s1FastMa();
-            int volMaN = strategyParams.s1VolMa();
+            int fast = fastMa();
+            int volMaN = volumeMa();
             BigDecimal maFast = IndicatorUtils.ma(series.getCloses(), fast, index);
             BigDecimal maSlow = IndicatorUtils.ma(series.getCloses(), slow, index);
             BigDecimal close = series.getCloses().get(index);
@@ -79,7 +117,7 @@ public class S1MaTrendStrategy implements Strategy {
         }
         if (shouldExit(series, index, -1, null)) {
             Map<String, Object> reason = new HashMap<>();
-            reason.put("rule", "跌破MA" + strategyParams.s1FastMa());
+            reason.put("rule", "跌破MA" + fastMa());
             return StrategySignalResult.builder()
                     .strategyId(ID)
                     .code(code)
@@ -94,9 +132,9 @@ public class S1MaTrendStrategy implements Strategy {
 
     @Override
     public boolean shouldEnter(BarSeries series, int index) {
-        int fast = strategyParams.s1FastMa();
-        int slow = strategyParams.s1SlowMa();
-        int volMaN = strategyParams.s1VolMa();
+        int fast = fastMa();
+        int slow = slowMa();
+        int volMaN = volumeMa();
         if (index < slow) {
             return false;
         }
@@ -117,7 +155,7 @@ public class S1MaTrendStrategy implements Strategy {
 
     @Override
     public boolean shouldExit(BarSeries series, int index, int entryIndex, BigDecimal entryBreakLow) {
-        int fast = strategyParams.s1FastMa();
+        int fast = fastMa();
         if (index < fast) {
             return false;
         }
@@ -127,6 +165,18 @@ public class S1MaTrendStrategy implements Strategy {
             return false;
         }
         return close.compareTo(maFast) < 0;
+    }
+
+    private int fastMa() {
+        return Objects.nonNull(fixedFastMa) ? fixedFastMa : strategyParams.s1FastMa();
+    }
+
+    private int slowMa() {
+        return Objects.nonNull(fixedSlowMa) ? fixedSlowMa : strategyParams.s1SlowMa();
+    }
+
+    private int volumeMa() {
+        return Objects.nonNull(fixedVolumeMa) ? fixedVolumeMa : strategyParams.s1VolMa();
     }
 
     /**

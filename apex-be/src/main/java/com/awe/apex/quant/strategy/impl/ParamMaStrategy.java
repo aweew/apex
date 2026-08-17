@@ -16,6 +16,11 @@ import java.util.Objects;
  */
 public class ParamMaStrategy implements Strategy {
 
+    /**
+     * 策略逻辑版本，交易规则变化时递增
+     */
+    public static final String LOGIC_VERSION = "PARAM_MA_V1";
+
     private final int fast;
     private final int slow;
 
@@ -32,6 +37,14 @@ public class ParamMaStrategy implements Strategy {
     @Override
     public String strategyName() {
         return "均线交叉 MA" + fast + "/" + slow;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public String logicVersion() {
+        return LOGIC_VERSION;
     }
 
     @Override

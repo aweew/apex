@@ -23,12 +23,51 @@ public class S2RsiPullbackStrategy implements Strategy {
 
     public static final String ID = "S2";
 
+    /**
+     * 策略逻辑版本，交易规则变化时递增
+     */
+    public static final String LOGIC_VERSION = "S2_V1";
+
     private static final BigDecimal SCORE_MIN = new BigDecimal("65");
     private static final BigDecimal SCORE_MAX = new BigDecimal("92");
     private static final BigDecimal BUY_BASE = new BigDecimal("65");
 
     @Resource
     private StrategyParams strategyParams;
+
+    private Integer fixedMa;
+
+    private Integer fixedRsiPeriod;
+
+    private BigDecimal fixedRsiOversold;
+
+    private BigDecimal fixedRsiRebound;
+
+    private BigDecimal fixedRsiOverbought;
+
+    /**
+     * 创建使用系统参数的S2策略
+     */
+    public S2RsiPullbackStrategy() {
+    }
+
+    /**
+     * 创建使用实验快照参数的S2策略
+     *
+     * @param ma            趋势均线周期
+     * @param rsiPeriod     RSI周期
+     * @param rsiOversold   RSI超卖阈值
+     * @param rsiRebound    RSI回升阈值
+     * @param rsiOverbought RSI超买阈值
+     */
+    public S2RsiPullbackStrategy(int ma, int rsiPeriod, BigDecimal rsiOversold,
+                                 BigDecimal rsiRebound, BigDecimal rsiOverbought) {
+        this.fixedMa = ma;
+        this.fixedRsiPeriod = rsiPeriod;
+        this.fixedRsiOversold = rsiOversold;
+        this.fixedRsiRebound = rsiRebound;
+        this.fixedRsiOverbought = rsiOverbought;
+    }
 
     @Override
     public String strategyId() {
@@ -40,15 +79,23 @@ public class S2RsiPullbackStrategy implements Strategy {
         return "RSI回调";
     }
 
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public String logicVersion() {
+        return LOGIC_VERSION;
+    }
+
     @Override
     public StrategySignalResult evaluate(String code, BarSeries series) {
         int index = series.size() - 1;
-        int maN = strategyParams.s2Ma();
+        int maN = ma();
         if (index < maN) {
             return null;
         }
         if (shouldEnter(series, index)) {
-            int rsiPeriod = strategyParams.s2RsiPeriod();
+            int rsiPeriod = rsiPeriod();
             BigDecimal ma = IndicatorUtils.ma(series.getCloses(), maN, index);
             BigDecimal close = series.getCloses().get(index);
             BigDecimal rsi = IndicatorUtils.rsi(series.getCloses(), rsiPeriod, index);
@@ -59,13 +106,13 @@ public class S2RsiPullbackStrategy implements Strategy {
                     ? rsi.subtract(prevRsi).setScale(4, RoundingMode.HALF_UP) : null;
             BigDecimal distMaPct = pctAbove(close, ma);
             BigDecimal volRatio = safeDivide(volume, volMa);
-            BigDecimal score = strengthScore(rsi, strategyParams.s2RsiRebound(), rsiLift, distMaPct, volRatio);
+            BigDecimal score = strengthScore(rsi, rsiRebound(), rsiLift, distMaPct, volRatio);
 
             Map<String, Object> reason = new HashMap<>();
             reason.put("rule", "MA" + maN + "上方RSI超卖回升");
             reason.put("rsi", rsi);
-            reason.put("rsiOversold", strategyParams.s2RsiOversold());
-            reason.put("rsiRebound", strategyParams.s2RsiRebound());
+            reason.put("rsiOversold", rsiOversold());
+            reason.put("rsiRebound", rsiRebound());
             reason.put("rsiLift", rsiLift);
             reason.put("distMaPct", distMaPct);
             reason.put("volRatio", volRatio);
@@ -96,10 +143,10 @@ public class S2RsiPullbackStrategy implements Strategy {
 
     @Override
     public boolean shouldEnter(BarSeries series, int index) {
-        int maN = strategyParams.s2Ma();
-        int rsiPeriod = strategyParams.s2RsiPeriod();
-        BigDecimal oversold = strategyParams.s2RsiOversold();
-        BigDecimal rebound = strategyParams.s2RsiRebound();
+        int maN = ma();
+        int rsiPeriod = rsiPeriod();
+        BigDecimal oversold = rsiOversold();
+        BigDecimal rebound = rsiRebound();
         if (index < maN) {
             return false;
         }
@@ -117,9 +164,9 @@ public class S2RsiPullbackStrategy implements Strategy {
 
     @Override
     public boolean shouldExit(BarSeries series, int index, int entryIndex, BigDecimal entryBreakLow) {
-        int maN = strategyParams.s2Ma();
-        int rsiPeriod = strategyParams.s2RsiPeriod();
-        BigDecimal overbought = strategyParams.s2RsiOverbought();
+        int maN = ma();
+        int rsiPeriod = rsiPeriod();
+        BigDecimal overbought = rsiOverbought();
         if (index < maN) {
             return false;
         }
@@ -130,6 +177,26 @@ public class S2RsiPullbackStrategy implements Strategy {
             return false;
         }
         return rsi.compareTo(overbought) > 0 || close.compareTo(ma) < 0;
+    }
+
+    private int ma() {
+        return Objects.nonNull(fixedMa) ? fixedMa : strategyParams.s2Ma();
+    }
+
+    private int rsiPeriod() {
+        return Objects.nonNull(fixedRsiPeriod) ? fixedRsiPeriod : strategyParams.s2RsiPeriod();
+    }
+
+    private BigDecimal rsiOversold() {
+        return Objects.nonNull(fixedRsiOversold) ? fixedRsiOversold : strategyParams.s2RsiOversold();
+    }
+
+    private BigDecimal rsiRebound() {
+        return Objects.nonNull(fixedRsiRebound) ? fixedRsiRebound : strategyParams.s2RsiRebound();
+    }
+
+    private BigDecimal rsiOverbought() {
+        return Objects.nonNull(fixedRsiOverbought) ? fixedRsiOverbought : strategyParams.s2RsiOverbought();
     }
 
     /**

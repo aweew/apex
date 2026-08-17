@@ -73,6 +73,16 @@ public class BacktestResult {
     private Integer tradeCount;
 
     /**
+     * 期末未平仓数量
+     */
+    private Integer endingPositionQuantity;
+
+    /**
+     * 期末未平仓市值
+     */
+    private BigDecimal endingPositionMarketValue;
+
+    /**
      * 成交明细
      */
     private List<BacktestTradePoint> trades;

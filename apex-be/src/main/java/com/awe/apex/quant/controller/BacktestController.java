@@ -2,6 +2,8 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.BacktestDetailResp;
+import com.awe.apex.quant.domain.dto.BacktestExperimentDetailResp;
+import com.awe.apex.quant.domain.dto.BacktestExperimentListResp;
 import com.awe.apex.quant.domain.dto.BacktestRunReq;
 import com.awe.apex.quant.domain.dto.BatchBacktestItemResp;
 import com.awe.apex.quant.domain.dto.BatchBacktestReq;
@@ -15,11 +17,15 @@ import com.awe.apex.quant.domain.dto.StrategyLeaderboardItemResp;
 import com.awe.apex.quant.domain.dto.MonteCarloResp;
 import com.awe.apex.quant.domain.dto.MonthlyReturnResp;
 import com.awe.apex.quant.domain.dto.WalkForwardResp;
+import com.awe.apex.quant.domain.dto.RollingBacktestReq;
+import com.awe.apex.quant.domain.dto.RollingBacktestResp;
 import com.awe.apex.quant.domain.entity.BacktestJob;
 import com.awe.apex.quant.service.IBacktestService;
+import com.awe.apex.quant.service.IBacktestExperimentService;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -39,6 +45,9 @@ public class BacktestController {
 
     @Resource
     private IBacktestService backtestService;
+
+    @Resource
+    private IBacktestExperimentService backtestExperimentService;
 
     /**
      * 运行回测
@@ -82,7 +91,7 @@ public class BacktestController {
      * 多标的等权组合回测
      */
     @PostMapping("/portfolio")
-    public Result<PortfolioBacktestResp> portfolio(@RequestBody(required = false) PortfolioBacktestReq req) {
+    public Result<PortfolioBacktestResp> portfolio(@Valid @RequestBody(required = false) PortfolioBacktestReq req) {
         return Result.success(backtestService.portfolioRun(req));
     }
 
@@ -96,7 +105,7 @@ public class BacktestController {
     }
 
     /**
-     * 策略绩效榜
+     * 严格配对策略绩效榜
      */
     @GetMapping("/leaderboard")
     public Result<List<StrategyLeaderboardItemResp>> leaderboard(@RequestParam(defaultValue = "100") Integer limit) {
@@ -118,6 +127,52 @@ public class BacktestController {
     public Result<WalkForwardResp> walkForward(@RequestBody BacktestRunReq req,
                                                @RequestParam(required = false, defaultValue = "0.7") BigDecimal inSampleRatio) {
         return Result.success(backtestService.walkForward(req, inSampleRatio));
+    }
+
+    /**
+     * 多窗口滚动样本外评估
+     *
+     * @param req 实验请求
+     * @return 滚动评估结果
+     */
+    @PostMapping("/rolling-evaluate")
+    public Result<RollingBacktestResp> rollingEvaluate(@RequestBody RollingBacktestReq req) {
+        return Result.success(backtestService.rollingEvaluate(req));
+    }
+
+    /**
+     * 最近滚动实验
+     *
+     * @param limit 条数
+     * @return 实验摘要
+     */
+    @GetMapping("/experiments")
+    public Result<List<BacktestExperimentListResp>> experiments(
+            @RequestParam(required = false, defaultValue = "20") Integer limit) {
+        return Result.success(backtestExperimentService.list(limit));
+    }
+
+    /**
+     * 滚动实验详情
+     *
+     * @param id 实验ID
+     * @return 实验详情
+     */
+    @GetMapping("/experiments/{id}")
+    public Result<BacktestExperimentDetailResp> experimentDetail(@PathVariable Long id) {
+        return Result.success(backtestExperimentService.detail(id));
+    }
+
+    /**
+     * 删除滚动实验
+     *
+     * @param id 实验ID
+     * @return 空
+     */
+    @DeleteMapping("/experiments/{id}")
+    public Result<Void> removeExperiment(@PathVariable Long id) {
+        backtestExperimentService.remove(id);
+        return Result.success(null);
     }
 
     /**

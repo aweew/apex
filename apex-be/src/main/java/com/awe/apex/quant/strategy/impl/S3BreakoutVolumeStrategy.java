@@ -23,12 +23,38 @@ public class S3BreakoutVolumeStrategy implements Strategy {
 
     public static final String ID = "S3";
 
+    /**
+     * 策略逻辑版本，交易规则变化时递增
+     */
+    public static final String LOGIC_VERSION = "S3_V1";
+
     private static final BigDecimal SCORE_MIN = new BigDecimal("65");
     private static final BigDecimal SCORE_MAX = new BigDecimal("92");
     private static final BigDecimal BUY_BASE = new BigDecimal("68");
 
     @Resource
     private StrategyParams strategyParams;
+
+    private Integer fixedLookback;
+
+    private BigDecimal fixedVolumeRatio;
+
+    /**
+     * 创建使用系统参数的S3策略
+     */
+    public S3BreakoutVolumeStrategy() {
+    }
+
+    /**
+     * 创建使用实验快照参数的S3策略
+     *
+     * @param lookback   突破回看周期
+     * @param volumeRatio 最小成交量比率
+     */
+    public S3BreakoutVolumeStrategy(int lookback, BigDecimal volumeRatio) {
+        this.fixedLookback = lookback;
+        this.fixedVolumeRatio = volumeRatio;
+    }
 
     @Override
     public String strategyId() {
@@ -40,10 +66,18 @@ public class S3BreakoutVolumeStrategy implements Strategy {
         return "突破放量";
     }
 
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public String logicVersion() {
+        return LOGIC_VERSION;
+    }
+
     @Override
     public StrategySignalResult evaluate(String code, BarSeries series) {
         int index = series.size() - 1;
-        int lookback = strategyParams.s3Lookback();
+        int lookback = lookback();
         if (index < lookback) {
             return null;
         }
@@ -54,13 +88,13 @@ public class S3BreakoutVolumeStrategy implements Strategy {
             BigDecimal volume = series.getVolumes().get(index);
             BigDecimal breakoutPct = pctAbove(close, highPrev);
             BigDecimal volumeRatio = safeDivide(volume, volMa);
-            BigDecimal score = strengthScore(breakoutPct, volumeRatio, strategyParams.s3VolumeRatio());
+            BigDecimal score = strengthScore(breakoutPct, volumeRatio, volumeRatio());
 
             Map<String, Object> reason = new HashMap<>();
-            reason.put("rule", lookback + "日新高且量比>" + strategyParams.s3VolumeRatio());
+            reason.put("rule", lookback + "日新高且量比>" + volumeRatio());
             reason.put("breakLow", series.getLows().get(index));
             reason.put("lookback", lookback);
-            reason.put("volumeRatioMin", strategyParams.s3VolumeRatio());
+            reason.put("volumeRatioMin", volumeRatio());
             reason.put("breakoutPct", breakoutPct);
             reason.put("volumeRatio", volumeRatio);
             reason.put("strengthScore", score);
@@ -97,8 +131,8 @@ public class S3BreakoutVolumeStrategy implements Strategy {
 
     @Override
     public boolean shouldEnter(BarSeries series, int index) {
-        int lookback = strategyParams.s3Lookback();
-        BigDecimal volRatioMin = strategyParams.s3VolumeRatio();
+        int lookback = lookback();
+        BigDecimal volRatioMin = volumeRatio();
         if (index < lookback) {
             return false;
         }
@@ -115,6 +149,14 @@ public class S3BreakoutVolumeStrategy implements Strategy {
         boolean newHigh = close.compareTo(highPrev) > 0;
         BigDecimal volumeRatio = volume.divide(volMa, 4, RoundingMode.HALF_UP);
         return newHigh && volumeRatio.compareTo(volRatioMin) > 0;
+    }
+
+    private int lookback() {
+        return Objects.nonNull(fixedLookback) ? fixedLookback : strategyParams.s3Lookback();
+    }
+
+    private BigDecimal volumeRatio() {
+        return Objects.nonNull(fixedVolumeRatio) ? fixedVolumeRatio : strategyParams.s3VolumeRatio();
     }
 
     @Override
@@ -188,7 +230,7 @@ public class S3BreakoutVolumeStrategy implements Strategy {
      * @return 下标，无则 -1
      */
     private int findLatestEntryIndex(BarSeries series, int index) {
-        int lookback = strategyParams.s3Lookback();
+        int lookback = lookback();
         int from = Math.max(lookback, index - 60);
         for (int i = index - 1; i >= from; i--) {
             if (shouldEnter(series, i)) {

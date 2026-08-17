@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -61,6 +62,38 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "ALTER TABLE observe_pool ADD COLUMN decision_updated_at");
         assertContains(executed, "UPDATE observe_pool");
         assertContains(executed, "UPDATE stock_basic SET pe_ttm = NULL");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN user_id");
+        assertContains(executed, "UPDATE backtest_job t1");
+        assertContains(executed, "ALTER TABLE backtest_job MODIFY COLUMN user_id BIGINT NOT NULL");
+        assertContains(executed, "ADD KEY idx_backtest_user_status_id");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN comparison_batch_id");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN comparison_strategy_ids");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN strategy_parameters");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN comparison_config_fingerprint");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN commission_rate");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN stamp_tax_rate");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN buy_slippage");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN sell_slippage");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN execution_model_version");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN price_adjustment");
+        assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN data_fingerprint");
+        assertContains(executed, "ADD KEY idx_backtest_user_comparison_batch");
+        assertContains(executed, "ALTER TABLE universe_snapshot ADD COLUMN user_id");
+        assertContains(executed, "ALTER TABLE universe_snapshot ADD COLUMN as_of_date");
+        assertContains(executed, "UPDATE universe_snapshot t1");
+        assertContains(executed, "SET t1.as_of_date = DATE(t1.create_time)");
+        assertContains(executed, "ALTER TABLE universe_snapshot MODIFY COLUMN user_id BIGINT NOT NULL");
+        assertContains(executed, "ALTER TABLE universe_snapshot MODIFY COLUMN as_of_date DATE NOT NULL");
+        assertContains(executed, "ADD KEY idx_universe_user_batch");
+        assertContains(executed, "ADD KEY idx_universe_user_as_of_id");
+        assertContains(executed, "CREATE TABLE IF NOT EXISTS backtest_experiment");
+        assertContains(executed, "init_cash DECIMAL(20, 2) NULL COMMENT '初始资金'");
+        assertContains(executed, "execution_model_version VARCHAR(32) NULL COMMENT '成交语义版本'");
+        assertContains(executed, "price_adjustment VARCHAR(16) NULL COMMENT '行情复权口径'");
+        assertContains(executed, "ALTER TABLE backtest_experiment ADD COLUMN execution_model_version");
+        assertContains(executed, "ALTER TABLE backtest_experiment ADD COLUMN price_adjustment");
+        assertContains(executed, "ALTER TABLE backtest_experiment ADD COLUMN init_cash");
+        assertContains(executed, "KEY idx_backtest_experiment_user_id (user_id, id)");
     }
 
     @Test
@@ -74,6 +107,19 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "CREATE TABLE IF NOT EXISTS decision_feature_snapshot");
         assertContains(executed, "CREATE TABLE IF NOT EXISTS decision_outcome");
         assertContains(executed, "CREATE TABLE IF NOT EXISTS decision_portfolio_snapshot");
+        assertContains(executed, "CREATE TABLE IF NOT EXISTS backtest_experiment");
+    }
+
+    @Test
+    void failsApplicationStartupWhenSchemaBootstrapFails() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        doAnswer(invocation -> {
+            throw new IllegalStateException("database unavailable");
+        }).when(jdbcTemplate).execute(anyString());
+        MarketSchemaBootstrap bootstrap = new MarketSchemaBootstrap();
+        ReflectionTestUtils.setField(bootstrap, "jdbcTemplate", jdbcTemplate);
+
+        assertThrows(IllegalStateException.class, () -> bootstrap.run(null));
     }
 
     private List<String> runBootstrap(Integer columnCount, String actionIdNullable, Integer indexCount) {
