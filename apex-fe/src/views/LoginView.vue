@@ -65,23 +65,30 @@ function showPasswordResetHelp() {
 </template>
 
 <style scoped>
-.submit-btn { width: 100%; height: 50px; margin-top: 2px; border: 0; border-radius: 6px; background: #1669c9; font-weight: 700; box-shadow: none; transition: background .18s ease; }
-.submit-btn:hover, .submit-btn:focus-visible { background: #1058ad; }
-.submit-btn:active { background: #0d4d92; }
-.submit-btn.is-disabled, .submit-btn.is-disabled:hover { background: #90b3d6; color: rgba(255, 255, 255, .78); }
+.submit-btn { width: 100%; height: 50px; margin-top: 2px; border: 0; border-radius: 8px; background: #0071e3; font-weight: 600; box-shadow: none; transition: background .18s ease, box-shadow .18s ease; }
+.submit-btn:hover { background: #0077ed; }
+.submit-btn:focus-visible { background: #0071e3; box-shadow: 0 0 0 4px rgba(0, 113, 227, .18); }
+.submit-btn:active { background: #0068d1; }
+.submit-btn.is-disabled, .submit-btn.is-disabled:hover { background: #a6c8ea; color: rgba(255, 255, 255, .82); }
 .password-field { position: relative; }
-.forgot-password { position: absolute; top: 0; right: 6px; padding: 0; border: 0; background: transparent; color: #0d58af; font: inherit; font-size: 12px; font-weight: 600; line-height: 1.3; cursor: pointer; }
-.forgot-password:hover, .forgot-password:focus-visible { color: #08488f; text-decoration: underline; outline: none; }
-.invite-link { display: flex; align-items: center; justify-content: center; gap: 6px; width: fit-content; margin: 22px auto 0; color: rgba(28, 57, 75, .58); font-size: 13px; text-decoration: none; }
-.invite-link strong { color: #1478d4; font-size: 13px; }
+.forgot-password { position: absolute; top: -7px; right: 0; display: inline-flex; align-items: center; min-height: 32px; padding: 0; border: 0; background: transparent; color: #0066cc; font: inherit; font-size: 12px; font-weight: 600; line-height: 1.3; cursor: pointer; }
+.forgot-password:hover { color: #004f9e; text-decoration: underline; }
+.forgot-password:focus-visible { color: #004f9e; border-radius: 4px; outline: 3px solid rgba(0, 113, 227, .18); outline-offset: 2px; }
+.invite-link { display: flex; align-items: center; justify-content: center; gap: 6px; width: fit-content; min-height: 32px; margin: 20px auto 0; color: #6e6e73; font-size: 13px; text-decoration: none; }
+.invite-link strong { color: #0066cc; font-size: 13px; font-weight: 600; }
 .invite-link strong::after { content: ' →'; }
-.invite-link:hover { color: rgba(28, 57, 75, .78); }
+.invite-link:hover { color: #1d1d1f; }
+.invite-link:focus-visible { border-radius: 4px; outline: 3px solid rgba(0, 113, 227, .18); outline-offset: 2px; }
 
 @media (prefers-color-scheme: dark) {
-  .invite-link { color: rgba(231, 241, 246, .58); }
-  .invite-link strong { color: #61d1d7; }
-  .forgot-password { color: #61d1d7; }
-  .forgot-password:hover, .forgot-password:focus-visible { color: #a0f0f0; }
-  .invite-link:hover { color: rgba(231, 241, 246, .82); }
+  .invite-link { color: #a1a1a6; }
+  .invite-link strong,
+  .forgot-password { color: #0a84ff; }
+  .forgot-password:hover, .forgot-password:focus-visible { color: #64b5ff; }
+  .invite-link:hover { color: #f5f5f7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submit-btn { transition: none; }
 }
 </style>

@@ -17,9 +17,25 @@ test('login fields keep the expected keyboard focus order', () => {
   assert.ok(passwordInputIndex < passwordHelpIndex)
 })
 
-test('auth validation errors stay in document flow', () => {
+test('auth validation errors use a reserved slot without changing field height', () => {
   assert.match(
     authShellSource,
-    /:deep\(\.el-form-item__error\)\s*\{[\s\S]*?position:\s*static;[\s\S]*?width:\s*100%;/,
+    /:deep\(\.el-form-item\)\s*\{[\s\S]*?position:\s*relative;[\s\S]*?padding-bottom:\s*20px;/,
   )
+  assert.match(
+    authShellSource,
+    /:deep\(\.el-form-item__error\)\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?bottom:\s*-20px;[\s\S]*?width:\s*100%;/,
+  )
+})
+
+test('auth shell keeps the restrained premium surface contract', () => {
+  assert.match(authShellSource, /--auth-font:[^;]*-apple-system/)
+  assert.match(authShellSource, /background:\s*#f5f5f7;/)
+  assert.match(authShellSource, /--field-bg:\s*#ffffff;/)
+  assert.match(authShellSource, /\.el-input__wrapper\)\s*\{[\s\S]*?background:\s*var\(--field-bg\);/)
+  assert.match(authShellSource, /\.el-input\.is-disabled \.el-input__wrapper\)\s*\{[\s\S]*?background:\s*#eeeeef;/)
+  assert.match(authShellSource, /\.auth-page::before\s*\{[\s\S]*?repeating-linear-gradient\(/)
+  assert.match(authShellSource, /\.apex-geometry\s*\{[^}]*opacity:\s*\.18;/)
+  assert.match(authShellSource, /\.auth-panel\s*\{[\s\S]*?border-radius:\s*8px;/)
+  assert.doesNotMatch(authShellSource, /backdrop-filter:/)
 })
