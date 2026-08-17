@@ -2,9 +2,9 @@
 <configuration>
     <property name="log.path" value="./logs"/>
     <property name="console.log.pattern"
-              value="[%X{traceId:-}] [%X{userId:-}] %red(%d{yyyy-MM-dd HH:mm:ss}) %green([%thread]) %highlight(%-5level) %boldMagenta(%logger{36}%n) %msg%n"/>
+              value="[%X{traceId:--}] [%X{phone:--}] %red(%d{yyyy-MM-dd HH:mm:ss}) %green([%thread]) %highlight(%-5level) %boldMagenta(%logger{36}) - %msg%n"/>
     <property name="log.pattern"
-              value="[%X{traceId:-}] [%X{userId:-}] %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} %msg%n"/>
+              value="[%X{traceId:--}] [%X{phone:--}] %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} %msg%n"/>
 
     <!-- 控制台输出 -->
     <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
@@ -27,11 +27,8 @@
             <pattern>${log.pattern}</pattern>
             <charset>utf-8</charset>
         </encoder>
-        <filter class="ch.qos.logback.classic.filter.LevelFilter">
-            <!-- 过滤的级别 -->
-            <level>ALL</level>
-            <!-- 匹配时的操作：接收（记录） -->
-            <onMatch>ACCEPT</onMatch>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>TRACE</level>
         </filter>
     </appender>
 
@@ -94,14 +91,8 @@
         <encoder>
             <pattern>${log.pattern}</pattern>
         </encoder>
-        <filter class="ch.qos.logback.classic.filter.LevelFilter">
-            <!-- 过滤的级别 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>WARN</level>
-            <level>ERROR</level>
-            <!-- 匹配时的操作：接收（记录） -->
-            <onMatch>ACCEPT</onMatch>
-            <!-- 不匹配时的操作：拒绝（不记录） -->
-            <onMismatch>DENY</onMismatch>
         </filter>
     </appender>
 
@@ -124,7 +115,6 @@
         <!-- 添加附加的appender,最多只能添加一个 -->
         <appender-ref ref="file_info"/>
     </appender>
-‘
     <!-- error异步输出 -->
     <appender name="async_error" class="ch.qos.logback.classic.AsyncAppender">
         <!-- 不丢失日志.默认的,如果队列的80%已满,则会丢弃TRACT、DEBUG、INFO级别的日志 -->

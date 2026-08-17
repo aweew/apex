@@ -14,6 +14,26 @@ public interface Constants {
     String TRACE_ID = "traceId";
 
     /**
+     * 日志中的脱敏手机号
+     */
+    String PHONE = "phone";
+
+    /**
+     * 请求日志级别标记
+     */
+    String REQUEST_LOG_LEVEL = Constants.class.getName() + ".requestLogLevel";
+
+    /**
+     * 请求警告日志级别
+     */
+    String LOG_LEVEL_WARN = "WARN";
+
+    /**
+     * 请求错误日志级别
+     */
+    String LOG_LEVEL_ERROR = "ERROR";
+
+    /**
      * UTF-8 字符集
      */
     String UTF8 = "UTF-8";

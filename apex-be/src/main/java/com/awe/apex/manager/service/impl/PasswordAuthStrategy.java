@@ -3,6 +3,7 @@ package com.awe.apex.manager.service.impl;
 import cn.dev33.satoken.secure.BCrypt;
 import cn.dev33.satoken.stp.SaLoginModel;
 import cn.dev33.satoken.stp.StpUtil;
+import com.awe.apex.common.constant.Constants;
 import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.manager.domain.auth.dto.req.LoginReq;
 import com.awe.apex.manager.domain.auth.dto.resp.LoginResp;
@@ -42,6 +43,7 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         //     throw new RuntimeException("密码错误");
         // }
         StpUtil.login(user.getId());
+        StpUtil.getSession().set(Constants.PHONE, user.getPhone());
 
         return LoginResp.builder().accessToken(StpUtil.getTokenValue()).expireIn(StpUtil.getTokenTimeout()).build();
     }

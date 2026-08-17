@@ -1,8 +1,10 @@
 package com.awe.apex.common.exception;
 
 import com.awe.apex.common.api.Result;
+import com.awe.apex.common.constant.Constants;
 import com.awe.apex.common.constant.ErrorCodeEnum;
 import cn.dev33.satoken.exception.NotLoginException;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.connector.ClientAbortException;
@@ -18,6 +20,7 @@ import org.springframework.web.context.request.async.AsyncRequestNotUsableExcept
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -34,45 +37,78 @@ public class GlobalExceptionHandler {
      * 处理登录态失效
      *
      * @param exception 登录态异常
+     * @param request   HTTP 请求
      * @return 未授权响应
-    */
+     */
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     @ExceptionHandler(NotLoginException.class)
-    public Result<?> handleNotLoginException(NotLoginException exception) {
-        log.info("登录态失效，type={}", exception.getType());
+    public Result<?> handleNotLoginException(NotLoginException exception, HttpServletRequest request) {
+        markRequestLevel(request, Constants.LOG_LEVEL_WARN);
+        log.warn("登录态失效，type={}", exception.getType());
         return Result.failure(HttpStatus.UNAUTHORIZED.value(), "登录已失效，请重新登录");
     }
 
-    // 业务异常
+    /**
+     * 处理业务异常。
+     *
+     * @param exception 业务异常
+     * @param request   HTTP 请求
+     * @return 失败响应
+     */
     @ExceptionHandler(BusinessException.class)
-    public Result<?> handleBusinessException(BusinessException e) {
-        Integer code = e.getCode();
-        if (code == null) {
+    public Result<?> handleBusinessException(BusinessException exception, HttpServletRequest request) {
+        markRequestLevel(request, Constants.LOG_LEVEL_WARN);
+        log.warn("业务请求失败：{}", exception.getMessage());
+        Integer code = exception.getCode();
+        if (Objects.isNull(code)) {
             code = ErrorCodeEnum.FAILURE.getCode();
         }
-        return Result.failure(code, e.getMessage());
+        return Result.failure(code, exception.getMessage());
     }
 
-    // 系统异常
+    /**
+     * 处理系统异常。
+     *
+     * @param exception 系统异常
+     * @param request   HTTP 请求
+     * @return 失败响应
+     */
     @ExceptionHandler(SystemException.class)
-    public Result<?> handleSystemException(SystemException e) {
-        Integer code = e.getCode();
-        if (code == null) {
+    public Result<?> handleSystemException(SystemException exception, HttpServletRequest request) {
+        markRequestLevel(request, Constants.LOG_LEVEL_ERROR);
+        log.error("系统异常：", exception);
+        Integer code = exception.getCode();
+        if (Objects.isNull(code)) {
             code = ErrorCodeEnum.ERROR.getCode();
         }
         return Result.failure(code, "系统异常，请联系管理员");
     }
 
-    // 参数校验异常（如 @Valid 抛出的）
+    /**
+     * 处理方法参数约束异常。
+     *
+     * @param exception 参数约束异常
+     * @param request   HTTP 请求
+     * @return 失败响应
+     */
     @ExceptionHandler(ConstraintViolationException.class)
-    public Result<?> handleValidationException(ConstraintViolationException e) {
-        return Result.failure(ErrorCodeEnum.FAILURE.getCode(), e.getMessage());
+    public Result<?> handleValidationException(ConstraintViolationException exception, HttpServletRequest request) {
+        markRequestLevel(request, Constants.LOG_LEVEL_WARN);
+        return Result.failure(ErrorCodeEnum.FAILURE.getCode(), exception.getMessage());
     }
 
-    // 参数校验异常
+    /**
+     * 处理请求对象字段校验异常。
+     *
+     * @param exception 字段校验异常
+     * @param request   HTTP 请求
+     * @return 失败响应
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public Result<?> handleMethodArgumentNotValidException(MethodArgumentNotValidException e) {
-        BindingResult bindingResult = e.getBindingResult();
+    public Result<?> handleMethodArgumentNotValidException(MethodArgumentNotValidException exception,
+                                                           HttpServletRequest request) {
+        markRequestLevel(request, Constants.LOG_LEVEL_WARN);
+        BindingResult bindingResult = exception.getBindingResult();
         Map<String, String> errors = bindingResult.getFieldErrors().stream()
                 .collect(Collectors.toMap(
                         FieldError::getField,
@@ -83,45 +119,70 @@ public class GlobalExceptionHandler {
         return Result.failure(ErrorCodeEnum.FAILURE.getCode(), "参数校验失败", errors);
     }
 
-    // 参数校验异常（如 @Valid 抛出的）
+    /**
+     * 处理无法读取的 HTTP 消息。
+     *
+     * @param exception 消息读取异常
+     * @param request   HTTP 请求
+     * @return 失败响应
+     */
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public Result<?> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
-        return Result.failure(ErrorCodeEnum.FAILURE.getCode(), e.getMessage());
+    public Result<?> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception,
+                                                           HttpServletRequest request) {
+        markRequestLevel(request, Constants.LOG_LEVEL_WARN);
+        return Result.failure(ErrorCodeEnum.FAILURE.getCode(), exception.getMessage());
     }
 
     /**
      * 客户端主动断开（超时/刷新/取消请求）：业务可能已跑完，勿当系统故障刷 ERROR
+     *
+     * @param exception 客户端断开异常
+     * @param request   HTTP 请求
      */
     @ExceptionHandler({ClientAbortException.class, AsyncRequestNotUsableException.class})
-    public void handleClientAbort(Exception e) {
-        log.warn("客户端已断开连接，响应未写完：{}", e.getMessage());
+    public void handleClientAbort(Exception exception, HttpServletRequest request) {
+        markRequestLevel(request, Constants.LOG_LEVEL_WARN);
+        log.warn("客户端已断开连接，响应未写完：{}", exception.getMessage());
     }
 
-    // 兜底异常
+    /**
+     * 处理未分类异常。
+     *
+     * @param exception 未分类异常
+     * @param request   HTTP 请求
+     * @return 失败响应
+     */
     @ExceptionHandler(Exception.class)
-    public Result<?> handleException(Exception e) {
-        if (isClientAbort(e)) {
-            log.warn("客户端已断开连接，响应未写完：{}", e.getMessage());
+    public Result<?> handleException(Exception exception, HttpServletRequest request) {
+        if (isClientAbort(exception)) {
+            markRequestLevel(request, Constants.LOG_LEVEL_WARN);
+            log.warn("客户端已断开连接，响应未写完：{}", exception.getMessage());
             return null;
         }
-        log.error("系统异常：", e);
+        markRequestLevel(request, Constants.LOG_LEVEL_ERROR);
+        log.error("系统异常：", exception);
         return Result.failure(ErrorCodeEnum.ERROR.getCode(), "未知异常，请联系管理员");
     }
 
-    private boolean isClientAbort(Throwable e) {
-        Throwable cur = e;
-        while (cur != null) {
-            if (cur instanceof ClientAbortException || cur instanceof AsyncRequestNotUsableException) {
+    private void markRequestLevel(HttpServletRequest request, String level) {
+        request.setAttribute(Constants.REQUEST_LOG_LEVEL, level);
+    }
+
+    private boolean isClientAbort(Throwable exception) {
+        Throwable currentException = exception;
+        while (Objects.nonNull(currentException)) {
+            if (currentException instanceof ClientAbortException
+                    || currentException instanceof AsyncRequestNotUsableException) {
                 return true;
             }
-            String msg = cur.getMessage();
-            if (cur instanceof IOException && msg != null
-                    && (msg.contains("中止了一个已建立的连接")
-                    || msg.contains("Broken pipe")
-                    || msg.contains("Connection reset by peer"))) {
+            String message = currentException.getMessage();
+            if (currentException instanceof IOException && Objects.nonNull(message)
+                    && (message.contains("中止了一个已建立的连接")
+                    || message.contains("Broken pipe")
+                    || message.contains("Connection reset by peer"))) {
                 return true;
             }
-            cur = cur.getCause();
+            currentException = currentException.getCause();
         }
         return false;
     }

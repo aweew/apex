@@ -7,9 +7,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.convert.LocalDateConverter;
 import com.awe.apex.common.convert.LocalDateTimeConverter;
 import com.awe.apex.common.convert.LocalTimeConverter;
-import com.awe.apex.common.interceptor.LogInterceptor;
 import com.awe.apex.common.interceptor.UserAssetInterceptor;
-import com.awe.apex.common.interceptor.WebInvokeTimeInterceptor;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -57,10 +55,6 @@ public class WebConfig implements WebMvcConfigurer {
                         .check(r -> StpUtil.checkLogin())))
                 .addPathPatterns("/**").order(-100);
         registry.addInterceptor(userAssetInterceptor).addPathPatterns("/api/paper/**").order(-90);
-        // 日志拦截器
-        registry.addInterceptor(new LogInterceptor()).addPathPatterns("/**");
-        // 全局访问性能拦截
-        registry.addInterceptor(new WebInvokeTimeInterceptor());
     }
 
     @Override

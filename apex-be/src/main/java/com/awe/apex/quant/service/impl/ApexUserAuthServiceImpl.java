@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import cn.dev33.satoken.secure.BCrypt;
 import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.constant.enums.StatusEnum;
+import com.awe.apex.common.constant.Constants;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.manager.domain.user.entity.User;
 import com.awe.apex.manager.mapper.UserMapper;
@@ -82,6 +83,7 @@ public class ApexUserAuthServiceImpl implements ApexUserAuthService {
         user.setLastLoginTime(LocalDateTime.now());
         userMapper.updateById(user);
         StpUtil.login(user.getId());
+        StpUtil.getSession().set(Constants.PHONE, user.getPhone());
         return ApexLoginResp.builder()
                 .accessToken(StpUtil.getTokenValue())
                 .expireIn(StpUtil.getTokenTimeout())

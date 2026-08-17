@@ -1,14 +1,10 @@
 package com.awe.apex.common.config;
 
-import com.awe.apex.common.interceptor.LogInterceptor;
-import com.awe.apex.common.interceptor.WebInvokeTimeInterceptor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
-import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
-import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -19,18 +15,6 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @AutoConfiguration
 public class ResourcesConfig implements WebMvcConfigurer {
-
-    @Override
-    public void addInterceptors(InterceptorRegistry registry) {
-        // 日志拦截器
-        registry.addInterceptor(new LogInterceptor()).addPathPatterns("/**");
-        // 全局访问性能拦截
-        registry.addInterceptor(new WebInvokeTimeInterceptor());
-    }
-
-    @Override
-    public void addResourceHandlers(ResourceHandlerRegistry registry) {
-    }
 
     /**
      * 跨域配置
