@@ -67,8 +67,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     private static final Pattern PCT_PATTERN = Pattern.compile("(\\d{1,3})\\s*%");
     private static final Pattern STEP_PATTERN = Pattern.compile("\\[(\\d+)\\s*/\\s*(\\d+)]");
-    /** CLOSE_BUNDLE: step 1/5: index */
-    private static final Pattern CLOSE_STEP_PATTERN = Pattern.compile("step\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+    /** 编排脚本阶段进度，例如 step 1/5: index */
+    private static final Pattern SCRIPT_STEP_PATTERN = Pattern.compile("step\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
     private static final int LOG_MAX = 12000;
 
     @Resource
@@ -734,8 +734,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             return;
         }
         String type = taskType.trim().toUpperCase(Locale.ROOT);
-        if (!"CLOSE_BUNDLE".equals(type) && !"INDEX".equals(type) && !"SECTOR_QUOTE".equals(type)
-                && !"LIMIT_UP".equals(type)) {
+        if (!"CLOSE_BUNDLE".equals(type) && !"NIGHTLY_REPAIR".equals(type)
+                && !"INDEX".equals(type) && !"SECTOR_QUOTE".equals(type) && !"LIMIT_UP".equals(type)) {
             return;
         }
         try {
@@ -846,9 +846,13 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         if (StringUtils.isBlank(line)) {
             return;
         }
+        if ("NIGHTLY_REPAIR".equalsIgnoreCase(job.getTaskType())
+                && !line.contains("[NIGHTLY_REPAIR] step")) {
+            return;
+        }
         Matcher step = STEP_PATTERN.matcher(line);
         if (!step.find()) {
-            step = CLOSE_STEP_PATTERN.matcher(line);
+            step = SCRIPT_STEP_PATTERN.matcher(line);
             if (!step.find()) {
                 step = null;
             }

@@ -109,6 +109,7 @@ def main() -> int:
     rounds = max(0, int(args.rounds))
     done_rounds = 0
     attempted_codes = set()
+    failed_rounds = []
     while True:
         if rounds and done_rounds >= rounds:
             break
@@ -125,7 +126,7 @@ def main() -> int:
             conn.close()
         if not codes:
             print("无未处理缺口，结束")
-            return 0
+            return 1 if failed_rounds else 0
         done_rounds += 1
         attempted_codes.update(codes)
         joined = ",".join(codes)
@@ -162,9 +163,9 @@ def main() -> int:
                 break
         if rc != 0:
             print(f"round {done_rounds} 最终失败 exit={rc}", file=sys.stderr)
-            return rc if rc != 0 else 1
-    print(f"完成 rounds={done_rounds}")
-    return 0
+            failed_rounds.append(done_rounds)
+    print(f"完成 rounds={done_rounds} failed_rounds={failed_rounds}")
+    return 1 if failed_rounds else 0
 
 
 if __name__ == "__main__":

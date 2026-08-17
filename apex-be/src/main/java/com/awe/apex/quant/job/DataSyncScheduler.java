@@ -168,6 +168,36 @@ public class DataSyncScheduler {
     }
 
     /**
+     * 每天凌晨补齐全市场日线、公司资料和财务数据
+     */
+    @Scheduled(cron = "0 10 2 * * *", zone = "Asia/Shanghai")
+    public void repairMarketDataNightly() {
+        repairMarketDataNightly(LocalDate.now());
+    }
+
+    /**
+     * 按运行日期提交凌晨数据补缺任务
+     *
+     * @param runDate 任务运行日期
+     */
+    public void repairMarketDataNightly(LocalDate runDate) {
+        if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+            return;
+        }
+        LocalDate expectedDate = TradingCalendar.latestTradingDayOnOrBefore(runDate.minusDays(1));
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("NIGHTLY_REPAIR");
+        request.setExpectedDate(expectedDate.toString());
+        try {
+            SyncJobResp job = dataSyncJobService.startSystemTask(request);
+            log.info("凌晨数据补缺已提交 jobId={} expectedDate={} status={}",
+                    job.getId(), expectedDate, job.getStatus());
+        } catch (Exception ex) {
+            log.warn("凌晨数据补缺提交失败 expectedDate={} reason={}", expectedDate, ex.getMessage());
+        }
+    }
+
+    /**
      * 交易时段快刷热点（跳过较慢雪球；需 auto_sync_enabled=true）
      */
     @Scheduled(cron = "0 20 9,10,11,13,14 * * MON-FRI")

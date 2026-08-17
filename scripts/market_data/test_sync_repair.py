@@ -89,6 +89,28 @@ class MissingBarSelectionTest(unittest.TestCase):
 
         self.assertEqual(1, exit_code)
 
+    def test_missing_bar_round_failure_does_not_block_later_rounds(self):
+        args = types.SimpleNamespace(
+            batch=80,
+            rounds=2,
+            start="20240101",
+            sleep=0,
+            min_bars=30,
+            expected_date="2026-08-17",
+        )
+        connection = FakeConnection([])
+        connection.close = lambda: None
+
+        with patch.object(sync_missing_bars.argparse.ArgumentParser, "parse_args", return_value=args), \
+                patch.object(sync_missing_bars, "load_env"), \
+                patch.object(sync_missing_bars, "db_conn", return_value=connection), \
+                patch.object(sync_missing_bars, "fetch_missing", side_effect=[["000001"], ["600519"]]), \
+                patch.object(sync_missing_bars.subprocess, "call", side_effect=[1, 0]) as subprocess_call:
+            exit_code = sync_missing_bars.main()
+
+        self.assertEqual(1, exit_code)
+        self.assertEqual(2, subprocess_call.call_count)
+
 
 class MissingCompanyProfileSelectionTest(unittest.TestCase):
 

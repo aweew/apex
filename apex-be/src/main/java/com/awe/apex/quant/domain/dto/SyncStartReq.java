@@ -65,6 +65,11 @@ public class SyncStartReq {
     private Integer rounds;
 
     /**
+     * 期望最新交易日
+     */
+    private String expectedDate;
+
+    /**
      * 智能决策是否纳入北交所
      */
     private Boolean includeBj;
