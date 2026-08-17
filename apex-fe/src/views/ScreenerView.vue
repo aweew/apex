@@ -8,7 +8,6 @@ import { batchBacktest } from '../api/backtest'
 import { saveObserve } from '../api/observe'
 import { buildTrailingDateRange } from '../utils/backtestLab.js'
 import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
-import { securityMarketBadge } from '../utils/securityMarket.js'
 import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
@@ -622,22 +621,15 @@ onBeforeUnmount(() => {
       style="width: 100%"
       empty-text="暂无符合条件的股票"
     >
-        <el-table-column prop="code" label="代码" min-width="96">
+        <el-table-column prop="name" label="股票" min-width="132" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-          </template>
-        </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="120">
-          <template #default="{ row }">
-            <span class="security-name">
-              <span>{{ row.name || '-' }}</span>
-              <span
-                v-if="securityMarketBadge(row)"
-                class="market-badge"
-                :class="`is-${securityMarketBadge(row).tone}`"
-                :title="securityMarketBadge(row).title"
-              >{{ securityMarketBadge(row).label }}</span>
-            </span>
+            <button type="button" class="security-link" @click="router.push(`/stock/${row.code}`)">
+              <span class="security-name">
+                <span class="security-name-text">{{ row.name || '-' }}</span>
+                <SecurityMarketBadge :security="row" include-main />
+              </span>
+              <span class="security-code">{{ row.code }}</span>
+            </button>
           </template>
         </el-table-column>
         <el-table-column v-if="!screeningActive" label="股票池" width="74">
@@ -726,12 +718,7 @@ onBeforeUnmount(() => {
           <span class="mobile-stock-heading">
             <span class="mobile-stock-identity">
               <strong>{{ row.name || row.code }}</strong>
-              <span
-                v-if="securityMarketBadge(row)"
-                class="market-badge"
-                :class="`is-${securityMarketBadge(row).tone}`"
-                :title="securityMarketBadge(row).title"
-              >{{ securityMarketBadge(row).label }}</span>
+              <SecurityMarketBadge :security="row" include-main />
               <span v-if="!screeningActive && row.inUniverse" class="universe-badge">池</span>
               <small>{{ row.code }}</small>
             </span>
@@ -957,49 +944,50 @@ onBeforeUnmount(() => {
 }
 
 .security-name {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
 }
 
-.market-badge {
-  display: inline-flex;
+.security-name-text {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.security-link {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  box-sizing: border-box;
-  font-size: 10px;
-  font-weight: 750;
-  line-height: 1;
+  gap: 3px;
+  width: 100%;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--el-color-primary);
+  font: inherit;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
 }
 
-.market-badge.is-star {
-  color: #0a66c2;
-  background: rgba(0, 113, 227, 0.09);
-  border-color: rgba(0, 113, 227, 0.18);
+.security-link:hover .security-name-text,
+.security-link:focus-visible .security-name-text {
+  color: var(--el-color-primary-dark-2);
 }
 
-.market-badge.is-chinext {
-  color: #16775d;
-  background: rgba(42, 157, 143, 0.1);
-  border-color: rgba(42, 157, 143, 0.2);
+.security-link:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 2px;
 }
 
-.market-badge.is-bj {
-  color: #a86400;
-  background: rgba(255, 159, 10, 0.11);
-  border-color: rgba(255, 159, 10, 0.22);
-}
-
-.market-badge.is-hk {
-  color: #6b4fbb;
-  background: rgba(107, 79, 187, 0.1);
-  border-color: rgba(107, 79, 187, 0.2);
+.security-code {
+  color: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .pager {

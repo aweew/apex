@@ -7,9 +7,13 @@ const props = defineProps({
     type: Object,
     required: true,
   },
+  includeMain: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-const badge = computed(() => securityMarketBadge(props.security))
+const badge = computed(() => securityMarketBadge(props.security, { includeMain: props.includeMain }))
 </script>
 
 <template>
@@ -65,5 +69,17 @@ const badge = computed(() => securityMarketBadge(props.security))
   color: #515154;
   background: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.1);
+}
+
+.security-market-badge.is-sh {
+  color: #4d6074;
+  background: rgba(71, 85, 105, 0.08);
+  border-color: rgba(71, 85, 105, 0.18);
+}
+
+.security-market-badge.is-sz {
+  color: #176b72;
+  background: rgba(13, 148, 136, 0.08);
+  border-color: rgba(13, 148, 136, 0.18);
 }
 </style>

@@ -26,3 +26,10 @@ test('uses an explicit market when provided', () => {
   assert.equal(securityMarketBadge({ code: 'TSLA', market: 'NASDAQ' })?.label, '美')
   assert.equal(securityMarketBadge({ code: '430001', market: 'BJ' })?.label, '京')
 })
+
+test('optionally classifies Shanghai and Shenzhen main-board securities', () => {
+  assert.equal(securityMarketBadge({ code: '600519' }, { includeMain: true })?.label, '沪')
+  assert.equal(securityMarketBadge({ code: '000001' }, { includeMain: true })?.label, '深')
+  assert.equal(securityMarketBadge({ code: '002594', market: 'SZ' }, { includeMain: true })?.label, '深')
+  assert.equal(securityMarketBadge({ code: '600519', market: 'SH' })?.label || null, null)
+})
