@@ -34,6 +34,7 @@ class SignalServiceImplTest {
         TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
         AtomicInteger queryCount = new AtomicInteger();
         AtomicInteger evaluatedCount = new AtomicInteger();
+        List<Integer> reportedProgress = new ArrayList<>();
 
         when(barDailyMapper.selectList(any())).thenAnswer(invocation -> {
             int batchIndex = queryCount.getAndIncrement();
@@ -62,10 +63,14 @@ class SignalServiceImplTest {
         }
         request.setCodes(codes);
 
-        signalService.run(request);
+        signalService.run(request, (completed, total, message) -> {
+            assertEquals(81, total);
+            reportedProgress.add(completed);
+        });
 
         assertEquals(3, queryCount.get());
         assertEquals(81, evaluatedCount.get());
+        assertEquals(List.of(40, 80, 81), reportedProgress);
     }
 
     private List<BarDaily> buildBars(int startIndex, int codeCount) {

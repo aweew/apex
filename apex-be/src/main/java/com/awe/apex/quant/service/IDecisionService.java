@@ -25,6 +25,15 @@ public interface IDecisionService {
     DecisionTodayResp run(DecisionRunReq req);
 
     /**
+     * 一键生成今日决策并上报执行进度
+     *
+     * @param req              请求
+     * @param progressListener 进度监听器
+     * @return 今日决策
+     */
+    DecisionTodayResp run(DecisionRunReq req, TaskProgressListener progressListener);
+
+    /**
      * 读取某日决策清单
      *
      * @param date      日期，可空=今天

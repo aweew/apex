@@ -277,7 +277,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
         if ("DECISION".equals(spec.getTaskType())) {
             if (runningDecisionJobs.containsKey(userId)) {
-                throw new BusinessException(spec.getName() + " 正在运行中（jobId=" + runningDecisionJobs.get(userId) + "），请先停止");
+                throw new BusinessException(spec.getName() + " 正在运行中（jobId=" + runningDecisionJobs.get(userId) + "），请等待完成");
             }
         } else {
             SyncJob running = syncJobMapper.selectOne(runningQuery
@@ -348,7 +348,19 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 DecisionRunReq request = new DecisionRunReq();
                 request.setGroupName(configService.getString("auto_sync_group", "我的自选"));
                 request.setIncludeBj(Boolean.TRUE.equals(syncRequest.getIncludeBj()));
-                DecisionTodayResp response = decisionService.run(request);
+                DecisionTodayResp response = decisionService.run(request, (completed, total, message) -> {
+                    if (cancelled.get()) {
+                        return;
+                    }
+                    int progressPct = total > 0 ? completed * 100 / total : 0;
+                    int currentProgress = Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0;
+                    job.setProgressPct(Math.min(99, Math.max(currentProgress, progressPct)));
+                    job.setDoneItems(completed);
+                    job.setTotalItems(total > 0 ? total : null);
+                    job.setMessage(clip(message, 400));
+                    appendLog(job, "[progress] " + job.getProgressPct() + "% " + message + "\n");
+                    syncJobMapper.updateById(job);
+                });
 
                 if (cancelled.get()) {
                     return;

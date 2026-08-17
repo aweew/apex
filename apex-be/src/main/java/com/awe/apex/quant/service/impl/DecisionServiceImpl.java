@@ -92,6 +92,7 @@ import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.ISignalService;
 import com.awe.apex.quant.service.IUniverseService;
 import com.awe.apex.quant.service.IValuationService;
+import com.awe.apex.quant.service.TaskProgressListener;
 import com.awe.apex.quant.strategy.StrategyParams;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -240,19 +241,37 @@ public class DecisionServiceImpl implements IDecisionService {
      */
     @Override
     public DecisionTodayResp run(DecisionRunReq req) {
+        return run(req, null);
+    }
+
+    /**
+     * 一键生成今日决策并上报执行进度
+     *
+     * @param req              请求
+     * @param progressListener 进度监听器
+     * @return 今日决策
+     */
+    @Override
+    public DecisionTodayResp run(DecisionRunReq req, TaskProgressListener progressListener) {
+        boolean progressEnabled = Objects.nonNull(progressListener);
+        TaskProgressListener reporter = progressEnabled
+                ? progressListener : (completed, total, message) -> { };
         DecisionRunReq safe = Objects.nonNull(req) ? req : new DecisionRunReq();
         String groupName = StringUtils.isNotBlank(safe.getGroupName()) ? safe.getGroupName().trim() : "我的自选";
         DecisionContext context = DecisionContext.from(safe);
+        reporter.onProgress(2, 100, "正在创建决策运行");
         DecisionRun decisionRun = decisionRunManager.start(context, groupName, decisionConfigSnapshot());
         long startedAt = System.currentTimeMillis();
         log.info("一键决策开始 runNo={} mode={} actionDate={} groupName={} includeBj={}",
                 decisionRun.getRunNo(), decisionRun.getMode(), decisionRun.getActionDate(), groupName,
                 Boolean.TRUE.equals(safe.getIncludeBj()));
         try {
-            DecisionTodayResp response = executeRun(safe, groupName, context, decisionRun);
+            DecisionTodayResp response = executeRun(safe, groupName, context, decisionRun, reporter, progressEnabled);
             String dataLevel = Objects.nonNull(response.getMarketBriefing())
                     ? response.getMarketBriefing().getDataLevel() : null;
+            reporter.onProgress(98, 100, "正在发布决策结果");
             finishRun(context, decisionRun, response, dataLevel);
+            reporter.onProgress(99, 100, "决策结果已生成");
             log.info("一键决策完成 runNo={} mode={} universeCount={} buyCount={} sellCount={} holdCount={} elapsedMs={}",
                     decisionRun.getRunNo(), decisionRun.getMode(), response.getUniverseCount(), response.getBuyCount(),
                     response.getSellCount(), response.getHoldCount(), System.currentTimeMillis() - startedAt);
@@ -278,14 +297,17 @@ public class DecisionServiceImpl implements IDecisionService {
     }
 
     private DecisionTodayResp executeRun(DecisionRunReq safe, String groupName,
-                                         DecisionContext context, DecisionRun decisionRun) {
+                                         DecisionContext context, DecisionRun decisionRun,
+                                         TaskProgressListener progressListener, boolean progressEnabled) {
         LocalDate actionDate = context.getActionDate();
 
         // 0. 市场简报（大盘/风格/量能/涨停/主线）→ 调节买入仓位
+        progressListener.onProgress(5, 100, "正在生成市场简报");
         MarketBriefingResp briefing = resolveRunBriefing(context);
         BigDecimal buyFactor = Objects.nonNull(briefing.getBuyWeightFactor())
                 ? briefing.getBuyWeightFactor() : BigDecimal.ONE;
         List<String> mainlineNames = resolveMainlineNames(briefing, context.getMode() != DecisionMode.REPLAY);
+        progressListener.onProgress(12, 100, "市场简报完成，正在固化组合快照");
 
         // 1. 固化市场状态和默认组合时点，后续仓位只使用该快照
         MarketRegimeResult marketRegime = resolveRunMarketRegime(context);
@@ -297,6 +319,7 @@ public class DecisionServiceImpl implements IDecisionService {
             marketRegime = snapshotMarketRegime(portfolioSnapshot);
         }
         RiskOverviewResp risk = portfolioRiskOverview(portfolioSnapshot);
+        progressListener.onProgress(20, 100, "组合快照完成，正在读取全市场股票池");
 
         // 2. 默认组合持仓仅用于卖出/持有和风险预算；买入候选不从持仓里挑
         List<MyHolding> holdings = toDecisionHoldings(portfolioSnapshot.getHoldings());
@@ -313,6 +336,7 @@ public class DecisionServiceImpl implements IDecisionService {
         }
         int universeCount = universeList.size();
         boolean includeBj = Boolean.TRUE.equals(safe.getIncludeBj());
+        progressListener.onProgress(24, 100, "股票池已就绪，正在准备策略扫描");
 
         // 4. 跑 S1/S2/S3：全A质量池 + 热点；持仓仅附加以便产出卖出信号（观察池不同步卖出）
         List<String> signalCodes = new ArrayList<>();
@@ -352,9 +376,18 @@ public class DecisionServiceImpl implements IDecisionService {
         } else {
             signalReq.setUseUniverse(true);
         }
-        List<StrategySignalEntity> signals = signalService.run(signalReq);
+        List<StrategySignalEntity> signals;
+        if (progressEnabled) {
+            signals = signalService.run(signalReq, (completed, total, message) -> {
+                int scanProgress = total > 0 ? 28 + completed * 42 / total : 28;
+                progressListener.onProgress(scanProgress, 100, message);
+            });
+        } else {
+            signals = signalService.run(signalReq);
+        }
 
         // 4. 多策略共振（窗口/最少策略数可配置）
+        progressListener.onProgress(71, 100, "策略扫描完成，正在计算多策略共振");
         SignalConfluenceResp confluenceResp = signalService.confluence(
                 strategyParams.decisionConfluenceWindow(),
                 strategyParams.decisionConfluenceMinStrategies(),
@@ -370,6 +403,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 }
             }
         }
+        progressListener.onProgress(75, 100, "共振分析完成，正在加载行情与基本面");
 
         // 5. 风控参数只读规则，账户权益和仓位来自默认组合快照
         BigDecimal singleLimit = Objects.nonNull(risk.getSingleLimit()) ? risk.getSingleLimit() : new BigDecimal("0.15");
@@ -385,6 +419,7 @@ public class DecisionServiceImpl implements IDecisionService {
         Map<String, FundSnapshot> fundMap = context.getMode() == DecisionMode.REPLAY
                 ? Map.of() : loadFunds(codesNeeded);
         Map<String, BigDecimal> performanceAdjustments = resolvePerformanceAdjustments(context.getMode());
+        progressListener.onProgress(78, 100, "行情与基本面完成，正在计算估值");
 
         // 持仓缺止损/止盈时先补全（供卖出/持有/加仓离场规则使用）
         boolean snapshotRiskLevelsChanged = false;
@@ -425,6 +460,7 @@ public class DecisionServiceImpl implements IDecisionService {
         }
         Map<String, ValuationBriefResp> valuationMap = context.getMode() == DecisionMode.REPLAY
                 ? Map.of() : valuationService.briefBatch(buyValCodes);
+        progressListener.onProgress(82, 100, "估值完成，正在生成买卖决策");
 
         // 6. 组装决策：买入=全A机会；卖出=仅我的持仓；另收集「值得观察」候选（不要求马上买）
         List<DecisionItemResp> buys = new ArrayList<>();
@@ -910,6 +946,7 @@ public class DecisionServiceImpl implements IDecisionService {
         sells.sort(Comparator.comparing(DecisionItemResp::getScore, Comparator.nullsLast(Comparator.reverseOrder())));
 
         // 7. 按评分顺序逐笔占用风险预算，生成组合可同时执行的目标仓位
+        progressListener.onProgress(88, 100, "候选决策完成，正在执行组合风控");
         applyPortfolioRiskBudget(buys, portfolioSnapshot, marketRegime, risk, basicMap,
                 featureSelectionStatus, featureRejectReason, actionDate);
 
@@ -953,6 +990,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .rankNo(featureRank)
                     .build()));
         }
+        progressListener.onProgress(92, 100, "组合风控完成，正在保存决策特征");
         decisionRunManager.saveFeatures(decisionRun, features);
         if (context.getMode() == DecisionMode.LIVE) {
             saveBriefingSnapshot(actionDate, briefing);
@@ -962,6 +1000,7 @@ public class DecisionServiceImpl implements IDecisionService {
         int observeCreated = 0;
         int observeUpdated = 0;
         int observeUpserted = 0;
+        progressListener.onProgress(96, 100, "正在更新观察池");
         try {
             if (context.getMode() == DecisionMode.LIVE) {
                 List<DecisionItemResp> balanced = balanceObserveCandidates(observeCandidates, basicMap);

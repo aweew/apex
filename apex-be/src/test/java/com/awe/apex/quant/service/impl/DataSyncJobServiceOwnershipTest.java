@@ -2,6 +2,7 @@ package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.context.ApexUserContext;
+import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.SyncOverviewResp;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
@@ -10,6 +11,7 @@ import com.awe.apex.quant.domain.entity.SyncJob;
 import com.awe.apex.quant.mapper.SyncJobMapper;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDecisionService;
+import com.awe.apex.quant.service.TaskProgressListener;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -36,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doThrow;
@@ -72,7 +75,8 @@ class DataSyncJobServiceOwnershipTest {
         when(syncJobMapper.selectById(any(Long.class))).thenAnswer(invocation -> savedJob.get());
         when(syncJobMapper.updateById(any(SyncJob.class))).thenReturn(1);
         when(configService.getString("auto_sync_group", "我的自选")).thenReturn("我的自选");
-        when(decisionService.run(any())).thenReturn(DecisionTodayResp.builder()
+        when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class)))
+                .thenReturn(DecisionTodayResp.builder()
                 .runNo("RUN-1").buyCount(0).sellCount(0).holdCount(0).message("完成").build());
     }
 
@@ -204,7 +208,7 @@ class DataSyncJobServiceOwnershipTest {
         ReflectionTestUtils.setField(service, "userContext", realUserContext);
         AtomicLong observedUserId = new AtomicLong();
         CountDownLatch decisionFinished = new CountDownLatch(1);
-        when(decisionService.run(any())).thenAnswer(invocation -> {
+        when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class))).thenAnswer(invocation -> {
             observedUserId.set(realUserContext.currentUserId());
             decisionFinished.countDown();
             return DecisionTodayResp.builder()
@@ -217,5 +221,39 @@ class DataSyncJobServiceOwnershipTest {
 
         assertTrue(decisionFinished.await(2, TimeUnit.SECONDS));
         assertEquals(9L, observedUserId.get());
+    }
+
+    @Test
+    void decisionJobPersistsIntermediateProgressWhileRunning() throws Exception {
+        CountDownLatch progressReported = new CountDownLatch(1);
+        CountDownLatch releaseDecision = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            Runnable decisionTask = invocation.getArgument(1);
+            decisionTask.run();
+            return null;
+        }).when(userContext).runAsUser(any(Long.class), any(Runnable.class));
+        when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class))).thenAnswer(invocation -> {
+            TaskProgressListener progressListener = invocation.getArgument(1);
+            progressListener.onProgress(40, 100, "正在扫描策略信号");
+            progressReported.countDown();
+            assertTrue(releaseDecision.await(2, TimeUnit.SECONDS));
+            return DecisionTodayResp.builder()
+                    .runNo("RUN-3").buyCount(1).sellCount(0).holdCount(2).message("完成").build();
+        });
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("DECISION");
+
+        try {
+            service.start(request);
+
+            assertTrue(progressReported.await(2, TimeUnit.SECONDS));
+            assertEquals("RUNNING", savedJob.get().getStatus());
+            assertEquals(40, savedJob.get().getProgressPct());
+            assertEquals(40, savedJob.get().getDoneItems());
+            assertEquals(100, savedJob.get().getTotalItems());
+            assertEquals("正在扫描策略信号", savedJob.get().getMessage());
+        } finally {
+            releaseDecision.countDown();
+        }
     }
 }

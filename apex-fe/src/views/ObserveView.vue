@@ -5,7 +5,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import {
   archiveObserve,
-  autoDecideObserve,
   fetchGuideTemplate,
   fetchGuideTemplates,
   listObserve,
@@ -13,6 +12,7 @@ import {
   removeObserve,
   saveObserve,
 } from '../api/observe'
+import { fetchSyncJob, startSyncJob } from '../api/sync'
 import { searchStock } from '../api/stock'
 import {
   captureElementBlob,
@@ -26,6 +26,7 @@ import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const route = useRoute()
+const DECISION_JOB_SESSION_KEY = 'apex:observe:decision-job-id'
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -45,7 +46,18 @@ const shareOpen = ref(false)
 const sharePreviewUrl = ref('')
 const copying = ref(false)
 const downloading = ref(false)
+const decisionJob = ref(null)
+const decisionElapsedSeconds = ref(0)
 let sharePreviewObjectUrl = ''
+let decisionPollTimer
+let decisionPollFailures = 0
+let observeUnmounted = false
+
+const decisionElapsedText = computed(() => {
+  const elapsed = decisionElapsedSeconds.value
+  if (elapsed < 60) return `${elapsed} 秒`
+  return `${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒`
+})
 
 useSessionViewState('observe', {
   sideTab,
@@ -241,19 +253,81 @@ async function onRefresh() {
   }
 }
 
-async function onAutoDecide() {
-  deciding.value = true
+function updateDecisionElapsed(job) {
+  const startedAt = new Date(job?.startedAt || Date.now()).getTime()
+  decisionElapsedSeconds.value = Number.isFinite(startedAt)
+    ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+    : 0
+}
+
+function scheduleDecisionPoll(jobId, delay = 1000) {
+  window.clearTimeout(decisionPollTimer)
+  if (observeUnmounted) return
+  decisionPollTimer = window.setTimeout(() => pollDecisionJob(jobId), delay)
+}
+
+async function pollDecisionJob(jobId) {
+  if (observeUnmounted || Number(sessionStorage.getItem(DECISION_JOB_SESSION_KEY)) !== jobId) return
   try {
-    const res = await autoDecideObserve({ groupName: '我的自选' })
-    const d = res.data || {}
-    ElMessage.success(
-      `今日可买 ${d.buys?.length ?? 0} · 写入观察 ${d.observeUpserted ?? 0}（含买入观察/情绪风向）`,
-    )
-    await load()
-  } catch (e) {
-    ElMessage.error(e.message || '自动决策失败')
-  } finally {
+    const res = await fetchSyncJob(jobId)
+    const job = res.data || {}
+    if (Number(job.id) !== jobId) throw new Error('任务编号不匹配')
+    decisionJob.value = job
+    updateDecisionElapsed(job)
+    decisionPollFailures = 0
+    if (job.status === 'PENDING' || job.status === 'RUNNING') {
+      deciding.value = true
+      scheduleDecisionPoll(jobId)
+      return
+    }
+
     deciding.value = false
+    sessionStorage.removeItem(DECISION_JOB_SESSION_KEY)
+    if (job.status === 'SUCCESS') {
+      ElMessage.success(job.message || '自动决策完成')
+      await load()
+    } else {
+      ElMessage.error(job.message || '自动决策失败')
+    }
+  } catch (e) {
+    decisionPollFailures += 1
+    if (decisionPollFailures === 3) {
+      ElMessage.warning('进度查询暂时失败，决策仍在后台运行')
+    }
+    scheduleDecisionPoll(jobId, decisionPollFailures >= 3 ? 3000 : 1000)
+  }
+}
+
+async function onAutoDecide() {
+  if (deciding.value) return
+  deciding.value = true
+  decisionElapsedSeconds.value = 0
+  decisionJob.value = {
+    status: 'PENDING',
+    progressPct: 0,
+    message: '正在提交后台决策任务',
+    startedAt: new Date().toISOString(),
+  }
+  try {
+    const res = await startSyncJob({ taskType: 'DECISION' })
+    const job = res.data || {}
+    const jobId = Number(job.id)
+    if (!Number.isFinite(jobId) || jobId <= 0) throw new Error('后台任务创建失败')
+    decisionJob.value = job
+    sessionStorage.setItem(DECISION_JOB_SESSION_KEY, String(jobId))
+    ElMessage.success(`自动决策已在后台启动 · 任务 #${jobId}`)
+    await pollDecisionJob(jobId)
+  } catch (e) {
+    const runningJobId = Number(String(e.message || '').match(/jobId=(\d+)/)?.[1])
+    if (Number.isFinite(runningJobId) && runningJobId > 0) {
+      sessionStorage.setItem(DECISION_JOB_SESSION_KEY, String(runningJobId))
+      ElMessage.info(`继续跟踪正在运行的决策 · 任务 #${runningJobId}`)
+      await pollDecisionJob(runningJobId)
+      return
+    }
+    deciding.value = false
+    decisionJob.value = null
+    ElMessage.error(e.message || '自动决策启动失败')
   }
 }
 
@@ -634,6 +708,11 @@ watch(keyword, () => {
 
 onMounted(async () => {
   await Promise.all([load(), loadTemplates()])
+  const decisionJobId = Number(sessionStorage.getItem(DECISION_JOB_SESSION_KEY))
+  if (Number.isFinite(decisionJobId) && decisionJobId > 0) {
+    deciding.value = true
+    await pollDecisionJob(decisionJobId)
+  }
   const qCode = route.query.code
   const qName = route.query.name
   if (qCode) {
@@ -642,6 +721,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  observeUnmounted = true
+  window.clearTimeout(decisionPollTimer)
+  window.clearTimeout(keywordTimer)
   revokeSharePreview()
 })
 </script>
@@ -656,7 +738,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="actions">
         <button type="button" class="btn btn-primary" :disabled="deciding" @click="onAutoDecide">
-          {{ deciding ? '决策中…' : '自动决策' }}
+          {{ deciding ? `决策 ${decisionJob?.progressPct || 0}%` : '自动决策' }}
         </button>
         <button type="button" class="btn btn-ghost" :disabled="refreshing" @click="onRefresh">
           {{ refreshing ? '评估中…' : '重估' }}
@@ -665,6 +747,30 @@ onBeforeUnmount(() => {
         <button type="button" class="btn btn-text" @click="router.push('/decision')">决策明细</button>
       </div>
     </header>
+
+    <section v-if="decisionJob" class="decision-progress" aria-live="polite">
+      <div class="decision-progress-head">
+        <div class="decision-progress-stage">
+          <span class="decision-progress-dot" :class="decisionJob.status?.toLowerCase()"></span>
+          <strong>{{ decisionJob?.message || '正在生成智能决策' }}</strong>
+        </div>
+        <b>{{ decisionJob?.progressPct || 0 }}%</b>
+      </div>
+      <div
+        class="decision-progress-track"
+        role="progressbar"
+        aria-label="自动决策进度"
+        :aria-valuenow="decisionJob?.progressPct || 0"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <span :style="{ width: `${Math.max(0, Math.min(100, decisionJob?.progressPct || 0))}%` }"></span>
+      </div>
+      <div class="decision-progress-meta">
+        <span>已用时 {{ decisionElapsedText }}</span>
+        <span v-if="decisionJob.id">任务 #{{ decisionJob.id }}</span>
+      </div>
+    </section>
 
     <FloatingShareButton
       v-if="!shareOpen"
@@ -695,24 +801,27 @@ onBeforeUnmount(() => {
         <b>{{ stats.sell }}</b>
         <small>请改看决策页</small>
       </button>
+    </div>
+
+    <div class="filter-bar">
+      <div class="status-chips">
+        <button type="button" class="chip" :class="{ on: !statusFilter }" @click="setStatusFilter('')">全部状态</button>
+        <button type="button" class="chip ready" :class="{ on: statusFilter === 'READY' }" @click="setStatusFilter('READY')">
+          优先处理 {{ stats.buyReady || 0 }}
+        </button>
+        <button type="button" class="chip" :class="{ on: statusFilter === 'TRIGGERED' }" @click="setStatusFilter('TRIGGERED')">可执行</button>
+        <button type="button" class="chip" :class="{ on: statusFilter === 'NEAR' }" @click="setStatusFilter('NEAR')">接近</button>
+        <button type="button" class="chip" :class="{ on: statusFilter === 'WATCHING' }" @click="setStatusFilter('WATCHING')">观察中</button>
+        <button type="button" class="chip" :class="{ on: statusFilter === 'ARCHIVED' }" @click="setStatusFilter('ARCHIVED')">已归档</button>
+      </div>
       <el-input
         v-model="keyword"
         clearable
         :prefix-icon="Search"
         placeholder="搜索代码或名称"
+        aria-label="搜索观察池股票代码或名称"
         class="search"
       />
-    </div>
-
-    <div class="status-chips">
-      <button type="button" class="chip" :class="{ on: !statusFilter }" @click="setStatusFilter('')">全部状态</button>
-      <button type="button" class="chip ready" :class="{ on: statusFilter === 'READY' }" @click="setStatusFilter('READY')">
-        优先处理 {{ stats.buyReady || 0 }}
-      </button>
-      <button type="button" class="chip" :class="{ on: statusFilter === 'TRIGGERED' }" @click="setStatusFilter('TRIGGERED')">可执行</button>
-      <button type="button" class="chip" :class="{ on: statusFilter === 'NEAR' }" @click="setStatusFilter('NEAR')">接近</button>
-      <button type="button" class="chip" :class="{ on: statusFilter === 'WATCHING' }" @click="setStatusFilter('WATCHING')">观察中</button>
-      <button type="button" class="chip" :class="{ on: statusFilter === 'ARCHIVED' }" @click="setStatusFilter('ARCHIVED')">已归档</button>
     </div>
 
     <el-empty
@@ -720,7 +829,7 @@ onBeforeUnmount(() => {
       description="还没有观察标的，先跑自动决策抓买点信号与情绪风向标"
     >
       <button type="button" class="btn btn-primary" :disabled="deciding" @click="onAutoDecide">
-        {{ deciding ? '决策中…' : '自动决策' }}
+        {{ deciding ? `决策 ${decisionJob?.progressPct || 0}%` : '自动决策' }}
       </button>
     </el-empty>
 
@@ -984,6 +1093,91 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
+.decision-progress {
+  margin: -4px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 113, 227, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.decision-progress-head,
+.decision-progress-meta,
+.decision-progress-stage {
+  display: flex;
+  align-items: center;
+}
+
+.decision-progress-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.decision-progress-head strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.decision-progress-head > b {
+  flex: 0 0 auto;
+  color: var(--accent, #0071e3);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.decision-progress-stage {
+  min-width: 0;
+  gap: 8px;
+}
+
+.decision-progress-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent, #0071e3);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.12);
+}
+
+.decision-progress-dot.success {
+  background: var(--down, #34c759);
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.12);
+}
+
+.decision-progress-dot.failed,
+.decision-progress-dot.cancelled {
+  background: var(--up, #ff3b30);
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.12);
+}
+
+.decision-progress-track {
+  height: 5px;
+  margin: 10px 0 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.decision-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #0071e3);
+  transition: width 0.25s ease;
+}
+
+.decision-progress-meta {
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted, #8e8e93);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .btn {
   border: 0;
   border-radius: 10px;
@@ -1047,15 +1241,23 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  align-items: stretch;
+  align-items: flex-start;
   margin-bottom: 10px;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .status-chips {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 16px;
+  min-width: 0;
 }
 
 .status-chips .chip {
@@ -1131,22 +1333,23 @@ onBeforeUnmount(() => {
 }
 
 .search {
-  width: 200px;
+  flex: 0 0 240px;
+  width: 240px;
   margin-left: auto;
 }
 
 .search :deep(.el-input__wrapper) {
-  min-height: 38px;
-  padding: 1px 11px;
-  border: 1px solid transparent;
+  min-height: 40px;
+  padding: 1px 12px;
+  border: 1px solid var(--glass-border, #dce3ed);
   border-radius: 8px;
-  background: rgba(100, 116, 139, 0.08);
-  box-shadow: none;
+  background: #fff;
+  box-shadow: var(--shadow-soft, 0 1px 3px rgba(15, 23, 42, 0.06));
   transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .search :deep(.el-input__wrapper:hover) {
-  background: rgba(100, 116, 139, 0.12);
+  border-color: var(--line-strong, #cbd5e1);
 }
 
 .search :deep(.el-input__wrapper.is-focus) {
@@ -1632,10 +1835,15 @@ onBeforeUnmount(() => {
   .search {
     margin-left: 0;
     width: 100%;
+    flex-basis: 100%;
   }
 
   .header {
     flex-direction: column;
+  }
+
+  .decision-progress {
+    margin-top: -2px;
   }
 }
 
@@ -1679,6 +1887,13 @@ onBeforeUnmount(() => {
     margin-bottom: 12px;
   }
 
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
   .sum {
     min-width: 0;
     padding: 10px 12px;
@@ -1700,8 +1915,9 @@ onBeforeUnmount(() => {
   }
 
   .search {
-    grid-column: 1 / -1;
+    order: -1;
     width: 100%;
+    flex: 0 0 auto;
   }
 
   .search :deep(.el-input__wrapper) {
@@ -1715,9 +1931,10 @@ onBeforeUnmount(() => {
   }
 
   .status-chips {
+    flex: 0 0 auto;
     flex-wrap: nowrap;
     overflow-x: auto;
-    margin: 0 -12px 14px;
+    margin: 0 -12px;
     padding: 0 12px 4px;
     scrollbar-width: none;
   }

@@ -24,6 +24,15 @@ public interface ISignalService {
     List<StrategySignalEntity> run(SignalRunReq req);
 
     /**
+     * 运行信号并上报批次进度
+     *
+     * @param req              请求
+     * @param progressListener 进度监听器
+     * @return 信号列表
+     */
+    List<StrategySignalEntity> run(SignalRunReq req, TaskProgressListener progressListener);
+
+    /**
      * 最近信号
      *
      * @param limit       条数

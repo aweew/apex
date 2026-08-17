@@ -24,6 +24,7 @@ import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.ISignalService;
 import com.awe.apex.quant.service.IUniverseService;
+import com.awe.apex.quant.service.TaskProgressListener;
 import com.awe.apex.quant.strategy.BarSeries;
 import com.awe.apex.quant.strategy.Strategy;
 import com.awe.apex.quant.strategy.StrategySignalResult;
@@ -89,6 +90,18 @@ public class SignalServiceImpl implements ISignalService {
      */
     @Override
     public List<StrategySignalEntity> run(SignalRunReq req) {
+        return run(req, null);
+    }
+
+    /**
+     * 运行信号并上报批次进度
+     *
+     * @param req              请求
+     * @param progressListener 进度监听器
+     * @return 信号列表
+     */
+    @Override
+    public List<StrategySignalEntity> run(SignalRunReq req, TaskProgressListener progressListener) {
         List<String> codes = resolveCodes(req);
         if (CollUtil.isEmpty(codes)) {
             throw new BusinessException("无可用股票代码");
@@ -121,6 +134,11 @@ public class SignalServiceImpl implements ISignalService {
                         bestByCodeSide.put(key, entity);
                     }
                 }
+            }
+            if (Objects.nonNull(progressListener)) {
+                int completed = Math.min(start + codeBatch.size(), codes.size());
+                progressListener.onProgress(completed, codes.size(),
+                        "正在扫描策略信号 " + completed + "/" + codes.size());
             }
         }
 
