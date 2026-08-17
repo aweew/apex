@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { resolveTreemapLabelFontSize } from '../utils/heatmapLabel.js'
 
 const indexSource = await readFile(new URL('./IndexBoardView.vue', import.meta.url), 'utf8')
 const phoneStyles = indexSource.slice(
@@ -68,11 +69,26 @@ test('embedded heatmap favors readable mobile blocks over clipped labels', async
   const heatmapSource = await readFile(new URL('./HeatmapView.vue', import.meta.url), 'utf8')
   assert.match(heatmapSource, /const mobileNodeLimit = 18/)
   assert.match(heatmapSource, /props\.embedded && window\.matchMedia\('\(max-width: 560px\)'\)\.matches[\s\S]*?sortedNodes\.slice\(0, mobileNodeLimit\)/)
-  assert.match(heatmapSource, /function hideSmallTreemapLabel\(\{ rect \}\)/)
-  assert.match(heatmapSource, /rect\.width < minWidth \|\| rect\.height < minHeight/)
-  assert.match(heatmapSource, /labelLayout: hideSmallTreemapLabel/)
+  assert.match(heatmapSource, /function resizeTreemapLabel\(\{ rect \}\)/)
+  assert.match(heatmapSource, /fontSize: resolveTreemapLabelFontSize\(rect\)/)
+  assert.match(heatmapSource, /padding:\s*\[2, 2\]/)
+  assert.match(heatmapSource, /lineHeight:\s*13/)
+  assert.match(heatmapSource, /labelLayout: resizeTreemapLabel/)
   assert.match(heatmapSource, /class="share-card" :class="\{ 'is-embedded': embedded \}"/)
   assert.match(heatmapSource, /\.share-card\.is-embedded \{[\s\S]*?background: #f2f5f7;/)
+})
+
+test('treemap labels shrink through readable size tiers before hiding', () => {
+  assert.equal(resolveTreemapLabelFontSize({ width: 100, height: 50 }), 12)
+  assert.equal(resolveTreemapLabelFontSize({ width: 70, height: 34 }), 11)
+  assert.equal(resolveTreemapLabelFontSize({ width: 48, height: 26 }), 10)
+  assert.equal(resolveTreemapLabelFontSize({ width: 30, height: 20 }), 9)
+  assert.equal(resolveTreemapLabelFontSize({ width: 21, height: 17 }), 8)
+})
+
+test('treemap labels hide only when two minimum-size Chinese characters cannot fit', () => {
+  assert.equal(resolveTreemapLabelFontSize({ width: 20, height: 17 }), 0)
+  assert.equal(resolveTreemapLabelFontSize({ width: 21, height: 16 }), 0)
 })
 
 test('observe pool keeps mobile controls and cards inside stable tracks', async () => {
@@ -81,8 +97,11 @@ test('observe pool keeps mobile controls and cards inside stable tracks', async 
   assert.match(mobileStyles, /\.page \.header > \.actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/)
   assert.doesNotMatch(observeSource, /导出CSV/)
   assert.match(observeSource, /:prefix-icon="Search"/)
-  assert.match(observeSource, /\.search :deep\(\.el-input__wrapper\)\s*\{[\s\S]*?background:\s*rgba\(100, 116, 139, 0\.08\);/)
-  assert.match(mobileStyles, /\.search\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/)
+  assert.match(observeSource, /class="filter-bar"[\s\S]*?class="status-chips"[\s\S]*?class="search"/)
+  assert.match(observeSource, /\.filter-bar\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;/)
+  assert.match(observeSource, /\.search :deep\(\.el-input__wrapper\)\s*\{[\s\S]*?min-height:\s*40px;[\s\S]*?background:\s*#fff;/)
+  assert.match(mobileStyles, /\.filter-bar\s*\{[\s\S]*?flex-direction:\s*column;/)
+  assert.match(mobileStyles, /\.search\s*\{[\s\S]*?order:\s*-1;/)
   assert.match(mobileStyles, /\.status-chips\s*\{[\s\S]*?overflow-x:\s*auto;/)
   assert.match(mobileStyles, /\.card-actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/)
 })

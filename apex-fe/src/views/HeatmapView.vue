@@ -15,6 +15,7 @@ import {
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 import { snapshotStamp } from '../utils/snapshotDate'
+import { resolveTreemapLabelFontSize } from '../utils/heatmapLabel'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const props = defineProps({
@@ -258,13 +259,8 @@ function formatMetric(n, colorKey) {
   return fmtPct(n.pctChg)
 }
 
-function hideSmallTreemapLabel({ rect }) {
-  const minWidth = props.embedded ? 74 : 64
-  const minHeight = props.embedded ? 52 : 46
-  if (rect.width < minWidth || rect.height < minHeight) {
-    return { fontSize: 0, width: 0, height: 0 }
-  }
-  return {}
+function resizeTreemapLabel({ rect }) {
+  return { fontSize: resolveTreemapLabelFontSize(rect) }
 }
 
 function renderChart() {
@@ -273,7 +269,6 @@ function renderChart() {
   const nodes = data.value?.nodes || []
   const colorKey = colorBy.value
   const tree = toTreeData(nodes, colorKey)
-  const isEmbeddedMobile = props.embedded && window.matchMedia('(max-width: 560px)').matches
   const chartSurface = props.embedded ? '#f2f5f7' : '#0b0f14'
   const chartGap = props.embedded ? '#f2f5f7' : '#0b0f14'
   chart.setOption(
@@ -323,24 +318,24 @@ function renderChart() {
           squareRatio: 0.72 * (1 + Math.sqrt(5)),
           label: {
             show: true,
-            visibleMin: isEmbeddedMobile ? 900 : 1100,
             position: 'inside',
-            padding: [4, 6],
+            padding: [2, 2],
             overflow: 'truncate',
+            lineOverflow: 'truncate',
             ellipsis: '',
             formatter(p) {
               const name = p.data?.labelName || p.name || ''
               const metric = p.data?.labelMetric || ''
               return metric ? `${name}\n${metric}` : name
             },
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 700,
-            lineHeight: 17,
+            lineHeight: 13,
             fontFamily: '"Plus Jakarta Sans","PingFang SC","Microsoft YaHei",sans-serif',
             textShadowColor: 'rgba(0,0,0,0.35)',
             textShadowBlur: 2,
           },
-          labelLayout: hideSmallTreemapLabel,
+          labelLayout: resizeTreemapLabel,
           upperLabel: { show: false },
           itemStyle: {
             borderColor: chartGap,
