@@ -317,7 +317,7 @@ public class ScreenerStrategyServiceImpl implements IScreenerStrategyService {
     }
 
     private void validateRule(ScreenerStrategyRuleSaveReq rule) {
-        if (Objects.isNull(rule) || findRuleType(rule.getRuleType()) == null) {
+        if (Objects.isNull(rule) || Objects.isNull(findRuleType(rule.getRuleType()))) {
             throw new BusinessException("存在不支持的规则类型");
         }
         ScreenerOperatorEnum operator = findOperator(rule.getOperatorCode());
