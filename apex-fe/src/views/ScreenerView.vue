@@ -1,9 +1,35 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowDown, Refresh, RefreshRight, Search } from '@element-plus/icons-vue'
-import { fetchScreenerMarket, fetchScreenerMeta, runScreener } from '../api/screener'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ArrowDown,
+  ArrowUp,
+  CopyDocument,
+  Delete,
+  EditPen,
+  MoreFilled,
+  Plus,
+  Rank,
+  Refresh,
+  RefreshRight,
+  Search,
+  VideoPlay,
+} from '@element-plus/icons-vue'
+import {
+  copyScreenerStrategy,
+  copyScreenerTemplate,
+  createScreenerStrategy,
+  deleteScreenerStrategy,
+  fetchScreenerMarket,
+  fetchScreenerMeta,
+  fetchScreenerStrategies,
+  reorderScreenerStrategies,
+  runScreener,
+  runScreenerStrategy,
+  toggleScreenerStrategy,
+  updateScreenerStrategy,
+} from '../api/screener'
 import { batchBacktest } from '../api/backtest'
 import { saveObserve } from '../api/observe'
 import { buildTrailingDateRange } from '../utils/backtestLab.js'
@@ -11,13 +37,104 @@ import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
+const activeMode = ref('free')
 const loading = ref(false)
 const marketLoading = ref(false)
+const strategyLoading = ref(false)
 const screeningActive = ref(false)
 const viewportWidth = ref(window.innerWidth)
 const isMobileViewport = computed(() => viewportWidth.value <= 820)
 const showActionColumn = computed(() => resolveActionColumnVisible(viewportWidth.value))
 const mobileAdvancedOpen = ref(false)
+
+const modeOptions = [
+  { label: '自由筛选', value: 'free' },
+  { label: '策略选股', value: 'strategy' },
+]
+
+const RULE_CATALOG = [
+  { value: 'MARKET_BOARD', label: '市场板块', kind: 'market', operator: 'EQ' },
+  { value: 'EXCLUDE_ST', label: '排除 ST', kind: 'boolean', operator: 'EQ' },
+  { value: 'PE_TTM', label: '滚动市盈率', kind: 'number', operator: 'BETWEEN' },
+  { value: 'PB', label: '市净率', kind: 'number', operator: 'BETWEEN' },
+  { value: 'TOTAL_MV', label: '总市值（元）', kind: 'number', operator: 'BETWEEN' },
+  { value: 'CIRC_MV', label: '流通市值（元）', kind: 'number', operator: 'BETWEEN' },
+  { value: 'PCT_CHG', label: '当日涨跌幅（%）', kind: 'number', operator: 'BETWEEN' },
+  { value: 'TURNOVER_RATE', label: '当日换手率（%）', kind: 'number', operator: 'BETWEEN' },
+  { value: 'VOLUME_RATIO', label: '实时量比', kind: 'number', operator: 'GTE' },
+  { value: 'RANGE_RETURN', label: '区间涨跌幅（%）', kind: 'number', operator: 'GTE', lookback: true },
+  { value: 'LIMIT_UP_COUNT', label: '近期涨停次数', kind: 'integer', operator: 'GTE', lookback: true },
+  { value: 'UP_DAYS', label: '连续上涨天数', kind: 'integer', operator: 'GTE' },
+  { value: 'RS20', label: '20日相对强度（%）', kind: 'number', operator: 'GTE' },
+  { value: 'ATR_PCT', label: 'ATR14/现价（%）', kind: 'number', operator: 'BETWEEN' },
+  { value: 'PRICE_POSITION', label: '区间价格位置（%）', kind: 'number', operator: 'LTE', lookback: true },
+  { value: 'INTRADAY_ABOVE_AVG_RATIO', label: '均价线上方占比（%）', kind: 'number', operator: 'GTE' },
+  { value: 'INTRADAY_CURRENT_ABOVE_AVG', label: '当前价不低于均价', kind: 'boolean', operator: 'EQ' },
+  { value: 'INTRADAY_MAX_BELOW_MINUTES', label: '连续跌破均价分钟数', kind: 'integer', operator: 'LTE' },
+  { value: 'LIMIT_UP_LEVEL', label: '连板层级', kind: 'integer', operator: 'EQ' },
+  { value: 'FIRST_SEAL_TIME', label: '首次封板时间', kind: 'time', operator: 'LTE' },
+  { value: 'LAST_SEAL_TIME', label: '最后封板时间', kind: 'time', operator: 'LTE' },
+  { value: 'BREAK_COUNT', label: '炸板次数', kind: 'integer', operator: 'LTE' },
+  { value: 'SEAL_AMOUNT', label: '封单金额（元）', kind: 'number', operator: 'GTE' },
+  { value: 'AMOUNT', label: '成交额（元）', kind: 'number', operator: 'BETWEEN' },
+  { value: 'THEME_LINKAGE_COUNT', label: '同题材涨停家数', kind: 'integer', operator: 'GTE' },
+]
+
+const NUMERIC_OPERATORS = [
+  { label: '大于', value: 'GT' },
+  { label: '大于等于', value: 'GTE' },
+  { label: '小于', value: 'LT' },
+  { label: '小于等于', value: 'LTE' },
+  { label: '等于', value: 'EQ' },
+  { label: '区间', value: 'BETWEEN' },
+]
+
+const strategies = ref([])
+const selectedStrategyKey = ref('')
+const strategyRunResult = ref(null)
+const strategyEditorOpen = ref(false)
+const strategyEditorSaving = ref(false)
+const strategyManageOpen = ref(false)
+const managedUserStrategies = ref([])
+const draggingStrategyId = ref(null)
+const strategyForm = ref(emptyStrategyForm())
+
+const systemStrategies = computed(() => strategies.value.filter((item) => item.template))
+const userStrategies = computed(() => strategies.value.filter((item) => !item.template))
+const selectedStrategy = computed(() => strategies.value.find(
+  (item) => strategyKey(item) === selectedStrategyKey.value,
+) || null)
+const strategyHasRun = computed(() => activeMode.value === 'strategy' && strategyRunResult.value)
+
+function strategyKey(strategy) {
+  return strategy?.template ? `template:${strategy.templateKey}` : `user:${strategy?.id}`
+}
+
+function emptyStrategyForm() {
+  return {
+    id: null,
+    name: '',
+    description: '',
+    runMode: 'REALTIME',
+    enabled: true,
+    rules: [newStrategyRule('PCT_CHG')],
+  }
+}
+
+function newStrategyRule(ruleType = 'PCT_CHG') {
+  const catalog = RULE_CATALOG.find((item) => item.value === ruleType) || RULE_CATALOG[0]
+  return {
+    ruleType: catalog.value,
+    operatorCode: catalog.operator,
+    minValue: catalog.operator === 'BETWEEN' ? '' : '',
+    maxValue: catalog.operator === 'BETWEEN' ? '' : '',
+    intValue: catalog.kind === 'integer' ? 1 : null,
+    textValue: catalog.kind === 'market' ? 'MAIN_BOARD' : catalog.kind === 'time' ? '103000' : '',
+    boolValue: catalog.kind === 'boolean' ? true : null,
+    lookbackDays: catalog.lookback ? 20 : null,
+    toleranceValue: null,
+  }
+}
 
 function syncViewportWidth() {
   viewportWidth.value = window.innerWidth
@@ -69,14 +186,18 @@ const marketTotal = ref(0)
 const marketRows = ref([])
 
 useSessionViewState('screener', {
+  activeMode,
   form,
   marketKeyword,
   marketPage,
   marketSize,
+  selectedStrategyKey,
 })
 
 const displayRows = computed(() => {
-  const sourceRows = screeningActive.value ? rows.value : marketRows.value
+  const sourceRows = activeMode.value === 'strategy'
+    ? rows.value
+    : screeningActive.value ? rows.value : marketRows.value
   const keyword = String(marketKeyword.value || '').trim().toLowerCase()
   if (!screeningActive.value || !keyword) return sourceRows
   return sourceRows.filter((row) =>
@@ -197,6 +318,358 @@ async function loadMeta() {
   }
 }
 
+async function loadStrategies(preserveSelection = true) {
+  strategyLoading.value = true
+  try {
+    const res = await fetchScreenerStrategies()
+    strategies.value = res.data || []
+    const currentExists = strategies.value.some((item) => strategyKey(item) === selectedStrategyKey.value)
+    if (!preserveSelection || !currentExists) {
+      const recommended = strategies.value.find(
+        (item) => item.templateKey === 'MAIN_BOARD_STRONG_ACCEPTANCE',
+      ) || strategies.value[0]
+      selectedStrategyKey.value = recommended ? strategyKey(recommended) : ''
+    }
+  } catch (e) {
+    strategies.value = []
+    ElMessage.error(e.message || '加载策略失败')
+  } finally {
+    strategyLoading.value = false
+  }
+}
+
+function onModeChange(mode) {
+  rows.value = []
+  batchRows.value = []
+  screeningActive.value = false
+  marketKeyword.value = ''
+  if (mode === 'strategy') {
+    strategyRunResult.value = null
+    loadStrategies(true)
+  } else {
+    loadMarket(true)
+  }
+}
+
+function onStrategyChange() {
+  rows.value = []
+  batchRows.value = []
+  screeningActive.value = false
+  strategyRunResult.value = null
+}
+
+async function onRunStrategy() {
+  const strategy = selectedStrategy.value
+  if (!strategy) {
+    ElMessage.warning('请选择策略')
+    return
+  }
+  strategyLoading.value = true
+  try {
+    const payload = {
+      limit: Number(form.value.limit || 50),
+    }
+    if (strategy.template) payload.templateKey = strategy.templateKey
+    else payload.strategyId = strategy.id
+    const res = await runScreenerStrategy(payload)
+    strategyRunResult.value = res.data || null
+    rows.value = res.data?.matches || []
+    screeningActive.value = true
+    const matched = Number(res.data?.matchedCount || 0)
+    const returned = rows.value.length
+    ElMessage.success(matched > returned ? `命中 ${matched} 只，展示前 ${returned} 只` : `命中 ${matched} 只`)
+  } catch (e) {
+    rows.value = []
+    strategyRunResult.value = null
+    ElMessage.error(e.message || '策略运行失败')
+  } finally {
+    strategyLoading.value = false
+  }
+}
+
+function ruleCatalog(ruleType) {
+  return RULE_CATALOG.find((item) => item.value === ruleType) || RULE_CATALOG[0]
+}
+
+function ruleOperators(rule) {
+  const kind = ruleCatalog(rule.ruleType).kind
+  if (kind === 'boolean' || kind === 'market') return [{ label: '等于', value: 'EQ' }]
+  if (kind === 'time') {
+    return NUMERIC_OPERATORS.filter((item) => ['EQ', 'GTE', 'LTE'].includes(item.value))
+  }
+  return NUMERIC_OPERATORS
+}
+
+function onRuleTypeChange(rule) {
+  Object.assign(rule, newStrategyRule(rule.ruleType))
+}
+
+function addStrategyRule() {
+  strategyForm.value.rules.push(newStrategyRule())
+}
+
+function removeStrategyRule(index) {
+  if (strategyForm.value.rules.length <= 1) {
+    ElMessage.warning('策略至少保留一条规则')
+    return
+  }
+  strategyForm.value.rules.splice(index, 1)
+}
+
+function openCreateStrategy() {
+  strategyForm.value = emptyStrategyForm()
+  strategyEditorOpen.value = true
+}
+
+function openEditStrategy() {
+  const strategy = selectedStrategy.value
+  if (!strategy || strategy.template) return
+  strategyForm.value = {
+    id: strategy.id,
+    name: strategy.name || '',
+    description: strategy.description || '',
+    runMode: strategy.runMode || 'REALTIME',
+    enabled: strategy.enabled !== false,
+    rules: (strategy.rules || []).map((rule) => ({
+      ruleType: rule.ruleType,
+      operatorCode: rule.operatorCode,
+      minValue: rule.minValue ?? '',
+      maxValue: rule.maxValue ?? '',
+      intValue: rule.intValue ?? null,
+      textValue: rule.textValue ?? '',
+      boolValue: rule.boolValue ?? null,
+      lookbackDays: rule.lookbackDays ?? null,
+      toleranceValue: rule.toleranceValue ?? null,
+    })),
+  }
+  strategyEditorOpen.value = true
+}
+
+function strategyRulePayload(rule, index) {
+  const catalog = ruleCatalog(rule.ruleType)
+  const payload = {
+    ruleType: rule.ruleType,
+    operatorCode: rule.operatorCode,
+    minValue: null,
+    maxValue: null,
+    intValue: null,
+    textValue: null,
+    boolValue: null,
+    lookbackDays: catalog.lookback ? Number(rule.lookbackDays || 20) : null,
+    toleranceValue: numOrNull(rule.toleranceValue),
+    sortNo: (index + 1) * 10,
+  }
+  if (catalog.kind === 'boolean') payload.boolValue = Boolean(rule.boolValue)
+  else if (catalog.kind === 'market' || catalog.kind === 'time') payload.textValue = rule.textValue || null
+  else if (rule.operatorCode === 'BETWEEN') {
+    payload.minValue = numOrNull(rule.minValue)
+    payload.maxValue = numOrNull(rule.maxValue)
+  } else if (catalog.kind === 'integer') payload.intValue = Number(rule.intValue)
+  else payload.minValue = numOrNull(rule.minValue)
+  return payload
+}
+
+async function saveStrategyEditor() {
+  const name = String(strategyForm.value.name || '').trim()
+  if (!name) {
+    ElMessage.warning('请输入策略名称')
+    return
+  }
+  if (!strategyForm.value.rules.length) {
+    ElMessage.warning('策略至少需要一条规则')
+    return
+  }
+  const payload = {
+    name,
+    description: String(strategyForm.value.description || '').trim() || null,
+    runMode: strategyForm.value.runMode,
+    enabled: strategyForm.value.enabled,
+    rules: strategyForm.value.rules.map(strategyRulePayload),
+  }
+  strategyEditorSaving.value = true
+  try {
+    const res = strategyForm.value.id
+      ? await updateScreenerStrategy(strategyForm.value.id, payload)
+      : await createScreenerStrategy(payload)
+    strategyEditorOpen.value = false
+    selectedStrategyKey.value = strategyKey(res.data)
+    await loadStrategies(true)
+    ElMessage.success(strategyForm.value.id ? '策略已更新' : '策略已创建')
+  } catch (e) {
+    ElMessage.error(e.message || '保存策略失败')
+  } finally {
+    strategyEditorSaving.value = false
+  }
+}
+
+async function copySelectedStrategy() {
+  const strategy = selectedStrategy.value
+  if (!strategy) return
+  strategyLoading.value = true
+  try {
+    const res = strategy.template
+      ? await copyScreenerTemplate(strategy.templateKey)
+      : await copyScreenerStrategy(strategy.id)
+    selectedStrategyKey.value = strategyKey(res.data)
+    await loadStrategies(true)
+    ElMessage.success('已复制为我的策略')
+  } catch (e) {
+    ElMessage.error(e.message || '复制策略失败')
+  } finally {
+    strategyLoading.value = false
+  }
+}
+
+async function toggleSelectedStrategy() {
+  const strategy = selectedStrategy.value
+  if (!strategy || strategy.template) return
+  try {
+    await toggleScreenerStrategy(strategy.id, !strategy.enabled)
+    await loadStrategies(true)
+    ElMessage.success(strategy.enabled ? '策略已停用' : '策略已启用')
+  } catch (e) {
+    ElMessage.error(e.message || '更新策略状态失败')
+  }
+}
+
+async function removeSelectedStrategy() {
+  const strategy = selectedStrategy.value
+  if (!strategy || strategy.template) return
+  try {
+    await ElMessageBox.confirm(`删除策略「${strategy.name}」？`, '删除策略', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+    await deleteScreenerStrategy(strategy.id)
+    await loadStrategies(false)
+    rows.value = []
+    strategyRunResult.value = null
+    ElMessage.success('策略已删除')
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '删除策略失败')
+  }
+}
+
+function openStrategyManager() {
+  managedUserStrategies.value = userStrategies.value.map((item) => ({ ...item }))
+  strategyManageOpen.value = true
+}
+
+function onStrategyDragStart(strategyId) {
+  draggingStrategyId.value = strategyId
+}
+
+async function onStrategyDrop(targetId) {
+  const sourceId = draggingStrategyId.value
+  draggingStrategyId.value = null
+  if (!sourceId || sourceId === targetId) return
+  const sourceIndex = managedUserStrategies.value.findIndex((item) => item.id === sourceId)
+  const targetIndex = managedUserStrategies.value.findIndex((item) => item.id === targetId)
+  if (sourceIndex < 0 || targetIndex < 0) return
+  const [moved] = managedUserStrategies.value.splice(sourceIndex, 1)
+  managedUserStrategies.value.splice(targetIndex, 0, moved)
+  await persistStrategyOrder()
+}
+
+async function moveStrategy(index, offset) {
+  const target = index + offset
+  if (target < 0 || target >= managedUserStrategies.value.length) return
+  const [moved] = managedUserStrategies.value.splice(index, 1)
+  managedUserStrategies.value.splice(target, 0, moved)
+  await persistStrategyOrder()
+}
+
+async function persistStrategyOrder() {
+  try {
+    await reorderScreenerStrategies(managedUserStrategies.value.map((item) => item.id))
+    await loadStrategies(true)
+  } catch (e) {
+    ElMessage.error(e.message || '策略排序失败')
+    await loadStrategies(true)
+    managedUserStrategies.value = userStrategies.value.map((item) => ({ ...item }))
+  }
+}
+
+function handleStrategyCommand(command) {
+  if (command === 'create') openCreateStrategy()
+  else if (command === 'edit') openEditStrategy()
+  else if (command === 'copy') copySelectedStrategy()
+  else if (command === 'toggle') toggleSelectedStrategy()
+  else if (command === 'remove') removeSelectedStrategy()
+  else if (command === 'manage') openStrategyManager()
+  else if (command === 'load-free') loadStrategyIntoFreeFilter()
+}
+
+function loadStrategyIntoFreeFilter() {
+  const strategy = selectedStrategy.value
+  if (!strategy) return
+  const nextForm = emptyForm()
+  let mapped = 0
+  for (const rule of strategy.rules || []) {
+    const between = rule.operatorCode === 'BETWEEN'
+    if (rule.ruleType === 'EXCLUDE_ST') {
+      nextForm.excludeSt = rule.boolValue !== false
+      mapped++
+    } else if (rule.ruleType === 'PE_TTM') {
+      if (between) [nextForm.peMin, nextForm.peMax] = [rule.minValue ?? '', rule.maxValue ?? '']
+      else if (['GTE', 'GT'].includes(rule.operatorCode)) nextForm.peMin = rule.minValue ?? ''
+      else nextForm.peMax = rule.minValue ?? ''
+      mapped++
+    } else if (rule.ruleType === 'PB') {
+      if (between) [nextForm.pbMin, nextForm.pbMax] = [rule.minValue ?? '', rule.maxValue ?? '']
+      else if (['GTE', 'GT'].includes(rule.operatorCode)) nextForm.pbMin = rule.minValue ?? ''
+      else nextForm.pbMax = rule.minValue ?? ''
+      mapped++
+    } else if (rule.ruleType === 'PCT_CHG') {
+      if (between) [nextForm.pctChgMin, nextForm.pctChgMax] = [rule.minValue ?? '', rule.maxValue ?? '']
+      else if (['GTE', 'GT'].includes(rule.operatorCode)) nextForm.pctChgMin = rule.minValue ?? ''
+      else nextForm.pctChgMax = rule.minValue ?? ''
+      mapped++
+    } else if (rule.ruleType === 'CIRC_MV') {
+      if (between) {
+        nextForm.minCircMvYi = Number(rule.minValue || 0) / 1e8
+        nextForm.maxCircMvYi = Number(rule.maxValue || 0) / 1e8
+      }
+      mapped++
+    } else if (rule.ruleType === 'RANGE_RETURN' && Number(rule.lookbackDays || 20) === 20) {
+      if (between) [nextForm.pctChg20Min, nextForm.pctChg20Max] = [rule.minValue ?? '', rule.maxValue ?? '']
+      else if (['GTE', 'GT'].includes(rule.operatorCode)) nextForm.pctChg20Min = rule.minValue ?? ''
+      else nextForm.pctChg20Max = rule.minValue ?? ''
+      mapped++
+    } else if (rule.ruleType === 'VOLUME_RATIO' && ['GTE', 'GT'].includes(rule.operatorCode)) {
+      nextForm.minVolumeRatio = rule.minValue ?? ''
+      mapped++
+    } else if (rule.ruleType === 'UP_DAYS' && ['GTE', 'GT'].includes(rule.operatorCode)) {
+      nextForm.minUpDays = rule.intValue ?? ''
+      mapped++
+    } else if (rule.ruleType === 'RS20' && ['GTE', 'GT'].includes(rule.operatorCode)) {
+      nextForm.rs20Min = rule.minValue ?? ''
+      mapped++
+    } else if (rule.ruleType === 'ATR_PCT') {
+      if (between) [nextForm.minAtrPct, nextForm.maxAtrPct] = [rule.minValue ?? '', rule.maxValue ?? '']
+      mapped++
+    }
+  }
+  form.value = nextForm
+  activeMode.value = 'free'
+  rows.value = []
+  screeningActive.value = false
+  strategyRunResult.value = null
+  loadMarket(true)
+  ElMessage.info(`已载入 ${mapped} 条可映射规则，其余策略规则未改动自由筛选器`)
+}
+
+function formatDateTime(value) {
+  return value ? String(value).replace('T', ' ').slice(0, 19) : '—'
+}
+
+function evidenceSummary(row) {
+  return (row?.evidence || []).slice(0, 4)
+    .map((item) => `${item.ruleName} ${item.actualValue}`)
+    .join(' · ')
+}
+
 async function onRun() {
   loading.value = true
   try {
@@ -297,8 +770,10 @@ async function addObserve(row) {
       code: row.code,
       name: row.name || '',
       status: 'WATCHING',
-      reason: screeningActive.value ? '条件选股' : '全市场浏览',
-      tags: screeningActive.value ? 'screener' : 'market',
+      reason: activeMode.value === 'strategy' ? `策略选股：${selectedStrategy.value?.name || ''}`
+        : screeningActive.value ? '条件选股' : '全市场浏览',
+      tags: activeMode.value === 'strategy' ? 'strategy-screener'
+        : screeningActive.value ? 'screener' : 'market',
     })
     ElMessage.success(`${row.code} 已进观察池`)
   } catch (e) {
@@ -333,7 +808,8 @@ async function onBatchBacktest() {
 
 onMounted(() => {
   loadMeta()
-  loadMarket(true)
+  if (activeMode.value === 'strategy') loadStrategies(true)
+  else loadMarket(true)
   window.addEventListener('resize', syncViewportWidth)
 })
 
@@ -368,6 +844,11 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
+    <div class="screener-mode-switch" aria-label="选股模式">
+      <el-segmented v-model="activeMode" :options="modeOptions" @change="onModeChange" />
+    </div>
+
+    <template v-if="activeMode === 'free'">
     <section v-if="!isMobileViewport" class="filter-panel desktop-filter-panel" aria-label="股票筛选条件">
       <div class="filter-heading">
         <div>
@@ -611,10 +1092,141 @@ onBeforeUnmount(() => {
         </div>
       </form>
     </section>
+    </template>
+
+    <section v-else class="strategy-panel" aria-label="策略选股">
+      <div class="strategy-toolbar">
+        <div class="strategy-selector">
+          <span>选择策略</span>
+          <el-select
+            v-model="selectedStrategyKey"
+            :loading="strategyLoading"
+            placeholder="选择系统模板或我的策略"
+            filterable
+            @change="onStrategyChange"
+          >
+            <el-option-group v-if="systemStrategies.length" label="系统模板">
+              <el-option
+                v-for="strategy in systemStrategies"
+                :key="strategyKey(strategy)"
+                :label="strategy.name"
+                :value="strategyKey(strategy)"
+              />
+            </el-option-group>
+            <el-option-group v-if="userStrategies.length" label="我的策略">
+              <el-option
+                v-for="strategy in userStrategies"
+                :key="strategyKey(strategy)"
+                :label="`${strategy.enabled ? '' : '已停用 · '}${strategy.name}`"
+                :value="strategyKey(strategy)"
+              />
+            </el-option-group>
+          </el-select>
+        </div>
+        <div class="strategy-actions">
+          <el-button
+            type="primary"
+            :icon="VideoPlay"
+            :loading="strategyLoading"
+            :disabled="!selectedStrategy || selectedStrategy.enabled === false"
+            @click="onRunStrategy"
+          >
+            运行策略
+          </el-button>
+          <el-dropdown trigger="click" @command="handleStrategyCommand">
+            <el-button :icon="MoreFilled" aria-label="策略操作" title="策略操作">
+              <span class="strategy-action-label">策略操作</span>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="create" :icon="Plus">新建策略</el-dropdown-item>
+                <el-dropdown-item
+                  command="copy"
+                  :icon="CopyDocument"
+                  :disabled="!selectedStrategy"
+                >
+                  复制策略
+                </el-dropdown-item>
+                <el-dropdown-item
+                  command="edit"
+                  :icon="EditPen"
+                  :disabled="!selectedStrategy || selectedStrategy.template"
+                >
+                  编辑策略
+                </el-dropdown-item>
+                <el-dropdown-item command="manage" :icon="Rank" :disabled="!userStrategies.length">
+                  策略排序
+                </el-dropdown-item>
+                <el-dropdown-item command="load-free" :disabled="!selectedStrategy" divided>
+                  载入自由筛选
+                </el-dropdown-item>
+                <el-dropdown-item
+                  command="toggle"
+                  :disabled="!selectedStrategy || selectedStrategy.template"
+                >
+                  {{ selectedStrategy?.enabled ? '停用策略' : '启用策略' }}
+                </el-dropdown-item>
+                <el-dropdown-item
+                  command="remove"
+                  :icon="Delete"
+                  :disabled="!selectedStrategy || selectedStrategy.template"
+                  divided
+                >
+                  删除策略
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </div>
+
+      <div v-if="selectedStrategy" class="strategy-definition">
+        <div class="strategy-title-line">
+          <div>
+            <h2>{{ selectedStrategy.name }}</h2>
+            <p>{{ selectedStrategy.description || '未填写策略说明' }}</p>
+          </div>
+          <div class="strategy-flags">
+            <el-tag size="small" effect="plain">{{ selectedStrategy.template ? '系统模板' : `版本 ${selectedStrategy.versionNo}` }}</el-tag>
+            <el-tag v-if="!selectedStrategy.template" size="small" :type="selectedStrategy.enabled ? 'success' : 'info'" effect="plain">
+              {{ selectedStrategy.enabled ? '已启用' : '已停用' }}
+            </el-tag>
+          </div>
+        </div>
+        <p v-if="selectedStrategy.disclaimer" class="strategy-disclaimer">{{ selectedStrategy.disclaimer }}</p>
+        <ol class="strategy-rule-list">
+          <li v-for="rule in selectedStrategy.rules" :key="rule.id || `${rule.ruleType}-${rule.sortNo}`">
+            <span>{{ rule.ruleName }}</span>
+            <b>{{ rule.summary }}</b>
+          </li>
+        </ol>
+      </div>
+
+      <div v-else-if="!strategyLoading" class="strategy-empty">
+        <span>暂无可用策略</span>
+        <el-button type="primary" plain :icon="Plus" @click="openCreateStrategy">新建策略</el-button>
+      </div>
+
+      <div v-if="strategyRunResult?.dataStatus" class="strategy-data-status">
+        <div class="strategy-status-grid">
+          <span><small>运行时间</small><b>{{ formatDateTime(strategyRunResult.dataStatus.runAt) }}</b></span>
+          <span><small>实时截面</small><b>{{ formatDateTime(strategyRunResult.dataStatus.snapshotAsOf) }}</b></span>
+          <span><small>日线截止</small><b>{{ strategyRunResult.dataStatus.dailyAsOf || '—' }}</b></span>
+          <span><small>分时截止</small><b>{{ strategyRunResult.dataStatus.intradayAsOf || '未使用' }}</b></span>
+          <span><small>阶段命中</small><b>{{ strategyRunResult.snapshotMatchedCount }} → {{ strategyRunResult.historicalMatchedCount }} → {{ strategyRunResult.matchedCount }}</b></span>
+          <span><small>分时复核</small><b>{{ strategyRunResult.dataStatus.intradayReviewedCount }} / {{ strategyRunResult.dataStatus.intradayCandidateCount }}</b></span>
+        </div>
+        <ul v-if="strategyRunResult.dataStatus.issues?.length" class="strategy-issues">
+          <li v-for="issue in strategyRunResult.dataStatus.issues" :key="`${issue.stage}-${issue.issueType}`">
+            {{ issue.message }}（{{ issue.count }} 只）
+          </li>
+        </ul>
+      </div>
+    </section>
 
     <el-table
       v-if="!isMobileViewport"
-      v-loading="loading || marketLoading"
+      v-loading="loading || marketLoading || strategyLoading"
       class="screener-table"
       :data="displayRows"
       stripe
@@ -632,7 +1244,7 @@ onBeforeUnmount(() => {
             </button>
           </template>
         </el-table-column>
-        <el-table-column v-if="!screeningActive" label="股票池" width="74">
+        <el-table-column v-if="activeMode === 'free' && !screeningActive" label="股票池" width="74">
           <template #default="{ row }">
             <el-tag v-if="row.inUniverse" size="small" type="success" effect="plain">池</el-tag>
             <span v-else class="muted">—</span>
@@ -644,12 +1256,12 @@ onBeforeUnmount(() => {
             <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ row.pctChg ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="screeningActive" prop="pctChg5" label="5日%" min-width="80">
+        <el-table-column v-if="activeMode === 'free' && screeningActive" prop="pctChg5" label="5日%" min-width="80">
           <template #default="{ row }">
             <span :class="Number(row.pctChg5) >= 0 ? 'up' : 'down'">{{ row.pctChg5 ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="screeningActive" prop="pctChg20" label="20日%" min-width="80">
+        <el-table-column v-if="activeMode === 'free' && screeningActive" prop="pctChg20" label="20日%" min-width="80">
           <template #default="{ row }">
             <span :class="Number(row.pctChg20) >= 0 ? 'up' : 'down'">{{ row.pctChg20 ?? '-' }}</span>
           </template>
@@ -657,13 +1269,13 @@ onBeforeUnmount(() => {
         <el-table-column v-if="screeningActive" prop="volumeRatio" min-width="72">
           <template #header><TermTip term="volume_ratio">量比</TermTip></template>
         </el-table-column>
-        <el-table-column v-if="screeningActive" prop="upDays" min-width="64">
+        <el-table-column v-if="activeMode === 'free' && screeningActive" prop="upDays" min-width="64">
           <template #header><TermTip term="up_days">连涨</TermTip></template>
         </el-table-column>
-        <el-table-column v-if="screeningActive" prop="rs20VsHs300" min-width="72" sortable>
+        <el-table-column v-if="activeMode === 'free' && screeningActive" prop="rs20VsHs300" min-width="72" sortable>
           <template #header><TermTip term="rs20">RS20</TermTip></template>
         </el-table-column>
-        <el-table-column v-if="screeningActive" prop="atrPct" min-width="72" sortable>
+        <el-table-column v-if="activeMode === 'free' && screeningActive" prop="atrPct" min-width="72" sortable>
           <template #header><TermTip term="atr_pct">ATR%</TermTip></template>
         </el-table-column>
         <el-table-column prop="peTtm" min-width="72" sortable>
@@ -672,13 +1284,24 @@ onBeforeUnmount(() => {
         <el-table-column prop="pb" min-width="72" sortable>
           <template #header><TermTip term="pb">PB</TermTip></template>
         </el-table-column>
-        <el-table-column prop="circMv" label="流通(亿)" min-width="88">
+        <el-table-column v-if="activeMode === 'strategy'" prop="turnoverRate" label="换手%" min-width="78" />
+        <el-table-column v-if="activeMode === 'strategy'" prop="totalMv" label="总值(亿)" min-width="92">
+          <template #default="{ row }">
+            {{ row.totalMv != null ? (Number(row.totalMv) / 1e8).toFixed(1) : '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column v-else prop="circMv" label="流通(亿)" min-width="88">
           <template #default="{ row }">
             {{ row.circMv != null ? (Number(row.circMv) / 1e8).toFixed(1) : '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="industry" label="行业" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="barCount" label="K线" min-width="72" />
+        <el-table-column v-if="activeMode === 'free'" prop="barCount" label="K线" min-width="72" />
+        <el-table-column v-if="activeMode === 'strategy'" label="命中依据" min-width="300" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="evidence-line">{{ evidenceSummary(row) || '规则全部通过' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="showActionColumn" label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link @click="router.push({ path: '/backtest', query: { code: row.code } })">回测</el-button>
@@ -693,8 +1316,10 @@ onBeforeUnmount(() => {
         <div>
           <h2 id="mobile-screener-results-title">股票列表</h2>
           <span>
-            {{ screeningActive ? `筛选结果 ${displayRows.length} 只` : `共 ${marketTotal} 只` }}
-            <template v-if="!screeningActive"> · 池内标「池」</template>
+            {{ activeMode === 'strategy'
+              ? strategyHasRun ? `命中 ${strategyRunResult.matchedCount} 只` : '请选择并运行策略'
+              : screeningActive ? `筛选结果 ${displayRows.length} 只` : `共 ${marketTotal} 只` }}
+            <template v-if="activeMode === 'free' && !screeningActive"> · 池内标「池」</template>
           </span>
         </div>
         <el-button
@@ -707,7 +1332,7 @@ onBeforeUnmount(() => {
         </el-button>
       </div>
 
-      <div v-loading="loading || marketLoading" class="screener-mobile-list">
+      <div v-loading="loading || marketLoading || strategyLoading" class="screener-mobile-list">
         <button
           v-for="row in displayRows"
           :key="row.code"
@@ -719,7 +1344,7 @@ onBeforeUnmount(() => {
             <span class="mobile-stock-identity">
               <strong>{{ row.name || row.code }}</strong>
               <SecurityMarketBadge :security="row" include-main />
-              <span v-if="!screeningActive && row.inUniverse" class="universe-badge">池</span>
+              <span v-if="activeMode === 'free' && !screeningActive && row.inUniverse" class="universe-badge">池</span>
               <small>{{ row.code }}</small>
             </span>
             <span class="mobile-stock-quote">
@@ -729,23 +1354,31 @@ onBeforeUnmount(() => {
           </span>
 
           <span class="mobile-stock-metrics" :class="{ 'is-screening': screeningActive }">
-            <span>
-              <small>PE</small>
-              <b>{{ formatNumber(row.peTtm) }}</b>
-            </span>
-            <span>
-              <small>PB</small>
-              <b>{{ formatNumber(row.pb) }}</b>
-            </span>
-            <span>
-              <small>流通</small>
-              <b>{{ formatCircMv(row.circMv) }}</b>
-            </span>
-            <span>
-              <small>行业</small>
-              <b class="mobile-industry">{{ row.industry || '-' }}</b>
-            </span>
-            <template v-if="screeningActive">
+            <template v-if="activeMode === 'strategy'">
+              <span><small>换手</small><b>{{ formatPct(row.turnoverRate) }}</b></span>
+              <span><small>量比</small><b>{{ formatNumber(row.volumeRatio) }}</b></span>
+              <span><small>总市值</small><b>{{ formatCircMv(row.totalMv) }}</b></span>
+              <span><small>涨停</small><b>{{ row.limitUpCount ?? '—' }}</b></span>
+            </template>
+            <template v-else>
+              <span>
+                <small>PE</small>
+                <b>{{ formatNumber(row.peTtm) }}</b>
+              </span>
+              <span>
+                <small>PB</small>
+                <b>{{ formatNumber(row.pb) }}</b>
+              </span>
+              <span>
+                <small>流通</small>
+                <b>{{ formatCircMv(row.circMv) }}</b>
+              </span>
+              <span>
+                <small>行业</small>
+                <b class="mobile-industry">{{ row.industry || '-' }}</b>
+              </span>
+            </template>
+            <template v-if="activeMode === 'free' && screeningActive">
               <span>
                 <small>20日</small>
                 <b :class="trendClass(row.pctChg20)">{{ formatPct(row.pctChg20) }}</b>
@@ -764,6 +1397,9 @@ onBeforeUnmount(() => {
               </span>
             </template>
           </span>
+          <span v-if="activeMode === 'strategy'" class="mobile-evidence-line">
+            {{ evidenceSummary(row) || '规则全部通过' }}
+          </span>
         </button>
 
         <div v-if="!displayRows.length && !loading && !marketLoading" class="mobile-empty-state">
@@ -771,7 +1407,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="!screeningActive" class="mobile-pager" aria-label="股票列表分页">
+      <div v-if="activeMode === 'free' && !screeningActive" class="mobile-pager" aria-label="股票列表分页">
         <el-button
           class="mobile-pager-button"
           :disabled="marketPage <= 1 || marketLoading"
@@ -793,7 +1429,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <div v-if="!isMobileViewport && !screeningActive" class="pager">
+    <div v-if="activeMode === 'free' && !isMobileViewport && !screeningActive" class="pager">
       <el-pagination
         background
         layout="total, sizes, prev, pager, next"
@@ -852,6 +1488,162 @@ onBeforeUnmount(() => {
           </template>
         </el-table-column>
     </el-table>
+
+    <el-dialog
+      v-model="strategyEditorOpen"
+      class="strategy-editor-dialog"
+      :title="strategyForm.id ? '编辑策略' : '新建策略'"
+      width="min(860px, calc(100vw - 24px))"
+      append-to-body
+      destroy-on-close
+    >
+      <el-form label-position="top" class="strategy-editor-form" @submit.prevent="saveStrategyEditor">
+        <div class="strategy-editor-basics">
+          <el-form-item label="策略名称">
+            <el-input v-model="strategyForm.name" maxlength="64" show-word-limit />
+          </el-form-item>
+          <el-form-item label="运行模式">
+            <el-select v-model="strategyForm.runMode">
+              <el-option label="实时" value="REALTIME" />
+              <el-option label="收盘" value="CLOSE" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态" class="strategy-enabled-field">
+            <el-switch v-model="strategyForm.enabled" active-text="启用" inactive-text="停用" />
+          </el-form-item>
+          <el-form-item label="策略说明" class="strategy-description-field">
+            <el-input v-model="strategyForm.description" type="textarea" :rows="2" maxlength="512" />
+          </el-form-item>
+        </div>
+
+        <div class="strategy-rule-editor-heading">
+          <div>
+            <h3>筛选规则</h3>
+            <span>同一策略内全部按 AND 执行</span>
+          </div>
+          <el-button :icon="Plus" @click="addStrategyRule">添加规则</el-button>
+        </div>
+
+        <div class="strategy-rule-editor-list">
+          <div
+            v-for="(rule, index) in strategyForm.rules"
+            :key="`${rule.ruleType}-${index}`"
+            class="strategy-rule-editor-row"
+          >
+            <span class="rule-index">{{ index + 1 }}</span>
+            <el-select v-model="rule.ruleType" class="rule-type-select" @change="onRuleTypeChange(rule)">
+              <el-option
+                v-for="catalog in RULE_CATALOG"
+                :key="catalog.value"
+                :label="catalog.label"
+                :value="catalog.value"
+              />
+            </el-select>
+            <el-select v-model="rule.operatorCode" class="rule-operator-select">
+              <el-option
+                v-for="operator in ruleOperators(rule)"
+                :key="operator.value"
+                :label="operator.label"
+                :value="operator.value"
+              />
+            </el-select>
+            <div class="rule-value-editor">
+              <el-switch
+                v-if="ruleCatalog(rule.ruleType).kind === 'boolean'"
+                v-model="rule.boolValue"
+                active-text="是"
+                inactive-text="否"
+              />
+              <el-select v-else-if="ruleCatalog(rule.ruleType).kind === 'market'" v-model="rule.textValue">
+                <el-option label="沪深主板" value="MAIN_BOARD" />
+              </el-select>
+              <el-input
+                v-else-if="ruleCatalog(rule.ruleType).kind === 'time'"
+                v-model="rule.textValue"
+                maxlength="6"
+                placeholder="如 103000"
+              />
+              <div v-else-if="rule.operatorCode === 'BETWEEN'" class="rule-range-editor">
+                <el-input v-model="rule.minValue" inputmode="decimal" placeholder="最小值" />
+                <span>至</span>
+                <el-input v-model="rule.maxValue" inputmode="decimal" placeholder="最大值" />
+              </div>
+              <el-input-number
+                v-else-if="ruleCatalog(rule.ruleType).kind === 'integer'"
+                v-model="rule.intValue"
+                :min="0"
+                controls-position="right"
+              />
+              <el-input v-else v-model="rule.minValue" inputmode="decimal" placeholder="比较值" />
+            </div>
+            <label v-if="ruleCatalog(rule.ruleType).lookback" class="rule-lookback-field">
+              <span>回看</span>
+              <el-input-number v-model="rule.lookbackDays" :min="1" :max="250" controls-position="right" />
+              <span>日</span>
+            </label>
+            <el-button
+              class="rule-remove-button"
+              text
+              type="danger"
+              :icon="Delete"
+              aria-label="删除规则"
+              title="删除规则"
+              @click="removeStrategyRule(index)"
+            />
+          </div>
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="strategyEditorOpen = false">取消</el-button>
+        <el-button type="primary" :loading="strategyEditorSaving" @click="saveStrategyEditor">保存策略</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="strategyManageOpen"
+      class="strategy-manager-dialog"
+      title="策略排序"
+      width="min(560px, calc(100vw - 24px))"
+      append-to-body
+    >
+      <div class="strategy-sort-list">
+        <div
+          v-for="(strategy, index) in managedUserStrategies"
+          :key="strategy.id"
+          class="strategy-sort-row"
+          :class="{ 'is-dragging': draggingStrategyId === strategy.id }"
+          draggable="true"
+          @dragstart="onStrategyDragStart(strategy.id)"
+          @dragover.prevent
+          @drop="onStrategyDrop(strategy.id)"
+          @dragend="draggingStrategyId = null"
+        >
+          <el-icon class="strategy-drag-handle" title="拖拽排序"><Rank /></el-icon>
+          <span class="strategy-sort-name">
+            <b>{{ strategy.name }}</b>
+            <small>{{ strategy.enabled ? '已启用' : '已停用' }}</small>
+          </span>
+          <span class="strategy-sort-actions">
+            <el-button
+              text
+              :icon="ArrowUp"
+              :disabled="index === 0"
+              aria-label="上移"
+              title="上移"
+              @click="moveStrategy(index, -1)"
+            />
+            <el-button
+              text
+              :icon="ArrowDown"
+              :disabled="index === managedUserStrategies.length - 1"
+              aria-label="下移"
+              title="下移"
+              @click="moveStrategy(index, 1)"
+            />
+          </span>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -867,6 +1659,335 @@ onBeforeUnmount(() => {
 
 .screener-page {
   min-height: calc(100vh - 48px);
+}
+
+.screener-mode-switch {
+  display: flex;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.screener-mode-switch :deep(.el-segmented) {
+  width: 260px;
+  margin-bottom: -1px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-bottom-color: var(--paper);
+  border-radius: 7px 7px 0 0;
+  background: var(--paper-deep);
+}
+
+.strategy-panel {
+  margin-bottom: 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.strategy-toolbar,
+.strategy-title-line,
+.strategy-rule-editor-heading,
+.strategy-sort-row {
+  display: flex;
+  align-items: center;
+}
+
+.strategy-toolbar,
+.strategy-title-line,
+.strategy-rule-editor-heading {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.strategy-selector {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 420px);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--slate);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.strategy-selector :deep(.el-select) {
+  width: 100%;
+}
+
+.strategy-actions,
+.strategy-flags,
+.strategy-sort-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.strategy-actions :deep(.el-button) {
+  margin: 0;
+}
+
+.strategy-definition {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.strategy-title-line {
+  align-items: flex-start;
+}
+
+.strategy-title-line h2 {
+  margin: 0 0 3px;
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.strategy-title-line p,
+.strategy-disclaimer {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.strategy-disclaimer {
+  margin-top: 7px;
+  color: #8a5a14;
+}
+
+.strategy-rule-list {
+  display: grid;
+  margin: 12px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.strategy-rule-list li {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1.45fr);
+  gap: 14px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.strategy-rule-list li span {
+  color: var(--muted);
+}
+
+.strategy-rule-list li b {
+  min-width: 0;
+  color: var(--ink-soft);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.strategy-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.strategy-data-status {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.strategy-status-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.strategy-status-grid > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 9px 10px;
+  border-right: 1px solid var(--line);
+  background: var(--glass);
+}
+
+.strategy-status-grid > span:last-child {
+  border-right: 0;
+}
+
+.strategy-status-grid small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.strategy-status-grid b {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-issues {
+  display: grid;
+  gap: 4px;
+  margin: 9px 0 0;
+  padding: 0;
+  color: #9a5d00;
+  font-size: 12px;
+  list-style: none;
+}
+
+.evidence-line {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.strategy-editor-basics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 110px;
+  gap: 0 12px;
+}
+
+.strategy-description-field {
+  grid-column: 1 / -1;
+}
+
+.strategy-enabled-field :deep(.el-form-item__content) {
+  min-height: 32px;
+}
+
+.strategy-rule-editor-heading {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.strategy-rule-editor-heading h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.strategy-rule-editor-heading span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.strategy-rule-editor-list {
+  display: grid;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.strategy-rule-editor-row {
+  display: grid;
+  grid-template-columns: 24px minmax(150px, 1.15fr) 104px minmax(190px, 1.35fr) auto 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.rule-index {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.rule-value-editor,
+.rule-range-editor,
+.rule-lookback-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rule-value-editor > :deep(*) {
+  min-width: 0;
+}
+
+.rule-range-editor :deep(.el-input) {
+  min-width: 0;
+}
+
+.rule-range-editor > span,
+.rule-lookback-field > span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.rule-lookback-field :deep(.el-input-number) {
+  width: 92px;
+}
+
+.rule-remove-button {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+}
+
+.strategy-sort-list {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.strategy-sort-row {
+  gap: 10px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--line);
+}
+
+.strategy-sort-row.is-dragging {
+  opacity: 0.45;
+}
+
+.strategy-drag-handle {
+  flex: 0 0 28px;
+  cursor: grab;
+  color: var(--muted);
+}
+
+.strategy-sort-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.strategy-sort-name b {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-sort-name small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.strategy-sort-actions :deep(.el-button) {
+  width: 34px;
+  height: 34px;
+  margin: 0;
 }
 
 .meta-line {
@@ -1621,6 +2742,134 @@ onBeforeUnmount(() => {
   .mobile-batch-return {
     justify-items: end;
     text-align: right;
+  }
+
+  .screener-mode-switch {
+    margin-bottom: 12px;
+  }
+
+  .screener-mode-switch :deep(.el-segmented) {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .strategy-panel {
+    margin: 0 0 14px;
+    padding: 12px 0 14px;
+  }
+
+  .strategy-toolbar {
+    display: grid;
+    gap: 10px;
+  }
+
+  .strategy-selector {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .strategy-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(44px, 0.75fr);
+    gap: 8px;
+  }
+
+  .strategy-actions :deep(.el-button),
+  .strategy-actions :deep(.el-dropdown),
+  .strategy-actions :deep(.el-dropdown .el-button) {
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+  }
+
+  .strategy-title-line {
+    display: grid;
+    gap: 8px;
+  }
+
+  .strategy-title-line h2 {
+    font-size: 17px;
+  }
+
+  .strategy-flags {
+    flex-wrap: wrap;
+  }
+
+  .strategy-rule-list li {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 8px 0;
+  }
+
+  .strategy-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategy-status-grid > span {
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .strategy-status-grid > span:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .strategy-status-grid > span:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  .mobile-evidence-line {
+    display: -webkit-box;
+    margin-top: 8px;
+    padding-top: 8px;
+    overflow: hidden;
+    border-top: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 11px;
+    line-height: 1.45;
+    text-align: left;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .strategy-editor-basics {
+    grid-template-columns: minmax(0, 1fr) minmax(110px, 0.6fr);
+  }
+
+  .strategy-enabled-field {
+    grid-column: 1 / -1;
+  }
+
+  .strategy-rule-editor-row {
+    grid-template-columns: 24px minmax(0, 1fr) 34px;
+    gap: 8px;
+  }
+
+  .rule-index {
+    grid-row: 1;
+  }
+
+  .rule-type-select {
+    grid-column: 2;
+  }
+
+  .rule-operator-select,
+  .rule-value-editor,
+  .rule-lookback-field {
+    grid-column: 2;
+  }
+
+  .rule-remove-button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .rule-range-editor {
+    width: 100%;
+  }
+
+  .rule-lookback-field {
+    justify-content: flex-start;
   }
 }
 

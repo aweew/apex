@@ -56,3 +56,35 @@ test('batch backtest uses a current trailing two-year range', () => {
   assert.match(screenerSource, /endDate:\s*backtestRange\.endDate/)
   assert.doesNotMatch(screenerSource, /endDate:\s*'2026-08-01'/)
 })
+
+test('screener exposes free and strategy modes with a single primary strategy action', () => {
+  assert.match(screenerSource, /activeMode = ref\('free'\)/)
+  assert.match(screenerSource, /<el-segmented v-model="activeMode" :options="modeOptions"/)
+  assert.match(screenerSource, /class="strategy-panel"/)
+  assert.match(screenerSource, /运行策略/)
+  assert.match(screenerSource, /class="strategy-rule-list"/)
+})
+
+test('strategy maintenance supports copy edit toggle delete and ordering', () => {
+  assert.match(screenerSource, /copyScreenerTemplate/)
+  assert.match(screenerSource, /updateScreenerStrategy/)
+  assert.match(screenerSource, /toggleScreenerStrategy/)
+  assert.match(screenerSource, /deleteScreenerStrategy/)
+  assert.match(screenerSource, /reorderScreenerStrategies/)
+  assert.match(screenerSource, /draggable="true"/)
+  assert.match(screenerSource, /@drop="onStrategyDrop\(strategy.id\)"/)
+})
+
+test('strategy results show data cutoffs issues and per-stock evidence', () => {
+  assert.match(screenerSource, /class="strategy-data-status"/)
+  assert.match(screenerSource, /实时截面/)
+  assert.match(screenerSource, /日线截止/)
+  assert.match(screenerSource, /class="strategy-issues"/)
+  assert.match(screenerSource, /class="evidence-line"/)
+  assert.match(screenerSource, /class="mobile-evidence-line"/)
+})
+
+test('changing strategy clears results from the previously selected strategy', () => {
+  assert.match(screenerSource, /@change="onStrategyChange"/)
+  assert.match(screenerSource, /function onStrategyChange\(\) \{[\s\S]*strategyRunResult\.value = null[\s\S]*\}/)
+})
