@@ -437,16 +437,72 @@ public class ScreenerStrategyServiceImpl implements IScreenerStrategyService {
 
     private String buildSummary(ScreenerRuleTypeEnum type, ScreenerOperatorEnum operator,
                                 ScreenerStrategyRule rule) {
+        if (ScreenerRuleTypeEnum.MARKET_BOARD.equals(type)) {
+            return "市场范围 " + ("MAIN_BOARD".equalsIgnoreCase(rule.getTextValue())
+                    ? "沪深主板" : rule.getTextValue());
+        }
+        if (ScreenerRuleTypeEnum.EXCLUDE_ST.equals(type)) {
+            return Objects.nonNull(rule.getBoolValue()) && rule.getBoolValue() == 1 ? "排除 ST" : "包含 ST";
+        }
+        if (ScreenerRuleTypeEnum.INTRADAY_CURRENT_ABOVE_AVG.equals(type)) {
+            return Objects.nonNull(rule.getBoolValue()) && rule.getBoolValue() == 1
+                    ? "当前价不低于分时均价" : "当前价低于分时均价";
+        }
         String name = Objects.nonNull(type) ? type.getDesc() : rule.getRuleType();
         String lookback = Objects.nonNull(rule.getLookbackDays()) ? "近 " + rule.getLookbackDays() + " 日 " : "";
         if (ScreenerOperatorEnum.BETWEEN.equals(operator)) {
-            return lookback + name + " " + decimal(rule.getMinValue()) + " - " + decimal(rule.getMaxValue());
+            return lookback + name + " " + formatRuleValue(type, rule, false)
+                    + " - " + formatRuleValue(type, rule, true);
         }
-        Object value = Objects.nonNull(rule.getMinValue()) ? decimal(rule.getMinValue())
-                : Objects.nonNull(rule.getIntValue()) ? rule.getIntValue()
-                : StringUtils.isNotBlank(rule.getTextValue()) ? rule.getTextValue()
-                : Objects.nonNull(rule.getBoolValue()) ? (rule.getBoolValue() == 1 ? "是" : "否") : "-";
-        return lookback + name + " " + (Objects.nonNull(operator) ? operator.getDesc() : "") + " " + value;
+        return lookback + name + " " + (Objects.nonNull(operator) ? operator.getDesc() : "")
+                + " " + formatRuleValue(type, rule, false);
+    }
+
+    private String formatRuleValue(ScreenerRuleTypeEnum type, ScreenerStrategyRule rule, boolean maximum) {
+        BigDecimal numberValue = maximum ? rule.getMaxValue() : rule.getMinValue();
+        if (Objects.nonNull(numberValue)) {
+            if (ScreenerRuleTypeEnum.TOTAL_MV.equals(type) || ScreenerRuleTypeEnum.CIRC_MV.equals(type)
+                    || ScreenerRuleTypeEnum.AMOUNT.equals(type)) {
+                return decimal(numberValue.movePointLeft(8)) + "亿";
+            }
+            if (ScreenerRuleTypeEnum.SEAL_AMOUNT.equals(type)) {
+                return decimal(numberValue.movePointLeft(4)) + "万";
+            }
+            String value = decimal(numberValue);
+            if (ScreenerRuleTypeEnum.PCT_CHG.equals(type)
+                    || ScreenerRuleTypeEnum.TURNOVER_RATE.equals(type)
+                    || ScreenerRuleTypeEnum.RANGE_RETURN.equals(type)
+                    || ScreenerRuleTypeEnum.RS20.equals(type)
+                    || ScreenerRuleTypeEnum.ATR_PCT.equals(type)
+                    || ScreenerRuleTypeEnum.PRICE_POSITION.equals(type)
+                    || ScreenerRuleTypeEnum.INTRADAY_ABOVE_AVG_RATIO.equals(type)) {
+                return value + "%";
+            }
+            return value;
+        }
+        if (Objects.nonNull(rule.getIntValue())) {
+            String unit = switch (type) {
+                case LIMIT_UP_LEVEL -> "板";
+                case LIMIT_UP_COUNT, BREAK_COUNT -> "次";
+                case UP_DAYS -> "天";
+                case INTRADAY_MAX_BELOW_MINUTES -> "分钟";
+                case THEME_LINKAGE_COUNT -> "家";
+                default -> "";
+            };
+            return rule.getIntValue() + unit;
+        }
+        if (StringUtils.isNotBlank(rule.getTextValue())) {
+            String textValue = rule.getTextValue();
+            if ((ScreenerRuleTypeEnum.FIRST_SEAL_TIME.equals(type)
+                    || ScreenerRuleTypeEnum.LAST_SEAL_TIME.equals(type)) && textValue.length() == 6) {
+                return textValue.substring(0, 2) + ":" + textValue.substring(2, 4);
+            }
+            return textValue;
+        }
+        if (Objects.nonNull(rule.getBoolValue())) {
+            return rule.getBoolValue() == 1 ? "是" : "否";
+        }
+        return "-";
     }
 
     private String decimal(BigDecimal value) {
