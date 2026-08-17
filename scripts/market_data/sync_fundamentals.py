@@ -103,6 +103,53 @@ def list_codes(conn, limit: Optional[int] = None, codes: Optional[Sequence[str]]
         return [r["code"] for r in cur.fetchall()]
 
 
+def list_missing_codes(conn, limit: Optional[int] = None, mode: str = "all") -> List[str]:
+    conditions = {
+        "indicator": "t2.code IS NULL",
+        "abstract": "t3.code IS NULL",
+        "reports": "t4.has_profit = 0 OR t4.has_balance = 0 OR t4.has_cashflow = 0 OR t4.code IS NULL",
+        "all": (
+            "t2.code IS NULL OR t3.code IS NULL OR t4.code IS NULL "
+            "OR t4.has_profit = 0 OR t4.has_balance = 0 OR t4.has_cashflow = 0"
+        ),
+    }
+    sql = f"""
+    SELECT t1.code
+    FROM stock_basic t1
+    LEFT JOIN (
+      SELECT code
+      FROM stock_fin_indicator
+      WHERE deleted = 0
+      GROUP BY code
+    ) t2 ON t2.code = t1.code
+    LEFT JOIN (
+      SELECT code
+      FROM stock_fin_abstract
+      WHERE deleted = 0
+      GROUP BY code
+    ) t3 ON t3.code = t1.code
+    LEFT JOIN (
+      SELECT code,
+             MAX(CASE WHEN statement_type = 'profit' THEN 1 ELSE 0 END) AS has_profit,
+             MAX(CASE WHEN statement_type = 'balance' THEN 1 ELSE 0 END) AS has_balance,
+             MAX(CASE WHEN statement_type = 'cashflow' THEN 1 ELSE 0 END) AS has_cashflow
+      FROM stock_fin_report_item
+      WHERE deleted = 0
+      GROUP BY code
+    ) t4 ON t4.code = t1.code
+    WHERE t1.deleted = 0
+      AND ({conditions[mode]})
+    ORDER BY t1.code
+    """
+    params = []
+    if limit:
+        sql += " LIMIT %s"
+        params.append(limit)
+    with conn.cursor() as cur:
+        cur.execute(sql, tuple(params))
+        return [row["code"] for row in cur.fetchall()]
+
+
 def parse_date(val: Any) -> Optional[date]:
     if val is None or (isinstance(val, float) and math.isnan(val)):
         return None
@@ -429,7 +476,7 @@ def run_mode(
     sleep_s: float,
     resume: bool,
     progress: Dict[str, Any],
-) -> None:
+) -> int:
     done = progress.get(mode, {}) if resume else {}
     total = len(codes)
     ok_n = fail_n = skip_n = 0
@@ -447,6 +494,8 @@ def run_mode(
                 n = sync_reports(conn, code)
             else:
                 raise ValueError(mode)
+            if n <= 0:
+                raise RuntimeError("数据源未返回可落库记录")
             mark_done(progress, mode, code, True, f"rows={n}")
             ok_n += 1
             print(f"[{idx}/{total}] {code} {mode} ok rows={n}")
@@ -458,6 +507,7 @@ def run_mode(
         if sleep_s > 0:
             time.sleep(sleep_s)
     print(f"{mode} 完成：ok={ok_n} fail={fail_n} skip={skip_n}")
+    return fail_n
 
 
 def main() -> int:
@@ -472,18 +522,25 @@ def main() -> int:
     parser.add_argument("--codes", default="", help="逗号分隔代码，优先于库内列表")
     parser.add_argument("--limit", type=int, default=0, help="从 stock_basic 取前 N 只")
     parser.add_argument("--sleep", type=float, default=0.8, help="每只股票间隔秒")
+    parser.add_argument("--missing", action="store_true", help="仅同步缺少指标、摘要或三大报表的股票")
     parser.add_argument("--no-resume", action="store_true", help="忽略进度强制重跑")
     args = parser.parse_args()
 
     code_list = [c.strip() for c in args.codes.split(",") if c.strip()] or None
     limit = args.limit if args.limit and args.limit > 0 else None
-    resume = not args.no_resume
+    resume = not args.no_resume and not args.missing
     progress = load_progress()
 
     conn = db_conn()
     try:
-        codes = list_codes(conn, limit=limit, codes=code_list)
+        if args.missing and not code_list:
+            codes = list_missing_codes(conn, limit=limit, mode=args.mode)
+        else:
+            codes = list_codes(conn, limit=limit, codes=code_list)
         if not codes:
+            if args.missing:
+                print("无基本面缺口，结束")
+                return 0
             print("没有可同步的股票代码（请先同步 stock_basic 列表）", file=sys.stderr)
             return 1
         print(f"待同步 {len(codes)} 只，mode={args.mode}, resume={resume}, sleep={args.sleep}")
@@ -494,9 +551,10 @@ def main() -> int:
         else:
             modes = [args.mode]
 
+        failed_count = 0
         for mode in modes:
-            run_mode(conn, mode, codes, args.sleep, resume, progress)
-        return 0
+            failed_count += run_mode(conn, mode, codes, args.sleep, resume, progress)
+        return 1 if failed_count > 0 else 0
     finally:
         conn.close()
 

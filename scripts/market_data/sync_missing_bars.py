@@ -11,7 +11,9 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from datetime import date, datetime
 from pathlib import Path
+from typing import Optional, Sequence
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -44,19 +46,44 @@ def db_conn():
     )
 
 
-def fetch_missing(conn, batch: int, min_bars: int) -> list[str]:
-    sql = """
-    SELECT s.code
-    FROM stock_basic s
+def fetch_missing(
+    conn,
+    batch: int,
+    min_bars: int,
+    expected_date: Optional[date] = None,
+    excluded_codes: Optional[Sequence[str]] = None,
+) -> list[str]:
+    conditions = ["t2.bar_count IS NULL OR t2.bar_count < %s"]
+    params = [min_bars]
+    if expected_date is not None:
+        conditions.append("t2.latest_trade_date < %s")
+        params.append(expected_date)
+    excluded = [code for code in (excluded_codes or []) if code]
+    exclude_sql = ""
+    if excluded:
+        placeholders = ",".join(["%s"] * len(excluded))
+        exclude_sql = f" AND t1.code NOT IN ({placeholders})"
+        params.extend(excluded)
+    params.append(batch)
+    sql = f"""
+    SELECT t1.code
+    FROM stock_basic t1
     LEFT JOIN (
-      SELECT code, COUNT(*) c FROM bar_daily WHERE deleted = 0 GROUP BY code
-    ) b ON b.code = s.code
-    WHERE s.deleted = 0 AND (b.c IS NULL OR b.c < %s)
-    ORDER BY s.code
+      SELECT code,
+             COUNT(*) AS bar_count,
+             MAX(trade_date) AS latest_trade_date
+      FROM bar_daily
+      WHERE deleted = 0
+      GROUP BY code
+    ) t2 ON t2.code = t1.code
+    WHERE t1.deleted = 0
+      AND ({' OR '.join(conditions)})
+      {exclude_sql}
+    ORDER BY t1.code
     LIMIT %s
     """
     with conn.cursor() as cur:
-        cur.execute(sql, (min_bars, batch))
+        cur.execute(sql, tuple(params))
         return [r["code"] for r in cur.fetchall()]
 
 
@@ -68,23 +95,39 @@ def main() -> int:
     p.add_argument("--start", default="20240101")
     p.add_argument("--sleep", type=float, default=0.18)
     p.add_argument("--min-bars", type=int, default=30, help="少于此根视为缺口")
+    p.add_argument("--expected-date", default="", help="期望最新交易日 yyyy-MM-dd")
     args = p.parse_args()
+
+    expected_date = None
+    if args.expected_date:
+        try:
+            expected_date = datetime.strptime(args.expected_date, "%Y-%m-%d").date()
+        except ValueError:
+            p.error("--expected-date 必须为 yyyy-MM-dd")
 
     script = ROOT / "sync_a_share.py"
     rounds = max(0, int(args.rounds))
     done_rounds = 0
+    attempted_codes = set()
     while True:
         if rounds and done_rounds >= rounds:
             break
         conn = db_conn()
         try:
-            codes = fetch_missing(conn, max(1, int(args.batch)), max(1, int(args.min_bars)))
+            codes = fetch_missing(
+                conn,
+                max(1, int(args.batch)),
+                max(1, int(args.min_bars)),
+                expected_date,
+                sorted(attempted_codes),
+            )
         finally:
             conn.close()
         if not codes:
-            print("无缺口，结束")
+            print("无未处理缺口，结束")
             return 0
         done_rounds += 1
+        attempted_codes.update(codes)
         joined = ",".join(codes)
         print(f"==== round {done_rounds} codes={len(codes)} first={codes[0]} last={codes[-1]} ====")
         cmd = [
@@ -101,6 +144,8 @@ def main() -> int:
             str(args.sleep),
             "--no-resume",
         ]
+        if expected_date is not None:
+            cmd.extend(["--end", expected_date.strftime("%Y%m%d")])
         # Windows 上偶发 exit=-1（进程被外部打断/管道异常）；对瞬时失败重试一轮
         rc = -1
         attempts = 2
