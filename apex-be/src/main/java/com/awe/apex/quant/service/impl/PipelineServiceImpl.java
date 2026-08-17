@@ -8,8 +8,8 @@ import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.PipelineRunReq;
 import com.awe.apex.quant.domain.dto.PipelineRunResp;
 import com.awe.apex.quant.domain.dto.SignalRunReq;
-import com.awe.apex.quant.domain.dto.UniverseRefreshReq;
-import com.awe.apex.quant.domain.dto.UniverseRefreshResp;
+import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.domain.entity.StrategySignalEntity;
 import com.awe.apex.quant.market.TradingCalendar;
@@ -101,14 +101,13 @@ public class PipelineServiceImpl implements IPipelineService {
             steps.add("同步过期/缺失日线 成功" + barSuccess + " 失败" + barFail);
         }
         if (refreshUniverse) {
-            UniverseRefreshReq universeReq = new UniverseRefreshReq();
-            universeReq.setScope("MARKET");
-            universeReq.setLooseFilter(true);
-            universeReq.setGroupName(groupName);
-            UniverseRefreshResp universe = universeService.refresh(universeReq);
-            universeCount = universe.getCount();
-            batchNo = universe.getBatchNo();
-            steps.add("股票池入选 " + universeCount + " 批号 " + batchNo);
+            List<UniverseSnapshot> universe = universeService.latest();
+            if (CollUtil.isEmpty(universe)) {
+                throw new BusinessException("共享股票池尚未发布，请管理员先刷新全市场股票池");
+            }
+            universeCount = universe.size();
+            batchNo = universe.get(0).getBatchNo();
+            steps.add("使用共享股票池 " + universeCount + " 批号 " + batchNo);
         }
         if (runSignals) {
             SignalRunReq signalReq = new SignalRunReq();

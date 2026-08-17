@@ -4,6 +4,7 @@ import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.UniverseRefreshReq;
 import com.awe.apex.quant.domain.dto.UniverseRefreshResp;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IUniverseService;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,8 +25,11 @@ public class UniverseController {
     @Resource
     private IUniverseService universeService;
 
+    @Resource
+    private ApexUserAuthService userAuthService;
+
     /**
-     * 刷新股票池
+     * 发布共享股票池
      *
      * @param req 请求
      * @return 结果
@@ -35,6 +39,7 @@ public class UniverseController {
         if (req == null) {
             req = new UniverseRefreshReq();
         }
+        userAuthService.requireAdmin();
         return Result.success(universeService.refresh(req));
     }
 

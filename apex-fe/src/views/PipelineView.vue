@@ -26,7 +26,7 @@ const stepCards = computed(() => [
   { key: 'quotes', label: '刷新行情', on: form.value.refreshQuotes, tip: '自选最新价' },
   { key: 'bars', label: '同步日线', on: form.value.syncStaleBars, tip: '补齐 K 线' },
   { key: 'decision', label: '智能决策', on: form.value.runDecision, tip: '池·信号·观察' },
-  { key: 'universe', label: '刷新股票池', on: form.value.refreshUniverse, tip: '全市场有日线标的' },
+  { key: 'universe', label: '使用共享股票池', on: form.value.refreshUniverse, tip: '管理员发布的全市场池' },
   { key: 'signals', label: '运行信号', on: form.value.runSignals, tip: '旧路径' },
   { key: 'daily', label: '日终清单', on: form.value.runDaily, tip: '旧路径' },
 ])

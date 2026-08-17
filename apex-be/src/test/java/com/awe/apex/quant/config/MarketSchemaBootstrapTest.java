@@ -78,14 +78,15 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN price_adjustment");
         assertContains(executed, "ALTER TABLE backtest_job ADD COLUMN data_fingerprint");
         assertContains(executed, "ADD KEY idx_backtest_user_comparison_batch");
-        assertContains(executed, "ALTER TABLE universe_snapshot ADD COLUMN user_id");
+        assertContains(executed, "ALTER TABLE universe_snapshot ADD COLUMN creator_user_id");
         assertContains(executed, "ALTER TABLE universe_snapshot ADD COLUMN as_of_date");
         assertContains(executed, "UPDATE universe_snapshot t1");
         assertContains(executed, "SET t1.as_of_date = DATE(t1.create_time)");
-        assertContains(executed, "ALTER TABLE universe_snapshot MODIFY COLUMN user_id BIGINT NOT NULL");
+        assertContains(executed, "ALTER TABLE universe_snapshot MODIFY COLUMN creator_user_id BIGINT NOT NULL");
         assertContains(executed, "ALTER TABLE universe_snapshot MODIFY COLUMN as_of_date DATE NOT NULL");
-        assertContains(executed, "ADD KEY idx_universe_user_batch");
-        assertContains(executed, "ADD KEY idx_universe_user_as_of_id");
+        assertContains(executed, "ADD KEY idx_universe_batch");
+        assertContains(executed, "ADD KEY idx_universe_as_of_id");
+        assertContains(executed, "ADD KEY idx_universe_creator_id");
         assertContains(executed, "CREATE TABLE IF NOT EXISTS backtest_experiment");
         assertContains(executed, "init_cash DECIMAL(20, 2) NULL COMMENT '初始资金'");
         assertContains(executed, "execution_model_version VARCHAR(32) NULL COMMENT '成交语义版本'");
@@ -94,8 +95,6 @@ class MarketSchemaBootstrapTest {
         assertContains(executed, "ALTER TABLE backtest_experiment ADD COLUMN price_adjustment");
         assertContains(executed, "ALTER TABLE backtest_experiment ADD COLUMN init_cash");
         assertContains(executed, "KEY idx_backtest_experiment_user_id (user_id, id)");
-        assertContains(executed, "ALTER TABLE sync_job ADD COLUMN user_id");
-        assertContains(executed, "ADD KEY idx_sync_job_user_type_status");
         assertContains(executed, "ALTER TABLE decision_run ADD COLUMN user_id");
         assertContains(executed, "ADD KEY idx_decision_run_user_publish");
         assertContains(executed, "ALTER TABLE daily_action ADD COLUMN user_id");

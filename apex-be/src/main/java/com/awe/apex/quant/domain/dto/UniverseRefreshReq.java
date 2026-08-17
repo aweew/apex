@@ -12,12 +12,12 @@ import java.util.List;
 public class UniverseRefreshReq {
 
     /**
-     * 代码列表，空则取自选
+     * 手工代码，仅用于识别并拒绝非共享发布请求
      */
     private List<String> codes;
 
     /**
-     * 分组
+     * 自选分组，仅用于识别并拒绝非共享发布请求
      */
     private String groupName;
 
@@ -27,7 +27,7 @@ public class UniverseRefreshReq {
     private Boolean looseFilter;
 
     /**
-     * 候选范围：WATCHLIST（默认，自选） / MARKET（有足够日线的全市场）
+     * 候选范围：仅支持 MARKET（有足够日线的全市场）
      */
     private String scope;
 

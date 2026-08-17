@@ -185,33 +185,41 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
         ensureIndex("backtest_job", "idx_backtest_user_comparison_batch",
                 "ALTER TABLE backtest_job ADD KEY idx_backtest_user_comparison_batch (user_id, comparison_batch_id)");
 
-        boolean universeUserAdded = ensureColumn("universe_snapshot", "user_id",
-                "ALTER TABLE universe_snapshot ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
+        if (columnExists("universe_snapshot", "user_id")
+                && !columnExists("universe_snapshot", "creator_user_id")) {
+            jdbcTemplate.execute("ALTER TABLE universe_snapshot CHANGE COLUMN user_id creator_user_id BIGINT NULL COMMENT '创建用户ID'");
+        }
+        boolean universeCreatorAdded = ensureColumn("universe_snapshot", "creator_user_id",
+                "ALTER TABLE universe_snapshot ADD COLUMN creator_user_id BIGINT NULL COMMENT '创建用户ID' AFTER id");
         boolean universeDateAdded = ensureColumn("universe_snapshot", "as_of_date",
                 "ALTER TABLE universe_snapshot ADD COLUMN as_of_date DATE NULL COMMENT '数据截止日' AFTER batch_no");
         jdbcTemplate.update("""
                 UPDATE universe_snapshot t1
                 JOIN (
-                    SELECT MIN(user_id) AS user_id
+                    SELECT MIN(user_id) AS creator_user_id
                     FROM apex_user_profile
                     WHERE role = 'ADMIN'
                 ) t2 ON 1 = 1
-                SET t1.user_id = t2.user_id
-                WHERE t1.user_id IS NULL
+                SET t1.creator_user_id = t2.creator_user_id
+                WHERE t1.creator_user_id IS NULL
                 """);
         jdbcTemplate.update("""
                 UPDATE universe_snapshot t1
                 SET t1.as_of_date = DATE(t1.create_time)
                 WHERE t1.as_of_date IS NULL
                 """);
-        ensureRequiredColumn("universe_snapshot", "user_id", universeUserAdded,
-                "ALTER TABLE universe_snapshot MODIFY COLUMN user_id BIGINT NOT NULL COMMENT '所属用户ID'");
+        ensureRequiredColumn("universe_snapshot", "creator_user_id", universeCreatorAdded,
+                "ALTER TABLE universe_snapshot MODIFY COLUMN creator_user_id BIGINT NOT NULL COMMENT '创建用户ID'");
         ensureRequiredColumn("universe_snapshot", "as_of_date", universeDateAdded,
                 "ALTER TABLE universe_snapshot MODIFY COLUMN as_of_date DATE NOT NULL COMMENT '数据截止日'");
-        ensureIndex("universe_snapshot", "idx_universe_user_batch",
-                "ALTER TABLE universe_snapshot ADD KEY idx_universe_user_batch (user_id, batch_no)");
-        ensureIndex("universe_snapshot", "idx_universe_user_as_of_id",
-                "ALTER TABLE universe_snapshot ADD KEY idx_universe_user_as_of_id (user_id, as_of_date, id)");
+        dropIndex("universe_snapshot", "idx_universe_user_batch");
+        dropIndex("universe_snapshot", "idx_universe_user_as_of_id");
+        ensureIndex("universe_snapshot", "idx_universe_batch",
+                "ALTER TABLE universe_snapshot ADD KEY idx_universe_batch (batch_no)");
+        ensureIndex("universe_snapshot", "idx_universe_as_of_id",
+                "ALTER TABLE universe_snapshot ADD KEY idx_universe_as_of_id (as_of_date, id)");
+        ensureIndex("universe_snapshot", "idx_universe_creator_id",
+                "ALTER TABLE universe_snapshot ADD KEY idx_universe_creator_id (creator_user_id, id)");
 
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS backtest_experiment (
@@ -267,10 +275,10 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
      * 后台任务、决策、日记和策略信号的用户隔离结构
      */
     private void ensureUserIsolationSchema() {
-        ensureColumn("sync_job", "user_id",
-                "ALTER TABLE sync_job ADD COLUMN user_id BIGINT NULL COMMENT '用户私有任务所属用户ID，共享任务为空' AFTER id");
-        ensureIndex("sync_job", "idx_sync_job_user_type_status",
-                "ALTER TABLE sync_job ADD KEY idx_sync_job_user_type_status (user_id, task_type, status, id)");
+        dropIndex("sync_job", "idx_sync_job_user_type_status");
+        if (columnExists("sync_job", "user_id")) {
+            jdbcTemplate.execute("ALTER TABLE sync_job DROP COLUMN user_id");
+        }
 
         ensureColumn("decision_run", "user_id",
                 "ALTER TABLE decision_run ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
@@ -681,17 +689,28 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
      * @param ddl    ALTER 语句
      */
     private boolean ensureColumn(String table, String column, String ddl) {
+        if (!columnExists(table, column)) {
+            jdbcTemplate.execute(ddl);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 判断列是否存在
+     *
+     * @param table  表名
+     * @param column 列名
+     * @return 是否存在
+     */
+    private boolean columnExists(String table, String column) {
         Integer cnt = jdbcTemplate.queryForObject(
                 """
                         SELECT COUNT(*) FROM information_schema.COLUMNS
                         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
                         """,
                 Integer.class, table, column);
-        if (Objects.isNull(cnt) || cnt == 0) {
-            jdbcTemplate.execute(ddl);
-            return true;
-        }
-        return false;
+        return Objects.nonNull(cnt) && cnt > 0;
     }
 
     /**

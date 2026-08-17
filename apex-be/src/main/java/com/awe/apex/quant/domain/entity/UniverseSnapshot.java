@@ -34,9 +34,9 @@ public class UniverseSnapshot implements Serializable {
     private Long id;
 
     /**
-     * 所属用户ID
+     * 创建用户ID
      */
-    private Long userId;
+    private Long creatorUserId;
 
     /**
      * 批次号

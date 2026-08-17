@@ -57,8 +57,6 @@ import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceItem;
 import com.awe.apex.quant.domain.dto.SignalConfluenceResp;
 import com.awe.apex.quant.domain.dto.SignalRunReq;
-import com.awe.apex.quant.domain.dto.UniverseRefreshReq;
-import com.awe.apex.quant.domain.dto.UniverseRefreshResp;
 import com.awe.apex.quant.domain.dto.ValuationBriefResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.DailyAction;
@@ -307,36 +305,18 @@ public class DecisionServiceImpl implements IDecisionService {
             posMap.put(holding.getCode(), holding);
         }
 
-        // 3. 刷新全A股票池：本地日线≥60 的全市场（不截断市值 TopN）；宽松质量不因估值硬踢
-        // 默认不含北交所（京市），仅 includeBj=true 时纳入
+        // 3. 读取管理员发布的全A共享股票池；回放只使用截止日已存在的批次
+        List<UniverseSnapshot> universeList = context.getMode() == DecisionMode.REPLAY
+                ? universeService.latestAsOf(actionDate) : universeService.latest();
+        if (CollUtil.isEmpty(universeList)) {
+            throw new BusinessException("共享股票池尚未发布，请管理员先刷新全市场股票池");
+        }
+        int universeCount = universeList.size();
         boolean includeBj = Boolean.TRUE.equals(safe.getIncludeBj());
-        UniverseRefreshReq universeReq = new UniverseRefreshReq();
-        universeReq.setLooseFilter(true);
-        universeReq.setScope("MARKET");
-        universeReq.setIncludeBj(includeBj);
-        if (context.getMode() == DecisionMode.REPLAY) {
-            universeReq.setAsOfDate(actionDate);
-        }
-        UniverseRefreshResp universeResp;
-        try {
-            universeResp = universeService.refresh(universeReq);
-        } catch (BusinessException ex) {
-            if (context.getMode() == DecisionMode.REPLAY) {
-                throw ex;
-            }
-            log.warn("全A股票池为空，回退自选分组 group={} err={}", groupName, ex.getMessage());
-            UniverseRefreshReq fallbackReq = new UniverseRefreshReq();
-            fallbackReq.setLooseFilter(true);
-            fallbackReq.setGroupName(groupName);
-            fallbackReq.setIncludeBj(includeBj);
-            universeResp = universeService.refresh(fallbackReq);
-        }
-        int universeCount = Objects.nonNull(universeResp.getCount()) ? universeResp.getCount() : 0;
 
-        // 3. 跑 S1/S2/S3：全A质量池 + 热点；持仓仅附加以便产出卖出信号（观察池不同步卖出）
+        // 4. 跑 S1/S2/S3：全A质量池 + 热点；持仓仅附加以便产出卖出信号（观察池不同步卖出）
         List<String> signalCodes = new ArrayList<>();
         Set<String> signalCodeSet = new HashSet<>();
-        List<UniverseSnapshot> universeList = universeService.listByBatchNo(universeResp.getBatchNo());
         if (CollUtil.isNotEmpty(universeList)) {
             for (UniverseSnapshot snapshot : universeList) {
                 if (StringUtils.isNotBlank(snapshot.getCode()) && signalCodeSet.add(snapshot.getCode())) {

@@ -24,7 +24,7 @@ public class PipelineRunReq {
     private Boolean syncStaleBars;
 
     /**
-     * 是否刷新股票池
+     * 是否使用已发布的共享股票池
      */
     private Boolean refreshUniverse;
 

@@ -77,40 +77,38 @@ class DataSyncJobServiceOwnershipTest {
     }
 
     @Test
-    void manualDecisionStoresCurrentOwnerAndDeduplicatesByOwner() {
+    void manualDecisionDoesNotStoreUserAndUsesSharedTaskRecord() {
         SyncStartReq request = new SyncStartReq();
         request.setTaskType("DECISION");
 
         service.start(request);
 
-        assertEquals(7L, savedJob.get().getUserId());
-        ArgumentCaptor<Wrapper<SyncJob>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
-        verify(syncJobMapper).selectOne(queryCaptor.capture());
-        assertTrue(queryCaptor.getValue().getSqlSegment().contains("user_id"));
+        assertEquals("DECISION", savedJob.get().getTaskType());
+        verify(syncJobMapper, never()).selectOne(any());
     }
 
     @Test
-    void scheduledDecisionUsesExplicitOwner() {
+    void scheduledDecisionUsesExplicitRuntimeUserWithoutPersistingOwner() {
         SyncStartReq request = new SyncStartReq();
         request.setTaskType("DECISION");
 
         service.startForUser(request, 9L);
 
-        assertEquals(9L, savedJob.get().getUserId());
+        assertEquals("DECISION", savedJob.get().getTaskType());
     }
 
     @Test
-    void rejectsReadingAnotherUsersDecisionJob() {
-        savedJob.set(SyncJob.builder().id(201L).userId(8L).taskType("DECISION").status("SUCCESS").build());
+    void sharedDecisionJobIsVisibleToAllUsers() {
+        savedJob.set(SyncJob.builder().id(201L).taskType("DECISION").status("SUCCESS").build());
 
-        assertThrows(BusinessException.class, () -> service.getJob(201L));
+        assertEquals(201L, service.getJob(201L).getId());
     }
 
     @Test
-    void rejectsStoppingAnotherUsersDecisionJob() {
-        savedJob.set(SyncJob.builder().id(201L).userId(8L).taskType("DECISION").status("RUNNING").build());
+    void completedSharedDecisionJobCanBeReadWithoutUserCheck() {
+        savedJob.set(SyncJob.builder().id(201L).taskType("DECISION").status("SUCCESS").build());
 
-        assertThrows(BusinessException.class, () -> service.stop(201L));
+        assertEquals(201L, service.stop(201L).getId());
     }
 
     @Test
@@ -140,7 +138,7 @@ class DataSyncJobServiceOwnershipTest {
     }
 
     @Test
-    void recentJobsContainsSharedTasksAndCurrentUsersDecisionsOnly() {
+    void recentJobsContainsAllSharedTasks() {
         when(syncJobMapper.selectList(any())).thenReturn(java.util.List.of());
 
         service.recentJobs(20);
@@ -148,8 +146,7 @@ class DataSyncJobServiceOwnershipTest {
         ArgumentCaptor<Wrapper<SyncJob>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(syncJobMapper).selectList(queryCaptor.capture());
         Wrapper<SyncJob> query = queryCaptor.getValue();
-        assertTrue(query.getSqlSegment().contains("user_id"));
-        assertTrue(query.getSqlSegment().contains("task_type"));
+        assertTrue(query.getSqlSegment().contains("id"));
     }
 
     @Test

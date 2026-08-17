@@ -14,7 +14,6 @@ import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.UniverseSnapshotMapper;
-import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IUniverseService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -48,9 +47,6 @@ public class UniverseServiceImpl implements IUniverseService {
     private static final BigDecimal MIN_CIRC_MV = new BigDecimal("3000000000");
 
     @Resource
-    private WatchlistMapper watchlistMapper;
-
-    @Resource
     private BarDailyMapper barDailyMapper;
 
     @Resource
@@ -71,19 +67,20 @@ public class UniverseServiceImpl implements IUniverseService {
         Long currentUserId = currentUserId();
         LocalDate asOfDate = Objects.nonNull(req) ? req.getAsOfDate() : null;
         LocalDate currentDate = LocalDate.now();
+        String scope = Objects.nonNull(req) ? req.getScope() : null;
+        if (!"MARKET".equalsIgnoreCase(scope)) {
+            throw new BusinessException("共享股票池只能基于全市场行情生成，请将 scope 设为 MARKET");
+        }
+        if (CollUtil.isNotEmpty(req.getCodes()) || StringUtils.isNotBlank(req.getGroupName())) {
+            throw new BusinessException("共享股票池不支持自选分组或手工代码");
+        }
         if (Objects.nonNull(asOfDate) && asOfDate.isAfter(currentDate)) {
             throw new BusinessException("股票池截止日期不能晚于今天");
         }
-        if (Objects.nonNull(asOfDate) && asOfDate.isBefore(currentDate)) {
-            String scope = req.getScope();
-            if (!"MARKET".equalsIgnoreCase(scope) || CollUtil.isNotEmpty(req.getCodes())) {
-                throw new BusinessException("历史股票池只能基于截止日行情生成，请将 scope 设为 MARKET");
-            }
-        }
         LocalDate snapshotDate = Objects.nonNull(asOfDate) ? asOfDate : currentDate;
-        List<Watchlist> candidates = resolveCandidates(req, currentUserId);
+        List<Watchlist> candidates = loadMarketCandidatesFromBars(asOfDate);
         if (CollUtil.isEmpty(candidates)) {
-            throw new BusinessException("无候选股票，请先导入自选或传入 codes");
+            throw new BusinessException("无全市场候选股票，请先同步日线数据");
         }
 
         Map<String, StockBasic> basicMap = new HashMap<>();
@@ -223,7 +220,7 @@ public class UniverseServiceImpl implements IUniverseService {
         LocalDateTime now = LocalDateTime.now();
         for (Scored scored : scoredList) {
             universeSnapshotMapper.insert(UniverseSnapshot.builder()
-                    .userId(currentUserId)
+                    .creatorUserId(currentUserId)
                     .batchNo(batchNo)
                     .asOfDate(snapshotDate)
                     .code(scored.code)
@@ -246,7 +243,6 @@ public class UniverseServiceImpl implements IUniverseService {
     @Override
     public List<UniverseSnapshot> latest() {
         UniverseSnapshot latest = universeSnapshotMapper.selectOne(Wrappers.<UniverseSnapshot>lambdaQuery()
-                .eq(UniverseSnapshot::getUserId, currentUserId())
                 .orderByDesc(UniverseSnapshot::getAsOfDate)
                 .orderByDesc(UniverseSnapshot::getId)
                 .last("limit 1"));
@@ -268,7 +264,6 @@ public class UniverseServiceImpl implements IUniverseService {
             throw new BusinessException("股票池批次号不能为空");
         }
         return universeSnapshotMapper.selectList(Wrappers.<UniverseSnapshot>lambdaQuery()
-                .eq(UniverseSnapshot::getUserId, currentUserId())
                 .eq(UniverseSnapshot::getBatchNo, batchNo)
                 .orderByAsc(UniverseSnapshot::getCode));
     }
@@ -285,7 +280,6 @@ public class UniverseServiceImpl implements IUniverseService {
             throw new BusinessException("股票池截止日期不能为空");
         }
         UniverseSnapshot latest = universeSnapshotMapper.selectOne(Wrappers.<UniverseSnapshot>lambdaQuery()
-                .eq(UniverseSnapshot::getUserId, currentUserId())
                 .le(UniverseSnapshot::getAsOfDate, asOfDate)
                 .orderByDesc(UniverseSnapshot::getAsOfDate)
                 .orderByDesc(UniverseSnapshot::getId)
@@ -301,27 +295,6 @@ public class UniverseServiceImpl implements IUniverseService {
             return true;
         }
         return StringUtils.isNotBlank(name) && name.toUpperCase().contains("ST");
-    }
-
-    private List<Watchlist> resolveCandidates(UniverseRefreshReq req, Long currentUserId) {
-        if (Objects.nonNull(req) && CollUtil.isNotEmpty(req.getCodes())) {
-            List<Watchlist> list = new ArrayList<>();
-            for (String code : req.getCodes()) {
-                list.add(Watchlist.builder()
-                        .code(MarketCodeUtils.normalizeCode(code))
-                        .name(null)
-                        .build());
-            }
-            return list;
-        }
-        String scope = Objects.nonNull(req) ? req.getScope() : null;
-        if (StringUtils.isNotBlank(scope) && "MARKET".equalsIgnoreCase(scope.trim())) {
-            return loadMarketCandidatesFromBars(req.getAsOfDate());
-        }
-        String groupName = Objects.nonNull(req) ? req.getGroupName() : null;
-        return watchlistMapper.selectList(Wrappers.<Watchlist>lambdaQuery()
-                .eq(Watchlist::getUserId, currentUserId)
-                .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName));
     }
 
     private Long currentUserId() {

@@ -7,11 +7,9 @@ import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.UniverseRefreshResp;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
-import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.UniverseSnapshotMapper;
-import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -30,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -44,7 +43,6 @@ class UniverseServicePointInTimeTest {
 
     private static final Long CURRENT_USER_ID = 7L;
 
-    private final WatchlistMapper watchlistMapper = mock(WatchlistMapper.class);
     private final BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);
     private final UniverseSnapshotMapper universeSnapshotMapper = mock(UniverseSnapshotMapper.class);
     private final StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
@@ -56,7 +54,6 @@ class UniverseServicePointInTimeTest {
     static void initTableInfo() {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, UniverseSnapshot.class);
-        TableInfoHelper.initTableInfo(assistant, Watchlist.class);
         TableInfoHelper.initTableInfo(assistant, StockBasic.class);
     }
 
@@ -65,7 +62,6 @@ class UniverseServicePointInTimeTest {
         stpUtil = mockStatic(StpUtil.class);
         stpUtil.when(StpUtil::getLoginIdAsLong).thenReturn(CURRENT_USER_ID);
         ReflectionTestUtils.setField(service, "userContext", new ApexUserContext());
-        ReflectionTestUtils.setField(service, "watchlistMapper", watchlistMapper);
         ReflectionTestUtils.setField(service, "barDailyMapper", barDailyMapper);
         ReflectionTestUtils.setField(service, "universeSnapshotMapper", universeSnapshotMapper);
         ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
@@ -91,9 +87,8 @@ class UniverseServicePointInTimeTest {
         verify(universeSnapshotMapper).selectOne(queryCaptor.capture());
         LambdaQueryWrapper<UniverseSnapshot> query = (LambdaQueryWrapper<UniverseSnapshot>) queryCaptor.getValue();
         assertTrue(query.getSqlSegment().contains("as_of_date"));
-        assertTrue(query.getSqlSegment().contains("user_id"));
+        assertFalse(query.getSqlSegment().contains("creator_user_id"));
         assertTrue(query.getParamNameValuePairs().containsValue(backtestBeginDate));
-        assertTrue(query.getParamNameValuePairs().containsValue(CURRENT_USER_ID));
     }
 
     @Test
@@ -126,9 +121,8 @@ class UniverseServicePointInTimeTest {
         verify(universeSnapshotMapper).selectList(queryCaptor.capture());
         LambdaQueryWrapper<UniverseSnapshot> query = (LambdaQueryWrapper<UniverseSnapshot>) queryCaptor.getValue();
         assertTrue(query.getSqlSegment().contains("batch_no"));
-        assertTrue(query.getSqlSegment().contains("user_id"));
+        assertFalse(query.getSqlSegment().contains("creator_user_id"));
         assertTrue(query.getParamNameValuePairs().containsValue("requested-batch"));
-        assertTrue(query.getParamNameValuePairs().containsValue(CURRENT_USER_ID));
     }
 
     @Test
@@ -145,7 +139,7 @@ class UniverseServicePointInTimeTest {
         ArgumentCaptor<UniverseSnapshot> snapshotCaptor = ArgumentCaptor.forClass(UniverseSnapshot.class);
         verify(universeSnapshotMapper).insert(snapshotCaptor.capture());
         assertEquals(asOfDate, ReflectionTestUtils.getField(snapshotCaptor.getValue(), "asOfDate"));
-        assertEquals(CURRENT_USER_ID, snapshotCaptor.getValue().getUserId());
+        assertEquals(CURRENT_USER_ID, snapshotCaptor.getValue().getCreatorUserId());
         assertTrue(snapshotCaptor.getValue().getReasonTags().contains("RECONSTRUCTED_AS_OF"));
     }
 
@@ -162,48 +156,31 @@ class UniverseServicePointInTimeTest {
     }
 
     @Test
-    void shouldRejectCurrentWatchlistWhenRefreshingHistoricalUniverse() {
+    void shouldRejectNonMarketScopeWhenRefreshingSharedUniverse() {
         UniverseRefreshReq request = new UniverseRefreshReq();
-        request.setAsOfDate(LocalDate.now().minusDays(1));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.refresh(request));
 
-        assertEquals("历史股票池只能基于截止日行情生成，请将 scope 设为 MARKET", exception.getMessage());
-        verify(watchlistMapper, never()).selectList(any());
+        assertEquals("共享股票池只能基于全市场行情生成，请将 scope 设为 MARKET", exception.getMessage());
         verify(universeSnapshotMapper, never()).insert(any(UniverseSnapshot.class));
     }
 
     @Test
-    void shouldRejectManualCodesWhenRefreshingHistoricalUniverse() {
+    void shouldRejectPersonalCandidatesWhenRefreshingSharedUniverse() {
         UniverseRefreshReq request = new UniverseRefreshReq();
+        request.setScope("MARKET");
         request.setCodes(List.of("600519"));
-        request.setAsOfDate(LocalDate.now().minusDays(1));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.refresh(request));
 
-        assertEquals("历史股票池只能基于截止日行情生成，请将 scope 设为 MARKET", exception.getMessage());
-        verify(barDailyMapper, never()).selectMaps(any());
+        assertEquals("共享股票池不支持自选分组或手工代码", exception.getMessage());
         verify(universeSnapshotMapper, never()).insert(any(UniverseSnapshot.class));
-    }
-
-    @Test
-    void shouldLoadDefaultCandidatesFromCurrentUsersWatchlist() {
-        when(watchlistMapper.selectList(any())).thenReturn(List.of());
-
-        assertThrows(BusinessException.class, () -> service.refresh(new UniverseRefreshReq()));
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Wrapper<Watchlist>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
-        verify(watchlistMapper).selectList(queryCaptor.capture());
-        LambdaQueryWrapper<Watchlist> query = (LambdaQueryWrapper<Watchlist>) queryCaptor.getValue();
-        assertTrue(query.getSqlSegment().contains("user_id"));
-        assertTrue(query.getParamNameValuePairs().containsValue(CURRENT_USER_ID));
     }
 
     @Test
     void shouldGenerateCollisionResistantBatchNumberForEveryRefresh() {
         UniverseRefreshReq request = new UniverseRefreshReq();
-        request.setCodes(List.of("600519"));
+        request.setScope("MARKET");
         when(stockBasicMapper.selectList(any())).thenReturn(List.of());
         when(barDailyMapper.selectMaps(any())).thenReturn(List.of(Map.of("code", "600519", "cnt", 100L)));
 

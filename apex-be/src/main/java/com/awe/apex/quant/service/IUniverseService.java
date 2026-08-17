@@ -13,7 +13,7 @@ import java.util.List;
 public interface IUniverseService {
 
     /**
-     * 刷新股票池
+     * 发布共享股票池
      *
      * @param req 请求
      * @return 结果

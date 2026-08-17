@@ -6,7 +6,6 @@ import { ArrowDown, Filter, MoreFilled, Refresh } from '@element-plus/icons-vue'
 import {
   latestSignals,
   latestUniverse,
-  refreshUniverse,
   runSignals,
   signalConfluence,
   signalForward,
@@ -170,9 +169,12 @@ async function loadSignalList({ force = false } = {}) {
 async function onGenerateSignals() {
   generating.value = true
   try {
-    // 1. 按本地日线重建全市场可扫描池（≥60 根、剔 ST）
-    const uni = await refreshUniverse({ scope: 'MARKET', looseFilter: true })
-    const poolCount = uni.data?.count ?? 0
+    // 1. 使用管理员已发布的全市场共享股票池
+    const uni = await latestUniverse()
+    const poolCount = (uni.data || []).length
+    if (!poolCount) {
+      throw new Error('共享股票池尚未发布，请管理员先刷新全市场股票池')
+    }
     universeCount.value = poolCount
     // 2. 对股票池跑 S1/S2/S3，写出买卖信号
     const response = await runSignals({ useUniverse: poolCount > 0 })
