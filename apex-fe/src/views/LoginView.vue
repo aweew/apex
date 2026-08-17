@@ -21,10 +21,11 @@ const rules = {
 }
 
 async function submit() {
-  const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (loading.value) return
   loading.value = true
   try {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
     await login(form)
     await router.replace(typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard')
   } catch (error) {
@@ -49,7 +50,7 @@ function showPasswordResetHelp() {
         </el-form-item>
         <div class="password-field">
           <el-form-item label="密码" prop="password">
-            <el-input v-model="form.password" type="password" show-password autocomplete="current-password" placeholder="请输入密码" @keyup.enter="submit">
+            <el-input v-model="form.password" type="password" show-password autocomplete="current-password" placeholder="请输入密码">
               <template #prefix><el-icon><Lock /></el-icon></template>
             </el-input>
           </el-form-item>

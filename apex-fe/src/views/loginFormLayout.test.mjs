@@ -17,6 +17,21 @@ test('login fields keep the expected keyboard focus order', () => {
   assert.ok(passwordInputIndex < passwordHelpIndex)
 })
 
+test('login submission uses one keyboard path and blocks concurrent requests', () => {
+  assert.match(loginSource, /<el-form[^>]*@submit\.prevent="submit"/)
+  assert.doesNotMatch(loginSource, /@keyup\.enter="submit"/)
+
+  const guardIndex = loginSource.indexOf('if (loading.value) return')
+  const lockIndex = loginSource.indexOf('loading.value = true')
+  const validateIndex = loginSource.indexOf('formRef.value.validate()')
+
+  assert.notEqual(guardIndex, -1)
+  assert.notEqual(lockIndex, -1)
+  assert.notEqual(validateIndex, -1)
+  assert.ok(guardIndex < lockIndex)
+  assert.ok(lockIndex < validateIndex)
+})
+
 test('auth validation errors use a reserved slot without changing field height', () => {
   assert.match(
     authShellSource,
