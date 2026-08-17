@@ -26,6 +26,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -163,6 +164,29 @@ class RequestLogFilterTest {
         assertEquals(200, response.getStatus());
         assertEquals(Level.WARN, appender.list.get(2).getLevel());
         assertEquals(Level.WARN, appender.list.get(3).getLevel());
+    }
+
+    @Test
+    void skipsRequestLogsForApplicationHealthEndpointOnly() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/apex/api/health");
+        request.setContextPath("/apex");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean chainCalled = new AtomicBoolean(false);
+
+        filter.doFilter(request, response, (wrappedRequest, wrappedResponse) -> chainCalled.set(true));
+
+        assertTrue(chainCalled.get());
+        assertTrue(appender.list.isEmpty());
+        assertNull(response.getHeader(Constants.TRACE_ID));
+        verifyNoInteractions(userService);
+
+        MockHttpServletRequest localHealthRequest = new MockHttpServletRequest("GET", "/api/health");
+        assertTrue(filter.shouldNotFilter(localHealthRequest));
+
+        MockHttpServletRequest businessHealthRequest = new MockHttpServletRequest(
+                "GET", "/apex/api/paper/health-score");
+        businessHealthRequest.setContextPath("/apex");
+        assertFalse(filter.shouldNotFilter(businessHealthRequest));
     }
 
     private String messages(List<ILoggingEvent> events) {

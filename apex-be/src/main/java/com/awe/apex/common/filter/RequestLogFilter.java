@@ -44,6 +44,7 @@ public class RequestLogFilter extends OncePerRequestFilter {
 
     private static final int MAX_BODY_BYTES = 65_536;
     private static final int MAX_PARAMETER_TEXT_LENGTH = 8_192;
+    private static final String HEALTH_ENDPOINT = "/api/health";
     private static final String MASKED_VALUE = "[已脱敏]";
     private static final String REQUEST_START = "====================[请求开始]====================";
     private static final String REQUEST_END = "====================[请求结束]====================";
@@ -51,6 +52,22 @@ public class RequestLogFilter extends OncePerRequestFilter {
 
     @Resource
     private IUserService userService;
+
+    /**
+     * 健康检查由基础设施高频调用，不记录请求链路日志。
+     *
+     * @param request HTTP 请求
+     * @return 是否跳过请求日志过滤器
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String requestPath = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (StringUtils.isNotBlank(contextPath) && requestPath.startsWith(contextPath)) {
+            requestPath = requestPath.substring(contextPath.length());
+        }
+        return HEALTH_ENDPOINT.equals(requestPath);
+    }
 
     /**
      * 记录请求开始与结束，并保证请求体可由后续 Controller 正常读取。
