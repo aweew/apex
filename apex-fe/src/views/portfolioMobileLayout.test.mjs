@@ -99,3 +99,19 @@ test('desktop portfolio cards keep drag, selection, name, and menu in stable col
   assert.match(portfolioSource, /\.pf-name strong\s*\{[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/)
   assert.doesNotMatch(portfolioSource, /\.pf-top\s*\{[\s\S]*?padding-right:\s*72px;/)
 })
+
+test('desktop portfolio cards keep holdings in one compact summary band', () => {
+  const portfolioListTemplate = portfolioSource.slice(
+    portfolioSource.indexOf('class="pf-card"'),
+    portfolioSource.indexOf('class="side-rail"'),
+  )
+  assert.match(portfolioListTemplate, /row\.topHoldings\.slice\(0, 2\)/)
+  assert.match(
+    portfolioSource,
+    /\.pf-tops\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+  )
+  assert.match(
+    portfolioSource,
+    /\.pf-top-chip\s*\{[\s\S]*?justify-content:\s*space-between;[\s\S]*?border-right:\s*1px solid var\(--line\);/,
+  )
+})

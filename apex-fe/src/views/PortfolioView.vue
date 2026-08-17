@@ -1640,12 +1640,13 @@ onBeforeUnmount(() => {
             <div v-if="!isMobileViewport" class="pf-summary">
               <span class="pf-meta">{{ row.positionCount || 0 }} 只</span>
               <span class="pf-pnl" :class="Number(row.todayPnl) >= 0 ? 'up' : 'down'">
-                今日 <b>{{ fmtSignedMoney(row.todayPnl) }}</b>
+                <span class="pf-pnl-label">今日</span>
+                <b>{{ fmtSignedMoney(row.todayPnl) }}</b>
                 <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
               </span>
             </div>
             <div v-if="row.topHoldings?.length" class="pf-tops">
-              <span v-for="h in row.topHoldings.slice(0, 3)" :key="h.code" class="pf-top-chip">
+              <span v-for="h in row.topHoldings.slice(0, 2)" :key="h.code" class="pf-top-chip">
                 <span class="pf-top-chip-name">{{ h.name || h.code }}</span>
                 <em :class="Number(h.pctChg) >= 0 ? 'up' : 'down'">{{ fmtSignedPct(h.pctChg) }}</em>
               </span>
@@ -2553,7 +2554,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-  padding: 0 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.025);
 }
 .side-select-count {
   flex: 1;
@@ -2565,11 +2568,11 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   width: 100%;
   text-align: left;
-  border: 1px solid transparent;
-  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  background: rgba(255, 255, 255, 0.86);
   border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+  padding: 9px 10px;
+  margin-bottom: 6px;
   cursor: pointer;
   position: relative;
   outline: none;
@@ -2693,7 +2696,7 @@ onBeforeUnmount(() => {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
   padding-left: 62px;
 }
 .pf-meta {
@@ -2711,6 +2714,10 @@ onBeforeUnmount(() => {
   font-weight: 600;
   white-space: nowrap;
 }
+.pf-pnl-label {
+  color: #86868b;
+  font-weight: 500;
+}
 .pf-pnl b {
   font-size: 13px;
   font-weight: 700;
@@ -2720,21 +2727,30 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 .pf-tops {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.035);
 }
 .pf-top-chip {
   display: inline-flex;
   align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
   min-width: 0;
+  padding: 5px 7px;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
   font-size: 11px;
   color: #6e6e73;
-  background: rgba(0, 0, 0, 0.04);
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: transparent;
   line-height: 1.3;
+}
+.pf-top-chip:last-child {
+  border-right: 0;
 }
 .pf-top-chip-name {
   min-width: 0;
