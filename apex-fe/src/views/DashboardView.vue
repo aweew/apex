@@ -541,55 +541,61 @@ onMounted(() => {
               empty-text="暂无买入建议"
               stripe
             >
-              <el-table-column prop="code" label="代码" width="100" class-name="code-col">
+              <el-table-column prop="code" label="代码" width="104" class-name="code-col">
                 <template #default="{ row }">
-                  <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
-                    {{ row.code }}
-                  </button>
-                  <SecurityMarketBadge :security="row" />
+                  <span class="security-code">
+                    <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
+                      {{ row.code }}
+                    </button>
+                    <SecurityMarketBadge :security="row" />
+                  </span>
                 </template>
               </el-table-column>
-              <el-table-column prop="name" label="名称" width="90" />
-              <el-table-column prop="strategyId" label="策略" width="56" />
-              <el-table-column label="评分" width="110">
+              <el-table-column prop="name" label="名称" width="84" />
+              <el-table-column prop="strategyId" label="策略" width="52" />
+              <el-table-column label="评分" width="96">
                 <template #default="{ row }">
                   <ScoreBar :score="row.score" />
                 </template>
               </el-table-column>
-              <el-table-column label="估值" width="88">
+              <el-table-column label="估值" width="72">
                 <template #default="{ row }">
                   <span class="muted">{{ row.valuationLabel || '-' }}</span>
-                  <el-tag
-                    v-if="row.executableHint"
-                    size="small"
-                    type="success"
-                    effect="plain"
-                    style="margin-left: 4px"
-                  >可执行</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="仓位" width="64">
+              <el-table-column label="仓位" width="60">
                 <template #default="{ row }">
                   <span class="num">{{ fmtWeight(row.suggestedWeight) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="联动" min-width="88">
+              <el-table-column label="联动" width="124" class-name="action-cues-col">
                 <template #default="{ row }">
-                  <el-tag
-                    v-if="row.linkHint"
-                    size="small"
-                    effect="plain"
-                    :type="String(row.linkHint).includes('降权') ? 'danger' : 'success'"
-                  >{{ row.linkHint }}</el-tag>
-                  <span v-else class="muted">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="主线" min-width="72">
-                <template #default="{ row }">
-                  <el-tag v-if="row.mainlineMatch" size="small" type="warning" effect="light" round>
-                    {{ row.mainlineName || '匹配' }}
-                  </el-tag>
-                  <span v-else class="muted">-</span>
+                  <div class="action-cues">
+                    <el-tag
+                      v-if="row.executableHint"
+                      size="small"
+                      type="success"
+                      effect="plain"
+                    >可执行</el-tag>
+                    <el-tag
+                      v-if="row.linkHint"
+                      class="link-hint-tag"
+                      size="small"
+                      effect="plain"
+                      :type="String(row.linkHint).includes('降权') ? 'danger' : 'success'"
+                    >{{ row.linkHint }}</el-tag>
+                    <el-tag
+                      v-if="row.mainlineMatch"
+                      class="mainline-hint-tag"
+                      size="small"
+                      type="warning"
+                      effect="light"
+                    >{{ row.mainlineName || '匹配' }}</el-tag>
+                    <span
+                      v-if="!row.executableHint && !row.linkHint && !row.mainlineMatch"
+                      class="muted"
+                    >-</span>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -675,12 +681,14 @@ onMounted(() => {
               class="dash-table desktop-action-table"
               stripe
             >
-              <el-table-column prop="code" label="代码" width="100" class-name="code-col">
+              <el-table-column prop="code" label="代码" width="104" class-name="code-col">
                 <template #default="{ row }">
-                  <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
-                    {{ row.code }}
-                  </button>
-                  <SecurityMarketBadge :security="row" />
+                  <span class="security-code">
+                    <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
+                      {{ row.code }}
+                    </button>
+                    <SecurityMarketBadge :security="row" />
+                  </span>
                 </template>
               </el-table-column>
               <el-table-column prop="name" label="名称" width="90" />
@@ -864,7 +872,7 @@ onMounted(() => {
 
 .two-col {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 14px;
   align-items: stretch;
@@ -873,6 +881,7 @@ onMounted(() => {
 .action-panel {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -1538,6 +1547,44 @@ onMounted(() => {
   overflow: visible;
   padding-left: 8px;
   padding-right: 4px;
+}
+
+.security-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.dash-table :deep(.action-cues-col .cell) {
+  overflow: visible;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.action-cues {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+}
+
+.action-cues :deep(.el-tag) {
+  max-width: 100%;
+}
+
+.action-cues :deep(.link-hint-tag) {
+  white-space: nowrap;
+}
+
+.action-cues :deep(.mainline-hint-tag) {
+  height: auto;
+  white-space: normal;
+}
+
+.action-cues :deep(.mainline-hint-tag .el-tag__content) {
+  overflow-wrap: anywhere;
 }
 
 .mobile-action-list {
