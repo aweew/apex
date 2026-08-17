@@ -36,7 +36,7 @@ class ScreenerMarketSnapshotClientTest {
     @Test
     void shouldParseRealtimeTurnoverVolumeRatioAndMarketValues() throws Exception {
         String body = """
-                {"data":{"diff":[{
+                {"data":{"total":5896,"diff":[{
                   "f2":12.34,"f3":4.2,"f6":880000000,"f8":6.8,"f9":18.2,"f10":1.36,
                   "f12":"600001","f13":1,"f14":"示例股份","f20":12000000000,
                   "f21":8000000000,"f23":2.1,"f100":"电子","f124":1786982400
@@ -45,6 +45,8 @@ class ScreenerMarketSnapshotClientTest {
 
         ScreenerMarketSnapshotBatch batch = new ScreenerMarketSnapshotClient().parse(body);
 
+        assertEquals(5896, batch.getTotal());
+        assertEquals(59, new ScreenerMarketSnapshotClient().pageCount(batch.getTotal()));
         assertEquals(1, batch.getItems().size());
         ScreenerMarketSnapshot item = batch.getItems().get(0);
         assertEquals("SH", item.getMarket());

@@ -23,6 +23,9 @@ public class ScreenerMarketSnapshotBatch {
     /** 数据截止时间 */
     private LocalDateTime asOf;
 
+    /** 数据源返回的股票总数 */
+    private Integer total;
+
     /** 股票截面 */
     private List<ScreenerMarketSnapshot> items;
 }
