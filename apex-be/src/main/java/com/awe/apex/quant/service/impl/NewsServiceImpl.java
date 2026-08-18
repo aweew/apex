@@ -8,6 +8,7 @@ import com.awe.apex.quant.domain.dto.NewsOverviewResp;
 import com.awe.apex.quant.domain.dto.NewsRefreshResp;
 import com.awe.apex.quant.domain.entity.MarketNews;
 import com.awe.apex.quant.mapper.MarketNewsMapper;
+import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.INewsService;
 import com.awe.apex.quant.util.PythonCommandResolver;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -47,6 +48,9 @@ public class NewsServiceImpl implements INewsService {
 
     @Resource
     private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
+
+    @Resource
+    private IMorningBriefingService morningBriefingService;
 
     @Value("${apex.news.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
@@ -192,6 +196,11 @@ public class NewsServiceImpl implements INewsService {
             throw new BusinessException("新闻同步脚本退出码 " + exit + "：" + trimOut(output.toString()));
         }
         NewsOverviewResp overview = overview("all", size, null);
+        try {
+            morningBriefingService.invalidateCache();
+        } catch (Exception ex) {
+            log.warn("新闻刷新后清盘前晨报缓存失败 sources={} reason={}", src, ex.getMessage());
+        }
         return NewsRefreshResp.builder()
                 .success(true)
                 .log(trimOut(output.toString()))

@@ -13,4 +13,16 @@ public interface IMorningBriefingService {
      * @return 盘前晨报
      */
     MorningBriefingResp generate();
+
+    /**
+     * 读取最近一次盘前晨报，缓存未命中时生成。
+     *
+     * @return 最近一次盘前晨报
+     */
+    MorningBriefingResp latest();
+
+    /**
+     * 清除盘前晨报缓存。
+     */
+    void invalidateCache();
 }

@@ -14,6 +14,7 @@ import com.awe.apex.quant.domain.dto.EquityPointResp;
 import com.awe.apex.quant.domain.dto.IndustryPnlResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.MarketTipItem;
+import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.PaperMetricsResp;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
@@ -35,6 +36,7 @@ import com.awe.apex.quant.service.IDailyActionService;
 import com.awe.apex.quant.service.IDashboardService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
@@ -58,6 +60,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 仪表盘实现
@@ -90,6 +93,9 @@ public class DashboardServiceImpl implements IDashboardService {
     private IMarketBriefingService marketBriefingService;
 
     @Resource
+    private IMorningBriefingService morningBriefingService;
+
+    @Resource
     private LimitUpPoolMapper limitUpPoolMapper;
 
     @Resource
@@ -107,7 +113,7 @@ public class DashboardServiceImpl implements IDashboardService {
     @Resource
     private ApexUserContext userContext;
 
-    private static final ExecutorService HOME_POOL = Executors.newFixedThreadPool(4, r -> {
+    private static final ExecutorService HOME_POOL = Executors.newFixedThreadPool(5, r -> {
         Thread t = new Thread(r, "dashboard-home");
         t.setDaemon(true);
         return t;
@@ -159,7 +165,7 @@ public class DashboardServiceImpl implements IDashboardService {
                     .build();
         }
 
-        // 2. 并行拉取互不依赖的块：决策、观察告警、账户摘要、数据健康
+        // 2. 并行拉取互不依赖的块：决策、观察告警、账户摘要、数据健康、盘前晨报
         final MarketBriefingResp cachedBriefing = briefing;
         CompletableFuture<DecisionTodayResp> todayFuture = CompletableFuture.supplyAsync(
                 () -> userContext.runAsUser(currentUserId, () -> {
@@ -181,6 +187,16 @@ public class DashboardServiceImpl implements IDashboardService {
                 () -> userContext.runAsUser(currentUserId, () -> buildLightAccount(accountId)), HOME_POOL);
         CompletableFuture<DashboardHomeResp.DataHealthBlock> healthFuture = CompletableFuture.supplyAsync(
                 () -> userContext.runAsUser(currentUserId, () -> buildLightDataHealth(group)), HOME_POOL);
+        CompletableFuture<MorningBriefingResp> morningBriefingFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        return morningBriefingService.latest();
+                    } catch (Exception ex) {
+                        log.warn("看板盘前晨报加载失败 reason={}", ex.getMessage());
+                        return null;
+                    }
+                }, HOME_POOL)
+                .completeOnTimeout(null, 2, TimeUnit.SECONDS);
 
         Integer limitUpCount = resolveLimitUpCount(briefing);
         List<String> tips = new ArrayList<>();
@@ -321,6 +337,7 @@ public class DashboardServiceImpl implements IDashboardService {
                 : market.getStance() + " · " + decisionSummary;
         DashboardHomeResp response = DashboardHomeResp.builder()
                 .market(market)
+                .morningBriefing(morningBriefingFuture.join())
                 .decision(decision)
                 .observeAlerts(observeAlerts)
                 .account(account)
