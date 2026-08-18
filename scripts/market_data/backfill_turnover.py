@@ -83,21 +83,37 @@ def to_baostock_code(code: str) -> str:
 
 
 def list_codes(conn, codes: Optional[Sequence[str]], limit: int, only_missing: bool) -> List[str]:
-    if codes:
-        return [c.strip() for c in codes if c and c.strip()]
+    requested_codes = (
+        list(dict.fromkeys(c.strip() for c in codes if c and c.strip()))
+        if codes
+        else []
+    )
     sql = """
-    SELECT DISTINCT code
-    FROM bar_daily
-    WHERE deleted = 0
+    SELECT DISTINCT t1.code
+    FROM stock_basic t1
+    INNER JOIN bar_daily t2
+      ON t2.code = t1.code
+     AND t2.deleted = 0
+    WHERE t1.deleted = 0
     """
+    params: List[object] = []
     if only_missing:
-        sql += " AND turnover_rate IS NULL"
-    sql += " ORDER BY code"
+        sql += " AND t2.turnover_rate IS NULL"
+    if requested_codes:
+        placeholders = ",".join(["%s"] * len(requested_codes))
+        sql += f" AND t1.code IN ({placeholders})"
+        params.extend(requested_codes)
+    sql += " ORDER BY t1.code"
     if limit and limit > 0:
-        sql += f" LIMIT {int(limit)}"
+        sql += " LIMIT %s"
+        params.append(int(limit))
     with conn.cursor() as cur:
-        cur.execute(sql)
-        return [r["code"] for r in cur.fetchall()]
+        cur.execute(sql, tuple(params))
+        selected_codes = [r["code"] for r in cur.fetchall()]
+    if not requested_codes:
+        return selected_codes
+    selected_code_set = set(selected_codes)
+    return [code for code in requested_codes if code in selected_code_set]
 
 
 def date_range(conn, code: str) -> Tuple[Optional[date], Optional[date]]:
