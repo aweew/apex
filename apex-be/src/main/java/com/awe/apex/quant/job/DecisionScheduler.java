@@ -51,19 +51,19 @@ public class DecisionScheduler {
     @Scheduled(cron = "0 30 18 * * MON-FRI", zone = "Asia/Shanghai")
     public void calculateDecisionOutcomes() {
         int savedCount = decisionOutcomeService.calculatePendingOutcomes();
-        log.info("智能决策结果归因定时任务完成 savedCount={}", savedCount);
+        log.info("智能决策结果归因定时任务完成，保存数量={}", savedCount);
     }
 
     void runScheduledDecision(LocalDate actionDate) {
         if (!TradingCalendar.isTradingDay(actionDate)) {
-            log.info("智能决策定时任务跳过：非交易日 actionDate={}", actionDate);
+            log.info("智能决策定时任务跳过：非交易日，决策日期={}", actionDate);
             return;
         }
         List<Long> userIds;
         try {
             userIds = userAuthService.listEnabledUserIds();
         } catch (Exception ex) {
-            log.warn("智能决策定时任务读取启用用户失败 actionDate={} reason={}", actionDate, ex.getMessage());
+            log.warn("智能决策定时任务读取启用用户失败，决策日期={}，原因={}", actionDate, ex.getMessage());
             return;
         }
         for (Long userId : userIds) {
@@ -71,9 +71,9 @@ public class DecisionScheduler {
             request.setTaskType("DECISION");
             try {
                 dataSyncJobService.startForUser(request, userId);
-                log.info("智能决策定时任务已提交 actionDate={} userId={}", actionDate, userId);
+                log.info("智能决策定时任务已提交，决策日期={}，用户编号={}", actionDate, userId);
             } catch (Exception ex) {
-                log.warn("智能决策定时任务提交跳过 actionDate={} userId={} reason={}",
+                log.warn("智能决策定时任务提交跳过，决策日期={}，用户编号={}，原因={}",
                         actionDate, userId, ex.getMessage());
             }
         }

@@ -483,7 +483,7 @@ def run_mode(
     for idx, code in enumerate(codes, 1):
         if resume and done.get(code, {}).get("ok"):
             skip_n += 1
-            print(f"[{idx}/{total}] {code} skip (done)")
+            print(f"[{idx}/{total}] {code} 跳过（已完成）")
             continue
         try:
             if mode == "indicator":
@@ -498,15 +498,15 @@ def run_mode(
                 raise RuntimeError("数据源未返回可落库记录")
             mark_done(progress, mode, code, True, f"rows={n}")
             ok_n += 1
-            print(f"[{idx}/{total}] {code} {mode} ok rows={n}")
+            print(f"[{idx}/{total}] {code} {mode} 成功，写入行数={n}")
         except Exception as ex:
             conn.rollback()
             mark_done(progress, mode, code, False, str(ex)[:300])
             fail_n += 1
-            print(f"[{idx}/{total}] {code} {mode} FAIL {ex}", file=sys.stderr)
+            print(f"[{idx}/{total}] {code} {mode} 失败，异常={ex}", file=sys.stderr)
         if sleep_s > 0:
             time.sleep(sleep_s)
-    print(f"{mode} 完成：ok={ok_n} fail={fail_n} skip={skip_n}")
+    print(f"{mode} 完成：成功数={ok_n}，失败数={fail_n}，跳过数={skip_n}")
     return fail_n
 
 
@@ -543,7 +543,7 @@ def main() -> int:
                 return 0
             print("没有可同步的股票代码（请先同步 stock_basic 列表）", file=sys.stderr)
             return 1
-        print(f"待同步 {len(codes)} 只，mode={args.mode}, resume={resume}, sleep={args.sleep}")
+        print(f"待同步 {len(codes)} 只，模式={args.mode}，是否续传={resume}，等待秒数={args.sleep}")
 
         modes: List[str]
         if args.mode == "all":

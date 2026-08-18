@@ -57,11 +57,11 @@ public class BotController {
         try {
             BotAskResp response = userContext.runAsUser(requireBoundUserId(request.getUserId()),
                     () -> botQuestionService.ask(request));
-            log.info("Bot 问答完成 requestId={} intent={} durationMs={}",
+            log.info("Bot 问答完成，请求编号={}，意图={}，耗时毫秒={}",
                     response.getRequestId(), response.getIntent(), elapsedMillis(startedAt));
             return Result.success(response);
         } catch (Exception ex) {
-            log.warn("Bot 问答失败 requestId={} durationMs={} reason={}",
+            log.warn("Bot 问答失败，请求编号={}，耗时毫秒={}，原因={}",
                     request.getRequestId(), elapsedMillis(startedAt), ex.getMessage());
             throw ex;
         }

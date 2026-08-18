@@ -49,7 +49,7 @@ public class DailyBarClient {
             }
         } catch (Exception ex) {
             eastMoneyError = ex;
-            log.warn("东财前复权日线失败，尝试新浪兜底，code={}, err={}", pureCode, ex.getMessage());
+            log.warn("东财前复权日线失败，尝试新浪兜底，证券代码={}，异常={}", pureCode, ex.getMessage());
             sleepQuiet(600L);
         }
         try {
@@ -110,7 +110,7 @@ public class DailyBarClient {
                         SOURCE_EASTMONEY
                 ));
             }
-            log.info("东财日线拉取完成，code={}, bars={}", pureCode, bars.size());
+            log.info("东财日线拉取完成，证券代码={}，日线数量={}", pureCode, bars.size());
             return bars;
         } catch (BusinessException ex) {
             throw ex;
@@ -158,7 +158,7 @@ public class DailyBarClient {
                         SOURCE_SINA
                 ));
             }
-            log.info("新浪日线拉取完成，code={}, bars={}", pureCode, bars.size());
+            log.info("新浪日线拉取完成，证券代码={}，日线数量={}", pureCode, bars.size());
             if (bars.isEmpty()) {
                 throw new BusinessException("新浪无区间数据");
             }

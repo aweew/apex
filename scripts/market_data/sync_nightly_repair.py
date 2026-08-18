@@ -60,12 +60,12 @@ def build_steps(
 
 def run_one(script: Path, script_args: List[str]) -> int:
     if not script.is_file():
-        print(f"[NIGHTLY_REPAIR] missing script={script.name}", flush=True)
+        print(f"[NIGHTLY_REPAIR] 缺少脚本={script.name}", flush=True)
         return 2
     command = [sys.executable, "-u", str(script), *script_args]
-    print(f"[NIGHTLY_REPAIR] run: {' '.join(command)}", flush=True)
+    print(f"[NIGHTLY_REPAIR] 执行命令：{' '.join(command)}", flush=True)
     process = subprocess.run(command, cwd=str(ROOT))
-    print(f"[NIGHTLY_REPAIR] exit={process.returncode} script={script.name}", flush=True)
+    print(f"[NIGHTLY_REPAIR] 退出码={process.returncode}，脚本={script.name}", flush=True)
     return process.returncode
 
 
@@ -73,15 +73,15 @@ def run_steps(steps: List[RepairStep]) -> int:
     failed_steps = []
     total = len(steps)
     for index, (step_name, script, script_args) in enumerate(steps, 1):
-        print(f"[NIGHTLY_REPAIR] step {index}/{total}: {step_name}", flush=True)
+        print(f"[NIGHTLY_REPAIR] 步骤 {index}/{total}：{step_name}", flush=True)
         exit_code = run_one(script, script_args)
         if exit_code != 0:
             failed_steps.append(step_name)
-            print(f"[NIGHTLY_REPAIR] failed step={step_name} exit={exit_code}", flush=True)
+            print(f"[NIGHTLY_REPAIR] 失败步骤={step_name}，退出码={exit_code}", flush=True)
     if failed_steps:
-        print(f"[NIGHTLY_REPAIR] done with failures: {','.join(failed_steps)}", flush=True)
+        print(f"[NIGHTLY_REPAIR] 执行完成，但存在失败步骤：{','.join(failed_steps)}", flush=True)
         return 1
-    print("[NIGHTLY_REPAIR] all done", flush=True)
+    print("[NIGHTLY_REPAIR] 全部完成", flush=True)
     return 0
 
 

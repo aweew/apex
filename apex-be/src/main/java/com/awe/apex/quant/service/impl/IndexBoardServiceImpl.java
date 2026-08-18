@@ -141,7 +141,7 @@ public class IndexBoardServiceImpl implements IIndexBoardService {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("指数同步失败 script={}, err={}", script, ex.getMessage());
+            log.warn("指数同步失败，脚本={}，异常={}", script, ex.getMessage());
             throw new BusinessException("指数同步失败: " + ex.getMessage());
         }
         if (exit != 0) {

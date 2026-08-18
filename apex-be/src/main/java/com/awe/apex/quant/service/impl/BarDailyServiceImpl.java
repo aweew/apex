@@ -334,7 +334,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
             String source = bars.isEmpty() ? "unknown" : bars.get(0).getSource();
             return new SyncItem(code, true, upserted, code + ": " + upserted + " bars (" + source + ")");
         } catch (Exception ex) {
-            log.warn("同步日线失败 code={}, err={}", code, ex.getMessage());
+            log.warn("同步日线失败，证券代码={}，异常={}", code, ex.getMessage());
             return new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage());
         }
     }

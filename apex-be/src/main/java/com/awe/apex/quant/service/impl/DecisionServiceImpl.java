@@ -266,7 +266,7 @@ public class DecisionServiceImpl implements IDecisionService {
         reporter.onProgress(2, 100, "正在创建决策运行");
         DecisionRun decisionRun = decisionRunManager.start(context, groupName, decisionConfigSnapshot());
         long startedAt = System.currentTimeMillis();
-        log.info("一键决策开始 runNo={} mode={} actionDate={} groupName={} includeBj={}",
+        log.info("一键决策开始，运行编号={}，模式={}，决策日期={}，分组名称={}，是否包含北交所={}",
                 decisionRun.getRunNo(), decisionRun.getMode(), decisionRun.getActionDate(), groupName,
                 Boolean.TRUE.equals(safe.getIncludeBj()));
         try {
@@ -276,13 +276,13 @@ public class DecisionServiceImpl implements IDecisionService {
             reporter.onProgress(98, 100, "正在发布决策结果");
             finishRun(context, decisionRun, response, dataLevel);
             reporter.onProgress(99, 100, "决策结果已生成");
-            log.info("一键决策完成 runNo={} mode={} universeCount={} buyCount={} sellCount={} holdCount={} elapsedMs={}",
+            log.info("一键决策完成，运行编号={}，模式={}，股票池数量={}，买入数量={}，卖出数量={}，持有数量={}，耗时毫秒={}",
                     decisionRun.getRunNo(), decisionRun.getMode(), response.getUniverseCount(), response.getBuyCount(),
                     response.getSellCount(), response.getHoldCount(), System.currentTimeMillis() - startedAt);
             return response;
         } catch (RuntimeException ex) {
             decisionRunManager.fail(decisionRun, ex);
-            log.error("一键决策失败 runNo={} mode={} elapsedMs={}", decisionRun.getRunNo(), decisionRun.getMode(),
+            log.error("一键决策失败，运行编号={}，模式={}，耗时毫秒={}", decisionRun.getRunNo(), decisionRun.getMode(),
                     System.currentTimeMillis() - startedAt, ex);
             throw ex;
         }
@@ -1249,7 +1249,7 @@ public class DecisionServiceImpl implements IDecisionService {
                         industryLimit = ruleValue;
                     }
                 } catch (NumberFormatException ex) {
-                    log.warn("忽略非法风控规则 ruleKey={} ruleValue={}",
+                    log.warn("忽略非法风控规则，规则标识={}，规则值={}",
                             riskRule.getRuleKey(), riskRule.getRuleValue());
                 }
             }
@@ -2212,7 +2212,7 @@ public class DecisionServiceImpl implements IDecisionService {
             }
         }
         redisCacheService.put(cacheKey, ai, Duration.ofSeconds(Math.max(60, aiChatProperties.getSummaryCacheSeconds())));
-        log.info("决策买入AI总结完成 date={} buys={} fromCache=false", actionDate, buys.size());
+        log.info("决策买入AI总结完成，日期={}，买入数量={}，是否来自缓存=false", actionDate, buys.size());
         return ai;
     }
 
@@ -2566,7 +2566,8 @@ public class DecisionServiceImpl implements IDecisionService {
             }
             out.add(item);
         }
-        log.info("观察池候选再平衡 buy={} (s2优先) mood={}", buys.size(), Math.min(moods.size(), 15));
+        log.info("观察池候选再平衡，买入候选数={}（第二阶段优先），情绪候选数={}",
+                buys.size(), Math.min(moods.size(), 15));
         return out;
     }
 

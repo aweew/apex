@@ -192,7 +192,7 @@ public class DashboardServiceImpl implements IDashboardService {
                     try {
                         return morningBriefingService.latest();
                     } catch (Exception ex) {
-                        log.warn("看板盘前晨报加载失败 reason={}", ex.getMessage());
+                        log.warn("看板盘前晨报加载失败，原因={}", ex.getMessage());
                         return null;
                     }
                 }, HOME_POOL)

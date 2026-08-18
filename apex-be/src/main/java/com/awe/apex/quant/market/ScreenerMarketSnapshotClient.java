@@ -72,7 +72,7 @@ public class ScreenerMarketSnapshotClient {
             throw new BusinessException("实时截面分页不完整，预期 " + expectedTotal
                     + " 条，实际 " + snapshotMap.size() + " 条");
         }
-        log.info("实时选股截面拉取完成 total={}, pages={}, asOf={}", expectedTotal, pageCount, asOf);
+        log.info("实时选股截面拉取完成，总数={}，页数={}，截止时间={}", expectedTotal, pageCount, asOf);
         return ScreenerMarketSnapshotBatch.builder()
                 .source("eastmoney-clist")
                 .asOf(asOf)
@@ -98,7 +98,7 @@ public class ScreenerMarketSnapshotClient {
                 return parse(response.body());
             } catch (Exception ex) {
                 last = ex;
-                log.warn("实时选股截面拉取失败 host={}, page={}, error={}", host, page, ex.getMessage());
+                log.warn("实时选股截面拉取失败，服务地址={}，页码={}，异常={}", host, page, ex.getMessage());
             }
         }
         throw new BusinessException("实时选股截面第 " + page + " 页拉取失败: "

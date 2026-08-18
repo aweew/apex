@@ -6,20 +6,20 @@ readonly servlet_path="/apex/api/trade-events/ingest"
 readonly http_method="POST"
 
 if [[ $# -ne 1 || -z "${1//[[:space:]]/}" ]]; then
-    echo "Usage: apex_trade_event.sh '<JSON trade event>'" >&2
+    echo "用法：apex_trade_event.sh '<JSON 交易事件>'" >&2
     exit 2
 fi
 
 for command_name in curl openssl; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
-        echo "Missing required command: ${command_name}" >&2
+        echo "缺少必需命令：${command_name}" >&2
         exit 3
     fi
 done
 
 for variable_name in APEX_BOT_BASE_URL APEX_BOT_CLIENT_KEY APEX_BOT_CLIENT_SECRET; do
     if [[ -z "${!variable_name:-}" ]]; then
-        echo "Missing required environment variable: ${variable_name}" >&2
+        echo "缺少必需环境变量：${variable_name}" >&2
         exit 4
     fi
 done

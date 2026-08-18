@@ -277,7 +277,7 @@ def main() -> int:
 
     lg = bs.login()
     if lg.error_code != "0":
-        print(f"baostock login failed: {lg.error_msg}", file=sys.stderr)
+        print(f"baostock 登录失败，异常={lg.error_msg}", file=sys.stderr)
         return 1
 
     conn = db_conn()
@@ -292,7 +292,7 @@ def main() -> int:
         for i, code in enumerate(codes, 1):
             d0, d1 = date_range(conn, code)
             if d0 is None or d1 is None:
-                print(f"[{i}/{len(codes)}] {code} skip(no missing range)")
+                print(f"[{i}/{len(codes)}] {code} 跳过（没有缺失区间）")
                 ok += 1
                 continue
             start = d0.strftime("%Y%m%d")
@@ -302,12 +302,12 @@ def main() -> int:
                 n = update_turnover(conn, code, rows)
                 updated += n
                 ok += 1
-                print(f"[{i}/{len(codes)}] {code} {start}-{end} fetched={len(rows)} updated={n}")
+                print(f"[{i}/{len(codes)}] {code} {start}-{end} 拉取数={len(rows)}，更新数={n}")
             except Exception as ex:  # noqa: BLE001
                 fail += 1
-                print(f"[{i}/{len(codes)}] {code} FAIL {ex}")
+                print(f"[{i}/{len(codes)}] {code} 失败，异常={ex}")
             time.sleep(max(args.sleep, 0))
-        print(f"done ok={ok} fail={fail} updated={updated}")
+        print(f"完成，成功数={ok}，失败数={fail}，更新数={updated}")
         return 0 if fail == 0 else 1
     finally:
         conn.close()

@@ -103,7 +103,7 @@ public class BotToolServiceImpl implements IBotToolService {
             throw ex;
         } catch (Exception ex) {
             errorMessage = ex.getMessage();
-            log.warn("Bot 工具执行失败 requestId={} operation={} err={}", requestId, request.getOperation(), ex.getMessage());
+            log.warn("Bot 工具执行失败，请求编号={}，操作={}，异常={}", requestId, request.getOperation(), ex.getMessage());
             throw new BusinessException("Bot 工具执行失败，请提供请求号 " + requestId);
         } finally {
             audit(request, requestId, response, errorMessage, System.currentTimeMillis() - start);
@@ -421,7 +421,7 @@ public class BotToolServiceImpl implements IBotToolService {
             audit.setCreateTime(LocalDateTime.now());
             callAuditMapper.insert(audit);
         } catch (Exception ex) {
-            log.warn("Bot 审计写入失败 requestId={} err={}", requestId, ex.getMessage());
+            log.warn("Bot 审计写入失败，请求编号={}，异常={}", requestId, ex.getMessage());
         }
     }
 

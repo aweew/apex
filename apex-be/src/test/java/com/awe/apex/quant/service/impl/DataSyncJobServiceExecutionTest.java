@@ -141,7 +141,7 @@ class DataSyncJobServiceExecutionTest {
                 .build();
 
         ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
-                job, "[NIGHTLY_REPAIR] step 2/3: company_profile", 10L);
+                job, "[NIGHTLY_REPAIR] 步骤 2/3：company_profile", 10L);
         ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
                 job, "[1/300] 000001 OK", 11L);
 
@@ -187,9 +187,9 @@ class DataSyncJobServiceExecutionTest {
         assertEquals(4, result.getDoneItems());
         assertEquals(4, result.getTotalItems());
         assertTrue(result.getMessage().contains("持仓行情刷新失败 11 项"), result::toString);
-        assertTrue(result.getLogTail().contains("[error] 收盘后处理失败：用户 7 · 持仓行情：持仓行情刷新失败 11 项"),
+        assertTrue(result.getLogTail().contains("[错误] 收盘后处理失败：用户 7 · 持仓行情：持仓行情刷新失败 11 项"),
                 result::toString);
-        assertTrue(result.getLogTail().contains("stage=自选日线完成"), result::toString);
+        assertTrue(result.getLogTail().contains("阶段=自选日线完成"), result::toString);
         verify(portfolioService).refreshQuotesAll(false);
         verify(portfolioService).snapshotAll();
         verify(barDailyService).syncStaleWatchlist("我的自选", 80);
@@ -199,7 +199,7 @@ class DataSyncJobServiceExecutionTest {
     void processOutputIsPersistedWhileScriptIsRunning() throws Exception {
         Path script = scriptDir.resolve("sync_close_bundle.py");
         Path releaseFile = scriptDir.resolve("sync_close_bundle.py.release");
-        Files.writeString(script, "echo '[CLOSE_BUNDLE] step 1/5: index'\n"
+        Files.writeString(script, "echo '[CLOSE_BUNDLE] 步骤 1/5：index'\n"
                 + "while [ ! -f \"${0}.release\" ]; do sleep 0.02; done\n"
                 + "exit 3\n");
         SyncStartReq request = new SyncStartReq();
@@ -213,7 +213,7 @@ class DataSyncJobServiceExecutionTest {
             if (Objects.nonNull(currentJob)
                     && "RUNNING".equals(currentJob.getStatus())
                     && StringUtils.isNotBlank(currentJob.getLogTail())
-                    && currentJob.getLogTail().contains("step 1/5: index")) {
+                    && currentJob.getLogTail().contains("步骤 1/5：index")) {
                 runningJob = currentJob;
                 break;
             }
@@ -224,7 +224,7 @@ class DataSyncJobServiceExecutionTest {
         assertNotNull(runningJob, () -> String.valueOf(savedJob.get()));
         SyncJob result = waitForTerminal();
         assertEquals("FAILED", result.getStatus());
-        assertTrue(result.getLogTail().contains("step 1/5: index"), result::toString);
+        assertTrue(result.getLogTail().contains("步骤 1/5：index"), result::toString);
     }
 
     @Test

@@ -189,7 +189,7 @@ public class NewsServiceImpl implements INewsService {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("新闻同步失败 script={}, err={}", script, ex.getMessage());
+            log.warn("新闻同步失败，脚本={}，异常={}", script, ex.getMessage());
             throw new BusinessException("新闻同步失败: " + ex.getMessage());
         }
         if (exit != 0) {
@@ -199,7 +199,7 @@ public class NewsServiceImpl implements INewsService {
         try {
             morningBriefingService.invalidateCache();
         } catch (Exception ex) {
-            log.warn("新闻刷新后清盘前晨报缓存失败 sources={} reason={}", src, ex.getMessage());
+            log.warn("新闻刷新后清盘前晨报缓存失败，来源={}，原因={}", src, ex.getMessage());
         }
         return NewsRefreshResp.builder()
                 .success(true)

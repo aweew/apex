@@ -17,7 +17,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 if [[ ! -f "${source_dir}/SKILL.md" || ! -x "${source_dir}/scripts/apex_tool.sh" ]]; then
-    echo "Skill 源文件不完整: ${source_dir}" >&2
+    echo "技能源文件不完整：${source_dir}" >&2
     exit 1
 fi
 if [[ ! -x "${docker_bin}" ]]; then
@@ -25,7 +25,7 @@ if [[ ! -x "${docker_bin}" ]]; then
     exit 1
 fi
 if [[ ! -f "${compose_file}" || ! -r "${env_file}" ]]; then
-    echo "OpenClaw Compose 配置不可用: ${openclaw_dir}" >&2
+    echo "OpenClaw 编排配置不可用：${openclaw_dir}" >&2
     exit 1
 fi
 
@@ -51,7 +51,7 @@ fi
 mv "${stage_dir}" "${target_dir}"
 stage_dir=""
 
-echo "已同步 Skill: ${target_dir}"
+echo "已同步技能：${target_dir}"
 "${docker_bin}" compose --env-file "${env_file}" -f "${compose_file}" up -d --force-recreate openclaw-gateway
 
 if [[ -n "${backup_dir}" ]]; then

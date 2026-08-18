@@ -68,8 +68,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     private static final Pattern PCT_PATTERN = Pattern.compile("(\\d{1,3})\\s*%");
     private static final Pattern STEP_PATTERN = Pattern.compile("\\[(\\d+)\\s*/\\s*(\\d+)]");
-    /** 编排脚本阶段进度，例如 step 1/5: index */
-    private static final Pattern SCRIPT_STEP_PATTERN = Pattern.compile("step\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+    /** 编排脚本阶段进度，例如“步骤 1/5：index” */
+    private static final Pattern SCRIPT_STEP_PATTERN = Pattern.compile("(?:步骤|step)\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
     private static final int LOG_MAX = 12000;
 
     @Resource
@@ -146,9 +146,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             job.setStatus("FAILED");
             job.setMessage("服务重启，任务中断（僵尸任务已清理）");
             job.setFinishedAt(now);
-            appendLog(job, "\n[orphan] jvm restarted, mark FAILED\n");
+            appendLog(job, "\n[僵尸任务] 服务已重启，任务标记为失败\n");
             syncJobMapper.updateById(job);
-            log.warn("清理僵尸同步任务 jobId={} type={} statusWas=RUNNING/PENDING",
+            log.warn("清理僵尸同步任务，任务编号={}，任务类型={}，原状态=运行中或等待中",
                     job.getId(), job.getTaskType());
         }
     }
@@ -346,7 +346,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 job.setStatus("RUNNING");
                 job.setMessage("正在生成智能决策");
                 job.setStartedAt(LocalDateTime.now());
-                appendLog(job, "[decision] started\n");
+                appendLog(job, "[智能决策] 已开始\n");
                 syncJobMapper.updateById(job);
 
                 DecisionRunReq request = new DecisionRunReq();
@@ -362,7 +362,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     job.setDoneItems(completed);
                     job.setTotalItems(total > 0 ? total : null);
                     job.setMessage(clip(message, 400));
-                    appendLog(job, "[progress] " + job.getProgressPct() + "% " + message + "\n");
+                    appendLog(job, "[进度] " + job.getProgressPct() + "% " + message + "\n");
                     syncJobMapper.updateById(job);
                 });
 
@@ -373,8 +373,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 job.setProgressPct(100);
                 job.setMessage("完成：买入 " + response.getBuyCount() + "，卖出 " + response.getSellCount()
                         + "，持有 " + response.getHoldCount());
-                appendLog(job, "[decision] runNo=" + response.getRunNo() + "\n");
-                appendLog(job, "[decision] " + response.getMessage() + "\n");
+                appendLog(job, "[智能决策] 运行编号=" + response.getRunNo() + "\n");
+                appendLog(job, "[智能决策] " + response.getMessage() + "\n");
                 job.setFinishedAt(LocalDateTime.now());
                 syncJobMapper.updateById(job);
             });
@@ -384,11 +384,11 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 failedJob.setStatus("FAILED");
                 failedJob.setMessage(clip(StringUtils.isNotBlank(ex.getMessage())
                         ? ex.getMessage() : "智能决策失败", 400));
-                appendLog(failedJob, "[error] " + ex + "\n");
+                appendLog(failedJob, "[错误] " + ex + "\n");
                 failedJob.setFinishedAt(LocalDateTime.now());
                 syncJobMapper.updateById(failedJob);
             }
-            log.warn("智能决策任务失败 jobId={} userId={} err={}", jobId, userId, ex.toString());
+            log.warn("智能决策任务失败，任务编号={}，用户编号={}，异常={}", jobId, userId, ex.toString());
         } finally {
             cleanup(jobId);
             runningDecisionJobs.remove(userId, jobId);
@@ -455,7 +455,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         job.setStatus("CANCELLED");
         job.setMessage("用户停止");
         job.setFinishedAt(LocalDateTime.now());
-        appendLog(job, "\n[stopped by user]\n");
+        appendLog(job, "\n[用户停止]\n");
         syncJobMapper.updateById(job);
         cleanup(jobId);
         return toResp(job);
@@ -553,17 +553,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     }
                 } catch (Exception ex) {
                     synchronized (logBuf) {
-                        appendLine(logBuf, "[error] 读取同步输出失败：" + errorMessage(ex));
+                        appendLine(logBuf, "[错误] 读取同步输出失败：" + errorMessage(ex));
                         runningJob.setLogTail(trimLog(logBuf.toString()));
                     }
                     if (!cancelled.get()) {
                         try {
                             syncJobMapper.updateById(runningJob);
                         } catch (Exception updateEx) {
-                            log.warn("持久化同步输出异常失败 jobId={} err={}", jobId, updateEx.getMessage());
+                            log.warn("持久化同步输出异常失败，任务编号={}，异常={}", jobId, updateEx.getMessage());
                         }
                     }
-                    log.warn("读同步输出失败 jobId={} err={}", jobId, ex.getMessage());
+                    log.warn("读取同步输出失败，任务编号={}，异常={}", jobId, ex.getMessage());
                 }
             }, "apex-sync-drain-" + jobId);
             drainThread.setDaemon(true);
@@ -608,7 +608,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             if (StringUtils.isBlank(logText)) {
                 logText = buildFallbackLog(command, exit, null);
             } else if (exit != 0) {
-                logText = trimLog(logText + "\n[exit=" + exit + "]\n");
+                logText = trimLog(logText + "\n[退出码=" + exit + "]\n");
             }
             job.setLogTail(logText);
             enrichProgressFromFile(job);
@@ -628,7 +628,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     job.setDoneItems(0);
                     job.setTotalItems(null);
                     job.setMessage("脚本完成，正在执行收盘后处理");
-                    appendLog(job, "[post] close bundle post-processing started\n");
+                    appendLog(job, "[收盘后处理] 已开始\n");
                     syncJobMapper.updateById(job);
                 }
                 onMarketDataSynced(job, cancelled);
@@ -644,7 +644,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             job.setFinishedAt(LocalDateTime.now());
             syncJobMapper.updateById(job);
         } catch (Exception ex) {
-            log.warn("同步任务失败 jobId={} type={} err={}", jobId, spec.getTaskType(), ex.toString());
+            log.warn("同步任务失败，任务编号={}，任务类型={}，异常={}", jobId, spec.getTaskType(), ex.toString());
             if (Objects.nonNull(process)) {
                 try {
                     if (process.isAlive()) {
@@ -689,10 +689,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
      */
     private String buildFallbackLog(List<String> command, int exit, String error) {
         StringBuilder sb = new StringBuilder();
-        sb.append("[cmd] ").append(String.join(" ", command)).append('\n');
-        sb.append("[exit] ").append(exit).append('\n');
+        sb.append("[命令] ").append(String.join(" ", command)).append('\n');
+        sb.append("[退出码] ").append(exit).append('\n');
         if (StringUtils.isNotBlank(error)) {
-            sb.append("[error] ").append(error).append('\n');
+            sb.append("[错误] ").append(error).append('\n');
         }
         return sb.toString();
     }
@@ -716,7 +716,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 group = configService.getString("auto_sync_group", group);
             }
         } catch (Exception ex) {
-            appendLog(job, "[warning] load sync group failed, use default: " + ex.getMessage() + "\n");
+            appendLog(job, "[警告] 读取同步分组失败，使用默认分组：" + ex.getMessage() + "\n");
         }
 
         List<Long> userIds;
@@ -730,7 +730,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             job.setDoneItems(0);
             job.setTotalItems(0);
             job.setMessage("收盘后处理：无启用用户，已跳过用户数据刷新");
-            appendLog(job, "[post] no enabled users, skipped user data refresh\n");
+            appendLog(job, "[收盘后处理] 没有启用用户，已跳过用户数据刷新\n");
             syncJobMapper.updateById(job);
             return;
         }
@@ -747,7 +747,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         if (CollUtil.isNotEmpty(failureMessages)) {
             String failureSummary = "收盘后处理失败 " + failureMessages.size() + " 项："
                     + String.join("；", failureMessages);
-            appendLog(job, "[error] " + failureSummary + "\n");
+            appendLog(job, "[错误] " + failureSummary + "\n");
             syncJobMapper.updateById(job);
             throw new BusinessException(failureSummary);
         }
@@ -763,16 +763,16 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             try {
                 marketBriefingService.invalidateCache();
             } catch (Exception ex) {
-                appendLog(job, "[warning] invalidate briefing cache failed: " + ex.getMessage() + "\n");
-                log.warn("清简报缓存失败 type={} err={}", type, ex.getMessage());
+                appendLog(job, "[警告] 清理市场简报缓存失败：" + ex.getMessage() + "\n");
+                log.warn("清理市场简报缓存失败，任务类型={}，异常={}", type, ex.getMessage());
             }
         }
         if ("NEWS".equals(type) || "CLOSE_BUNDLE".equals(type)) {
             try {
                 morningBriefingService.invalidateCache();
             } catch (Exception ex) {
-                appendLog(job, "[warning] invalidate morning briefing cache failed: " + ex.getMessage() + "\n");
-                log.warn("清盘前晨报缓存失败 type={} err={}", type, ex.getMessage());
+                appendLog(job, "[警告] 清理盘前晨报缓存失败：" + ex.getMessage() + "\n");
+                log.warn("清理盘前晨报缓存失败，任务类型={}，异常={}", type, ex.getMessage());
             }
         }
     }
@@ -788,7 +788,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             if (failCount > 0) {
                 throw new BusinessException("自选行情刷新失败 " + failCount + " 项");
             }
-            log.info("CLOSE_BUNDLE 后刷自选行情 userId={} success={}", userId, quoteResp.get("successCount"));
+            log.info("收盘任务刷新自选行情完成，用户编号={}，成功数={}", userId, quoteResp.get("successCount"));
         } catch (Exception ex) {
             watchlistSuccess = false;
             recordPostProcessingFailure(job, userId, "自选行情", ex, failureMessages,
@@ -807,7 +807,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             if (failCount > 0) {
                 throw new BusinessException("持仓行情刷新失败 " + failCount + " 项");
             }
-            log.info("CLOSE_BUNDLE 后刷持仓行情完成 userId={}", userId);
+            log.info("收盘任务刷新持仓行情完成，用户编号={}", userId);
         } catch (Exception ex) {
             holdingSuccess = false;
             recordPostProcessingFailure(job, userId, "持仓行情", ex, failureMessages,
@@ -827,7 +827,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 throw new BusinessException("组合行情刷新失败 " + failCount + " 项");
             }
             int snapshotCount = portfolioService.snapshotAll();
-            log.info("CLOSE_BUNDLE 后刷全部组合完成 userId={} portfolios={} success={} fail={} snapshot={}",
+            log.info("收盘任务刷新全部组合完成，用户编号={}，组合数={}，成功数={}，失败数={}，快照数={}",
                     userId, portfolioResp.get("portfolioCount"), portfolioResp.get("success"),
                     portfolioResp.get("fail"), snapshotCount);
         } catch (Exception ex) {
@@ -848,7 +848,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             if (failCount > 0) {
                 throw new BusinessException("自选日线刷新失败 " + failCount + " 项");
             }
-            log.info("CLOSE_BUNDLE 后刷自选日线 userId={} success={} fail={}",
+            log.info("收盘任务刷新自选日线完成，用户编号={}，成功数={}，失败数={}",
                     userId, barResp.getSuccessCount(), barResp.getFailCount());
         } catch (Exception ex) {
             watchlistBarSuccess = false;
@@ -869,7 +869,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         job.setDoneItems(completedStages);
         job.setTotalItems(totalStages);
         job.setMessage("收盘后处理：用户 " + userId + " · " + stage);
-        appendLog(job, "[post] userId=" + userId + " stage=" + stage + " progress=" + progress + "%\n");
+        appendLog(job, "[收盘后处理] 用户编号=" + userId + "，阶段=" + stage + "，进度=" + progress + "%\n");
         syncJobMapper.updateById(job);
     }
 
@@ -884,8 +884,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                                              int totalStages, AtomicBoolean cancelled) {
         String failureMessage = "用户 " + userId + " · " + stage + "：" + errorMessage(ex);
         failureMessages.add(failureMessage);
-        appendLog(job, "[error] 收盘后处理失败：" + failureMessage + "\n");
-        log.warn("CLOSE_BUNDLE 后处理失败 userId={} stage={} reason={}", userId, stage, errorMessage(ex));
+        appendLog(job, "[错误] 收盘后处理失败：" + failureMessage + "\n");
+        log.warn("收盘任务后处理失败，用户编号={}，阶段={}，原因={}", userId, stage, errorMessage(ex));
         persistPostProcessingStage(job, userId, stage + "失败，继续后续任务",
                 completedStages.incrementAndGet(), totalStages, cancelled);
     }
@@ -907,6 +907,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             return;
         }
         if ("NIGHTLY_REPAIR".equalsIgnoreCase(job.getTaskType())
+                && !line.contains("[NIGHTLY_REPAIR] 步骤")
                 && !line.contains("[NIGHTLY_REPAIR] step")) {
             return;
         }
@@ -925,7 +926,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             if (total > 0) {
                 job.setProgressPct(Math.min(99, done * 100 / total));
             }
-            if (line.contains("CLOSE_BUNDLE") || line.toLowerCase(Locale.ROOT).contains("step")) {
+            if (line.contains("CLOSE_BUNDLE") || line.contains("步骤")
+                    || line.toLowerCase(Locale.ROOT).contains("step")) {
                 job.setMessage(trimMessage(line));
             }
             return;
@@ -1004,7 +1006,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 }
             }
         } catch (Exception ex) {
-            log.debug("读进度文件失败 path={} err={}", file, ex.getMessage());
+            log.debug("读取进度文件失败，文件路径={}，异常={}", file, ex.getMessage());
         }
     }
 

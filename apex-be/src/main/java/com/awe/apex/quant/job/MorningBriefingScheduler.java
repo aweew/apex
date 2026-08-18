@@ -46,19 +46,19 @@ public class MorningBriefingScheduler {
             // 1. 先刷新夜间资讯，保证消息面摘要包含最新内容
             try {
                 NewsRefreshResp refreshResp = newsService.refresh("eastmoney,cls,ths,sina", 80);
-                log.info("盘前晨报新闻刷新完成 message={}", refreshResp.getMessage());
+                log.info("盘前晨报新闻刷新完成，结果={}", refreshResp.getMessage());
             } catch (Exception ex) {
-                log.warn("盘前晨报新闻刷新失败，继续使用本地新闻 reason={}", ex.getMessage());
+                log.warn("盘前晨报新闻刷新失败，继续使用本地新闻，原因={}", ex.getMessage());
             }
 
             // 2. 汇总美股收盘、关键股与夜间消息面，并发送到 Bot
             MorningBriefingResp briefing = morningBriefingService.generate();
             notificationService.notifyMorningBriefing(briefing);
             long durationSeconds = Duration.between(startedAt, LocalDateTime.now()).toSeconds();
-            log.info("盘前晨报完成 dataLevel={} quoteCount={} newsCount={} durationSeconds={}",
+            log.info("盘前晨报完成，数据等级={}，行情数量={}，新闻数量={}，耗时秒={}",
                     briefing.getDataLevel(), briefing.getMarketQuotes().size(), briefing.getNewsTitles().size(), durationSeconds);
         } catch (Exception ex) {
-            log.error("盘前晨报失败 startedAt={} reason={}", startedAt, ex.getMessage(), ex);
+            log.error("盘前晨报失败，开始时间={}，原因={}", startedAt, ex.getMessage(), ex);
         }
     }
 }

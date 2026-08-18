@@ -264,7 +264,7 @@ public class StockQuoteClient {
             }
             return body.substring(start + 1, end).split("~");
         } catch (Exception ex) {
-            log.debug("腾讯行情失败，code={}, err={}", basic.getCode(), ex.getMessage());
+            log.debug("腾讯行情失败，证券代码={}，异常={}", basic.getCode(), ex.getMessage());
             return null;
         }
     }
@@ -330,11 +330,11 @@ public class StockQuoteClient {
             long until = System.currentTimeMillis() + EM_COOLDOWN_MS;
             eastMoneyCooldownUntil.set(until);
             eastMoneyFailCount.set(0);
-            log.warn("东财接口连续失败，熔断 {} 分钟（不再逐票请求）。lastCode={}, err={}",
+            log.warn("东财接口连续失败，熔断 {} 分钟（不再逐票请求）。最后证券代码={}，异常={}",
                     EM_COOLDOWN_MS / 60000, code, err);
             return;
         }
-        log.debug("东财补充失败（{}/{}），code={}, err={}", fails, EM_FAIL_THRESHOLD, code, err);
+        log.debug("东财补充失败（{}/{}），证券代码={}，异常={}", fails, EM_FAIL_THRESHOLD, code, err);
     }
 
     private boolean needValuationFallback(StockBasic basic) {

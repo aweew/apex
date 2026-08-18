@@ -60,7 +60,7 @@ async function onDownload() {
     downloadBlob(blob, shareFilename('apex_news', props.item.title))
     ElMessage.success('已下载分享图')
   } catch (e) {
-    console.error(e)
+    console.error('下载新闻分享图失败', e)
     ElMessage.error(e.message || '下载失败')
   } finally {
     downloading.value = false
@@ -74,7 +74,7 @@ async function onCopy() {
     await copyImageBlob(captureCard())
     ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
   } catch (e) {
-    console.error(e)
+    console.error('复制新闻分享图失败', e)
     ElMessage.error(e.message || '复制失败，请改用下载')
   } finally {
     copying.value = false

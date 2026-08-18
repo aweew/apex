@@ -134,7 +134,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                     .deleted(0)
                     .build();
             portfolioMapper.insert(def);
-            log.info("已创建默认组合 id={}", def.getId());
+            log.info("已创建默认组合，组合编号={}", def.getId());
         }
         Long cnt = portfolioHoldingMapper.selectCount(Wrappers.<PortfolioHolding>lambdaQuery()
                 .eq(PortfolioHolding::getPortfolioId, def.getId()));
@@ -163,7 +163,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 portfolioHoldingMapper.insert(holding);
             }
             if (CollUtil.isNotEmpty(mine)) {
-                log.info("已迁移 my_holding → 默认组合，count={}", mine.size());
+                log.info("已将原持仓迁移到默认组合，数量={}", mine.size());
             }
         }
         return def;
@@ -187,7 +187,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 snapshot(portfolioId);
             }
         } catch (Exception ex) {
-            log.warn("持仓变更后刷新当日快照失败 portfolioId={} err={}", portfolioId, ex.getMessage());
+            log.warn("持仓变更后刷新当日快照失败，组合编号={}，异常={}", portfolioId, ex.getMessage());
         }
     }
 
@@ -791,7 +791,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 snapshot(portfolio.getId());
                 ok++;
             } catch (Exception ex) {
-                log.warn("组合快照失败 id={} err={}", portfolio.getId(), ex.getMessage());
+                log.warn("组合快照失败，组合编号={}，异常={}", portfolio.getId(), ex.getMessage());
             }
         }
         return ok;
@@ -1245,7 +1245,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 patch.setTakeProfit(holding.getTakeProfit());
                 patch.setUpdateTime(now);
                 portfolioHoldingMapper.updateById(patch);
-                log.info("组合持仓止损止盈已补全 portfolioId={} code={} stop={} take={}",
+                log.info("组合持仓止损止盈已补全，组合编号={}，证券代码={}，止损价={}，止盈价={}",
                         holding.getPortfolioId(), holding.getCode(),
                         holding.getStopLoss(), holding.getTakeProfit());
             }

@@ -435,7 +435,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 barFail = Objects.nonNull(barResp.getFailCount()) ? barResp.getFailCount() : 0;
                 barCount = Objects.nonNull(barResp.getBarCount()) ? barResp.getBarCount() : 0;
             } catch (Exception ex) {
-                log.warn("持仓日线同步失败 err={}", ex.getMessage());
+                log.warn("持仓日线同步失败，异常={}", ex.getMessage());
                 barFail = codes.size();
             }
         }
@@ -491,7 +491,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 }
             } catch (Exception ex) {
                 fail++;
-                log.warn("刷新行情失败 code={}, err={}", code, ex.getMessage());
+                log.warn("刷新行情失败，证券代码={}，异常={}", code, ex.getMessage());
             }
             try {
                 Thread.sleep(120L);
@@ -682,7 +682,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                     profileMap.put(code, refreshed);
                 }
             } catch (Exception e) {
-                log.warn("持仓补齐公司概况失败 code={} err={}", code, e.getMessage());
+                log.warn("持仓补齐公司概况失败，证券代码={}，异常={}", code, e.getMessage());
             }
         }
     }

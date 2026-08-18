@@ -219,7 +219,7 @@ public class RequestLogFilter extends OncePerRequestFilter {
     }
 
     private void logRequestStart(HttpServletRequest request) {
-        log.info(REQUEST_START);
+        log.info("请求开始：{}", REQUEST_START);
         String url = request.getMethod() + " " + request.getRequestURI();
         if (isJsonRequest(request)) {
             log.info("开始请求 => URL[{}], 参数类型[json], 参数: [{}]", url, jsonParameters(request));
@@ -393,15 +393,15 @@ public class RequestLogFilter extends OncePerRequestFilter {
                     ? requestFailure.getClass().getSimpleName() : "-";
             log.error("结束请求 => URL[{}], 状态[{}], 耗时[{} ms], 异常[{}]",
                     url, response.getStatus(), durationMs, exceptionName, requestFailure);
-            log.error(REQUEST_END);
+            log.error("请求结束：{}", REQUEST_END);
             return;
         }
         if (Constants.LOG_LEVEL_WARN.equals(markedLevel) || response.getStatus() >= 400) {
             log.warn("结束请求 => URL[{}], 状态[{}], 耗时[{} ms]", url, response.getStatus(), durationMs);
-            log.warn(REQUEST_END);
+            log.warn("请求结束：{}", REQUEST_END);
             return;
         }
         log.info("结束请求 => URL[{}], 状态[{}], 耗时[{} ms]", url, response.getStatus(), durationMs);
-        log.info(REQUEST_END);
+        log.info("请求结束：{}", REQUEST_END);
     }
 }

@@ -105,7 +105,7 @@ def fetch_zh(symbol: str, start: date):
     try:
         df = ak.stock_zh_index_daily_em(symbol=symbol)
     except Exception as ex:
-        print(f"eastmoney index daily miss {symbol}: {ex}", file=sys.stderr)
+        print(f"eastmoney 指数日线未获取，指数={symbol}，异常={ex}", file=sys.stderr)
     if df is None or getattr(df, "empty", True):
         df = ak.stock_zh_index_daily(symbol=symbol)
     return normalize_df(df, start)
@@ -268,7 +268,7 @@ def main() -> int:
     conn = db_conn()
     ok = fail = total = 0
     try:
-        print(f"待同步 {len(selected)} 个指数，start={start}")
+        print(f"待同步 {len(selected)} 个指数，开始日期={start}")
         for i, (code, meta) in enumerate(selected, 1):
             fetcher = FETCHERS[meta["fetcher"]]
             try:
@@ -277,12 +277,12 @@ def main() -> int:
                 total += n
                 ok += 1
                 last = bars[-1]["trade_date"] if bars else None
-                print(f"[{i}/{len(selected)}] {code} {meta['name']} bars={n} last={last}")
+                print(f"[{i}/{len(selected)}] {code} {meta['name']} 日线条数={n}，最后日期={last}")
             except Exception as ex:  # noqa: BLE001
                 fail += 1
-                print(f"[{i}/{len(selected)}] {code} FAIL {ex}", file=sys.stderr)
+                print(f"[{i}/{len(selected)}] {code} 同步失败，异常={ex}", file=sys.stderr)
             time.sleep(max(args.sleep, 0))
-        print(f"done ok={ok} fail={fail} upsert={total}")
+        print(f"完成，成功数={ok}，失败数={fail}，写入数={total}")
         return 0 if fail == 0 else 1
     finally:
         conn.close()

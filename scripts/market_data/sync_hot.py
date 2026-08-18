@@ -143,7 +143,7 @@ def upsert_rows(conn, source: str, snapshot_time: datetime, rows: List[Tuple]) -
     有数据才软删旧快照并插入；空结果不覆盖，避免网络抖动把榜单刷空
     """
     if not rows:
-        print(f"{source} skip empty (keep previous snapshot)", file=sys.stderr)
+        print(f"{source} 返回空数据，跳过并保留上一份快照", file=sys.stderr)
         return 0
     with conn.cursor() as cur:
         cur.execute(
@@ -289,7 +289,7 @@ def sync_baidu(conn, limit: int, snapshot_time: datetime, name_map: Dict[str, st
         try:
             df = ak.stock_hot_search_baidu(symbol=market_label)
         except Exception as ex:
-            print(f"baidu {market_label} FAIL {ex}", file=sys.stderr)
+            print(f"baidu {market_label} 同步失败，异常={ex}", file=sys.stderr)
             continue
         if df is None or df.empty:
             continue
@@ -346,7 +346,7 @@ def main() -> int:
     fail_count = 0
     try:
         name_map = load_name_map(conn) if "baidu" in sources else {}
-        print(f"snapshot={snapshot_time.isoformat()} sources={sources} limit={limit}")
+        print(f"快照时间={snapshot_time.isoformat()}，数据源={sources}，每源上限={limit}")
         for source in sources:
             try:
                 if source == "eastmoney":
@@ -355,7 +355,7 @@ def main() -> int:
                     n = sync_xueqiu(conn, limit, snapshot_time)
                 else:
                     n = sync_baidu(conn, limit, snapshot_time, name_map)
-                print(f"{source} ok rows={n}")
+                print(f"{source} 同步成功，写入行数={n}")
                 if n > 0:
                     ok_count += 1
                 else:
@@ -363,7 +363,7 @@ def main() -> int:
             except Exception as ex:
                 conn.rollback()
                 fail_count += 1
-                print(f"{source} FAIL {ex}", file=sys.stderr)
+                print(f"{source} 同步失败，异常={ex}", file=sys.stderr)
         # 清理较旧的软删快照，控制表体积
         try:
             with conn.cursor() as cur:
@@ -373,14 +373,14 @@ def main() -> int:
                 purged = cur.rowcount
             conn.commit()
             if purged:
-                print(f"purged soft-deleted rows={purged}")
+                print(f"已清理软删除记录，行数={purged}")
         except Exception as ex:
             conn.rollback()
-            print(f"purge skip: {ex}", file=sys.stderr)
+            print(f"清理软删除记录失败，已跳过，异常={ex}", file=sys.stderr)
 
         # 全部失败才非 0，便于后端提示；部分成功仍算成功
         if ok_count == 0:
-            print(f"all sources failed or empty fail={fail_count}", file=sys.stderr)
+            print(f"全部数据源失败或返回空数据，失败数={fail_count}", file=sys.stderr)
             return 2
         return 0
     finally:

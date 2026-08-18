@@ -83,10 +83,10 @@ public class DataSyncScheduler {
         for (Long userId : queryEnabledUserIds("定时重估观察池")) {
             try {
                 Map<String, Object> stats = userContext.runAsUser(userId, observePoolService::refresh);
-                log.info("定时重估观察池完成 userId={} total={} near={} triggered={} archived={}",
+                log.info("定时重估观察池完成，用户编号={}，总数={}，临近数量={}，触发数量={}，归档数量={}",
                         userId, stats.get("total"), stats.get("near"), stats.get("triggered"), stats.get("archived"));
             } catch (Exception ex) {
-                log.warn("定时重估观察池失败 userId={} reason={}", userId, ex.getMessage());
+                log.warn("定时重估观察池失败，用户编号={}，原因={}", userId, ex.getMessage());
             }
         }
     }
@@ -104,10 +104,10 @@ public class DataSyncScheduler {
             try {
                 BarSyncResp resp = userContext.runAsUser(userId,
                         () -> barDailyService.syncStaleWatchlist(group, 40));
-                log.info("定时同步日线完成 userId={} group={} success={} fail={}",
+                log.info("定时同步日线完成，用户编号={}，分组={}，成功数量={}，失败数量={}",
                         userId, group, resp.getSuccessCount(), resp.getFailCount());
             } catch (Exception ex) {
-                log.warn("定时同步日线失败 userId={} group={} reason={}", userId, group, ex.getMessage());
+                log.warn("定时同步日线失败，用户编号={}，分组={}，原因={}", userId, group, ex.getMessage());
             }
         }
     }
@@ -125,10 +125,10 @@ public class DataSyncScheduler {
             try {
                 Map<String, Object> resp = userContext.runAsUser(userId,
                         () -> watchlistService.refreshQuotes(group, 80, false));
-                log.info("定时刷新自选行情完成 userId={} group={} success={}",
+                log.info("定时刷新自选行情完成，用户编号={}，分组={}，成功数量={}",
                         userId, group, resp.get("successCount"));
             } catch (Exception ex) {
-                log.warn("定时刷新自选行情失败 userId={} group={} reason={}", userId, group, ex.getMessage());
+                log.warn("定时刷新自选行情失败，用户编号={}，分组={}，原因={}", userId, group, ex.getMessage());
             }
             try {
                 Map<String, Object> resp = userContext.runAsUser(userId, () -> {
@@ -136,10 +136,10 @@ public class DataSyncScheduler {
                     portfolioService.snapshotAll();
                     return refreshResult;
                 });
-                log.info("定时刷新全部组合行情完成 userId={} portfolios={} success={} fail={}",
+                log.info("定时刷新全部组合行情完成，用户编号={}，组合数量={}，成功数量={}，失败数量={}",
                         userId, resp.get("portfolioCount"), resp.get("success"), resp.get("fail"));
             } catch (Exception ex) {
-                log.warn("定时刷新全部组合行情失败 userId={} reason={}", userId, ex.getMessage());
+                log.warn("定时刷新全部组合行情失败，用户编号={}，原因={}", userId, ex.getMessage());
             }
         }
     }
@@ -161,9 +161,9 @@ public class DataSyncScheduler {
         request.setTypes("INDUSTRY,CONCEPT,THEME");
         try {
             SyncJobResp job = dataSyncJobService.startSystemTask(request);
-            log.info("收盘包已提交统一任务 jobId={} status={}", job.getId(), job.getStatus());
+            log.info("收盘包已提交统一任务，任务编号={}，状态={}", job.getId(), job.getStatus());
         } catch (Exception ex) {
-            log.warn("收盘包提交失败 reason={}", ex.getMessage());
+            log.warn("收盘包提交失败，原因={}", ex.getMessage());
         }
     }
 
@@ -190,10 +190,10 @@ public class DataSyncScheduler {
         request.setExpectedDate(expectedDate.toString());
         try {
             SyncJobResp job = dataSyncJobService.startSystemTask(request);
-            log.info("凌晨数据补缺已提交 jobId={} expectedDate={} status={}",
+            log.info("凌晨数据补缺已提交，任务编号={}，预期交易日={}，状态={}",
                     job.getId(), expectedDate, job.getStatus());
         } catch (Exception ex) {
-            log.warn("凌晨数据补缺提交失败 expectedDate={} reason={}", expectedDate, ex.getMessage());
+            log.warn("凌晨数据补缺提交失败，预期交易日={}，原因={}", expectedDate, ex.getMessage());
         }
     }
 
@@ -207,7 +207,7 @@ public class DataSyncScheduler {
         }
         try {
             HotRefreshResp resp = hotService.refresh("eastmoney,baidu", 40);
-            log.info("定时热点刷新完成 message={}", resp.getMessage());
+            log.info("定时热点刷新完成，结果={}", resp.getMessage());
         } catch (Exception ex) {
             log.warn("定时热点刷新失败: {}", ex.getMessage());
         }
@@ -223,7 +223,7 @@ public class DataSyncScheduler {
         }
         try {
             SectorRefreshResp resp = sectorBoardService.refresh("INDUSTRY,CONCEPT,THEME");
-            log.info("定时板块刷新完成 message={}", resp.getMessage());
+            log.info("定时板块刷新完成，结果={}", resp.getMessage());
         } catch (Exception ex) {
             log.warn("定时板块刷新失败: {}", ex.getMessage());
         }
@@ -233,7 +233,7 @@ public class DataSyncScheduler {
         try {
             return userAuthService.listEnabledUserIds();
         } catch (Exception ex) {
-            log.warn("{}读取启用用户失败 reason={}", taskName, ex.getMessage());
+            log.warn("{}读取启用用户失败，原因={}", taskName, ex.getMessage());
             return List.of();
         }
     }

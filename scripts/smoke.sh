@@ -16,13 +16,13 @@ raw=open(path).read()
 try:
     d=json.loads(raw)
 except Exception as e:
-    print(f'[FAIL] {name}: invalid json ({e}) {raw[:180]}')
+    print(f'[失败] {name}：JSON 无效（{e}）{raw[:180]}')
     sys.exit(1)
 code=str(d.get('code'))
 ok=code==expect
-print(f"[{'OK' if ok else 'FAIL'}] {name}: code={code}")
+print(f"[{'成功' if ok else '失败'}] {name}：状态码={code}")
 if not ok:
-    print(raw[:320])
+    print("响应内容：", raw[:320])
     sys.exit(1)
 PY
   then
@@ -30,7 +30,7 @@ PY
   fi
 }
 
-echo "== Apex smoke @ $BASE =="
+echo "== Apex 冒烟检查，服务地址：$BASE =="
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -256,18 +256,18 @@ q=json.load(open(sys.argv[2])).get('data') or {}
 dash=json.load(open(sys.argv[3])).get('data') or {}
 ok=True
 if not bench.get('benchmarkEquities'):
-    print('[WARN] benchmarkEquities empty')
+    print('[警告] 基准权益曲线为空')
 else:
-    print('[OK] benchmark overlay curves', len(bench.get('benchmarkEquities') or []))
+    print('[成功] 基准叠加曲线数量=', len(bench.get('benchmarkEquities') or []))
 if q.get('slaLevel') not in ('GREEN','YELLOW','RED'):
-    print('[FAIL] slaLevel missing'); ok=False
+    print('[失败] 数据服务等级缺失'); ok=False
 else:
-    print('[OK] data SLA', q.get('slaLevel'), 'quote', q.get('quoteCoverage'), 'bars', q.get('barsReadyCoverage'))
+    print('[成功] 数据服务等级=', q.get('slaLevel'), '，行情覆盖率=', q.get('quoteCoverage'), '，日线就绪覆盖率=', q.get('barsReadyCoverage'))
 m=(dash.get('paperMetrics') or {})
 if 'maxDrawdown' not in m and 'sharpe' not in m:
-    print('[WARN] paperMetrics missing maxDrawdown/sharpe (may need restart)')
+    print('[警告] 模拟盘指标缺少最大回撤或夏普比率，可能需要重启')
 else:
-    print('[OK] paper MTM metrics dd=', m.get('maxDrawdown'), 'sharpe=', m.get('sharpe'))
+    print('[成功] 模拟盘盯市指标，最大回撤=', m.get('maxDrawdown'), '，夏普比率=', m.get('sharpe'))
 sys.exit(0 if ok else 1)
 PY
 
@@ -277,14 +277,14 @@ d=json.load(open(sys.argv[1]))
 b=(d.get('data') or {}).get('basic') or {}
 need=['name','peTtm','pb','industry','totalMv']
 bad=[k for k in need if b.get(k) in (None,'')]
-print('[OK] valuation fields' if not bad else f"[WARN] missing {bad}; source={b.get('source')}")
+print('[成功] 估值字段完整' if not bad else f"[警告] 缺少字段 {bad}，数据源={b.get('source')}")
 if bad:
     sys.exit(2)
-print('name=', b.get('name'), 'pe=', b.get('peTtm'), 'pb=', b.get('pb'), 'industry=', b.get('industry'))
+print('名称=', b.get('name'), '，市盈率=', b.get('peTtm'), '，市净率=', b.get('pb'), '，行业=', b.get('industry'))
 PY
 
 if [[ $fail -ne 0 ]]; then
-  echo "SMOKE FAILED"
+  echo "冒烟检查失败"
   exit 1
 fi
-echo "SMOKE PASSED"
+echo "冒烟检查通过"

@@ -17,7 +17,7 @@ MODE=update
 DEPLOY_TARGET=all
 
 log() {
-    echo "[Apex] $*"
+    echo "[Apex 日志] $*"
 }
 
 fail() {

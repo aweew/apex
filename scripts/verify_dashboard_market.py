@@ -35,26 +35,26 @@ def main():
     errors = []
     home = get_json(f"{BASE}/api/dashboard/home?forceRefresh=true")
     if home.get("code") != 0:
-        print("FAIL home code", home.get("code"), home.get("msg"))
+        print("首页接口校验失败，状态码=", home.get("code"), "，消息=", home.get("msg"))
         return 1
     m = (home.get("data") or {}).get("market") or {}
-    print("stance", m.get("stance"), "score", m.get("stanceScore"), "level", m.get("dataLevel"))
-    print("volume", m.get("indexVolumeText"), m.get("volumeLabel"), m.get("volumeTrend"), m.get("volumeVsMa5Pct"))
-    print("breadth", m.get("breadthUp"), m.get("breadthFlat"), m.get("breadthDown"))
-    print("limit", m.get("limitUpCount"), m.get("limitDownCount"))
+    print("市场立场=", m.get("stance"), "，评分=", m.get("stanceScore"), "，数据等级=", m.get("dataLevel"))
+    print("成交额=", m.get("indexVolumeText"), m.get("volumeLabel"), m.get("volumeTrend"), m.get("volumeVsMa5Pct"))
+    print("市场广度=", m.get("breadthUp"), m.get("breadthFlat"), m.get("breadthDown"))
+    print("涨跌停数=", m.get("limitUpCount"), m.get("limitDownCount"))
     for row in m.get("indexes") or []:
-        print("index", row.get("name"), row.get("close"), row.get("pctChg"))
+        print("指数=", row.get("name"), "，收盘价=", row.get("close"), "，涨跌幅=", row.get("pctChg"))
 
     effect = m.get("effect") or {}
     print(
-        "effect",
-        "avg800005", effect.get("avgPctChg"),
-        "median", effect.get("medianPctChg"),
-        "eq800010", effect.get("equalWeightPctChg"),
-        "micro800007", effect.get("microPctChg") or effect.get("csi2000PctChg"),
-        "hs300", effect.get("hs300PctChg"),
-        "sample", effect.get("sampleSize"),
-        "src", effect.get("source"),
+        "赚钱效应：",
+        "平均股价指数=", effect.get("avgPctChg"),
+        "，中位数=", effect.get("medianPctChg"),
+        "，全A等权=", effect.get("equalWeightPctChg"),
+        "，微盘股指数=", effect.get("microPctChg") or effect.get("csi2000PctChg"),
+        "，沪深300=", effect.get("hs300PctChg"),
+        "，样本数=", effect.get("sampleSize"),
+        "，数据源=", effect.get("source"),
     )
     if not effect:
         errors.append("赚钱效应 effect 为空")
@@ -91,7 +91,7 @@ def main():
         errors.append(f"量能标签异常 label={label}")
 
     em_up, em_flat, em_down, em_lu, em_ld = fenbu_stats()
-    print("fenbu", em_up, em_flat, em_down, "limit", em_lu, em_ld)
+    print("东财涨跌分布=", em_up, em_flat, em_down, "，涨跌停数=", em_lu, em_ld)
     if abs(em_up - up) > 80 or abs(em_down - down) > 80:
         errors.append(f"广度与东财fenbu偏差过大 board={up}/{down} fenbu={em_up}/{em_down}")
     lu = m.get("limitUpCount")
@@ -102,9 +102,9 @@ def main():
         errors.append(f"跌停偏差 board={ld} fenbu={em_ld}")
 
     if errors:
-        print("FAIL", errors)
+        print("校验失败：", errors)
         return 1
-    print("PASS")
+    print("校验通过")
     return 0
 
 

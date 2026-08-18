@@ -345,7 +345,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             exist.setTags(StringUtils.trim(req.getTags()));
             exist.setUpdateTime(now);
             observePoolMapper.updateById(exist);
-            log.info("观察池更新 id={} code={}", exist.getId(), code);
+            log.info("观察池更新，记录编号={}，证券代码={}", exist.getId(), code);
             return exist;
         }
 
@@ -372,7 +372,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
                 .deleted(0)
                 .build();
         observePoolMapper.insert(created);
-        log.info("观察池新增 id={} code={}", created.getId(), code);
+        log.info("观察池新增，记录编号={}，证券代码={}", created.getId(), code);
         return created;
     }
 
@@ -484,7 +484,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         stats.put("hitTarget", hitTarget);
         stats.put("stopped", stopped);
         stats.put("archived", archived);
-        log.info("观察池刷新完成 total={} near={} triggered={} archived={}",
+        log.info("观察池刷新完成，总数={}，临近触发数={}，已触发数={}，已归档数={}",
                 rows.size(), near, triggered, archived);
         return stats;
     }
@@ -668,7 +668,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
         stats.put("near", eval.get("near"));
         stats.put("triggered", eval.get("triggered"));
         stats.put("watching", eval.get("watching"));
-        log.info("决策同步观察池 created={} updated={} watch={} mood={} archivedSells={}",
+        log.info("决策同步观察池，新增数={}，更新数={}，关注数={}，情绪数={}，归档卖出数={}",
                 created, updated, watchCount, moodCount, archivedSells);
         return stats;
     }
@@ -714,7 +714,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
                 .last("LIMIT 1"));
         BigDecimal latest = Objects.nonNull(basic) ? basic.getLatestPrice() : null;
         if (Objects.isNull(latest) || latest.signum() <= 0) {
-            log.warn("决策写入观察池跳过：无最新价 code={}", code);
+            log.warn("决策写入观察池跳过：无最新价，证券代码={}", code);
             return false;
         }
 

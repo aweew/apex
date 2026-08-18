@@ -70,7 +70,7 @@ public class KimiChatClient {
                 .execute()) {
             String raw = response.body();
             if (!response.isOk()) {
-                log.warn("Kimi 调用失败 status={} body={}", response.getStatus(), trim(raw));
+                log.warn("Kimi 调用失败，状态={}，响应内容={}", response.getStatus(), trim(raw));
                 return null;
             }
             JSONObject root = JSONUtil.parseObj(raw);

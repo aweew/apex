@@ -187,7 +187,7 @@ public class LimitUpLadderServiceImpl implements ILimitUpLadderService {
                 return Math.max(poolCount, briefing.getLimitUpCount());
             }
         } catch (Exception ex) {
-            log.debug("连板天梯读取全市场涨停数失败 tradeDate={}: {}", tradeDate, ex.getMessage());
+            log.debug("连板天梯读取全市场涨停数失败，交易日={}，原因={}", tradeDate, ex.getMessage());
         }
         return poolCount;
     }

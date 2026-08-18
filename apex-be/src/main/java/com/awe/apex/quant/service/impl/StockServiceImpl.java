@@ -127,7 +127,7 @@ public class StockServiceImpl implements IStockService {
             try {
                 basic = syncBasic(pure);
             } catch (Exception ex) {
-                log.warn("刷新基本信息失败，回退本地 code={}, err={}", pure, ex.getMessage());
+                log.warn("刷新基本信息失败，回退本地，证券代码={}，异常={}", pure, ex.getMessage());
             }
         }
         if (Objects.isNull(basic)) {

@@ -40,7 +40,7 @@ public class TestLoginController {
 
         // 获取扩展参数
         String name = String.valueOf(StpUtil.getExtra("name"));
-        log.info("name:{}", name);
+        log.info("当前登录用户名称：{}", name);
 
         // 获取任意 Token 的扩展参数
         // String name = StpUtil.getExtra("tokenValue", "name");
@@ -49,4 +49,3 @@ public class TestLoginController {
     }
 
 }
-

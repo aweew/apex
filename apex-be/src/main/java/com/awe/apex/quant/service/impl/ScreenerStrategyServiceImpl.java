@@ -157,7 +157,7 @@ public class ScreenerStrategyServiceImpl implements IScreenerStrategyService {
         strategy.setEnabled(Boolean.TRUE.equals(enabled) ? 1 : 0);
         strategy.setUpdateTime(LocalDateTime.now());
         strategyMapper.updateById(strategy);
-        log.info("选股策略状态更新 userId={}, strategyId={}, enabled={}",
+        log.info("选股策略状态更新，用户编号={}，策略编号={}，是否启用={}",
                 strategy.getUserId(), strategy.getId(), enabled);
         return detail(id);
     }
@@ -191,7 +191,7 @@ public class ScreenerStrategyServiceImpl implements IScreenerStrategyService {
             strategy.setUpdateTime(now);
             strategyMapper.updateById(strategy);
         }
-        log.info("选股策略排序完成 userId={}, count={}", userId, strategies.size());
+        log.info("选股策略排序完成，用户编号={}，数量={}", userId, strategies.size());
     }
 
     /**
@@ -206,7 +206,7 @@ public class ScreenerStrategyServiceImpl implements IScreenerStrategyService {
         ruleMapper.delete(Wrappers.<ScreenerStrategyRule>lambdaQuery()
                 .eq(ScreenerStrategyRule::getStrategyId, id));
         strategyMapper.deleteById(id);
-        log.info("选股策略删除 userId={}, strategyId={}", strategy.getUserId(), id);
+        log.info("选股策略删除，用户编号={}，策略编号={}", strategy.getUserId(), id);
     }
 
     /**
@@ -292,7 +292,7 @@ public class ScreenerStrategyServiceImpl implements IScreenerStrategyService {
             ruleMapper.insert(rule);
             index++;
         }
-        log.info("选股策略保存 userId={}, strategyId={}, version={}, ruleCount={}",
+        log.info("选股策略保存，用户编号={}，策略编号={}，版本={}，规则数量={}",
                 userId, strategy.getId(), strategy.getVersionNo(), req.getRules().size());
         return detail(strategy.getId());
     }

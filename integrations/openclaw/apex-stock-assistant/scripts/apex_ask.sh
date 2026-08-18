@@ -6,20 +6,20 @@ readonly servlet_path="/apex/bot/v1/ask"
 readonly http_method="POST"
 
 if [[ $# -eq 0 || -z "${*//[[:space:]]/}" ]]; then
-    echo "Usage: apex_ask.sh <question>" >&2
+    echo "用法：apex_ask.sh <问题>" >&2
     exit 2
 fi
 
 for command_name in curl node openssl; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
-        echo "Missing required command: ${command_name}" >&2
+        echo "缺少必需命令：${command_name}" >&2
         exit 3
     fi
 done
 
 for variable_name in APEX_BOT_BASE_URL APEX_BOT_CLIENT_KEY APEX_BOT_CLIENT_SECRET APEX_BOT_EXTERNAL_USER_ID; do
     if [[ -z "${!variable_name:-}" ]]; then
-        echo "Missing required environment variable: ${variable_name}" >&2
+        echo "缺少必需环境变量：${variable_name}" >&2
         exit 4
     fi
 done

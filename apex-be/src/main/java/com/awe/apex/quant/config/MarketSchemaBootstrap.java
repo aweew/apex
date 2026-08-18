@@ -42,7 +42,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                         UNIQUE KEY uk_market_briefing_date (trade_date)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """);
-            log.info("schema ready: market_briefing_snapshot");
+            log.info("数据库结构检查完成：market_briefing_snapshot 表");
             ensureDecisionTables();
             ensureCompoundDecisionColumns();
             ensureColumn("daily_action", "run_id",
@@ -83,7 +83,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     "ALTER TABLE daily_action ADD COLUMN risk_flags VARCHAR(256) NULL");
             ensureColumn("daily_action", "executable_hint",
                     "ALTER TABLE daily_action ADD COLUMN executable_hint TINYINT NULL");
-            log.info("schema ready: daily_action attribution/valuation columns");
+            log.info("数据库结构检查完成：daily_action 归因与估值字段");
             ensureStrategyLabSchema();
             ensureScreenerStrategyTables();
             ensureUserIsolationSchema();
@@ -118,7 +118,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                         KEY idx_observe_priority (priority)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='观察池'
                     """);
-            log.info("schema ready: observe_pool");
+            log.info("数据库结构检查完成：observe_pool 表");
             ensureColumn("observe_pool", "side",
                     "ALTER TABLE observe_pool ADD COLUMN side VARCHAR(8) NULL DEFAULT 'BUY' COMMENT '方向BUY/SELL'");
             ensureColumn("observe_pool", "decision_updated_at",
@@ -137,7 +137,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             ensureCompanyProfileRevenueColumns();
             ensureStockBasicPeColumns();
         } catch (Exception ex) {
-            log.error("schema bootstrap failed", ex);
+            log.error("数据库结构初始化失败", ex);
             throw new IllegalStateException("关键数据库结构初始化失败", ex);
         }
     }
@@ -185,7 +185,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     KEY idx_screener_rule_type (rule_type, deleted)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户选股策略规则'
                 """);
-        log.info("schema ready: screener_strategy/screener_strategy_rule");
+        log.info("数据库结构检查完成：选股策略及规则表");
     }
 
     /**
@@ -316,7 +316,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                 "ALTER TABLE backtest_experiment ADD COLUMN execution_model_version VARCHAR(32) NULL COMMENT '成交语义版本' AFTER sell_slippage");
         ensureColumn("backtest_experiment", "price_adjustment",
                 "ALTER TABLE backtest_experiment ADD COLUMN price_adjustment VARCHAR(16) NULL COMMENT '行情复权口径' AFTER execution_model_version");
-        log.info("schema ready: strategy lab");
+        log.info("数据库结构检查完成：策略实验室相关表");
     }
 
     /**
@@ -347,7 +347,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                 "ALTER TABLE strategy_signal ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
         ensureIndex("strategy_signal", "idx_strategy_signal_user_date",
                 "ALTER TABLE strategy_signal ADD KEY idx_strategy_signal_user_date (user_id, signal_date, id)");
-        log.info("schema ready: user isolation");
+        log.info("数据库结构检查完成：用户数据隔离字段");
     }
 
     /**
@@ -360,7 +360,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                 "ALTER TABLE my_holding ADD UNIQUE KEY uk_my_holding_user_code (user_id, code)");
         dropIndex("watchlist", "uk_watchlist_code_group");
         dropIndex("my_holding", "uk_my_holding_code");
-        log.info("schema ready: user scoped asset unique indexes");
+        log.info("数据库结构检查完成：用户资产唯一索引");
     }
 
     /**
@@ -375,7 +375,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             // 历史代码把动态 PE 写进 pe_ttm；新增口径时清空，等待 f164 正确回填。
             jdbcTemplate.execute("UPDATE stock_basic SET pe_ttm = NULL WHERE pe_ttm IS NOT NULL");
         }
-        log.info("schema ready: stock_basic PE variants");
+        log.info("数据库结构检查完成：stock_basic 市盈率字段");
     }
 
     /**
@@ -512,7 +512,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     KEY idx_decision_portfolio_date (portfolio_id, action_date)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """);
-        log.info("schema ready: compound decision tables");
+        log.info("数据库结构检查完成：复合决策相关表");
     }
 
     /**
@@ -570,7 +570,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
         } catch (Exception ignored) {
             // 已是 TEXT 或无权限时忽略
         }
-        log.info("schema ready: stock_company_profile revenue columns");
+        log.info("数据库结构检查完成：公司概况营收字段");
     }
 
     /**
@@ -638,7 +638,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     KEY idx_portfolio_daily_date (trade_date)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='组合每日快照'
                 """);
-        log.info("schema ready: portfolio / portfolio_holding / portfolio_daily");
+        log.info("数据库结构检查完成：组合、持仓及每日快照表");
     }
 
     /**
@@ -679,7 +679,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                 "ALTER TABLE journal_trade ADD KEY idx_journal_trade_user_portfolio_time (user_id, portfolio_id, trade_time, id)");
         ensureIndex("journal_trade", "uk_journal_trade_source_ref",
                 "ALTER TABLE journal_trade ADD UNIQUE KEY uk_journal_trade_source_ref (user_id, source, source_ref, code)");
-        log.info("schema ready: unified trade records");
+        log.info("数据库结构检查完成：统一交易流水字段");
     }
 
     /**
@@ -716,7 +716,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
                     KEY idx_bot_audit_created (create_time)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Bot调用审计'
                 """);
-        log.info("schema ready: bot_call_audit");
+        log.info("数据库结构检查完成：Bot 调用审计表");
     }
 
     /**
@@ -767,7 +767,7 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
         ensureColumn("smart_money_factor", "return_5d", "ALTER TABLE smart_money_factor ADD COLUMN return_5d DECIMAL(12, 6) NULL");
         ensureColumn("smart_money_factor", "return_10d", "ALTER TABLE smart_money_factor ADD COLUMN return_10d DECIMAL(12, 6) NULL");
         ensureColumn("smart_money_factor", "return_20d", "ALTER TABLE smart_money_factor ADD COLUMN return_20d DECIMAL(12, 6) NULL");
-        log.info("schema ready: smart trader tables");
+        log.info("数据库结构检查完成：聪明投资者相关表");
     }
 
     /**

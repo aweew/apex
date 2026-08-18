@@ -43,7 +43,7 @@ public class UsMarketQuoteClient {
                 .header("Referer", "https://gu.qq.com/")
                 .execute()) {
             if (!response.isOk() || StringUtils.isBlank(response.body())) {
-                log.warn("盘前晨报美股行情请求失败 status={}", response.getStatus());
+                log.warn("盘前晨报美股行情请求失败，状态={}", response.getStatus());
                 return quotes;
             }
             String body = new String(response.bodyBytes(), Charset.forName("GBK"));
@@ -56,7 +56,7 @@ public class UsMarketQuoteClient {
             }
             return quotes;
         } catch (Exception ex) {
-            log.warn("盘前晨报美股行情读取失败 reason={}", ex.getMessage());
+            log.warn("盘前晨报美股行情读取失败，原因={}", ex.getMessage());
             return quotes;
         }
     }

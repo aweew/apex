@@ -138,7 +138,7 @@ def fetch_eastmoney_yaowen(limit: int, snapshot_time: datetime) -> List[Dict[str
     try:
         payload = http_get_json(url)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as ex:
-        print(f"eastmoney yaowen: FAIL {ex}", file=sys.stderr)
+        print(f"eastmoney 要闻同步失败，异常={ex}", file=sys.stderr)
         return []
 
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
@@ -345,7 +345,7 @@ def fetch_eastmoney(limit: int, snapshot_time: datetime) -> List[Dict[str, Any]]
     try:
         flash_rows = fetch_eastmoney_flash(flash_n, snapshot_time)
     except Exception as ex:  # noqa: BLE001
-        print(f"eastmoney flash: FAIL {ex}", file=sys.stderr)
+        print(f"eastmoney 快讯同步失败，异常={ex}", file=sys.stderr)
         flash_rows = []
 
     for item in flash_rows:
@@ -357,7 +357,7 @@ def fetch_eastmoney(limit: int, snapshot_time: datetime) -> List[Dict[str, Any]]
         if len(merged) >= cap:
             break
 
-    print(f"eastmoney: yaowen+flash merged={len(merged)} (cap={cap})")
+    print(f"eastmoney 要闻与快讯合并完成，合并数={len(merged)}，上限={cap}")
     return merged[:cap]
 
 
@@ -497,18 +497,18 @@ def main() -> int:
                 rows = FETCHERS[source](limit, snapshot_time)
                 all_rows.extend(rows)
                 ok += 1
-                print(f"{source}: fetched={len(rows)}")
+                print(f"{source} 拉取完成，数量={len(rows)}")
             except Exception as ex:  # noqa: BLE001
                 fail += 1
-                print(f"{source}: FAIL {ex}", file=sys.stderr)
+                print(f"{source} 拉取失败，异常={ex}", file=sys.stderr)
         before = len(all_rows)
         all_rows = dedupe_by_title(all_rows)
         total = upsert_rows(conn, all_rows)
         dup_removed = soft_delete_duplicate_titles(conn)
         cleaned = cleanup_old(conn, args.keep_days)
         print(
-            f"done sources_ok={ok} fail={fail} fetched={before} unique_title={len(all_rows)} "
-            f"upsert={total} title_dup_soft_del={dup_removed} cleaned={cleaned} snapshot={snapshot_time}"
+            f"完成，成功数据源数={ok}，失败数据源数={fail}，拉取数={before}，标题去重数={len(all_rows)}，"
+            f"写入数={total}，软删除重复标题数={dup_removed}，清理数={cleaned}，快照时间={snapshot_time}"
         )
         return source_result_exit_code(ok)
     finally:

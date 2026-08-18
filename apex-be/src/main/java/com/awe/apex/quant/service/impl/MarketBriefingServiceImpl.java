@@ -988,7 +988,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             quote.pctChg = Objects.nonNull(pct) ? pct.setScale(2, RoundingMode.HALF_UP) : null;
             return quote;
         } catch (Exception ex) {
-            log.debug("单指数实时拉取失败 secId={}: {}", secId, ex.getMessage());
+            log.debug("单指数实时拉取失败，证券编号={}，异常={}", secId, ex.getMessage());
             return null;
         }
     }
@@ -1130,7 +1130,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                     break;
                 }
             } catch (Exception ex) {
-                log.debug("eastmoney limit pool fail up={} host={}: {}", limitUp, host, ex.getMessage());
+                log.debug("东财涨跌停池读取失败，是否涨停={}，服务地址={}，原因={}",
+                        limitUp, host, ex.getMessage());
             }
         }
         synchronized (cacheLock) {
@@ -2137,7 +2138,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 }
             }
         } catch (Exception ex) {
-            log.debug("??????????: {}", ex.getMessage());
+            log.debug("腾讯市场概览读取失败：{}", ex.getMessage());
         }
         synchronized (cacheLock) {
             cachedQqMarket = overview;

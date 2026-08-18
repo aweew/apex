@@ -151,7 +151,7 @@ public class HotServiceImpl implements IHotService {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("热点同步失败 script={}, err={}", script, ex.getMessage());
+            log.warn("热点同步失败，脚本={}，异常={}", script, ex.getMessage());
             throw new BusinessException("热点同步失败: " + ex.getMessage());
         }
         if (exit != 0) {
@@ -291,14 +291,14 @@ public class HotServiceImpl implements IHotService {
             try {
                 Path normalized = path.toAbsolutePath().normalize();
                 if (Files.isRegularFile(normalized)) {
-                    log.info("热点脚本定位成功 path={}", normalized);
+                    log.info("热点脚本定位成功，路径={}", normalized);
                     return normalized;
                 }
             } catch (Exception ignored) {
                 // 下一候选
             }
         }
-        log.warn("热点脚本未找到 user.dir={} cwd={} config={}", userDir, cwd, scriptPathConfig);
+        log.warn("热点脚本未找到，工作目录={}，当前目录={}，配置路径={}", userDir, cwd, scriptPathConfig);
         return null;
     }
 

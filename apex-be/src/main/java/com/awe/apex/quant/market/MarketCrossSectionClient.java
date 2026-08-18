@@ -150,7 +150,7 @@ public class MarketCrossSectionClient {
             }
             return result;
         } catch (Exception ex) {
-            log.debug("东财 clist 拉取失败 pn={}: {}", pageNo, ex.getMessage());
+            log.debug("东财 clist 拉取失败，页码={}，原因={}", pageNo, ex.getMessage());
             return null;
         }
     }

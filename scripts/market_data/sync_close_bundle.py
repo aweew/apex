@@ -14,9 +14,9 @@ from pathlib import Path
 
 def run_one(script: Path, args: list[str]) -> int:
     cmd = [sys.executable, "-u", str(script), *args]
-    print(f"[CLOSE_BUNDLE] run: {' '.join(cmd)}", flush=True)
+    print(f"[CLOSE_BUNDLE] 执行命令：{' '.join(cmd)}", flush=True)
     proc = subprocess.run(cmd, cwd=str(script.parent))
-    print(f"[CLOSE_BUNDLE] exit={proc.returncode} script={script.name}", flush=True)
+    print(f"[CLOSE_BUNDLE] 退出码={proc.returncode}，脚本={script.name}", flush=True)
     return proc.returncode
 
 
@@ -31,7 +31,7 @@ def run_with_retries(script: Path, args: list[str], retries: int, pause: float) 
         if i < attempts:
             wait = pause * i
             print(
-                f"[CLOSE_BUNDLE] step retry {i}/{attempts} script={script.name} sleep={wait:.0f}s",
+                f"[CLOSE_BUNDLE] 步骤重试 {i}/{attempts}，脚本={script.name}，等待秒数={wait:.0f}",
                 flush=True,
             )
             time.sleep(wait)
@@ -126,25 +126,25 @@ def main() -> int:
     failed: list[str] = []
     for key, script, script_args in steps:
         if key in skip:
-            print(f"[CLOSE_BUNDLE] skip {key}", flush=True)
+            print(f"[CLOSE_BUNDLE] 跳过步骤：{key}", flush=True)
             continue
         if not script.is_file():
-            print(f"[CLOSE_BUNDLE] missing {script.name}", flush=True)
+            print(f"[CLOSE_BUNDLE] 缺少脚本：{script.name}", flush=True)
             return 2
         done += 1
-        print(f"[CLOSE_BUNDLE] step {done}/{total}: {key}", flush=True)
+        print(f"[CLOSE_BUNDLE] 步骤 {done}/{total}：{key}", flush=True)
         # 涨停池外网更脆，多给一次重试预算
         retries = args.step_retries + (1 if key == "limit_up" else 0)
         code = run_with_retries(script, script_args, retries=retries, pause=8.0)
         if code != 0:
-            print(f"[CLOSE_BUNDLE] failed at {key}", flush=True)
+            print(f"[CLOSE_BUNDLE] 步骤失败：{key}", flush=True)
             failed.append(key)
             if not continue_on_error:
                 return code
     if failed:
-        print(f"[CLOSE_BUNDLE] done with failures: {','.join(failed)}", flush=True)
+        print(f"[CLOSE_BUNDLE] 执行完成，但存在失败步骤：{','.join(failed)}", flush=True)
         return 1
-    print("[CLOSE_BUNDLE] all done", flush=True)
+    print("[CLOSE_BUNDLE] 全部完成", flush=True)
     return 0
 
 

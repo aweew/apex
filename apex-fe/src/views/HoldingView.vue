@@ -693,7 +693,7 @@ async function openShare() {
     sharePreviewUrl.value = sharePreviewObjectUrl
     shareOpen.value = true
   } catch (e) {
-    console.error(e)
+    console.error('生成持仓分享图失败', e)
     ElMessage.error(e.message || '截图失败')
   } finally {
     sharing.value = false
@@ -706,7 +706,7 @@ async function onCopyShare() {
     await copyImageBlob(captureHoldingShare())
     ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
   } catch (e) {
-    console.error(e)
+    console.error('复制持仓分享图失败', e)
     ElMessage.error(e.message || '复制失败，请改用下载')
   } finally {
     copying.value = false
@@ -720,7 +720,7 @@ async function onDownloadShare() {
     downloadBlob(blob, shareFilename('apex_holding', new Date().toISOString().slice(0, 10)))
     ElMessage.success('已下载分享图')
   } catch (e) {
-    console.error(e)
+    console.error('下载持仓分享图失败', e)
     ElMessage.error(e.message || '下载失败')
   } finally {
     downloading.value = false

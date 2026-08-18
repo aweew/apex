@@ -68,8 +68,8 @@ def main():
         "ORDER BY code, trade_date DESC LIMIT 18"
     )
     for row in cur.fetchall():
-        print(row[0], row[1], row[2])
-    print("updated_rows=", updated)
+        print("指数成交额记录：", row[0], row[1], row[2])
+    print("更新行数=", updated)
     conn.close()
 
 

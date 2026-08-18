@@ -36,7 +36,7 @@ public class RedisCacheService {
             }
             return JsonUtils.parseObject(payload, valueType);
         } catch (Exception ex) {
-            log.debug("Redis 缓存读取失败 key={}: {}", cacheKey, ex.getMessage());
+            log.debug("Redis 缓存读取失败，缓存键={}，原因={}", cacheKey, ex.getMessage());
             return null;
         }
     }
@@ -55,7 +55,7 @@ public class RedisCacheService {
         try {
             stringRedisTemplate.opsForValue().set(cacheKey, JsonUtils.toJsonString(value), ttl);
         } catch (Exception ex) {
-            log.debug("Redis 缓存写入失败 key={}: {}", cacheKey, ex.getMessage());
+            log.debug("Redis 缓存写入失败，缓存键={}，原因={}", cacheKey, ex.getMessage());
         }
     }
 
@@ -68,7 +68,7 @@ public class RedisCacheService {
         try {
             stringRedisTemplate.delete(cacheKey);
         } catch (Exception ex) {
-            log.debug("Redis 缓存删除失败 key={}: {}", cacheKey, ex.getMessage());
+            log.debug("Redis 缓存删除失败，缓存键={}，原因={}", cacheKey, ex.getMessage());
         }
     }
 }

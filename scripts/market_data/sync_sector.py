@@ -275,11 +275,11 @@ def _fetch_em_clist(fs: str) -> List[Dict[str, Any]]:
                     seen.add(row["code"])
                     rows.append(row)
                 if rows:
-                    print(f"clist ok host={host.split('//')[1].split('/')[0]} rows={len(rows)}")
+                    print(f"板块列表拉取成功，服务地址={host.split('//')[1].split('/')[0]}，行数={len(rows)}")
                     return rows
             except Exception as ex:
                 last_err = ex
-                print(f"clist fail host={host} attempt={attempt + 1}: {ex}", file=sys.stderr)
+                print(f"板块列表拉取失败，服务地址={host}，尝试次数={attempt + 1}，异常={ex}", file=sys.stderr)
                 time.sleep(1.5 * (attempt + 1))
     raise RuntimeError(f"东财 clist 全部失败: {last_err}")
 
@@ -328,7 +328,7 @@ def fetch_board_spot(board_type: str) -> List[Dict[str, Any]]:
                     }
                 )
         if rows:
-            print(f"{board_type} akshare fallback rows={len(rows)}")
+            print(f"{board_type} 使用 AKShare 降级成功，行数={len(rows)}")
             return rows
     except Exception as ex:
         last_err = ex
@@ -545,7 +545,7 @@ def load_zt_context(trade_date: date) -> Dict[str, Any]:
             except Exception:
                 ssbk_map[code] = []
                 fail += 1
-    print(f"涨停股板块归属 ok={ok} fail={fail}")
+    print(f"涨停股板块归属完成，成功数={ok}，失败数={fail}")
     return {"rows": zt_rows, "ssbk_map": ssbk_map}
 
 
@@ -668,7 +668,7 @@ def upsert_quotes(
     zt_ctx: Optional[Dict[str, Any]] = None,
 ) -> int:
     if not items:
-        print(f"{board_type} quote skip empty", file=sys.stderr)
+        print(f"{board_type} 行情为空，已跳过", file=sys.stderr)
         return 0
     sql = """
     INSERT INTO sector_quote (
@@ -842,12 +842,12 @@ def _fetch_em_constituents(sector_code: str) -> List[Dict[str, Any]]:
                 seen.add(row["stock_code"])
                 rows.append(row)
             if rows:
-                print(f"constituents direct ok code={sector_code} rows={len(rows)}")
+                print(f"板块成分直连拉取成功，板块代码={sector_code}，行数={len(rows)}")
                 return rows
             raise RuntimeError(f"no valid constituents from {host}")
         except Exception as ex:
             last_err = ex
-            print(f"constituents direct fail host={host} code={sector_code}: {ex}", file=sys.stderr)
+            print(f"板块成分直连拉取失败，服务地址={host}，板块代码={sector_code}，异常={ex}", file=sys.stderr)
     raise RuntimeError(f"东财成分直连失败 {sector_code}: {last_err}")
 
 
@@ -934,20 +934,20 @@ def sync_quote_types(
                 conn.rollback()
                 msg = f"{source_key} 拉取失败: {ex}"
                 errors.append(msg)
-                print(msg, file=sys.stderr)
+                print("板块行情拉取异常：" + msg, file=sys.stderr)
                 pulled[source_key] = []
             if sleep_s > 0:
                 time.sleep(sleep_s)
         items = pulled.get(source_key) or []
         if not items:
             result[board_type] = 0
-            print(f"{board_type} quote skip empty")
+            print(f"{board_type} 行情为空，已跳过")
             continue
         upsert_basic(conn, board_type, items)
         n = upsert_quotes(conn, board_type, trade_date, synced_at, items, zt_ctx)
         conn.commit()
         result[board_type] = n
-        print(f"{board_type} quote upsert={n}")
+        print(f"{board_type} 行情写入完成，写入数={n}")
     if errors and not any(result.values()):
         raise RuntimeError(" ; ".join(errors))
     if errors:
@@ -1003,10 +1003,10 @@ def sync_cons_types(
                 n = replace_constituents(conn, code, bt, trade_date, synced_at, cons)
                 conn.commit()
                 total += n
-                print(f"[{idx}/{len(metas)}] {bt} {code} {name} cons={n}")
+                print(f"[{idx}/{len(metas)}] {bt} {code} {name} 成分股数={n}")
             except Exception as ex:
                 conn.rollback()
-                print(f"[{idx}/{len(metas)}] {bt} {code} fail: {ex}", file=sys.stderr)
+                print(f"[{idx}/{len(metas)}] {bt} {code} 同步失败，异常={ex}", file=sys.stderr)
             if sleep_s > 0:
                 time.sleep(sleep_s)
         result[board_type] = total
@@ -1019,7 +1019,7 @@ def parse_types(raw: str) -> List[str]:
         return list(ALL_TYPES)
     bad = [p for p in parts if p not in ALL_TYPES]
     if bad:
-        raise SystemExit(f"未知 board_type: {bad}，可选 {ALL_TYPES}")
+        raise SystemExit(f"未知板块类型：{bad}，可选 {ALL_TYPES}")
     # 去重保序
     seen: Set[str] = set()
     out: List[str] = []
@@ -1052,11 +1052,11 @@ def main() -> None:
         if args.mode in ("cons", "all"):
             # all 模式默认不拉全市场成分（太慢），除非显式 --codes 或 --limit
             if args.mode == "all" and not codes and not args.limit:
-                print("all 模式跳过全量成分股；请用 --mode cons --codes BKxxxx 或 --limit N")
+                print("全量模式跳过全部成分股；请用 --mode cons --codes BKxxxx 或 --limit N")
             else:
                 lim = args.limit if args.limit > 0 else None
                 sync_cons_types(conn, types, codes, args.sleep, lim)
-        print("done")
+        print("全部完成")
     finally:
         conn.close()
 

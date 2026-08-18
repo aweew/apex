@@ -367,7 +367,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
         try {
             return newsPulseService.pulse(6, true);
         } catch (Exception ex) {
-            log.warn("盘前晨报夜间新闻摘要失败 reason={}", ex.getMessage());
+            log.warn("盘前晨报夜间新闻摘要失败，原因={}", ex.getMessage());
             return null;
         }
     }

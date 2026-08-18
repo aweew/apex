@@ -44,7 +44,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NotLoginException.class)
     public Result<?> handleNotLoginException(NotLoginException exception, HttpServletRequest request) {
         markRequestLevel(request, Constants.LOG_LEVEL_WARN);
-        log.warn("登录态失效，type={}", exception.getType());
+        log.warn("登录态失效，类型={}", exception.getType());
         return Result.failure(HttpStatus.UNAUTHORIZED.value(), "登录已失效，请重新登录");
     }
 

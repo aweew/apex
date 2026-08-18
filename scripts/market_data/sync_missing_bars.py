@@ -130,7 +130,7 @@ def main() -> int:
         done_rounds += 1
         attempted_codes.update(codes)
         joined = ",".join(codes)
-        print(f"==== round {done_rounds} codes={len(codes)} first={codes[0]} last={codes[-1]} ====")
+        print(f"==== 轮次 {done_rounds}，证券数={len(codes)}，首个代码={codes[0]}，末个代码={codes[-1]} ====")
         cmd = [
             sys.executable,
             "-u",
@@ -151,20 +151,20 @@ def main() -> int:
         rc = -1
         attempts = 2
         for attempt in range(1, attempts + 1):
-            print(f"[round {done_rounds}] run attempt={attempt}/{attempts}")
+            print(f"[轮次 {done_rounds}] 执行尝试={attempt}/{attempts}")
             sys.stdout.flush()
             rc = subprocess.call(cmd, cwd=str(ROOT))
             if rc == 0:
                 break
-            print(f"round {done_rounds} attempt={attempt} 退出码 {rc}", file=sys.stderr)
+            print(f"轮次 {done_rounds}，尝试次数={attempt}，退出码={rc}", file=sys.stderr)
             sys.stderr.flush()
             # 非瞬时错误（脚本业务失败）不再重试
             if rc > 0:
                 break
         if rc != 0:
-            print(f"round {done_rounds} 最终失败 exit={rc}", file=sys.stderr)
+            print(f"轮次 {done_rounds} 最终失败，退出码={rc}", file=sys.stderr)
             failed_rounds.append(done_rounds)
-    print(f"完成 rounds={done_rounds} failed_rounds={failed_rounds}")
+    print(f"完成，执行轮数={done_rounds}，失败轮次={failed_rounds}")
     return 1 if failed_rounds else 0
 
 

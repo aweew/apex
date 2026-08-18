@@ -347,14 +347,14 @@ def sync_bars(
     progress = load_progress() if resume else {}
     total = len(codes)
     ok = fail = skip = 0
-    print(f"开始同步日线：{total} 只，区间 {start} ~ {end}，sleep={sleep_sec}s")
+    print(f"开始同步日线：{total} 只，区间 {start} ~ {end}，等待秒数={sleep_sec}")
 
     for idx, code in enumerate(codes, 1):
         state = progress.get(code) or {}
         if resume and state.get("status") == "done" and state.get("end") == end:
             skip += 1
             if idx % 200 == 0:
-                print(f"[{idx}/{total}] skip done…")
+                print(f"[{idx}/{total}] 跳过已完成记录…")
             continue
 
         local_max = max_bar_date(conn, code)
@@ -374,7 +374,7 @@ def sync_bars(
                 }
                 skip += 1
                 if idx % 200 == 0:
-                    print(f"[{idx}/{total}] skip fresh…")
+                    print(f"[{idx}/{total}] 跳过已有最新数据的记录…")
                 continue
             fetch_start = max(start, (local_max - timedelta(days=5)).strftime("%Y%m%d"))
             if fetch_start.replace("-", "") >= end:
@@ -401,7 +401,7 @@ def sync_bars(
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
             }
             ok += 1
-            print(f"[{idx}/{total}] {code} OK bars={n} src={src}")
+            print(f"[{idx}/{total}] {code} 成功，日线条数={n}，数据源={src}")
         except Exception as ex:
             fail += 1
             progress[code] = {
@@ -410,7 +410,7 @@ def sync_bars(
                 "error": str(ex)[:300],
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
             }
-            print(f"[{idx}/{total}] {code} FAIL {ex}")
+            print(f"[{idx}/{total}] {code} 失败，异常={ex}")
             try:
                 conn.rollback()
             except Exception:
@@ -421,7 +421,7 @@ def sync_bars(
         time.sleep(max(0.05, sleep_sec))
 
     save_progress(progress)
-    print(f"完成：ok={ok}, fail={fail}, skip={skip}, total={total}")
+    print(f"完成：成功数={ok}，失败数={fail}，跳过数={skip}，总数={total}")
     print(f"进度文件：{PROGRESS_PATH}")
     return fail
 
@@ -444,7 +444,7 @@ def main() -> int:
     load_env()
     args = parse_args()
     print(
-        f"DB={os.getenv('MYSQL_USER', 'root')}@"
+        f"数据库={os.getenv('MYSQL_USER', 'root')}@"
         f"{os.getenv('MYSQL_HOST', '127.0.0.1')}:{os.getenv('MYSQL_PORT', '3306')}/"
         f"{os.getenv('MYSQL_DB', 'apex')}"
     )

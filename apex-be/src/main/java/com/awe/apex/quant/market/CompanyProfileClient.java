@@ -123,7 +123,7 @@ public class CompanyProfileClient {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("拉取公司概况失败，code={}, err={}", pureCode, ex.getMessage());
+            log.warn("拉取公司概况失败，证券代码={}，异常={}", pureCode, ex.getMessage());
             throw new BusinessException("拉取公司概况失败: " + ex.getMessage(), ex);
         }
     }
@@ -231,7 +231,7 @@ public class CompanyProfileClient {
                 profile.setTopProfitRatio(topProfit.getProfitRatio());
             }
         } catch (Exception ex) {
-            log.warn("拉取主营构成失败 code={} err={}", profile.getCode(), ex.getMessage());
+            log.warn("拉取主营构成失败，证券代码={}，异常={}", profile.getCode(), ex.getMessage());
         }
     }
 

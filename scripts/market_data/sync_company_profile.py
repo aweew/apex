@@ -187,7 +187,7 @@ def fetch_business_composition(code: str) -> Dict[str, Any]:
     try:
         data = http_get_json(url)
     except Exception as ex:  # noqa: BLE001
-        print(f"{code} business composition FAIL {ex}", file=sys.stderr)
+        print(f"{code} 主营构成同步失败，异常={ex}", file=sys.stderr)
         return {}
     rows = data.get("zygcfx") or []
     if not rows:
@@ -400,12 +400,12 @@ def main() -> int:
                 raw = fetch_profile(code)
                 upsert(conn, to_row(code, raw))
                 ok += 1
-                print(f"[{i}/{len(codes)}] {code} {_text(raw, 'SECURITY_NAME_ABBR') or ''} OK")
+                print(f"[{i}/{len(codes)}] {code} {_text(raw, 'SECURITY_NAME_ABBR') or ''} 成功")
             except Exception as ex:  # noqa: BLE001
                 fail += 1
-                print(f"[{i}/{len(codes)}] {code} FAIL {ex}")
+                print(f"[{i}/{len(codes)}] {code} 失败，异常={ex}")
             time.sleep(max(args.sleep, 0))
-        print(f"done ok={ok} fail={fail}")
+        print(f"完成，成功数={ok}，失败数={fail}")
         return 0 if fail == 0 else 1
     finally:
         conn.close()

@@ -3,6 +3,7 @@ package com.awe.apex.common.config;
 import cn.hutool.core.util.ArrayUtil;
 import com.awe.apex.common.exception.SystemException;
 import com.awe.apex.common.util.SpringUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.scheduling.annotation.AsyncConfigurer;
@@ -19,6 +20,7 @@ import java.util.concurrent.Executor;
  */
 @EnableAsync(proxyTargetClass = true)
 @AutoConfiguration
+@Slf4j
 public class AsyncConfig implements AsyncConfigurer {
 
     /**
@@ -35,14 +37,11 @@ public class AsyncConfig implements AsyncConfigurer {
     @Override
     public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
         return (throwable, method, objects) -> {
-            throwable.printStackTrace();
-            StringBuilder sb = new StringBuilder();
-            sb.append("Exception message - ").append(throwable.getMessage())
-                    .append(", Method name - ").append(method.getName());
-            if (ArrayUtil.isNotEmpty(objects)) {
-                sb.append(", Parameter value - ").append(Arrays.toString(objects));
-            }
-            throw new SystemException(sb.toString());
+            String parameterText = ArrayUtil.isNotEmpty(objects) ? Arrays.toString(objects) : "[]";
+            log.error("异步方法执行失败，方法={}，参数={}，原因={}",
+                    method.getName(), parameterText, throwable.getMessage(), throwable);
+            throw new SystemException("异步方法执行失败，方法=" + method.getName()
+                    + "，参数=" + parameterText + "，原因=" + throwable.getMessage());
         };
     }
 

@@ -182,7 +182,7 @@ public class PortfolioTradeRecordServiceImpl implements IPortfolioTradeRecordSer
             }
             throw ex;
         }
-        log.info("组合交易流水已记录 userId={}, portfolioId={}, code={}, side={}, quantity={}, source={}, estimated={}",
+        log.info("组合交易流水已记录，用户编号={}，组合编号={}，证券代码={}，方向={}，数量={}，来源={}，是否估算={}",
                 currentUserId, portfolio.getId(), normalizedCode, side.getCode(), changedQuantity,
                 recordSource.getCode(), estimated);
         return trade;

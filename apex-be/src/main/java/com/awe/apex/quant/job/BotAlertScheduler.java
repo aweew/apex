@@ -76,7 +76,7 @@ public class BotAlertScheduler {
         String group = properties.getWatchlistGroup();
         Long userId = properties.getApexUserId();
         if (Objects.isNull(userId) || userId <= 0) {
-            log.warn("ClawBot 盘中告警跳过：未配置有效的绑定用户 group={}", group);
+            log.warn("ClawBot 盘中告警跳过：未配置有效的绑定用户，分组={}", group);
             return;
         }
         try {
@@ -98,7 +98,7 @@ public class BotAlertScheduler {
                 notificationService.notifyMarketAlerts(movers, observeItems, holdingRisk);
             });
         } catch (Exception ex) {
-            log.warn("ClawBot 盘中告警扫描失败 userId={} group={} reason={}",
+            log.warn("ClawBot 盘中告警扫描失败，用户编号={}，分组={}，原因={}",
                     userId, group, ex.getMessage());
         }
     }

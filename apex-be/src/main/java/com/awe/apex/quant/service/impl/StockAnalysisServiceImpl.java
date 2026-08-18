@@ -159,7 +159,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
                 stockService.syncBasic(pure);
                 quoteRefreshed = true;
             } catch (Exception ex) {
-                log.debug("综合研判刷新行情失败 code={}: {}", pure, ex.getMessage());
+                log.debug("综合研判刷新行情失败，证券代码={}，原因={}", pure, ex.getMessage());
             }
         }
 
@@ -180,7 +180,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         try {
             valuation = valuationService.evaluate(pure);
         } catch (Exception ex) {
-            log.warn("综合分析估值失败 code={}: {}", pure, ex.getMessage());
+            log.warn("综合分析估值失败，证券代码={}，原因={}", pure, ex.getMessage());
         }
 
         // 4. 资金与情绪（板块资金 + 热点；暂无个股主力流水）
@@ -237,10 +237,10 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             syncReq.setCodes(List.of(code));
             syncReq.setBeginDate(LocalDate.now().minusDays(120).toString());
             barDailyService.syncBars(syncReq);
-            log.info("综合研判已补日线 code={} expected={}", code, expectedTradeDate);
+            log.info("综合研判已补日线，证券代码={}，预期交易日={}", code, expectedTradeDate);
             return true;
         } catch (Exception ex) {
-            log.warn("综合研判补日线失败 code={}: {}", code, ex.getMessage());
+            log.warn("综合研判补日线失败，证券代码={}，原因={}", code, ex.getMessage());
             return false;
         }
     }
@@ -438,7 +438,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             }
             return best;
         } catch (Exception ex) {
-            log.debug("匹配行业板块失败 industry={}: {}", industry, ex.getMessage());
+            log.debug("匹配行业板块失败，行业={}，原因={}", industry, ex.getMessage());
             return null;
         }
     }
@@ -460,7 +460,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             }
             return signalService.toItemRespList(mine);
         } catch (Exception ex) {
-            log.warn("综合分析跑信号失败 code={}: {}", code, ex.getMessage());
+            log.warn("综合分析跑信号失败，证券代码={}，原因={}", code, ex.getMessage());
             return List.of();
         }
     }

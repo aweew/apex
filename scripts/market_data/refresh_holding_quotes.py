@@ -106,13 +106,13 @@ def main():
                     """,
                     (code, name or row["name"], market, str(price), str(pct) if pct is not None else None),
                 )
-            print(f"OK {code} {name} {price}")
+            print(f"成功，证券代码={code}，名称={name}，价格={price}")
             ok += 1
         except Exception as ex:
-            print(f"FAIL {code} {ex}")
+            print(f"失败，证券代码={code}，异常={ex}")
             fail += 1
         time.sleep(0.15)
-    print(f"done ok={ok} fail={fail}")
+    print(f"完成，成功数={ok}，失败数={fail}")
     conn.close()
 
 

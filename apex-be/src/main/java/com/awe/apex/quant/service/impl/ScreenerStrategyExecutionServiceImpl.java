@@ -264,8 +264,8 @@ public class ScreenerStrategyExecutionServiceImpl implements IScreenerStrategyEx
             responses.add(toMatch(finalMatches.get(index)));
         }
         List<ScreenerDataIssueResp> issues = finalizeIssues(issueMap);
-        log.info("选股策略运行完成 userId={}, strategyId={}, templateKey={}, snapshotMatched={}, "
-                        + "historicalMatched={}, matched={}, returned={}",
+        log.info("选股策略运行完成，用户编号={}，策略编号={}，模板标识={}，快照命中数={}，"
+                        + "历史命中数={}，最终命中数={}，返回数量={}",
                 userContext.currentUserIdOrNull(), strategy.getId(), strategy.getTemplateKey(),
                 snapshotMatches.size(), historicalMatchedCount, matchedCount, responses.size());
         return ScreenerStrategyRunResp.builder()

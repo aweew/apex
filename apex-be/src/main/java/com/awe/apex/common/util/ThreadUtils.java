@@ -41,7 +41,7 @@ public class ThreadUtils {
                 if (!pool.awaitTermination(120, TimeUnit.SECONDS)) {
                     pool.shutdownNow();
                     if (!pool.awaitTermination(120, TimeUnit.SECONDS)) {
-                        log.info("Pool did not terminate");
+                        log.info("线程池未能在限定时间内终止");
                     }
                 }
             } catch (InterruptedException ie) {
@@ -70,7 +70,7 @@ public class ThreadUtils {
             }
         }
         if (t != null) {
-            log.error(t.getMessage(), t);
+            log.error("线程执行异常：{}", t.getMessage(), t);
         }
     }
 

@@ -62,7 +62,7 @@ public class IntradayQuoteClient {
                 return parse(pure, response.body());
             } catch (Exception ex) {
                 last = ex;
-                log.debug("分时拉取失败 host={}, code={}, err={}", host, pure, ex.getMessage());
+                log.debug("分时拉取失败，服务地址={}，证券代码={}，异常={}", host, pure, ex.getMessage());
             }
         }
         throw new BusinessException("拉取分时失败: " + pure + ", "

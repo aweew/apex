@@ -55,13 +55,13 @@ public class WeClawMessageClient {
             }
             try (HttpResponse response = httpRequest.execute()) {
                 if (!response.isOk()) {
-                    log.warn("WeClaw 消息发送失败 status={} body={}", response.getStatus(), clip(response.body()));
+                    log.warn("WeClaw 消息发送失败，状态={}，响应内容={}", response.getStatus(), clip(response.body()));
                     return false;
                 }
                 return true;
             }
         } catch (Exception ex) {
-            log.warn("WeClaw 消息发送异常 recipient={} reason={}", channel.getRecipient(), ex.getMessage());
+            log.warn("WeClaw 消息发送异常，接收方={}，原因={}", channel.getRecipient(), ex.getMessage());
             return false;
         }
     }

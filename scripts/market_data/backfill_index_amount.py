@@ -97,7 +97,7 @@ def main():
         conn.commit()
     finally:
         conn.close()
-    print(f"backfill index amount rows_from_source={len(rows)} updated={updated}")
+    print(f"指数成交额回填完成，数据源行数={len(rows)}，更新数={updated}")
 
 
 if __name__ == "__main__":

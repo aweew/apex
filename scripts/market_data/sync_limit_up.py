@@ -130,7 +130,10 @@ def _http_get_json(session, url: str, params: Dict[str, Any], timeout: float, re
         except (requests.RequestException, ValueError) as ex:
             last_err = ex
             wait = min(2 ** attempt, 12)
-            print(f"  retry {attempt}/{retries} host={url.split('/')[2]} wait={wait}s err={ex}", flush=True)
+            print(
+                f"  重试 {attempt}/{retries}，服务地址={url.split('/')[2]}，等待秒数={wait}，异常={ex}",
+                flush=True,
+            )
             time.sleep(wait)
     assert last_err is not None
     raise last_err
@@ -163,7 +166,7 @@ def fetch_zt_pool(trade_date: date, timeout: float = 45, retries: int = 4) -> Li
                 payload = _http_get_json(session, url, params, timeout=timeout, retries=retries)
                 data = payload.get("data") or {}
                 host_idx = (host_idx + offset) % len(ZT_POOL_HOSTS)
-                print(f"  page={page} ok host={url.split('/')[2]}", flush=True)
+                print(f"  第 {page} 页拉取成功，服务地址={url.split('/')[2]}", flush=True)
                 last_err = None
                 break
             except Exception as ex:  # noqa: BLE001
@@ -277,7 +280,7 @@ def sync_one(conn, trade_date: date, timeout: float = 45, retries: int = 4) -> i
     rows = fetch_zt_pool(trade_date, timeout=timeout, retries=retries)
     n = upsert_day(conn, trade_date, rows)
     conn.commit()
-    print(f"{trade_date} upsert={n}", flush=True)
+    print(f"{trade_date} 写入数={n}", flush=True)
     return n
 
 
@@ -305,11 +308,11 @@ def main() -> int:
                     print(f"前一日 {prev} 失败: {ex}", file=sys.stderr, flush=True)
                     prev -= timedelta(days=1)
                     time.sleep(1.5)
-        print(f"done total={total}", flush=True)
+        print(f"完成，总数={total}", flush=True)
         return 0
     except Exception as ex:  # noqa: BLE001
         conn.rollback()
-        print(f"FAIL {ex}", file=sys.stderr, flush=True)
+        print(f"同步失败，异常={ex}", file=sys.stderr, flush=True)
         return 1
     finally:
         conn.close()

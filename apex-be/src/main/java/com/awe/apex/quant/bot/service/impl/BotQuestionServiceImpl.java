@@ -102,7 +102,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
         // 4. 优先匹配真实组合名称，再处理默认持仓和通用决策
         long portfolioListStartedAt = System.nanoTime();
         List<PortfolioSummaryResp> portfolios = portfolioService.listPortfolios(false);
-        log.info("Bot 组合列表查询完成 requestId={} portfolioCount={} durationMs={}",
+        log.info("Bot 组合列表查询完成，请求编号={}，组合数量={}，耗时毫秒={}",
                 requestId, portfolios.size(), elapsedMillis(portfolioListStartedAt));
         if (CollUtil.isNotEmpty(portfolios)) {
             for (PortfolioSummaryResp portfolio : portfolios) {
@@ -161,7 +161,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     private BotAskResp answerStock(String requestId, String code, String fallbackName) {
         long startedAt = System.nanoTime();
         StockAnalysisResp analysis = stockAnalysisService.analyze(code, "BUY", 120, true, false);
-        log.info("Bot 个股分析查询完成 requestId={} code={} durationMs={}",
+        log.info("Bot 个股分析查询完成，请求编号={}，证券代码={}，耗时毫秒={}",
                 requestId, code, elapsedMillis(startedAt));
         String name = StringUtils.isNotBlank(analysis.getName()) ? analysis.getName() : fallbackName;
         StringBuilder answer = new StringBuilder();
@@ -213,7 +213,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     private BotAskResp answerMarket(String requestId) {
         long startedAt = System.nanoTime();
         MarketBriefingResp briefing = marketBriefingService.briefing(false);
-        log.info("Bot 市场简报查询完成 requestId={} durationMs={}", requestId, elapsedMillis(startedAt));
+        log.info("Bot 市场简报查询完成，请求编号={}，耗时毫秒={}", requestId, elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder("今日市场\n");
         answer.append("立场：").append(defaultText(briefing.getStance(), "暂无")).append("。")
                 .append(defaultText(briefing.getStanceReason(), "暂无市场说明")).append("\n");
@@ -238,7 +238,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     private BotAskResp answerPortfolioRisk(String requestId) {
         long startedAt = System.nanoTime();
         BotHoldingRiskResp risk = botHoldingRiskService.analyze();
-        log.info("Bot 持仓风险查询完成 requestId={} holdingCount={} durationMs={}",
+        log.info("Bot 持仓风险查询完成，请求编号={}，持仓数量={}，耗时毫秒={}",
                 requestId, defaultInteger(risk.getHoldingCount()), elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder("持仓风险\n");
         answer.append("持仓：").append(defaultInteger(risk.getHoldingCount())).append(" 只，")
@@ -275,7 +275,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     private BotAskResp answerPortfolio(String requestId, Long portfolioId, boolean includeAdvice) {
         long startedAt = System.nanoTime();
         PortfolioSummaryResp portfolio = portfolioService.detail(portfolioId);
-        log.info("Bot 组合详情查询完成 requestId={} portfolioId={} includeAdvice={} positionCount={} durationMs={}",
+        log.info("Bot 组合详情查询完成，请求编号={}，组合编号={}，是否包含建议={}，持仓数量={}，耗时毫秒={}",
                 requestId, portfolioId, includeAdvice, defaultInteger(portfolio.getPositionCount()),
                 elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder();
@@ -357,7 +357,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     private BotAskResp answerPortfolioTodayPnl(String requestId, Long portfolioId) {
         long startedAt = System.nanoTime();
         PortfolioSummaryResp portfolio = portfolioService.detail(portfolioId);
-        log.info("Bot 今日盈亏查询完成 requestId={} portfolioId={} positionCount={} durationMs={}",
+        log.info("Bot 今日盈亏查询完成，请求编号={}，组合编号={}，持仓数量={}，耗时毫秒={}",
                 requestId, portfolioId, defaultInteger(portfolio.getPositionCount()), elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder("今日持仓盈亏\n");
         if (defaultInteger(portfolio.getPositionCount()) == 0) {
@@ -396,7 +396,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     private BotAskResp answerDecision(String requestId) {
         long startedAt = System.nanoTime();
         DecisionAdviceResp advice = decisionService.advice(null);
-        log.info("Bot 今日决策查询完成 requestId={} actionCount={} durationMs={}",
+        log.info("Bot 今日决策查询完成，请求编号={}，操作数量={}，耗时毫秒={}",
                 requestId, CollUtil.isNotEmpty(advice.getActions()) ? advice.getActions().size() : 0,
                 elapsedMillis(startedAt));
         StringBuilder answer = new StringBuilder("今日决策\n");
@@ -455,7 +455,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
             }
         }
         if (CollUtil.isEmpty(exactMatches)) {
-            log.info("Bot 观察池写入未解析 requestId={} keyword={} durationMs={}",
+            log.info("Bot 观察池写入未解析，请求编号={}，关键词={}，耗时毫秒={}",
                     requestId, stockKeyword, elapsedMillis(startedAt));
             return BotAskResp.builder()
                     .requestId(requestId)
@@ -467,7 +467,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
                     .build();
         }
         if (exactMatches.size() > 1) {
-            log.info("Bot 观察池写入名称歧义 requestId={} keyword={} matchCount={} durationMs={}",
+            log.info("Bot 观察池写入名称歧义，请求编号={}，关键词={}，匹配数量={}，耗时毫秒={}",
                     requestId, stockKeyword, exactMatches.size(), elapsedMillis(startedAt));
             return BotAskResp.builder()
                     .requestId(requestId)
@@ -483,7 +483,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
         if (CollUtil.isNotEmpty(existingItems)) {
             for (ObservePoolResp existingItem : existingItems) {
                 if (stock.getCode().equals(existingItem.getCode())) {
-                    log.info("Bot 观察池股票已存在 requestId={} code={} durationMs={}",
+                    log.info("Bot 观察池股票已存在，请求编号={}，证券代码={}，耗时毫秒={}",
                             requestId, stock.getCode(), elapsedMillis(startedAt));
                     return BotAskResp.builder()
                             .requestId(requestId)
@@ -510,7 +510,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
                 .tags("微信Bot,手动")
                 .build();
         observePoolService.save(saveRequest);
-        log.info("Bot 观察池写入完成 requestId={} code={} durationMs={}",
+        log.info("Bot 观察池写入完成，请求编号={}，证券代码={}，耗时毫秒={}",
                 requestId, stock.getCode(), elapsedMillis(startedAt));
         return BotAskResp.builder()
                 .requestId(requestId)

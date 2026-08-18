@@ -25,11 +25,11 @@ public class P6SpySlf4JLogger extends FormattedLogger {
     }
 
     public void logException(Exception e) {
-        log.info("", e);
+        log.info("数据库日志异常", e);
     }
 
     public void logText(String text) {
-        log.info(text);
+        log.info("数据库日志：{}", text);
     }
 
     public void logSQL(int connectionId, String now, long elapsed, Category category, String prepared, String sql, String url) {
@@ -39,15 +39,15 @@ public class P6SpySlf4JLogger extends FormattedLogger {
         }
         String msg = this.strategy.formatMessage(connectionId, now, elapsed, category.toString(), prepared, sql, url);
         if (Category.ERROR.equals(category)) {
-            log.error(msg);
+            log.error("数据库错误日志：{}", msg);
         } else if (Category.WARN.equals(category)) {
-            log.warn(msg);
+            log.warn("数据库警告日志：{}", msg);
         } else if (Category.DEBUG.equals(category)) {
-            log.debug(msg);
+            log.debug("数据库调试日志：{}", msg);
         } else if (Category.STATEMENT.equals(category)) {
-            log.debug(msg);
+            log.debug("数据库语句日志：{}", msg);
         } else {
-            log.info(msg);
+            log.info("数据库普通日志：{}", msg);
         }
 
     }

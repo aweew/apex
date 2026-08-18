@@ -282,12 +282,12 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
         TransactionalAsyncExecutor.runAfterCommit(() -> {
             userContext.runAsUser(preheatUserId, () -> {
                 try {
-                    log.info("自选导入后开始后台预热 userId={} groupName={}", preheatUserId, preheatGroup);
+                    log.info("自选导入后开始后台预热，用户编号={}，分组名称={}", preheatUserId, preheatGroup);
                     fillQuotes(preheatGroup, 5, 40);
                     barDailyService.fillWatchlist(preheatGroup, 5, 40);
-                    log.info("自选导入后后台预热完成 userId={} groupName={}", preheatUserId, preheatGroup);
+                    log.info("自选导入后后台预热完成，用户编号={}，分组名称={}", preheatUserId, preheatGroup);
                 } catch (Exception ex) {
-                    log.warn("自选导入后后台预热失败 userId={} groupName={} err={}",
+                    log.warn("自选导入后后台预热失败，用户编号={}，分组名称={}，异常={}",
                             preheatUserId, preheatGroup, ex.getMessage());
                 }
             });
@@ -461,7 +461,7 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
             } catch (Exception ex) {
                 fail++;
                 details.add(item.getCode() + ": " + ex.getMessage());
-                log.warn("刷新行情失败 code={}, err={}", item.getCode(), ex.getMessage());
+                log.warn("刷新行情失败，证券代码={}，异常={}", item.getCode(), ex.getMessage());
             }
         }
         Map<String, Object> result = new HashMap<>();

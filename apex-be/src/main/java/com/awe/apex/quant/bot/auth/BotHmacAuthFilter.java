@@ -61,7 +61,7 @@ public class BotHmacAuthFilter extends OncePerRequestFilter {
                     request.getHeader("X-Apex-Content-Sha256"),
                     request.getHeader("X-Apex-Signature"),
                     cachedRequest.getCachedBody());
-            log.info("Bot 鉴权完成 path={} bodyBytes={} durationMs={}",
+            log.info("Bot 鉴权完成，请求路径={}，请求体字节数={}，耗时毫秒={}",
                     request.getRequestURI(), cachedRequest.getCachedBody().length, elapsedMillis(authStartedAt));
             filterChain.doFilter(cachedRequest, response);
         } catch (BotRequestBodyTooLargeException ex) {
