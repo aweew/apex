@@ -6,6 +6,8 @@ import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.context.ApexUserContext;
+import com.awe.apex.quant.domain.bo.DashboardCommandContextBO;
+import com.awe.apex.quant.domain.dto.DashboardCommandResp;
 import com.awe.apex.quant.domain.dto.DashboardHomeResp;
 import com.awe.apex.quant.domain.dto.DashboardResp;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
@@ -33,6 +35,8 @@ import com.awe.apex.quant.mapper.StrategySignalMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.paper.PaperEquityCalculator;
 import com.awe.apex.quant.service.IDailyActionService;
+import com.awe.apex.quant.service.IDataSyncJobService;
+import com.awe.apex.quant.service.IDashboardCommandService;
 import com.awe.apex.quant.service.IDashboardService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
@@ -49,6 +53,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -94,6 +99,12 @@ public class DashboardServiceImpl implements IDashboardService {
 
     @Resource
     private IMorningBriefingService morningBriefingService;
+
+    @Resource
+    private IDashboardCommandService dashboardCommandService;
+
+    @Resource
+    private IDataSyncJobService dataSyncJobService;
 
     @Resource
     private LimitUpPoolMapper limitUpPoolMapper;
@@ -273,7 +284,7 @@ public class DashboardServiceImpl implements IDashboardService {
             mainlineMatchCount = Objects.nonNull(today.getMainlineMatchCount()) ? today.getMainlineMatchCount() : 0;
             riskNote = today.getRiskNote();
             // 立场以看板实时简报为准，不覆盖为决策落库时的旧快照
-            hasToday = buyCount + sellCount + holdCount > 0;
+            hasToday = Boolean.TRUE.equals(today.getGenerated()) || buyCount + sellCount + holdCount > 0;
             for (DecisionItemResp item : buys) {
                 if (topBuys.size() >= 3) {
                     break;
@@ -320,6 +331,28 @@ public class DashboardServiceImpl implements IDashboardService {
         if (Objects.isNull(dataHealth)) {
             dataHealth = buildLightDataHealth(group);
         }
+
+        MorningBriefingResp morningBriefing = morningBriefingFuture.join();
+        boolean decisionRunning = false;
+        try {
+            decisionRunning = dataSyncJobService.isCurrentUserDecisionRunning();
+        } catch (Exception ex) {
+            log.warn("看板决策任务状态加载失败，用户编号={}，原因={}", currentUserId, ex.getMessage());
+        }
+        DashboardCommandResp command = null;
+        try {
+            DashboardCommandContextBO commandContext = DashboardCommandContextBO.builder()
+                    .marketBriefing(briefing)
+                    .morningBriefing(morningBriefing)
+                    .decision(today)
+                    .observeAlerts(observeAlerts)
+                    .decisionRunning(decisionRunning)
+                    .currentTime(LocalDateTime.now())
+                    .build();
+            command = dashboardCommandService.build(commandContext);
+        } catch (Exception ex) {
+            log.warn("看板盘前指挥聚合失败，用户编号={}，原因={}", currentUserId, ex.getMessage());
+        }
         // 用简报等级校准数据健康（轻量统计可能滞后）
         String briefingLevel = market.getDataLevel();
         if (StringUtils.isNotBlank(briefingLevel) && !"RED".equals(dataHealth.getLevel())) {
@@ -337,7 +370,8 @@ public class DashboardServiceImpl implements IDashboardService {
                 : market.getStance() + " · " + decisionSummary;
         DashboardHomeResp response = DashboardHomeResp.builder()
                 .market(market)
-                .morningBriefing(morningBriefingFuture.join())
+                .morningBriefing(morningBriefing)
+                .command(command)
                 .decision(decision)
                 .observeAlerts(observeAlerts)
                 .account(account)

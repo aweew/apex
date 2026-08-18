@@ -10,6 +10,7 @@ import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.OvernightMarketTheme;
 import com.awe.apex.quant.market.MarketBriefingMath;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.market.UsMarketQuoteClient;
 import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.INewsPulseService;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,6 +61,9 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
     @Override
     public MorningBriefingResp generate() {
         LocalDateTime generatedAt = LocalDateTime.now();
+        LocalDate generatedDate = generatedAt.toLocalDate();
+        LocalDate tradeDate = TradingCalendar.isTradingDay(generatedDate)
+                ? generatedDate : TradingCalendar.nextTradingDay(generatedDate);
 
         // 1. 合并旧清单、展示分组和主题清单，确保新增配置真正进入一次性行情请求
         String[] configuredSymbolGroups = {
@@ -117,6 +122,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
         }
         boolean quoteDataIncomplete = CollUtil.isEmpty(symbols) || validQuoteSymbols.size() < symbols.size();
         MorningBriefingResp briefing = MorningBriefingResp.builder()
+                .tradeDate(tradeDate)
                 .generatedAt(generatedAt)
                 .marketQuotes(marketQuotes)
                 .indexQuotes(indexQuotes)

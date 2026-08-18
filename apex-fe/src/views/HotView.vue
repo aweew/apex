@@ -186,16 +186,16 @@ onMounted(load)
           title="同时出现在 ≥2 个平台热榜的标的，优先级更高（仍只作参考，不构成投资建议）"
         />
         <el-table :data="confluence" size="small" stripe empty-text="暂无共振，请先刷新热点">
-          <el-table-column prop="code" label="代码" width="100" sortable>
+          <el-table-column prop="name" label="股票" width="154" sortable>
             <template #default="{ row }">
-              <el-button v-if="row.code" link type="primary" @click="router.push(`/stock/${row.code}`)">
-                {{ row.code }}
-              </el-button>
-              <SecurityMarketBadge v-if="row.code" :security="row" />
-              <span v-else>-</span>
+              <StockIdentity
+                :security="row"
+                :interactive="Boolean(row.code)"
+                compact
+                @select="router.push(`/stock/${row.code}`)"
+              />
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" width="120" sortable />
           <el-table-column prop="sourceCount" label="源数" width="70" sortable />
           <el-table-column label="来源" min-width="140">
             <template #default="{ row }">
@@ -228,15 +228,16 @@ onMounted(load)
         />
         <el-table :data="eastmoney" size="small" stripe empty-text="暂无东财数据，点刷新">
           <el-table-column prop="rankNo" label="排名" width="70" sortable />
-          <el-table-column prop="code" label="代码" width="100" sortable>
+          <el-table-column prop="name" label="股票" width="154" sortable>
             <template #default="{ row }">
-              <el-button v-if="row.code" link type="primary" @click="router.push(`/stock/${row.code}`)">
-                {{ row.code }}
-              </el-button>
-              <SecurityMarketBadge v-if="row.code" :security="row" />
+              <StockIdentity
+                :security="row"
+                :interactive="Boolean(row.code)"
+                compact
+                @select="router.push(`/stock/${row.code}`)"
+              />
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" width="120" sortable />
           <el-table-column prop="price" label="现价" width="100" sortable />
           <el-table-column label="涨跌幅" width="90" sortable prop="pctChg">
             <template #default="{ row }">
@@ -251,15 +252,16 @@ onMounted(load)
         <el-alert class="hint" type="info" :closable="false" show-icon title="雪球接口较慢，完整刷新可能需 1～2 分钟" />
         <el-table :data="xueqiu" size="small" stripe empty-text="暂无雪球数据，点「刷新全部」">
           <el-table-column prop="rankNo" label="排名" width="70" sortable />
-          <el-table-column prop="code" label="代码" width="100" sortable>
+          <el-table-column prop="name" label="股票" width="154" sortable>
             <template #default="{ row }">
-              <el-button v-if="row.code" link type="primary" @click="router.push(`/stock/${row.code}`)">
-                {{ row.code }}
-              </el-button>
-              <SecurityMarketBadge v-if="row.code" :security="row" />
+              <StockIdentity
+                :security="row"
+                :interactive="Boolean(row.code)"
+                compact
+                @select="router.push(`/stock/${row.code}`)"
+              />
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" width="120" sortable />
           <el-table-column prop="price" label="现价" width="100" sortable />
           <el-table-column prop="heatScore" label="关注数" width="110" sortable />
           <el-table-column prop="heatText" label="说明" min-width="140" />
@@ -269,16 +271,16 @@ onMounted(load)
       <el-tab-pane :label="`百度热搜 (${baidu.length})`" name="baidu">
         <el-table :data="baidu" size="small" stripe empty-text="暂无百度数据，点刷新">
           <el-table-column prop="rankNo" label="排名" width="70" sortable />
-          <el-table-column prop="code" label="代码" width="100" sortable>
+          <el-table-column prop="name" label="股票" width="166" sortable>
             <template #default="{ row }">
-              <el-button v-if="row.code" link type="primary" @click="router.push(`/stock/${row.code}`)">
-                {{ row.code }}
-              </el-button>
-              <SecurityMarketBadge v-if="row.code" :security="row" />
-              <span v-else class="muted">未匹配</span>
+              <StockIdentity
+                :security="row"
+                :interactive="Boolean(row.code)"
+                compact
+                @select="router.push(`/stock/${row.code}`)"
+              />
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" width="140" sortable />
           <el-table-column label="涨跌幅" width="90" sortable prop="pctChg">
             <template #default="{ row }">
               <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>

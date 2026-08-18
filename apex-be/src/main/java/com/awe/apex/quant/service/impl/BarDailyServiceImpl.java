@@ -23,6 +23,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -50,6 +51,9 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     /** 降低并发，减轻行情源限流 */
     private static final int MAX_PARALLEL = 2;
     private static final int MAX_SYNC_CODES = 80;
+
+    @Value("${apex.bar-sync.timeout-seconds:180}")
+    private int syncTimeoutSeconds;
 
     @Resource
     private DailyBarClient dailyBarClient;
@@ -238,26 +242,23 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(MAX_PARALLEL, codes.size()));
         List<SyncItem> items = new ArrayList<>();
         try {
-            for (int start = 0; start < codes.size(); start += MAX_PARALLEL) {
-                int endIndex = Math.min(start + MAX_PARALLEL, codes.size());
-                List<Callable<SyncItem>> tasks = new ArrayList<>();
-                for (int index = start; index < endIndex; index++) {
-                    String code = codes.get(index);
-                    tasks.add(() -> syncOne(code, beginDate, endDate));
+            List<Callable<SyncItem>> tasks = new ArrayList<>();
+            for (String code : codes) {
+                tasks.add(() -> syncOne(code, beginDate, endDate));
+            }
+            List<Future<SyncItem>> futures = pool.invokeAll(
+                    tasks, Math.max(syncTimeoutSeconds, 1), TimeUnit.SECONDS);
+            for (int index = 0; index < futures.size(); index++) {
+                Future<SyncItem> future = futures.get(index);
+                String code = codes.get(index);
+                if (future.isCancelled()) {
+                    items.add(new SyncItem(code, false, 0, code + " TIMEOUT"));
+                    continue;
                 }
-                List<Future<SyncItem>> futures = pool.invokeAll(tasks, 90, TimeUnit.SECONDS);
-                for (int index = 0; index < futures.size(); index++) {
-                    Future<SyncItem> future = futures.get(index);
-                    String code = codes.get(start + index);
-                    if (future.isCancelled()) {
-                        items.add(new SyncItem(code, false, 0, code + " TIMEOUT"));
-                        continue;
-                    }
-                    try {
-                        items.add(future.get());
-                    } catch (Exception ex) {
-                        items.add(new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage()));
-                    }
+                try {
+                    items.add(future.get());
+                } catch (Exception ex) {
+                    items.add(new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage()));
                 }
             }
         } catch (InterruptedException ex) {

@@ -56,8 +56,8 @@ test('holding tables keep stock links blue and avoid fixed columns on mobile', (
   const mobileActionsEnd = holdingSource.indexOf('</el-table-column>', mobileActionsStart)
   const mobileActionsColumn = holdingSource.slice(mobileActionsStart, mobileActionsEnd)
   assert.doesNotMatch(mobileActionsColumn, /fixed="right"/)
-  assert.match(portfolioSource, /\.security-link\s*\{[\s\S]*?color: var\(--el-color-primary\);/)
-  assert.match(holdingSource, /\.security-link\s*\{[\s\S]*?color: var\(--el-color-primary\);/)
+  assert.match(portfolioSource, /<StockIdentity :security="row" interactive compact/)
+  assert.match(holdingSource, /<StockIdentity :security="row" interactive compact/)
 })
 
 test('holding quantity headers reserve room for their sort indicator', () => {

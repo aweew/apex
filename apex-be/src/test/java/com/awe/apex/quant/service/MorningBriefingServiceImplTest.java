@@ -6,6 +6,7 @@ import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.market.UsMarketQuoteClient;
 import com.awe.apex.quant.service.impl.MorningBriefingServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,6 +69,18 @@ class MorningBriefingServiceImplTest {
                 "usSNPS", "usCDNS", "usQCOM", "usINTC", "usTXN", "usADI",
                 "usNXPI", "usON", "usBABA", "usPDD"
         )));
+    }
+
+    @Test
+    void assignsCurrentOrNextTradingDate() {
+        when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of());
+
+        MorningBriefingResp response = service.generate();
+
+        LocalDateTime generatedAt = response.getGeneratedAt();
+        assertEquals(TradingCalendar.isTradingDay(generatedAt.toLocalDate())
+                        ? generatedAt.toLocalDate() : TradingCalendar.nextTradingDay(generatedAt.toLocalDate()),
+                response.getTradeDate());
     }
 
     @Test

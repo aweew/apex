@@ -477,13 +477,7 @@ onBeforeUnmount(() => {
           >
           <header class="signal-mobile-head">
             <div class="signal-stock">
-              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
-                {{ row.code }}
-              </el-button>
-              <span class="signal-stock-name">
-                <strong>{{ row.name || '-' }}</strong>
-                <SecurityMarketBadge :security="row" />
-              </span>
+              <StockIdentity :security="row" interactive @select="router.push(`/stock/${row.code}`)" />
             </div>
             <el-dropdown
               trigger="click"
@@ -525,17 +519,9 @@ onBeforeUnmount(() => {
 
         <el-table v-else class="signal-desktop-table" :data="filtered" size="small" stripe height="calc(100vh - 340px)">
         <el-table-column prop="signalDate" label="日期" width="110" sortable />
-        <el-table-column prop="code" label="代码" width="96">
+        <el-table-column prop="name" label="股票" width="144">
           <template #default="{ row }">
-            <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-          </template>
-        </el-table-column>
-        <el-table-column prop="name" label="名称" width="128" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="signal-stock-name">
-              <span class="signal-stock-name-text">{{ row.name || '-' }}</span>
-              <SecurityMarketBadge :security="row" />
-            </span>
+            <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
           </template>
         </el-table-column>
         <el-table-column prop="strategyId" label="策略" width="70" />
@@ -611,9 +597,7 @@ onBeforeUnmount(() => {
         <div v-if="isMobileViewport && confluence?.items?.length" class="confluence-mobile-list">
           <article v-for="item in confluence.items" :key="`${item.code}-${item.side}`" class="confluence-mobile-item">
             <div>
-              <strong>{{ item.name || item.code }}</strong>
-              <SecurityMarketBadge :security="item" />
-              <span>{{ item.code }}</span>
+              <StockIdentity :security="item" compact />
             </div>
             <span class="side-badge" :class="item.side === 'BUY' ? 'is-buy' : 'is-sell'">
               {{ item.side === 'BUY' ? '买入' : '卖出' }}
@@ -622,8 +606,9 @@ onBeforeUnmount(() => {
           </article>
         </div>
         <el-table v-else-if="confluence?.items?.length" :data="confluence.items" size="small" stripe>
-          <el-table-column prop="code" label="代码" width="100" />
-          <el-table-column prop="name" label="名称" width="120" />
+          <el-table-column prop="name" label="股票" width="144">
+            <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+          </el-table-column>
           <el-table-column prop="side" label="方向" width="80" />
           <el-table-column prop="strategyCount" label="策略数" width="80" />
           <el-table-column label="策略" min-width="140">
@@ -1180,33 +1165,7 @@ onBeforeUnmount(() => {
     min-width: 0;
   }
 
-  .signal-stock-name {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    min-width: 0;
-  }
-
-  .signal-stock :deep(.el-button) {
-    min-height: 32px;
-    margin: 0;
-    padding: 0;
-    font-size: 15px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .signal-stock strong,
-  .signal-stock-name-text {
-    overflow: hidden;
-    color: var(--ink);
-    font-size: 14px;
-    font-weight: 650;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .signal-actions-trigger {
+.signal-actions-trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;

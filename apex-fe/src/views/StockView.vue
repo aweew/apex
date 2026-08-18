@@ -1837,9 +1837,12 @@ function dash(v) {
       <div class="stock-heading">
         <p class="eyebrow">Stock</p>
         <h1>
-          <span class="stock-name">{{ basic?.name || '股票详情' }}</span>
-          <SecurityMarketBadge :security="basic || { code }" />
-          <span class="code">{{ basic?.code || code }}</span>
+          <StockIdentity
+            :security="basic || { code }"
+            :name="basic?.name || '股票详情'"
+            :code="basic?.code || code"
+            prominent
+          />
         </h1>
         <p class="stock-note">{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>
@@ -2602,14 +2605,6 @@ function dash(v) {
   }
 }
 
-.header .code {
-  color: var(--muted);
-  font-size: 18px;
-  font-weight: 500;
-  margin-left: 8px;
-  letter-spacing: -0.02em;
-}
-
 .meta-panel {
   margin-bottom: 12px;
 }
@@ -2948,19 +2943,6 @@ function dash(v) {
     gap: 6px;
     font-size: 24px;
     line-height: 1.2;
-  }
-
-  .stock-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .header .code {
-    flex: 0 0 auto;
-    margin-left: 0;
-    font-size: 14px;
   }
 
   .header .stock-note,

@@ -57,7 +57,7 @@ class BarDailyServiceImplTest {
     }
 
     @Test
-    void syncBarsShouldProcessCodesInBoundedBatches() {
+    void syncBarsShouldProcessCodesWithBoundedConcurrency() {
         BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
         DailyBarClient dailyBarClient = mock(DailyBarClient.class);
         StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
@@ -80,6 +80,7 @@ class BarDailyServiceImplTest {
         ReflectionTestUtils.setField(barDailyService, "dailyBarClient", dailyBarClient);
         ReflectionTestUtils.setField(barDailyService, "stockBasicMapper", stockBasicMapper);
         ReflectionTestUtils.setField(barDailyService, "dataSyncLogMapper", dataSyncLogMapper);
+        ReflectionTestUtils.setField(barDailyService, "syncTimeoutSeconds", 5);
         BarSyncReq request = new BarSyncReq();
         request.setCodes(List.of("600000", "600001", "600002"));
 
@@ -89,6 +90,34 @@ class BarDailyServiceImplTest {
         assertTrue(maxActiveTasks.get() <= 2);
         assertEquals(3, response.getSuccessCount());
         assertEquals(3, response.getDetails().size());
+    }
+
+    @Test
+    void syncBarsShouldUseOneTimeoutForTheWholeRequest() {
+        BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
+        DailyBarClient dailyBarClient = mock(DailyBarClient.class);
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
+        when(dailyBarClient.fetchDailyBars(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+            Thread.sleep(5000L);
+            return List.of();
+        });
+        when(stockBasicMapper.selectOne(any())).thenReturn(null);
+        ReflectionTestUtils.setField(barDailyService, "dailyBarClient", dailyBarClient);
+        ReflectionTestUtils.setField(barDailyService, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(barDailyService, "dataSyncLogMapper", dataSyncLogMapper);
+        ReflectionTestUtils.setField(barDailyService, "syncTimeoutSeconds", 1);
+        BarSyncReq request = new BarSyncReq();
+        request.setCodes(List.of("600000", "600001", "600002", "600003"));
+
+        long startedAt = System.nanoTime();
+        BarSyncResp response = barDailyService.syncBars(request);
+        long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        assertTrue(elapsedMillis < 3000, "整批同步不应逐批累加超时时间");
+        assertEquals(0, response.getSuccessCount());
+        assertEquals(4, response.getFailCount());
+        assertTrue(response.getDetails().stream().allMatch(detail -> detail.endsWith("TIMEOUT")));
     }
 
     @Test

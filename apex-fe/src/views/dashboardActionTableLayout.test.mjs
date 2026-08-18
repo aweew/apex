@@ -4,13 +4,13 @@ import test from 'node:test'
 
 const dashboardSource = await readFile(new URL('./DashboardView.vue', import.meta.url), 'utf8')
 
-test('desktop decision table keeps market badges spaced from stock codes', () => {
+test('desktop decision table uses the shared name-first stock identity', () => {
   const tableStart = dashboardSource.indexOf(':data="topBuys"')
   const tableEnd = dashboardSource.indexOf('</el-table>', tableStart)
   const decisionTable = dashboardSource.slice(tableStart, tableEnd)
 
-  assert.match(decisionTable, /class="security-code"[\s\S]*?<SecurityMarketBadge :security="row"/)
-  assert.match(dashboardSource, /\.security-code\s*\{[\s\S]*?gap:\s*5px;/)
+  assert.match(decisionTable, /<el-table-column prop="name" label="股票"[\s\S]*?<StockIdentity :security="row" interactive compact/)
+  assert.doesNotMatch(decisionTable, /label="代码"|label="名称"/)
 })
 
 test('desktop decision table reserves one complete cue column for linkage and mainline tags', () => {

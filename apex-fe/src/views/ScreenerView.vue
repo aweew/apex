@@ -1115,10 +1115,11 @@ onBeforeUnmount(() => {
         <div v-else class="strategy-selector">
           <span>选择策略</span>
           <el-select
+            class="mobile-strategy-select"
             v-model="selectedStrategyKey"
             :loading="strategyLoading"
             placeholder="选择系统模板或我的策略"
-            filterable
+            popper-class="screener-strategy-popper"
             @change="onStrategyChange"
           >
             <el-option-group v-if="systemStrategies.length" label="系统模板">
@@ -1334,13 +1335,13 @@ onBeforeUnmount(() => {
     >
         <el-table-column prop="name" label="股票" min-width="132" align="center">
           <template #default="{ row }">
-            <button type="button" class="security-link" @click="router.push(`/stock/${row.code}`)">
-              <span class="security-name">
-                <span class="security-name-text">{{ row.name || '-' }}</span>
-                <SecurityMarketBadge :security="row" include-main />
-              </span>
-              <span class="security-code">{{ row.code }}</span>
-            </button>
+            <StockIdentity
+              :security="row"
+              interactive
+              include-main
+              compact
+              @select="router.push(`/stock/${row.code}`)"
+            />
           </template>
         </el-table-column>
         <el-table-column v-if="activeMode === 'free' && !screeningActive" label="股票池" width="74">
@@ -1441,10 +1442,8 @@ onBeforeUnmount(() => {
         >
           <span class="mobile-stock-heading">
             <span class="mobile-stock-identity">
-              <strong>{{ row.name || row.code }}</strong>
-              <SecurityMarketBadge :security="row" include-main />
+              <StockIdentity :security="row" include-main compact />
               <span v-if="activeMode === 'free' && !screeningActive && row.inUniverse" class="universe-badge">池</span>
-              <small>{{ row.code }}</small>
             </span>
             <span class="mobile-stock-quote">
               <strong :class="trendClass(row.pctChg)">{{ formatPct(row.pctChg) }}</strong>
@@ -1566,7 +1565,9 @@ onBeforeUnmount(() => {
 
     <h3 v-if="!isMobileViewport && batchRows.length">批量回测排名</h3>
     <el-table v-if="!isMobileViewport && batchRows.length" :data="batchRows" size="small" style="width: 100%">
-        <el-table-column prop="code" label="代码" width="100" />
+        <el-table-column prop="code" label="股票" width="120">
+          <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+        </el-table-column>
         <el-table-column prop="jobId" label="任务" width="80" />
         <el-table-column prop="totalReturn" label="收益" width="100">
           <template #default="{ row }">
@@ -2379,53 +2380,6 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
-.security-name {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
-.security-name-text {
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.security-link {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  width: 100%;
-  padding: 3px 0;
-  border: 0;
-  background: transparent;
-  color: var(--el-color-primary);
-  font: inherit;
-  line-height: 1.15;
-  text-align: center;
-  cursor: pointer;
-}
-
-.security-link:hover .security-name-text,
-.security-link:focus-visible .security-name-text {
-  color: var(--el-color-primary-dark-2);
-}
-
-.security-link:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: 2px;
-}
-
-.security-code {
-  color: inherit;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
 .pager {
   margin-top: 12px;
   display: flex;
@@ -2439,6 +2393,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 820px) {
   .screener-page {
+    --page-title-size: 24px;
     overflow-x: clip;
   }
 
@@ -2454,12 +2409,12 @@ onBeforeUnmount(() => {
     min-width: 0;
   }
 
-  .screener-header .eyebrow {
-    display: none;
+  .screener-header > div:first-child > .eyebrow {
+    display: none !important;
   }
 
-  .screener-header h1 {
-    font-size: 24px;
+  .screener-header h1::after {
+    display: none;
   }
 
   .header-refresh-actions {
@@ -2467,8 +2422,9 @@ onBeforeUnmount(() => {
     align-self: start;
   }
 
-  .header-refresh-actions :deep(.mobile-refresh-button) {
-    width: 44px;
+  .screener-page .screener-header > .header-refresh-actions > :deep(.mobile-refresh-button) {
+    width: 44px !important;
+    min-width: 44px;
     min-height: 44px;
     margin: 0;
     padding: 0;
@@ -3075,14 +3031,27 @@ onBeforeUnmount(() => {
 
   .strategy-toolbar {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
     gap: 10px;
     min-height: 0;
     padding: 12px 0;
   }
 
+  .strategy-toolbar > * {
+    min-width: 0;
+    width: 100%;
+  }
+
   .strategy-selector {
     grid-template-columns: 1fr;
     gap: 5px;
+    width: 100%;
+  }
+
+  .mobile-strategy-select :deep(.el-select__wrapper) {
+    min-height: 44px;
+    border-radius: 8px;
   }
 
   .strategy-actions {
@@ -3104,7 +3073,9 @@ onBeforeUnmount(() => {
   }
 
   .strategy-definition {
+    max-width: 100%;
     padding: 14px 0 0;
+    overflow-wrap: anywhere;
   }
 
   .strategy-title-line {
@@ -3236,6 +3207,23 @@ onBeforeUnmount(() => {
 
   .mobile-risk-options :deep(.el-checkbox__label) {
     font-size: 10px;
+  }
+
+  .strategy-actions {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .strategy-action-label {
+    display: none;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 820px) {
+  .screener-strategy-popper .el-select-dropdown__item {
+    min-height: 44px;
+    line-height: 44px;
   }
 }
 </style>

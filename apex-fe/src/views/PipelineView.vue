@@ -172,12 +172,11 @@ onMounted(loadUniverse)
         <el-button link type="primary" @click="loadUniverse">刷新</el-button>
       </div>
       <el-table :data="universe" height="380" size="small" stripe empty-text="暂无股票池，先跑流水线">
-        <el-table-column prop="code" label="代码" width="100">
+        <el-table-column prop="name" label="股票" width="144">
           <template #default="{ row }">
-            <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+            <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" width="120" />
         <el-table-column prop="reasonTags" label="标签/评分" min-width="280" show-overflow-tooltip />
         <el-table-column prop="batchNo" label="批次" width="150" />
       </el-table>

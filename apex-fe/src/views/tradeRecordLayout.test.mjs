@@ -12,7 +12,7 @@ const holdingApiSource = await readFile(new URL('../api/holding.js', import.meta
 
 test('trade record workspace exposes provenance, estimates and post-sell performance', () => {
   assert.match(source, /交易记录/)
-  assert.match(source, /SecurityMarketBadge/)
+  assert.match(source, /<StockIdentity :security="row" :name="row\.stockName" include-main compact \/>/)
   assert.match(source, /portfolioId/)
   assert.match(source, /estimated/)
   assert.match(source, /latestReturnPct/)

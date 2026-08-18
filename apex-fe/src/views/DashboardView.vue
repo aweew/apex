@@ -6,7 +6,7 @@ import { dashboardHome } from '../api/dashboard'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v14'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v15'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
@@ -32,6 +32,8 @@ function writeHomeCache(data) {
 }
 
 const market = computed(() => home.value?.market || null)
+const command = computed(() => home.value?.command || null)
+const commandOperationItems = computed(() => (command.value?.operationGuide?.items || []).slice(0, 3))
 const morningBriefing = computed(() => home.value?.morningBriefing || null)
 const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
 const legacyIndexSymbols = new Set(['usIXIC', 'usDJI', 'usINX'])
@@ -215,9 +217,58 @@ function dataLevelLabel(level) {
   return level || '-'
 }
 
+function commandStatusLabel(status) {
+  const labels = {
+    READY: '已就绪',
+    PARTIAL: '部分可用',
+    STALE: '数据过期',
+    BLOCKED: '已阻断',
+    GENERATING: '生成中',
+  }
+  return labels[status] || '状态未知'
+}
+
+function operationStatusLabel(status) {
+  const labels = {
+    REQUIRED: '必做',
+    READY: '可执行',
+    WAIT: '等待',
+    BLOCKED: '已阻断',
+    DONE: '已完成',
+  }
+  return labels[status] || '待确认'
+}
+
+function fmtCommandTime(value) {
+  if (!value) return '-'
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
+function openCommandAction(code) {
+  if (code === 'VIEW_CONTEXT') {
+    document.getElementById('pre-market-context')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    return
+  }
+  const routeByCode = {
+    RISK_FIRST: '/portfolio',
+    BUY_CONDITIONALLY: '/decision',
+    WATCH_ALERTS: '/observe',
+    REFRESH_DATA: '/sync',
+  }
+  const route = routeByCode[code]
+  if (route) router.push(route)
+}
+
 function fmtPct(v, digits = 2) {
   if (v == null || v === '') return '-'
   return (Number(v) * 100).toFixed(digits) + '%'
+}
+
+function fmtFactor(value) {
+  if (value == null || value === '') return '-'
+  const factor = Number(value)
+  if (Number.isNaN(factor)) return '-'
+  return `${factor.toFixed(2)} 倍`
 }
 
 function fmtScore(v) {
@@ -345,7 +396,8 @@ onMounted(() => {
             </p>
             <p class="advice">
               {{
-                market?.positionAdvice
+                command?.preMarketSummary?.headline
+                  || market?.positionAdvice
                   || (loading || refreshing
                     ? '仓位建议加载中'
                     : '同步行情后，这里会给出进攻 / 均衡 / 防守与仓位建议')
@@ -500,10 +552,119 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="morning-context enter delay-1" aria-label="隔夜美股与今日消息面">
+    <section v-if="command" class="command-band enter delay-1" aria-label="盘前指挥">
+      <div class="command-head">
+        <div>
+          <h3>盘前指挥</h3>
+          <p>目标交易日 {{ command.tradeDate || '-' }}</p>
+        </div>
+        <span class="command-status" :class="`status-${String(command.status || '').toLowerCase()}`">
+          {{ commandStatusLabel(command.status) }}
+        </span>
+      </div>
+
+      <div class="command-meta" aria-label="盘前指挥数据时间">
+        <span>行情截至 <b>{{ command.marketDataAsOf || '-' }}</b></span>
+        <span>决策数据 <b>{{ fmtCommandTime(command.decisionDataAsOf) }}</b></span>
+        <span>生成于 <b>{{ fmtCommandTime(command.generatedAt) }}</b></span>
+      </div>
+
+      <div class="command-grid">
+        <div class="command-column command-summary">
+          <div class="command-column-head">
+            <h4>盘前总结</h4>
+            <span>{{ dataLevelLabel(command.dataLevel) }}</span>
+          </div>
+          <p class="command-headline">{{ command.preMarketSummary?.headline || '盘前结论待生成' }}</p>
+
+          <div v-if="command.preMarketSummary?.evidenceItems?.length" class="command-evidence">
+            <span class="command-evidence-title">核心依据</span>
+            <div class="command-evidence-grid">
+              <span
+                v-for="item in command.preMarketSummary.evidenceItems.slice(0, 4)"
+                :key="`${item.label}-${item.value}`"
+                class="command-evidence-item"
+              >
+                <span class="command-evidence-label">{{ item.label }}</span>
+                <b class="command-evidence-value">{{ item.value }}</b>
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="command.preMarketSummary?.opportunityItems?.length || command.preMarketSummary?.riskItems?.length"
+            class="command-directions"
+          >
+            <div v-if="command.preMarketSummary?.opportunityItems?.length" class="command-direction opportunity">
+              <strong>机会</strong>
+              <span v-for="item in command.preMarketSummary.opportunityItems" :key="`${item.name}-${item.reason}`">
+                <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
+              </span>
+            </div>
+            <div v-if="command.preMarketSummary?.riskItems?.length" class="command-direction risk">
+              <strong>风险</strong>
+              <span v-for="item in command.preMarketSummary.riskItems" :key="`${item.name}-${item.reason}`">
+                <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
+              </span>
+            </div>
+          </div>
+
+          <div v-if="command.preMarketSummary?.watchConditions?.length" class="command-watch">
+            <span>观察条件</span>
+            <p v-for="item in command.preMarketSummary.watchConditions" :key="`${item.title}-${item.condition}`">
+              <b>{{ item.title }}</b>{{ item.condition ? `：${item.condition}` : '' }}
+            </p>
+          </div>
+        </div>
+
+        <div class="command-column command-guide">
+          <div class="command-column-head">
+            <h4>今日操作指引</h4>
+          </div>
+          <p class="command-guide-summary">
+            {{ command.operationGuide?.summary || command.operationGuide?.blockedReason || '今日操作指引待生成' }}
+          </p>
+          <div v-if="command.operationGuide" class="command-position">
+            <span>
+              目标仓位
+              <b>{{ fmtPct(command.operationGuide.targetPositionMin, 0) }} - {{ fmtPct(command.operationGuide.targetPositionMax, 0) }}</b>
+            </span>
+            <span>新仓系数 <b>{{ fmtFactor(command.operationGuide.newPositionFactor) }}</b></span>
+          </div>
+          <p v-if="command.operationGuide?.blockedReason" class="command-blocked-reason">
+            {{ command.operationGuide.blockedReason }}
+          </p>
+          <div v-if="commandOperationItems.length" class="command-actions">
+            <button
+              v-for="item in commandOperationItems"
+              :key="`${item.priority}-${item.code}`"
+              type="button"
+              class="command-action"
+              @click="openCommandAction(item.code)"
+            >
+              <span class="command-action-order">{{ item.priority }}</span>
+              <span class="command-action-copy">
+                <span class="command-action-title">
+                  <b>{{ item.title }}</b>
+                  <em>{{ operationStatusLabel(item.status) }}</em>
+                  <span v-if="item.targetCount != null" class="command-target-count">
+                    {{ item.targetCount }} 项
+                  </span>
+                </span>
+                <span>{{ item.actionText }}</span>
+                <small v-if="item.conditionText">{{ item.conditionText }}</small>
+              </span>
+              <span class="command-action-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pre-market-context" class="morning-context enter delay-1" aria-label="盘前依据">
       <div class="morning-context-head">
         <div>
-          <h3>隔夜与今日消息</h3>
+          <h3>盘前依据</h3>
           <p>美股收盘表现与今日重要资讯</p>
         </div>
         <div class="morning-context-meta">
@@ -637,9 +798,7 @@ onMounted(() => {
           :class="item.status === 'TRIGGERED' ? 'trig' : 'near'"
           @click="router.push(`/stock/${item.code}`)"
         >
-          <b>{{ item.code }}</b>
-          <SecurityMarketBadge :security="item" />
-          <span>{{ item.name || '' }}</span>
+          <StockIdentity :security="item" compact />
           <em>{{ item.status === 'TRIGGERED' ? '已触发' : '接近' }}</em>
         </button>
       </div>
@@ -708,17 +867,11 @@ onMounted(() => {
               empty-text="暂无买入建议"
               stripe
             >
-              <el-table-column prop="code" label="代码" width="104" class-name="code-col">
+              <el-table-column prop="name" label="股票" width="132">
                 <template #default="{ row }">
-                  <span class="security-code">
-                    <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
-                      {{ row.code }}
-                    </button>
-                    <SecurityMarketBadge :security="row" />
-                  </span>
+                  <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
                 </template>
               </el-table-column>
-              <el-table-column prop="name" label="名称" width="84" />
               <el-table-column prop="strategyId" label="策略" width="52" />
               <el-table-column label="评分" width="96">
                 <template #default="{ row }">
@@ -778,9 +931,7 @@ onMounted(() => {
               >
                 <span class="mobile-action-primary">
                   <span class="mobile-stock">
-                    <strong>{{ row.code }}</strong>
-                    <SecurityMarketBadge :security="row" />
-                    <span>{{ row.name || '-' }}</span>
+                    <StockIdentity :security="row" compact />
                   </span>
                   <span class="mobile-score">
                     <em>评分</em>
@@ -848,17 +999,11 @@ onMounted(() => {
               class="dash-table desktop-action-table"
               stripe
             >
-              <el-table-column prop="code" label="代码" width="104" class-name="code-col">
+              <el-table-column prop="name" label="股票" width="138">
                 <template #default="{ row }">
-                  <span class="security-code">
-                    <button type="button" class="code-link" @click="router.push(`/stock/${row.code}`)">
-                      {{ row.code }}
-                    </button>
-                    <SecurityMarketBadge :security="row" />
-                  </span>
+                  <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
                 </template>
               </el-table-column>
-              <el-table-column prop="name" label="名称" width="90" />
               <el-table-column label="策略" width="72">
                 <template #default="{ row }">
                   <span :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
@@ -884,9 +1029,7 @@ onMounted(() => {
               >
                 <span class="mobile-action-primary">
                   <span class="mobile-stock">
-                    <strong>{{ row.code }}</strong>
-                    <SecurityMarketBadge :security="row" />
-                    <span>{{ row.name || '-' }}</span>
+                    <StockIdentity :security="row" compact />
                   </span>
                   <span class="mobile-score">
                     <em>评分</em>
@@ -1621,6 +1764,360 @@ onMounted(() => {
 .effect-cell.down b { color: var(--down); }
 .effect-cell.flat b { color: var(--slate, #64748b); }
 
+.command-band {
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 15px 2px 16px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  letter-spacing: 0;
+}
+
+.command-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.command-head h3,
+.command-column-head h4 {
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+.command-head h3 {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.command-head p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.command-status {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid rgba(52, 199, 89, 0.22);
+  border-radius: 4px;
+  background: rgba(52, 199, 89, 0.07);
+  color: #248a3d;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.command-status.status-partial,
+.command-status.status-generating {
+  border-color: rgba(255, 159, 10, 0.25);
+  background: rgba(255, 159, 10, 0.08);
+  color: #9a5b00;
+}
+
+.command-status.status-stale,
+.command-status.status-blocked {
+  border-color: rgba(255, 59, 48, 0.23);
+  background: rgba(255, 59, 48, 0.07);
+  color: var(--up);
+}
+
+.command-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  margin: 8px 0 12px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.command-meta span,
+.command-meta b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.command-meta b {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+}
+
+.command-column {
+  min-width: 0;
+  padding: 2px 18px 0 0;
+}
+
+.command-guide {
+  padding: 2px 0 0 18px;
+  border-left: 1px solid var(--line);
+}
+
+.command-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.command-column-head h4 {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.command-column-head span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.command-headline,
+.command-guide-summary {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.command-headline {
+  font-weight: 620;
+}
+
+.command-evidence {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.command-evidence-title {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.command-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 14px;
+  margin-top: 4px;
+}
+
+.command-evidence-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.command-evidence-label,
+.command-evidence-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.command-evidence-label {
+  color: var(--muted);
+}
+
+.command-evidence-value {
+  color: var(--ink-soft);
+  font-weight: 650;
+  text-align: right;
+}
+
+.command-directions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.command-direction {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.command-direction > strong {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.command-direction > span {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.command-direction > span b {
+  color: inherit;
+  font-weight: 650;
+}
+
+.command-direction.opportunity > strong { color: #248a3d; }
+.command-direction.risk > strong { color: var(--up); }
+
+.command-watch {
+  margin-top: 10px;
+}
+
+.command-watch > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.command-watch p {
+  margin: 3px 0 0;
+  color: var(--slate);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.command-watch b {
+  color: var(--ink-soft);
+  font-weight: 650;
+}
+
+.command-position {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.command-position b {
+  margin-left: 3px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.command-blocked-reason {
+  margin: 8px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 59, 48, 0.48);
+  color: var(--up);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.command-actions {
+  margin-top: 8px;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.command-action {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 7px 2px;
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  touch-action: manipulation;
+}
+
+.command-action:last-child {
+  border-bottom: 0;
+}
+
+.command-action:hover,
+.command-action:focus-visible {
+  background: rgba(0, 113, 227, 0.05);
+}
+
+.command-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.command-action-order {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(0, 113, 227, 0.09);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.command-action-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.command-action-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 7px;
+}
+
+.command-action-title b {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.command-action-title em {
+  color: var(--accent);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.command-target-count {
+  color: var(--slate);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.command-action-copy small {
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.command-action-arrow {
+  color: var(--accent);
+  font-size: 13px;
+}
+
 .morning-context {
   margin: 0 0 14px;
   padding: 15px 2px 16px;
@@ -1955,6 +2452,14 @@ onMounted(() => {
     grid-template-columns: 1fr 1fr;
   }
 
+  .command-directions {
+    grid-template-columns: 1fr;
+  }
+
+  .command-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
   .morning-context-head {
     align-items: flex-start;
     flex-direction: column;
@@ -1989,6 +2494,26 @@ onMounted(() => {
 }
 
 @media (max-width: 900px) {
+  .command-band {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .command-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .command-column {
+    padding: 0;
+  }
+
+  .command-guide {
+    margin-top: 13px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
   .morning-context {
     padding-right: 0;
     padding-left: 0;
@@ -2097,19 +2622,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.dash-table :deep(.code-col .cell) {
-  overflow: visible;
-  padding-left: 8px;
-  padding-right: 4px;
-}
-
-.security-code {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
 .dash-table :deep(.action-cues-col .cell) {
   overflow: visible;
   padding-left: 8px;
@@ -2143,26 +2655,6 @@ onMounted(() => {
 
 .mobile-action-list {
   display: none;
-}
-
-.code-link {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  color: var(--accent);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.code-link:hover {
-  color: var(--accent-hover);
-  text-decoration: underline;
 }
 
 .dash-empty {

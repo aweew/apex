@@ -29,6 +29,11 @@ public class DashboardHomeResp {
     private MorningBriefingResp morningBriefing;
 
     /**
+     * 盘前总结与今日操作指引
+     */
+    private DashboardCommandResp command;
+
+    /**
      * 今日决策摘要
      */
     private DecisionBlock decision;

@@ -53,7 +53,6 @@ import {
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 import HoldingTradeDialog from '../components/HoldingTradeDialog.vue'
-import { securityMarketBadge } from '../utils/securityMarket.js'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
 import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
@@ -1867,18 +1866,7 @@ onBeforeUnmount(() => {
               :sortable="!sharingCapture"
             >
               <template #default="{ row }">
-                <button type="button" class="security-link" @click="router.push(`/stock/${row.code}`)">
-                  <span class="security-name">
-                    <span class="security-name-text">{{ row.name || '-' }}</span>
-                    <span
-                      v-if="securityMarketBadge(row)"
-                      class="market-badge"
-                      :class="`is-${securityMarketBadge(row).tone}`"
-                      :title="securityMarketBadge(row).title"
-                    >{{ securityMarketBadge(row).label }}</span>
-                  </span>
-                  <span class="security-code">{{ row.code }}</span>
-                </button>
+                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
                 <el-dropdown
                   v-if="isMobileViewport"
                   trigger="click"
@@ -3060,47 +3048,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
   opacity: 0.85;
 }
-.security-name {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-.security-name-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 700;
-}
-.security-link {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  color: var(--el-color-primary);
-  background: transparent;
-  font: inherit;
-  line-height: 1.15;
-  text-align: center;
-  cursor: pointer;
-}
-.security-link:hover .security-name-text,
-.security-link:focus-visible .security-name-text {
-  color: var(--el-color-primary-dark-2);
-}
-.security-link:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: 2px;
-}
-.security-code {
-  color: inherit;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
 .mobile-holding-actions {
   display: inline-grid;
   place-items: center;
@@ -3121,45 +3068,6 @@ onBeforeUnmount(() => {
   color: var(--accent);
   background: var(--accent-soft);
   outline: none;
-}
-.market-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  box-sizing: border-box;
-  font-size: 10px;
-  font-weight: 750;
-  line-height: 1;
-}
-.market-badge.is-star {
-  color: #0a66c2;
-  background: rgba(0, 113, 227, 0.09);
-  border-color: rgba(0, 113, 227, 0.18);
-}
-.market-badge.is-chinext {
-  color: #16775d;
-  background: rgba(42, 157, 143, 0.1);
-  border-color: rgba(42, 157, 143, 0.2);
-}
-.market-badge.is-bj {
-  color: #a86400;
-  background: rgba(255, 159, 10, 0.11);
-  border-color: rgba(255, 159, 10, 0.22);
-}
-.market-badge.is-hk {
-  color: #6b4fbb;
-  background: rgba(107, 79, 187, 0.1);
-  border-color: rgba(107, 79, 187, 0.2);
-}
-.market-badge.is-us {
-  color: #515154;
-  background: rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.1);
 }
 .holding-layout {
   margin-top: 14px;

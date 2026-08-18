@@ -129,13 +129,11 @@ onMounted(load)
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="code" label="代码" width="100">
+      <el-table-column prop="name" label="股票" width="144">
         <template #default="{ row }">
-          <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-          <SecurityMarketBadge :security="row" />
+          <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" width="120" />
       <el-table-column prop="strategyId" label="策略" width="80" />
       <el-table-column label="评分" width="100">
         <template #default="{ row }">
@@ -169,7 +167,9 @@ onMounted(load)
     </div>
     <el-table v-else :data="journals" size="small" stripe>
       <el-table-column prop="tradeDate" label="日期" width="120" />
-      <el-table-column prop="code" label="代码" width="100" />
+      <el-table-column prop="code" label="股票" width="120">
+        <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+      </el-table-column>
       <el-table-column prop="side" label="方向" width="80" />
       <el-table-column prop="price" label="价格" width="100" />
       <el-table-column prop="quantity" label="数量" width="90" />

@@ -766,19 +766,16 @@ onBeforeUnmount(() => {
         :empty-text="drawerRefreshing ? '正在获取最新成分股，可关闭抽屉继续浏览' : '暂无成分股，请刷新成分'"
         max-height="70vh"
       >
-        <el-table-column prop="code" label="代码" width="90" sortable>
+        <el-table-column prop="name" label="股票" min-width="138" sortable>
           <template #default="{ row }">
-            <el-button
-              v-if="row.code"
-              link
-              type="primary"
-              @click="router.push(`/stock/${row.code}`)"
-            >
-              {{ row.code }}
-            </el-button>
+            <StockIdentity
+              :security="row"
+              :interactive="Boolean(row.code)"
+              compact
+              @select="router.push(`/stock/${row.code}`)"
+            />
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="100" sortable />
         <el-table-column prop="latestPrice" label="最新价" width="90" sortable />
         <el-table-column width="90" sortable prop="pctChg">
           <template #header><TermTip term="pct_chg">涨跌幅</TermTip></template>

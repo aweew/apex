@@ -653,13 +653,11 @@ onBeforeUnmount(() => {
     <el-drawer v-model="drawerOpen" :title="drawerTitle" size="420px">
       <div v-loading="drawerLoading">
         <el-table :data="drawerRows" size="small" stripe height="100%" empty-text="暂无成分">
-          <el-table-column prop="code" label="代码" width="88">
+          <el-table-column prop="name" label="股票" min-width="132">
             <template #default="{ row }">
-              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-              <SecurityMarketBadge :security="row" />
+              <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="名称" min-width="96" />
           <el-table-column prop="latestPrice" label="现价" width="72" />
           <el-table-column prop="pctChg" width="80">
             <template #header><TermTip term="pct_chg">涨跌%</TermTip></template>

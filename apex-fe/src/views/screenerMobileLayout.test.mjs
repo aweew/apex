@@ -7,6 +7,10 @@ const desktopTableSource = screenerSource.slice(
   screenerSource.indexOf('<el-table\n      v-if="!isMobileViewport"'),
   screenerSource.indexOf('<section v-if="isMobileViewport" class="mobile-results-section"'),
 )
+const mobileStrategySelectorSource = screenerSource.slice(
+  screenerSource.indexOf('<div v-else class="strategy-selector">'),
+  screenerSource.indexOf('<div class="strategy-actions">'),
+)
 
 test('stock screener uses a dedicated mobile filter surface with progressive disclosure', () => {
   assert.match(screenerSource, /isMobileViewport = computed\(\(\) => viewportWidth\.value <= 820\)/)
@@ -25,14 +29,12 @@ test('desktop form and table remain separate from mobile controls and results', 
 })
 
 test('desktop screener uses the shared stock identity hierarchy with market badges', () => {
-  assert.match(desktopTableSource, /<el-table-column prop="name" label="股票"[\s\S]*?class="security-link"[\s\S]*?class="security-name-text"[\s\S]*?<SecurityMarketBadge :security="row" include-main \/>[\s\S]*?class="security-code"/)
+  assert.match(desktopTableSource, /<el-table-column prop="name" label="股票"[\s\S]*?<StockIdentity[\s\S]*?:security="row"[\s\S]*?include-main[\s\S]*?compact/)
   assert.doesNotMatch(desktopTableSource, /<el-table-column prop="code" label="代码"/)
-  assert.match(screenerSource, /\.security-link\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*center;/)
-  assert.match(screenerSource, /\.security-code\s*\{[\s\S]*?font-size:\s*11px;/)
 })
 
 test('mobile screener reuses market badges including Shanghai and Shenzhen', () => {
-  assert.match(screenerSource, /class="mobile-stock-identity"[\s\S]*?<SecurityMarketBadge :security="row" include-main \/>/)
+  assert.match(screenerSource, /class="mobile-stock-identity"[\s\S]*?<StockIdentity :security="row" include-main compact \/>/)
   assert.doesNotMatch(screenerSource, /class="market-badge"/)
 })
 
@@ -82,6 +84,21 @@ test('desktop strategy workspace exposes all templates and practical explanation
 test('strategy workspace collapses to one column on mobile', () => {
   assert.match(screenerSource, /\.strategy-workspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(220px, 280px\) minmax\(0, 1fr\);/)
   assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.strategy-workspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+})
+
+test('mobile strategy header removes desktop title decoration', () => {
+  assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.screener-page\s*\{[\s\S]*?--page-title-size:\s*24px;/)
+  assert.match(screenerSource, /\.screener-header > div:first-child > \.eyebrow\s*\{[\s\S]*?display:\s*none !important;/)
+  assert.match(screenerSource, /\.screener-header h1::after\s*\{[\s\S]*?display:\s*none;/)
+  assert.match(screenerSource, /\.screener-page \.screener-header > \.header-refresh-actions > :deep\(\.mobile-refresh-button\)\s*\{[\s\S]*?width:\s*44px !important;[\s\S]*?min-width:\s*44px;/)
+})
+
+test('mobile strategy selector stays full width without opening a search keyboard', () => {
+  assert.doesNotMatch(mobileStrategySelectorSource, /\bfilterable\b/)
+  assert.match(mobileStrategySelectorSource, /class="mobile-strategy-select"/)
+  assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.strategy-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?justify-content:\s*stretch;/)
+  assert.match(screenerSource, /\.strategy-toolbar > \*\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?width:\s*100%;/)
+  assert.match(screenerSource, /\.mobile-strategy-select :deep\(\.el-select__wrapper\)\s*\{[\s\S]*?min-height:\s*44px;/)
 })
 
 test('strategy maintenance supports copy edit toggle delete and ordering', () => {

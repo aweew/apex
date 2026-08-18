@@ -30,6 +30,14 @@ public class DecisionScheduler {
     private ApexUserAuthService userAuthService;
 
     /**
+     * 06:50 使用盘前已就绪数据为启用用户生成决策。
+     */
+    @Scheduled(cron = "0 50 6 * * MON-FRI", zone = "Asia/Shanghai")
+    public void runPreMarketSession() {
+        runScheduledDecision(LocalDate.now());
+    }
+
+    /**
      * 午间和收盘后自动生成决策。
      */
     @Scheduled(cron = "0 40 11,15 * * MON-FRI", zone = "Asia/Shanghai")

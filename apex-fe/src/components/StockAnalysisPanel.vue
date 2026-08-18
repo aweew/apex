@@ -445,8 +445,7 @@ defineExpose({ reload: () => loadRules() })
           <div class="share-head-main">
             <BrandShareLockup v-if="capturingShare" subtitle="个股研判" :size="44" />
             <div class="quote-id">
-              <b class="quote-name">{{ data.name || '-' }}</b>
-              <span class="quote-code">{{ data.code }}</span>
+              <StockIdentity :security="data" prominent />
               <span v-if="data.industry" class="quote-ind">{{ data.industry }}</span>
             </div>
           </div>
@@ -734,22 +733,8 @@ defineExpose({ reload: () => loadRules() })
 .quote-id {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-}
-
-.quote-name {
-  font-size: 20px;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-}
-
-.quote-code {
-  font-size: 14px;
-  font-weight: 650;
-  color: var(--slate);
-  font-variant-numeric: tabular-nums;
 }
 
 .quote-ind {

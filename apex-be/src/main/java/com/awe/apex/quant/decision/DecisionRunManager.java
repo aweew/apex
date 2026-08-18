@@ -1,7 +1,9 @@
 package com.awe.apex.quant.decision;
 
-import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.common.util.JsonUtils;
+import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.domain.bo.DecisionDataCutoffBO;
 import com.awe.apex.quant.domain.entity.DecisionFeatureSnapshot;
 import com.awe.apex.quant.domain.entity.DecisionRun;
 import com.awe.apex.quant.context.ApexUserContext;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -145,6 +148,39 @@ public class DecisionRunManager {
         decisionRunMapper.updateById(run);
     }
 
+    /**
+     * 记录决策使用的市场行情实际截至日。
+     *
+     * @param run            决策运行
+     * @param marketDataAsOf 市场行情实际截至日
+     */
+    public void recordMarketDataAsOf(DecisionRun run, LocalDate marketDataAsOf) {
+        if (Objects.isNull(run)) {
+            return;
+        }
+        DecisionDataCutoffBO dataCutoff = parseDataCutoff(run.getDataCutoffJson());
+        if (Objects.isNull(dataCutoff)) {
+            dataCutoff = DecisionDataCutoffBO.builder()
+                    .asOfTime(run.getAsOfTime())
+                    .build();
+        }
+        dataCutoff.setMarketDataAsOf(marketDataAsOf);
+        run.setDataCutoffJson(JsonUtils.toJsonString(dataCutoff));
+    }
+
+    /**
+     * 解析决策运行数据截止信息，兼容未包含市场行情日期的历史 JSON。
+     *
+     * @param dataCutoffJson 数据截止 JSON
+     * @return 数据截止信息
+     */
+    public DecisionDataCutoffBO parseDataCutoff(String dataCutoffJson) {
+        if (StringUtils.isBlank(dataCutoffJson)) {
+            return null;
+        }
+        return JsonUtils.parseObject(dataCutoffJson, DecisionDataCutoffBO.class);
+    }
+
     private DecisionFeatureSnapshot toSnapshot(DecisionRun run, DecisionFeature feature, LocalDateTime now) {
         return DecisionFeatureSnapshot.builder()
                 .runId(run.getId())
@@ -171,8 +207,10 @@ public class DecisionRunManager {
     }
 
     private String dataCutoffJson(DecisionContext context) {
-        return "{\"asOfTime\":\"" + context.getAsOfTime()
-                + "\",\"policy\":\"" + context.getDataPolicy().name() + "\"}";
+        return JsonUtils.toJsonString(DecisionDataCutoffBO.builder()
+                .asOfTime(context.getAsOfTime())
+                .policy(context.getDataPolicy().name())
+                .build());
     }
 
     private String toJson(Object value) {

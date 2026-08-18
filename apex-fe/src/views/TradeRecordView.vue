@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import SecurityMarketBadge from '../components/SecurityMarketBadge.vue'
 import { listPortfolios } from '../api/portfolio'
 import { listTradeRecords } from '../api/trade'
 
@@ -203,11 +202,7 @@ onMounted(() => {
       <el-table-column label="股票" min-width="168">
         <template #default="{ row }">
           <div class="security-cell">
-            <div class="security-name-line">
-              <strong>{{ row.stockName || row.code }}</strong>
-              <SecurityMarketBadge :security="row" include-main />
-            </div>
-            <span>{{ row.code }}</span>
+            <StockIdentity :security="row" :name="row.stockName" include-main compact />
           </div>
         </template>
       </el-table-column>
@@ -253,11 +248,8 @@ onMounted(() => {
       <article v-for="row in records" :key="row.id" class="trade-mobile-card" @click="openStock(row)">
         <header>
           <div class="security-cell">
-            <div class="security-name-line">
-              <strong>{{ row.stockName || row.code }}</strong>
-              <SecurityMarketBadge :security="row" include-main />
-            </div>
-            <span>{{ row.code }} · {{ tradeTime(row) }}</span>
+            <StockIdentity :security="row" :name="row.stockName" include-main compact />
+            <span class="trade-time">{{ tradeTime(row) }}</span>
           </div>
           <span class="side-label" :class="row.side === 'BUY' ? 'is-buy' : 'is-sell'">
             {{ row.side === 'BUY' ? '买入' : '卖出' }}
@@ -304,8 +296,7 @@ onMounted(() => {
 .trade-heading,
 .trade-header-actions,
 .trade-filters,
-.filter-actions,
-.security-name-line {
+.filter-actions {
   display: flex;
   align-items: center;
 }
@@ -381,19 +372,7 @@ onMounted(() => {
   min-width: 0;
 }
 
-.security-name-line {
-  gap: 6px;
-  min-width: 0;
-}
-
-.security-name-line strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink, #1d1d1f);
-}
-
-.security-cell > span {
+.trade-time {
   display: block;
   margin-top: 2px;
   color: var(--muted, #86868b);

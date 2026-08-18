@@ -1,7 +1,5 @@
 package com.awe.apex.quant.market;
 
-import cn.hutool.http.HttpRequest;
-import cn.hutool.http.HttpResponse;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
@@ -11,11 +9,20 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 日线行情客户端（东财前复权优先，新浪仅作非研究场景兜底）
@@ -30,6 +37,19 @@ public class DailyBarClient {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter COMPACT = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final int EAST_MONEY_FAIL_THRESHOLD = 2;
+    private static final long EAST_MONEY_COOLDOWN_MS = 10 * 60 * 1000L;
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(3))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .version(HttpClient.Version.HTTP_1_1)
+            .build();
+
+    private final AtomicInteger eastMoneyFailCount = new AtomicInteger();
+    private final AtomicLong eastMoneyCooldownUntil = new AtomicLong();
+
+    private String eastMoneyUrl = "https://push2his.eastmoney.com/api/qt/stock/kline/get";
+    private String sinaUrl = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData";
 
     /**
      * 拉取日线，自动切换数据源
@@ -42,15 +62,26 @@ public class DailyBarClient {
     public List<BarDaily> fetchDailyBars(String code, String beginDate, String endDate) {
         String pureCode = MarketCodeUtils.normalizeCode(code);
         Exception eastMoneyError = null;
-        try {
-            List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate);
-            if (!eastMoneyBars.isEmpty()) {
+        if (System.currentTimeMillis() >= eastMoneyCooldownUntil.get()) {
+            try {
+                List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate);
+                eastMoneyFailCount.set(0);
+                eastMoneyCooldownUntil.set(0);
                 return eastMoneyBars;
+            } catch (Exception ex) {
+                eastMoneyError = ex;
+                int failCount = eastMoneyFailCount.incrementAndGet();
+                if (failCount >= EAST_MONEY_FAIL_THRESHOLD) {
+                    eastMoneyCooldownUntil.set(System.currentTimeMillis() + EAST_MONEY_COOLDOWN_MS);
+                    eastMoneyFailCount.set(0);
+                    log.warn("东财日线连续失败，熔断 {} 分钟，证券代码={}，异常={}",
+                            EAST_MONEY_COOLDOWN_MS / 60000, pureCode, ex.getMessage());
+                } else {
+                    log.warn("东财前复权日线失败，尝试新浪兜底，证券代码={}，异常={}", pureCode, ex.getMessage());
+                }
             }
-        } catch (Exception ex) {
-            eastMoneyError = ex;
-            log.warn("东财前复权日线失败，尝试新浪兜底，证券代码={}，异常={}", pureCode, ex.getMessage());
-            sleepQuiet(600L);
+        } else {
+            eastMoneyError = new BusinessException("东财日线接口熔断中");
         }
         try {
             List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate);
@@ -68,7 +99,7 @@ public class DailyBarClient {
         String secId = MarketCodeUtils.toEastMoneySecId(pureCode);
         String begin = toCompact(beginDate);
         String end = toCompact(endDate);
-        String url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+        String url = eastMoneyUrl
                 + "?secid=" + secId
                 + "&fields1=f1,f2,f3,f4,f5,f6"
                 + "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
@@ -111,6 +142,9 @@ public class DailyBarClient {
                 ));
             }
             log.info("东财日线拉取完成，证券代码={}，日线数量={}", pureCode, bars.size());
+            if (bars.isEmpty()) {
+                throw new BusinessException("东财无区间数据");
+            }
             return bars;
         } catch (BusinessException ex) {
             throw ex;
@@ -128,7 +162,7 @@ public class DailyBarClient {
             prefix = "bj";
         }
         String symbol = prefix + pureCode;
-        String url = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+        String url = sinaUrl
                 + "?symbol=" + symbol + "&scale=240&ma=no&datalen=640";
         String body = httpGet(url, "https://finance.sina.com.cn/");
         try {
@@ -193,22 +227,33 @@ public class DailyBarClient {
     }
 
     private String httpGet(String url, String referer) {
-        try (HttpResponse response = HttpRequest.get(url)
-                .timeout(20000)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                .header("Accept", "application/json,text/plain,*/*")
-                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                .header("Connection", "close")
-                .header("Referer", referer)
-                .execute()) {
-            if (!response.isOk()) {
-                throw new BusinessException("HTTP " + response.getStatus());
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                    .header("Accept", "application/json,text/plain,*/*")
+                    .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                    .header("Referer", referer)
+                    .GET()
+                    .build();
+            HttpResponse<String> response = HTTP_CLIENT.send(
+                    request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new BusinessException("HTTP " + response.statusCode());
             }
             String body = response.body();
             if (StringUtils.isBlank(body)) {
                 throw new BusinessException("空响应");
             }
             return body;
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("行情请求被中断", ex);
+        } catch (Exception ex) {
+            throw new BusinessException(ex.getMessage(), ex);
         }
     }
 
@@ -241,15 +286,7 @@ public class DailyBarClient {
         return LocalDate.parse(value, COMPACT);
     }
 
-    private void sleepQuiet(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
     private String messageOf(Exception ex) {
-        return ex == null ? "unknown" : ex.getMessage();
+        return Objects.isNull(ex) ? "unknown" : ex.getMessage();
     }
 }

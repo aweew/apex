@@ -614,11 +614,7 @@ onBeforeUnmount(() => {
           <el-table-column prop="priority" label="#" width="44" align="center" />
           <el-table-column label="标的" min-width="118">
             <template #default="{ row }">
-              <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
-                {{ row.name || row.code }}
-              </el-button>
-              <SecurityMarketBadge :security="row" />
-              <small class="advice-code">{{ row.code }}</small>
+              <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
             </template>
           </el-table-column>
           <el-table-column label="动作" width="76" align="center">
@@ -652,11 +648,7 @@ onBeforeUnmount(() => {
             <div class="advice-mobile-main">
               <span class="advice-priority">{{ row.priority }}</span>
               <div class="advice-mobile-stock">
-                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">
-                  {{ row.name || row.code }}
-                </el-button>
-                <SecurityMarketBadge :security="row" />
-                <small>{{ row.code }}</small>
+                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
               </div>
               <el-tag size="small" effect="plain" :type="adviceActionType(row.action)">
                 {{ adviceActionLabel(row.action) }}
@@ -743,8 +735,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="buyAi?.stockNotes?.length" class="buy-ai-notes">
               <div v-for="n in buyAi.stockNotes" :key="n.code" class="note-row">
-                <el-button link type="primary" @click="router.push(`/stock/${n.code}`)">{{ n.code }}</el-button>
-                <span class="note-name">{{ n.name || '-' }}</span>
+                <StockIdentity :security="n" interactive compact @select="router.push(`/stock/${n.code}`)" />
                 <el-tag v-if="n.priority" size="small" effect="plain" :type="priorityType(n.priority)">
                   {{ n.priority }}
                 </el-tag>
@@ -794,13 +785,11 @@ onBeforeUnmount(() => {
             stripe
             empty-text="当前筛选下无买入标的"
           >
-            <el-table-column prop="code" label="代码" width="96" fixed>
+            <el-table-column prop="name" label="股票" width="136" fixed>
               <template #default="{ row }">
-                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-                <SecurityMarketBadge :security="row" />
+                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="100" />
             <el-table-column label="策略" width="108">
               <template #default="{ row }">{{ strategyName(row.strategyId) }}</template>
             </el-table-column>
@@ -896,13 +885,11 @@ onBeforeUnmount(() => {
 
         <el-tab-pane :label="`建议卖出 (${sells.length})`" name="sells">
           <el-table :data="sells" size="small" stripe empty-text="持仓暂无卖出建议">
-            <el-table-column prop="code" label="代码" width="96" fixed>
+            <el-table-column prop="name" label="股票" width="136" fixed>
               <template #default="{ row }">
-                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-                <SecurityMarketBadge :security="row" />
+                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="100" />
             <el-table-column label="策略" width="120">
               <template #default="{ row }">{{ strategyName(row.strategyId) }}</template>
             </el-table-column>
@@ -937,13 +924,11 @@ onBeforeUnmount(() => {
 
         <el-tab-pane :label="`继续持有 (${holds.length})`" name="holds">
           <el-table :data="holds" size="small" stripe empty-text="持仓为空，或均已有买卖建议">
-            <el-table-column prop="code" label="代码" width="96">
+            <el-table-column prop="name" label="股票" width="142">
               <template #default="{ row }">
-                <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-                <SecurityMarketBadge :security="row" />
+                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="110" />
             <el-table-column
               prop="reason"
               label="理由"
@@ -1478,7 +1463,7 @@ onBeforeUnmount(() => {
 
 .note-row {
   display: grid;
-  grid-template-columns: 72px 72px auto 1fr;
+  grid-template-columns: 136px auto minmax(0, 1fr);
   gap: 8px;
   align-items: start;
   font-size: 12px;

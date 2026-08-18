@@ -326,16 +326,9 @@ onMounted(loadList)
       @selection-change="(val) => (selected = val)"
     >
       <el-table-column type="selection" width="48" />
-      <el-table-column prop="code" label="代码" width="100" sortable>
+      <el-table-column prop="name" label="股票" min-width="140" sortable>
         <template #default="{ row }">
-          <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-          <SecurityMarketBadge :security="row" />
-        </template>
-      </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="120">
-        <template #default="{ row }">
-          <el-button link @click="router.push(`/stock/${row.code}`)">{{ row.name || '-' }}</el-button>
-          <SecurityMarketBadge :security="row" />
+          <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
         </template>
       </el-table-column>
       <el-table-column prop="latestPrice" label="最新价" width="100" sortable />

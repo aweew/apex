@@ -943,7 +943,9 @@ onMounted(() => {
     </div>
 
     <el-table v-if="portfolioLegs.length" :data="portfolioLegs" size="small" style="margin-bottom: 12px">
-      <el-table-column prop="code" label="代码" width="100" />
+      <el-table-column prop="code" label="股票" width="120">
+        <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+      </el-table-column>
       <el-table-column prop="totalReturn" label="收益" width="100">
         <template #default="{ row }">
           {{ row.totalReturn != null ? (Number(row.totalReturn) * 100).toFixed(2) + '%' : row.error || '-' }}
@@ -1038,7 +1040,9 @@ onMounted(() => {
     <h3 v-if="jobs.length">历史任务</h3>
     <el-table v-if="jobs.length" :data="jobs" size="small" height="180" @row-click="(row) => showDetail(row.id)">
       <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column prop="code" label="代码" width="100" />
+      <el-table-column prop="code" label="股票" width="120">
+        <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+      </el-table-column>
       <el-table-column prop="strategyId" label="策略" width="80" />
       <el-table-column prop="beginDate" label="开始" width="120" />
       <el-table-column prop="endDate" label="结束" width="120" />

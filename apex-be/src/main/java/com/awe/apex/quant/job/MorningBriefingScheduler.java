@@ -38,9 +38,6 @@ public class MorningBriefingScheduler {
      */
     @Scheduled(cron = "0 35 6 * * *", zone = "Asia/Shanghai")
     public void generateMorningBriefing() {
-        if (!properties.getMorningBriefing().isEnabled()) {
-            return;
-        }
         LocalDateTime startedAt = LocalDateTime.now();
         try {
             // 1. 先刷新夜间资讯，保证消息面摘要包含最新内容
@@ -51,9 +48,11 @@ public class MorningBriefingScheduler {
                 log.warn("盘前晨报新闻刷新失败，继续使用本地新闻，原因={}", ex.getMessage());
             }
 
-            // 2. 汇总美股收盘、关键股与夜间消息面，并发送到 Bot
+            // 2. 始终生成 Web 晨报，按配置决定是否发送到 Bot
             MorningBriefingResp briefing = morningBriefingService.generate();
-            notificationService.notifyMorningBriefing(briefing);
+            if (properties.getMorningBriefing().isEnabled()) {
+                notificationService.notifyMorningBriefing(briefing);
+            }
             long durationSeconds = Duration.between(startedAt, LocalDateTime.now()).toSeconds();
             log.info("盘前晨报完成，数据等级={}，行情数量={}，新闻数量={}，耗时秒={}",
                     briefing.getDataLevel(), briefing.getMarketQuotes().size(), briefing.getNewsTitles().size(), durationSeconds);

@@ -252,6 +252,7 @@ class DataSyncJobServiceOwnershipTest {
             assertEquals(40, savedJob.get().getDoneItems());
             assertEquals(100, savedJob.get().getTotalItems());
             assertEquals("正在扫描策略信号", savedJob.get().getMessage());
+            assertTrue(service.isCurrentUserDecisionRunning());
         } finally {
             releaseDecision.countDown();
         }

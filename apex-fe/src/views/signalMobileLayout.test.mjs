@@ -34,8 +34,8 @@ test('mobile evaluation sections avoid desktop tables', () => {
 })
 
 test('signal list keeps market badges beside stock names and balances mobile metadata', () => {
-  assert.match(signalSource, /class="signal-stock-name">[\s\S]*?<strong>\{\{ row\.name \|\| '-' \}\}<\/strong>[\s\S]*?<SecurityMarketBadge :security="row"/)
-  assert.match(signalSource, /<el-table-column prop="name" label="名称" width="128"[\s\S]*?class="signal-stock-name"/)
+  assert.match(signalSource, /class="signal-stock">[\s\S]*?<StockIdentity :security="row" interactive/)
+  assert.match(signalSource, /<el-table-column prop="name" label="股票" width="144">[\s\S]*?<StockIdentity :security="row" interactive compact/)
   assert.match(signalSource, /\.signal-mobile-meta\s*\{\s*display: grid;\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/)
   assert.match(signalSource, /\.signal-mobile-meta \.strategy-badge,[\s\S]*?justify-self: center;/)
   assert.match(signalSource, /\.signal-mobile-meta \.signal-score\s*\{\s*justify-self: end;/)

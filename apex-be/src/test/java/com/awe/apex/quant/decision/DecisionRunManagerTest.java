@@ -4,6 +4,7 @@ import cn.hutool.extra.spring.SpringUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.domain.entity.DecisionFeatureSnapshot;
 import com.awe.apex.quant.domain.entity.DecisionRun;
+import com.awe.apex.quant.domain.bo.DecisionDataCutoffBO;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.mapper.DecisionFeatureSnapshotMapper;
 import com.awe.apex.quant.mapper.DecisionRunMapper;
@@ -24,6 +25,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -86,6 +88,34 @@ class DecisionRunManagerTest {
         assertEquals(0, run.getPublished());
         verify(runMapper).insert(run);
         verify(runMapper).updateById(run);
+    }
+
+    @Test
+    void recordsMarketDataDateSeparatelyFromRunTime() {
+        DecisionContext context = DecisionContext.builder()
+                .actionDate(LocalDate.of(2026, 8, 18))
+                .asOfTime(LocalDateTime.of(2026, 8, 18, 6, 50))
+                .mode(DecisionMode.LIVE)
+                .dataPolicy(DecisionDataPolicy.LATEST_AVAILABLE)
+                .build();
+
+        DecisionRun run = manager.start(context, "我的自选");
+        manager.recordMarketDataAsOf(run, LocalDate.of(2026, 8, 17));
+
+        DecisionDataCutoffBO cutoff = manager.parseDataCutoff(run.getDataCutoffJson());
+        assertEquals(LocalDateTime.of(2026, 8, 18, 6, 50), cutoff.getAsOfTime());
+        assertEquals("LATEST_AVAILABLE", cutoff.getPolicy());
+        assertEquals(LocalDate.of(2026, 8, 17), cutoff.getMarketDataAsOf());
+    }
+
+    @Test
+    void parsesLegacyDataCutoffWithoutMarketDataDate() {
+        DecisionDataCutoffBO cutoff = manager.parseDataCutoff(
+                "{\"asOfTime\":\"2026-08-18T06:50:00\",\"policy\":\"LATEST_AVAILABLE\"}");
+
+        assertEquals(LocalDateTime.of(2026, 8, 18, 6, 50), cutoff.getAsOfTime());
+        assertEquals("LATEST_AVAILABLE", cutoff.getPolicy());
+        assertNull(cutoff.getMarketDataAsOf());
     }
 
     @Test

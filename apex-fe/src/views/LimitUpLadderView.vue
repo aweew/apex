@@ -549,8 +549,7 @@ onBeforeUnmount(() => {
               >观</button>
             </div>
             <div class="card-name-row">
-              <div class="card-name">{{ s.name || s.code }}</div>
-              <SecurityMarketBadge :security="s" />
+              <StockIdentity :security="s" :show-code="false" compact />
               <span class="badges">
                 <i v-if="!s.failed && s.yizi" class="badge yizi" title="一字板">一</i>
                 <i v-if="s.lianban > 1" class="badge lb">{{ s.lianban }}</i>
@@ -1044,19 +1043,6 @@ onBeforeUnmount(() => {
 
 .badge.obs:hover {
   filter: brightness(1.08);
-}
-
-.card-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: #1d1d1f;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 16px;
-  height: 16px;
 }
 
 .card-sub {

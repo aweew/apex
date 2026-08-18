@@ -34,6 +34,7 @@ import com.awe.apex.quant.decision.DecisionScoreResp;
 import com.awe.apex.quant.decision.DecisionScorer;
 import com.awe.apex.quant.decision.MainlineBoardRules;
 import com.awe.apex.quant.decision.MainlineMatcher;
+import com.awe.apex.quant.domain.bo.DecisionDataCutoffBO;
 import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
 import com.awe.apex.quant.domain.dto.DecisionAdviceActionResp;
 import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
@@ -308,6 +309,7 @@ public class DecisionServiceImpl implements IDecisionService {
         // 0. 市场简报（大盘/风格/量能/涨停/主线）→ 调节买入仓位
         progressListener.onProgress(5, 100, "正在生成市场简报");
         MarketBriefingResp briefing = resolveRunBriefing(context);
+        decisionRunManager.recordMarketDataAsOf(decisionRun, briefing.getAsOf());
         BigDecimal buyFactor = Objects.nonNull(briefing.getBuyWeightFactor())
                 ? briefing.getBuyWeightFactor() : BigDecimal.ONE;
         List<String> mainlineNames = resolveMainlineNames(briefing, context.getMode() != DecisionMode.REPLAY);
@@ -1069,6 +1071,8 @@ public class DecisionServiceImpl implements IDecisionService {
                 .runNo(decisionRun.getRunNo())
                 .runMode(decisionRun.getMode())
                 .asOfTime(decisionRun.getAsOfTime())
+                .dataAsOf(briefing.getAsOf())
+                .generated(true)
                 .ruleVersion(decisionRun.getRuleVersion())
                 .modelVersion(decisionRun.getModelVersion())
                 .featureVersion(decisionRun.getFeatureVersion())
@@ -1446,7 +1450,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 .eq(DailyAction::getActionDate, actionDate)
                 .orderByAsc(DailyAction::getAction)
                 .orderByDesc(DailyAction::getScore));
-        DecisionRun storedRun = loadDecisionRun(rows);
+        DecisionRun storedRun = loadDecisionRun(rows, actionDate);
         if (actionDate.equals(LocalDate.now())) {
             if (!reuseBriefing) {
                 // 今日大盘与看板对齐：走实时简报（指数/量能/涨跌家数会覆盖）
@@ -1555,8 +1559,13 @@ public class DecisionServiceImpl implements IDecisionService {
                 valuationRichCount++;
             }
         }
+        boolean generated = Objects.nonNull(storedRun);
+        DecisionDataCutoffBO dataCutoff = generated
+                ? decisionRunManager.parseDataCutoff(storedRun.getDataCutoffJson()) : null;
         String message = CollUtil.isEmpty(all)
-                ? "今日尚无决策，请启动「后台生成决策」；下方市场简报已可参考"
+                ? (generated
+                ? "今日决策已生成，暂无符合条件的操作；下方市场简报已可参考"
+                : "今日尚无决策，请启动「后台生成决策」；下方市场简报已可参考")
                 : "市场「" + briefing.getStance() + "」· 买 " + buys.size()
                 + " / 卖 " + sells.size() + " / 持有 " + holds.size()
                 + " · 可执行 " + executableCount;
@@ -1564,6 +1573,8 @@ public class DecisionServiceImpl implements IDecisionService {
                 .runNo(Objects.nonNull(storedRun) ? storedRun.getRunNo() : null)
                 .runMode(Objects.nonNull(storedRun) ? storedRun.getMode() : null)
                 .asOfTime(Objects.nonNull(storedRun) ? storedRun.getAsOfTime() : null)
+                .dataAsOf(Objects.nonNull(dataCutoff) ? dataCutoff.getMarketDataAsOf() : null)
+                .generated(generated)
                 .ruleVersion(Objects.nonNull(storedRun) ? storedRun.getRuleVersion() : null)
                 .modelVersion(Objects.nonNull(storedRun) ? storedRun.getModelVersion() : null)
                 .featureVersion(Objects.nonNull(storedRun) ? storedRun.getFeatureVersion() : null)
@@ -1588,15 +1599,25 @@ public class DecisionServiceImpl implements IDecisionService {
                 .build();
     }
 
-    private DecisionRun loadDecisionRun(List<DailyAction> rows) {
+    private DecisionRun loadDecisionRun(List<DailyAction> rows, LocalDate actionDate) {
+        DecisionRun publishedRun = decisionRunMapper.selectOne(Wrappers.<DecisionRun>lambdaQuery()
+                .eq(DecisionRun::getUserId, userContext.currentUserId())
+                .eq(DecisionRun::getActionDate, actionDate)
+                .eq(DecisionRun::getStatus, "SUCCESS")
+                .eq(DecisionRun::getPublished, 1)
+                .orderByDesc(DecisionRun::getId)
+                .last("LIMIT 1"));
+        if (Objects.nonNull(publishedRun)) {
+            return publishedRun;
+        }
         if (CollUtil.isEmpty(rows)) {
             return null;
         }
         for (DailyAction row : rows) {
             if (Objects.nonNull(row.getRunId())) {
-                DecisionRun run = decisionRunMapper.selectById(row.getRunId());
-                return Objects.nonNull(run) && Objects.equals(run.getUserId(), userContext.currentUserId())
-                        ? run : null;
+                DecisionRun linkedRun = decisionRunMapper.selectById(row.getRunId());
+                return Objects.nonNull(linkedRun)
+                        && Objects.equals(linkedRun.getUserId(), userContext.currentUserId()) ? linkedRun : null;
             }
         }
         return null;
@@ -1619,7 +1640,7 @@ public class DecisionServiceImpl implements IDecisionService {
         if (CollUtil.isEmpty(actions)) {
             throw new BusinessException("该日期尚无已发布决策: " + actionDate);
         }
-        DecisionRun run = loadDecisionRun(actions);
+        DecisionRun run = loadDecisionRun(actions, actionDate);
         if (Objects.isNull(run)) {
             throw new BusinessException("决策缺少运行上下文: " + actionDate);
         }

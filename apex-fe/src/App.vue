@@ -637,8 +637,7 @@ onBeforeUnmount(() => {
               <ul class="search-list">
                 <li v-for="item in recentStocks" :key="item.code">
                   <button type="button" class="search-item" @click="goStock(item.code, item.name)">
-                    <span class="code">{{ item.code }}</span>
-                    <span class="name">{{ item.name || '-' }}</span>
+                    <StockIdentity :security="item" include-main />
                   </button>
                 </li>
               </ul>
@@ -654,9 +653,10 @@ onBeforeUnmount(() => {
           <ul v-else class="search-list">
             <li v-for="item in results" :key="item.code">
               <button type="button" class="search-item" @click="goStock(item.code, item.name)">
-                <span class="code" v-html="item.codeHtml" />
-                <span class="name" v-html="item.nameHtml" />
-                <span v-if="item.market" class="market">{{ item.market }}</span>
+                <StockIdentity :security="item" include-main>
+                  <template #name><span v-html="item.nameHtml" /></template>
+                  <template #code><span v-html="item.codeHtml" /></template>
+                </StockIdentity>
               </button>
             </li>
           </ul>
@@ -1188,9 +1188,7 @@ onBeforeUnmount(() => {
 
 .search-item {
   width: 100%;
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
-  gap: 10px;
+  display: flex;
   align-items: center;
   border: 0;
   background: transparent;
@@ -1203,27 +1201,6 @@ onBeforeUnmount(() => {
 
 .search-item:hover {
   background: rgba(0, 113, 227, 0.08);
-}
-
-.search-item .code {
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  font-size: 13px;
-}
-
-.search-item .name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--slate);
-  font-size: 13px;
-}
-
-.search-item .market {
-  font-size: 11px;
-  color: var(--muted);
 }
 
 .search-item :deep(em) {
@@ -1637,9 +1614,7 @@ onBeforeUnmount(() => {
   }
 
   .search-item {
-    grid-template-columns: 72px minmax(0, 1fr) auto;
     min-height: 52px;
-    gap: 10px;
     padding: 8px 10px;
     border-radius: 8px;
   }
@@ -1648,10 +1623,6 @@ onBeforeUnmount(() => {
     background: rgba(0, 113, 227, 0.1);
   }
 
-  .search-item .code,
-  .search-item .name {
-    font-size: 14px;
-  }
 }
 
 @media (max-width: 380px) {

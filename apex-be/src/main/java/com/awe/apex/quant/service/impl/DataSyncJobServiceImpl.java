@@ -268,6 +268,16 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         return startInternal(req, userId);
     }
 
+    /**
+     * 判断当前用户的智能决策任务是否正在运行。
+     *
+     * @return true=正在运行
+     */
+    @Override
+    public boolean isCurrentUserDecisionRunning() {
+        return runningDecisionJobs.containsKey(userContext.currentUserId());
+    }
+
     private synchronized SyncJobResp startInternal(SyncStartReq req, Long userId) {
         if (Objects.isNull(req) || StringUtils.isBlank(req.getTaskType())) {
             throw new BusinessException("请指定 taskType");

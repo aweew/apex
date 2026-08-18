@@ -853,11 +853,7 @@ onBeforeUnmount(() => {
             >
               {{ sideOf(row) === 'BUY' ? '买' : sideOf(row) === 'MOOD' ? '情' : '卖' }}
             </span>
-            <button type="button" class="code" @click="router.push(`/stock/${row.code}`)">
-              {{ row.code }}
-            </button>
-            <SecurityMarketBadge :security="row" />
-            <span class="name">{{ row.name || '' }}</span>
+            <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
             <span
               class="act"
               :class="[actTone(row), sideOf(row) === 'MOOD' ? 'mood' : '']"
@@ -1462,25 +1458,6 @@ onBeforeUnmount(() => {
 .side-tag.mood { background: #8a5a00; }
 .side-tag.sell { background: #1f6b3a; }
 
-.code {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  font-weight: 750;
-  color: var(--accent, #0071e3);
-  cursor: pointer;
-}
-
-.name {
-  font-size: 13px;
-  color: var(--ink-soft, #3a3a3c);
-  max-width: 6.5em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .act {
   font-size: 12px;
   font-weight: 700;
@@ -1965,11 +1942,6 @@ onBeforeUnmount(() => {
 
   .title {
     gap: 5px;
-  }
-
-  .name {
-    max-width: 5.5em;
-    font-size: 12px;
   }
 
   .act {

@@ -492,13 +492,11 @@ onMounted(load)
       <el-button plain @click="router.push('/signals')">看策略信号</el-button>
     </div>
     <el-table v-else :data="positions" size="small">
-      <el-table-column prop="code" label="代码" width="100">
+      <el-table-column prop="name" label="股票" width="144">
         <template #default="{ row }">
-          <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-          <SecurityMarketBadge :security="row" />
+          <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" width="120" />
       <el-table-column prop="quantity" label="数量" width="90" />
       <el-table-column prop="holdDays" label="持有天" width="80" />
       <el-table-column prop="costPrice" label="成本" width="100" />
@@ -613,8 +611,9 @@ onMounted(load)
 
     <h3 v-if="gapRisk?.items?.length">隔夜缺口明细</h3>
     <el-table v-if="gapRisk?.items?.length" :data="gapRisk.items" size="small" style="margin-bottom: 12px">
-      <el-table-column prop="code" label="代码" width="100" />
-      <el-table-column prop="name" label="名称" width="120" />
+      <el-table-column prop="name" label="股票" width="144">
+        <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+      </el-table-column>
       <el-table-column prop="avgAbsGapPct" label="均|缺口|%" width="110" />
       <el-table-column prop="maxAbsGapPct" label="最大|缺口|%" width="110" />
       <el-table-column prop="lastGapPct" label="最近缺口%" width="110" />
@@ -623,7 +622,9 @@ onMounted(load)
     <h3 v-if="fillQ?.items?.length">成交质量明细</h3>
     <el-table v-if="fillQ?.items?.length" :data="fillQ.items" size="small" style="margin-bottom: 12px">
       <el-table-column prop="tradeDate" label="日期" width="120" />
-      <el-table-column prop="code" label="代码" width="100" />
+      <el-table-column prop="code" label="股票" width="120">
+        <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+      </el-table-column>
       <el-table-column prop="side" label="方向" width="80" />
       <el-table-column prop="fillPrice" label="成交价" width="100" />
       <el-table-column prop="closePrice" label="收盘" width="100" />
@@ -636,7 +637,9 @@ onMounted(load)
 
     <h3 v-if="atrStops?.items?.length"><TermTip term="atr">ATR</TermTip> 止损建议</h3>
     <el-table v-if="atrStops?.items?.length" :data="atrStops.items" size="small" style="margin-bottom: 12px">
-      <el-table-column prop="code" label="代码" width="90" />
+      <el-table-column prop="code" label="股票" width="110">
+        <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+      </el-table-column>
       <el-table-column prop="atr14" label="ATR14" width="90" />
       <el-table-column prop="suggestedStopLoss" label="建议止损" width="100" />
       <el-table-column prop="suggestedTakeProfit" label="建议止盈" width="100" />
@@ -706,10 +709,9 @@ onMounted(load)
     </el-form>
     <el-table :data="filteredOrders" size="small" height="280">
       <el-table-column prop="tradeDate" label="日期" width="120" />
-      <el-table-column prop="code" label="代码" width="100">
+      <el-table-column prop="code" label="股票" width="120">
         <template #default="{ row }">
-          <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
-          <SecurityMarketBadge :security="row" />
+          <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
         </template>
       </el-table-column>
       <el-table-column prop="side" label="方向" width="80" />

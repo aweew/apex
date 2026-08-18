@@ -44,6 +44,13 @@ public interface IDataSyncJobService {
     SyncJobResp startForUser(SyncStartReq req, Long userId);
 
     /**
+     * 判断当前用户的智能决策任务是否正在运行。
+     *
+     * @return true=正在运行
+     */
+    boolean isCurrentUserDecisionRunning();
+
+    /**
      * 查询任务
      *
      * @param jobId 任务 ID

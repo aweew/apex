@@ -119,12 +119,11 @@ defineExpose({ load, onRefresh })
       stripe
       class="hot-table"
     >
-      <el-table-column prop="code" label="代码" width="88">
+      <el-table-column prop="name" label="股票" min-width="132">
         <template #default="{ row }">
-          <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">{{ row.code }}</el-button>
+          <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="100" />
       <el-table-column prop="sourceCount" label="源数" width="64" />
       <el-table-column prop="pctChg" label="涨跌" width="88">
         <template #default="{ row }">
@@ -144,18 +143,16 @@ defineExpose({ load, onRefresh })
       size="small"
       stripe
     >
-      <el-table-column prop="code" label="代码" width="88">
+      <el-table-column prop="name" label="股票" min-width="142">
         <template #default="{ row }">
-          <el-button
-            v-if="row.code"
-            link
-            type="primary"
-            @click="router.push(`/stock/${row.code}`)"
-          >{{ row.code }}</el-button>
-          <span v-else class="muted">-</span>
+          <StockIdentity
+            :security="row"
+            :interactive="Boolean(row.code)"
+            compact
+            @select="router.push(`/stock/${row.code}`)"
+          />
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="名称" min-width="120" />
       <el-table-column prop="rankNo" label="排名" width="72" />
     </el-table>
 

@@ -27,6 +27,16 @@ public class DecisionTodayResp {
     /** 本次决策可见数据截止时间 */
     private LocalDateTime asOfTime;
 
+    /**
+     * 市场行情实际截至日。
+     */
+    private LocalDate dataAsOf;
+
+    /**
+     * 当日决策是否已生成。
+     */
+    private Boolean generated;
+
     /** 规则版本 */
     private String ruleVersion;
 

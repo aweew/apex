@@ -2,6 +2,8 @@ package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.context.ApexUserContext;
+import com.awe.apex.quant.domain.bo.DashboardCommandContextBO;
+import com.awe.apex.quant.domain.dto.DashboardCommandResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.DashboardHomeResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
@@ -9,6 +11,8 @@ import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.service.IDecisionService;
+import com.awe.apex.quant.service.IDataSyncJobService;
+import com.awe.apex.quant.service.IDashboardCommandService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IObservePoolService;
@@ -51,6 +55,8 @@ class DashboardServiceImplTest {
         IDecisionService decisionService = mock(IDecisionService.class);
         IObservePoolService observePoolService = mock(IObservePoolService.class);
         IMorningBriefingService morningBriefingService = mock(IMorningBriefingService.class);
+        IDashboardCommandService dashboardCommandService = mock(IDashboardCommandService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
         RedisCacheService redisCacheService = mock(RedisCacheService.class);
         WatchlistMapper watchlistMapper = mock(WatchlistMapper.class);
         ApexUserContext userContext = new ApexUserContext();
@@ -68,6 +74,8 @@ class DashboardServiceImplTest {
         ReflectionTestUtils.setField(service, "decisionService", decisionService);
         ReflectionTestUtils.setField(service, "observePoolService", observePoolService);
         ReflectionTestUtils.setField(service, "morningBriefingService", morningBriefingService);
+        ReflectionTestUtils.setField(service, "dashboardCommandService", dashboardCommandService);
+        ReflectionTestUtils.setField(service, "dataSyncJobService", dataSyncJobService);
         ReflectionTestUtils.setField(service, "redisCacheService", redisCacheService);
         ReflectionTestUtils.setField(service, "watchlistMapper", watchlistMapper);
         ReflectionTestUtils.setField(service, "userContext", userContext);
@@ -76,6 +84,8 @@ class DashboardServiceImplTest {
                 .thenReturn(DecisionTodayResp.builder().build());
         when(observePoolService.listReadyAlerts(6)).thenReturn(List.of());
         when(morningBriefingService.latest()).thenReturn(morningBriefing);
+        when(dashboardCommandService.build(any(DashboardCommandContextBO.class)))
+                .thenReturn(DashboardCommandResp.builder().status("READY").build());
         when(watchlistMapper.selectList(any())).thenReturn(List.of());
 
         DashboardHomeResp response = userContext.runAsUser(7L,
@@ -87,6 +97,7 @@ class DashboardServiceImplTest {
         verify(decisionService).today(any(LocalDate.class), eq("我的自选"), same(briefing));
         verify(decisionService, never()).today(any(LocalDate.class), eq("我的自选"));
         assertSame(morningBriefing, response.getMorningBriefing());
+        assertEquals("READY", response.getCommand().getStatus());
     }
 
     @Test
@@ -96,6 +107,8 @@ class DashboardServiceImplTest {
         IDecisionService decisionService = mock(IDecisionService.class);
         IObservePoolService observePoolService = mock(IObservePoolService.class);
         IMorningBriefingService morningBriefingService = mock(IMorningBriefingService.class);
+        IDashboardCommandService dashboardCommandService = mock(IDashboardCommandService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
         RedisCacheService redisCacheService = mock(RedisCacheService.class);
         WatchlistMapper watchlistMapper = mock(WatchlistMapper.class);
         ApexUserContext userContext = new ApexUserContext();
@@ -110,6 +123,8 @@ class DashboardServiceImplTest {
         ReflectionTestUtils.setField(service, "decisionService", decisionService);
         ReflectionTestUtils.setField(service, "observePoolService", observePoolService);
         ReflectionTestUtils.setField(service, "morningBriefingService", morningBriefingService);
+        ReflectionTestUtils.setField(service, "dashboardCommandService", dashboardCommandService);
+        ReflectionTestUtils.setField(service, "dataSyncJobService", dataSyncJobService);
         ReflectionTestUtils.setField(service, "redisCacheService", redisCacheService);
         ReflectionTestUtils.setField(service, "watchlistMapper", watchlistMapper);
         ReflectionTestUtils.setField(service, "userContext", userContext);
@@ -123,6 +138,8 @@ class DashboardServiceImplTest {
             return List.of();
         });
         when(watchlistMapper.selectList(any())).thenReturn(List.of());
+        when(dashboardCommandService.build(any(DashboardCommandContextBO.class)))
+                .thenReturn(DashboardCommandResp.builder().status("PARTIAL").build());
 
         userContext.runAsUser(7L, () -> service.home(11L, "我的自选", false));
 
@@ -136,5 +153,60 @@ class DashboardServiceImplTest {
         assertTrue(queryCaptor.getValue().getSqlSegment().contains("user_id"));
         AbstractWrapper<?, ?, ?> query = (AbstractWrapper<?, ?, ?>) queryCaptor.getValue();
         assertTrue(query.getParamNameValuePairs().containsValue(7L));
+    }
+
+    @Test
+    void homeTreatsPublishedZeroActionRunAsGeneratedDecision() {
+        DashboardServiceImpl service = new DashboardServiceImpl();
+        IMarketBriefingService marketBriefingService = mock(IMarketBriefingService.class);
+        IDecisionService decisionService = mock(IDecisionService.class);
+        IObservePoolService observePoolService = mock(IObservePoolService.class);
+        IMorningBriefingService morningBriefingService = mock(IMorningBriefingService.class);
+        IDashboardCommandService dashboardCommandService = mock(IDashboardCommandService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        RedisCacheService redisCacheService = mock(RedisCacheService.class);
+        WatchlistMapper watchlistMapper = mock(WatchlistMapper.class);
+        ApexUserContext userContext = new ApexUserContext();
+        MarketBriefingResp briefing = MarketBriefingResp.builder()
+                .asOf(LocalDate.of(2026, 8, 18))
+                .stance("防守")
+                .dataLevel("GREEN")
+                .build();
+        DecisionTodayResp today = DecisionTodayResp.builder()
+                .generated(true)
+                .actionDate(LocalDate.of(2026, 8, 18))
+                .buys(List.of())
+                .sells(List.of())
+                .holds(List.of())
+                .buyCount(0)
+                .sellCount(0)
+                .holdCount(0)
+                .build();
+        DashboardCommandResp command = DashboardCommandResp.builder().status("READY").build();
+
+        ReflectionTestUtils.setField(service, "marketBriefingService", marketBriefingService);
+        ReflectionTestUtils.setField(service, "decisionService", decisionService);
+        ReflectionTestUtils.setField(service, "observePoolService", observePoolService);
+        ReflectionTestUtils.setField(service, "morningBriefingService", morningBriefingService);
+        ReflectionTestUtils.setField(service, "dashboardCommandService", dashboardCommandService);
+        ReflectionTestUtils.setField(service, "dataSyncJobService", dataSyncJobService);
+        ReflectionTestUtils.setField(service, "redisCacheService", redisCacheService);
+        ReflectionTestUtils.setField(service, "watchlistMapper", watchlistMapper);
+        ReflectionTestUtils.setField(service, "userContext", userContext);
+        when(marketBriefingService.loadCachedBriefing()).thenReturn(briefing);
+        when(decisionService.today(any(LocalDate.class), eq("我的自选"), same(briefing))).thenReturn(today);
+        when(observePoolService.listReadyAlerts(6)).thenReturn(List.of());
+        when(watchlistMapper.selectList(any())).thenReturn(List.of());
+        when(dashboardCommandService.build(any(DashboardCommandContextBO.class))).thenReturn(command);
+
+        DashboardHomeResp response = userContext.runAsUser(7L,
+                () -> service.home(null, "我的自选", false));
+
+        assertTrue(response.getDecision().getHasToday());
+        assertSame(command, response.getCommand());
+        ArgumentCaptor<DashboardCommandContextBO> contextCaptor =
+                ArgumentCaptor.forClass(DashboardCommandContextBO.class);
+        verify(dashboardCommandService).build(contextCaptor.capture());
+        assertSame(today, contextCaptor.getValue().getDecision());
     }
 }
