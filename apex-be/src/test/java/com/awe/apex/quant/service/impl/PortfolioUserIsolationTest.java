@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
+import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.entity.MyHolding;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioDaily;
@@ -27,6 +28,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -155,6 +157,88 @@ class PortfolioUserIsolationTest {
         ArgumentCaptor<Wrapper<MyHolding>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(myHoldingMapper).selectOne(queryCaptor.capture());
         assertUserFilter(queryCaptor.getValue());
+    }
+
+    @Test
+    void portfolioListIsSharedAndUsesCurrentUserView() {
+        doReturn(Portfolio.builder().id(1L).userId(7L).build()).when(service).ensureDefaultPortfolio();
+        Portfolio ownPortfolio = Portfolio.builder()
+                .id(1L)
+                .userId(7L)
+                .name("Awe")
+                .ownerLabel("Awe")
+                .isDefault(1)
+                .status("ACTIVE")
+                .build();
+        Portfolio otherPortfolio = Portfolio.builder()
+                .id(5L)
+                .userId(9L)
+                .name("郑十万")
+                .ownerLabel("郑十万")
+                .isDefault(1)
+                .status("ACTIVE")
+                .build();
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(ownPortfolio, otherPortfolio));
+        when(portfolioHoldingMapper.selectList(any())).thenReturn(List.of());
+
+        List<PortfolioSummaryResp> portfolios = service.listPortfolios(false);
+
+        assertEquals(2, portfolios.size());
+        assertEquals("我的持仓", portfolios.get(0).getName());
+        assertTrue(portfolios.get(0).getIsDefault());
+        assertTrue(portfolios.get(0).getEditable());
+        assertEquals("郑十万", portfolios.get(1).getName());
+        assertFalse(portfolios.get(1).getIsDefault());
+        assertFalse(portfolios.get(1).getEditable());
+        ArgumentCaptor<Wrapper<Portfolio>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(portfolioMapper).selectList(queryCaptor.capture());
+        assertFalse(queryCaptor.getValue().getSqlSegment().contains("user_id"));
+    }
+
+    @Test
+    void otherUsersPortfolioDetailAndDailyHistoryAreReadable() {
+        doReturn(Portfolio.builder().id(1L).userId(7L).build()).when(service).ensureDefaultPortfolio();
+        Portfolio otherPortfolio = Portfolio.builder()
+                .id(5L)
+                .userId(9L)
+                .name("郑十万")
+                .isDefault(1)
+                .status("ACTIVE")
+                .build();
+        when(portfolioMapper.selectById(5L)).thenReturn(otherPortfolio);
+        when(portfolioHoldingMapper.selectList(any())).thenReturn(List.of());
+        when(portfolioDailyMapper.selectList(any())).thenReturn(List.of(PortfolioDaily.builder().id(3L).build()));
+
+        PortfolioSummaryResp detail = service.detail(5L);
+        List<PortfolioDaily> dailyList = service.listDaily(5L, 30);
+
+        assertEquals("郑十万", detail.getName());
+        assertFalse(detail.getEditable());
+        assertEquals(1, dailyList.size());
+    }
+
+    @Test
+    void otherUsersPortfolioCannotBeModifiedOrSnapshotted() {
+        doReturn(Portfolio.builder().id(1L).userId(7L).build()).when(service).ensureDefaultPortfolio();
+        Portfolio otherPortfolio = Portfolio.builder()
+                .id(5L)
+                .userId(9L)
+                .name("郑十万")
+                .isDefault(1)
+                .status("ACTIVE")
+                .build();
+        when(portfolioMapper.selectById(5L)).thenReturn(otherPortfolio);
+        PortfolioSaveReq request = new PortfolioSaveReq();
+        request.setId(5L);
+        request.setName("修改后的名称");
+
+        BusinessException saveException = assertThrows(BusinessException.class,
+                () -> service.savePortfolio(request));
+        BusinessException snapshotException = assertThrows(BusinessException.class,
+                () -> service.snapshot(5L));
+
+        assertEquals("无权修改该组合", saveException.getMessage());
+        assertEquals("无权修改该组合", snapshotException.getMessage());
     }
 
     @Test

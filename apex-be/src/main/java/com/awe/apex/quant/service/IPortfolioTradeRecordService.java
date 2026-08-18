@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 用户组合交易流水服务。
+ * 共享组合交易流水服务。
  */
 public interface IPortfolioTradeRecordService {
 
@@ -35,7 +35,7 @@ public interface IPortfolioTradeRecordService {
                               PortfolioTradeSourceEnum source, String sourceRef);
 
     /**
-     * 分页查询当前用户交易记录。
+     * 分页查询共享组合交易记录。
      *
      * @param portfolioId 组合ID
      * @param code        证券代码
@@ -49,7 +49,7 @@ public interface IPortfolioTradeRecordService {
                                        Integer page, Integer size);
 
     /**
-     * 查询当前用户指定证券的 K 线交易标记。
+     * 查询共享组合指定证券的 K 线交易标记。
      *
      * @param code 证券代码
      * @return 交易标记

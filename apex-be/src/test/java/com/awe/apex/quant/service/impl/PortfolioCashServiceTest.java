@@ -14,6 +14,7 @@ import com.awe.apex.quant.mapper.PortfolioDailyMapper;
 import com.awe.apex.quant.mapper.PortfolioHoldingMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -47,6 +48,7 @@ class PortfolioCashServiceTest {
     private PortfolioDailyMapper portfolioDailyMapper;
     private StockBasicMapper stockBasicMapper;
     private ApexUserContext userContext;
+    private ApexUserAuthService userAuthService;
 
     @BeforeAll
     static void initJsonUtilsContext() {
@@ -70,6 +72,7 @@ class PortfolioCashServiceTest {
         portfolioDailyMapper = mock(PortfolioDailyMapper.class);
         stockBasicMapper = mock(StockBasicMapper.class);
         userContext = mock(ApexUserContext.class);
+        userAuthService = mock(ApexUserAuthService.class);
         when(userContext.currentUserIdOrNull()).thenReturn(7L);
         portfolioService = spy(new PortfolioServiceImpl());
         ReflectionTestUtils.setField(portfolioService, "userContext", userContext);
@@ -77,6 +80,7 @@ class PortfolioCashServiceTest {
         ReflectionTestUtils.setField(portfolioService, "portfolioHoldingMapper", portfolioHoldingMapper);
         ReflectionTestUtils.setField(portfolioService, "portfolioDailyMapper", portfolioDailyMapper);
         ReflectionTestUtils.setField(portfolioService, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(portfolioService, "userAuthService", userAuthService);
         doReturn(Portfolio.builder().id(1L).build()).when(portfolioService).ensureDefaultPortfolio();
     }
 
@@ -180,6 +184,7 @@ class PortfolioCashServiceTest {
         request.setPortfolioIds(List.of(3L, 2L));
         portfolioService.sortPortfolios(request);
 
+        verify(userAuthService).requireAdmin();
         assertEquals(0, second.getSortNo());
         assertEquals(1, first.getSortNo());
         verify(portfolioMapper).updateById(second);
@@ -218,6 +223,7 @@ class PortfolioCashServiceTest {
 
     @Test
     void snapshotPersistsPortfolioCash() {
+        Portfolio portfolio = Portfolio.builder().id(2L).userId(7L).build();
         PortfolioSummaryResp summary = PortfolioSummaryResp.builder()
                 .id(2L)
                 .marketValue(new BigDecimal("1000.00"))
@@ -225,6 +231,7 @@ class PortfolioCashServiceTest {
                 .positionCount(0)
                 .holdings(List.of())
                 .build();
+        when(portfolioMapper.selectById(2L)).thenReturn(portfolio);
         doReturn(summary).when(portfolioService).detail(2L);
         when(portfolioDailyMapper.selectOne(any())).thenReturn(null);
         when(portfolioDailyMapper.selectPeakEquityBefore(any(), any())).thenReturn(new BigDecimal("1800.00"));

@@ -12,6 +12,7 @@ import {
   FolderAdd,
   Minus,
   MoreFilled,
+  Operation,
   Plus,
   Rank,
   Refresh,
@@ -19,6 +20,7 @@ import {
   View,
 } from '@element-plus/icons-vue'
 import { saveObserve } from '../api/observe'
+import { getCurrentUser } from '../api/auth'
 import {
   importPortfolioHoldings,
   listPortfolioDaily,
@@ -61,6 +63,7 @@ import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
 const route = useRoute()
+const currentUser = getCurrentUser()
 const loading = ref(false)
 const detailLoading = ref(false)
 const refreshing = ref(false)
@@ -166,7 +169,7 @@ const shareCol = computed(() =>
         advice: 280,
       }
     : {
-        security: 128,
+        security: isMobileViewport.value ? 116 : 128,
         today: 132,
         priceCost: 116,
         stop: 84,
@@ -262,6 +265,15 @@ const activeSummary = computed(() => {
   if (!activeId.value) return null
   return list.value.find((x) => x.id === activeId.value) || detail.value
 })
+const activeEditable = computed(() => activeSummary.value?.editable === true)
+const hasEditablePortfolios = computed(() => list.value.some((row) => row.editable === true))
+const canSortPortfolios = computed(() => currentUser?.role === 'ADMIN')
+
+function ensureActiveEditable() {
+  if (activeEditable.value) return true
+  ElMessage.warning('该组合仅归属人可编辑')
+  return false
+}
 
 function themeMeta(name) {
   return (
@@ -970,17 +982,19 @@ async function onRemovePf(row) {
 }
 
 function openCreate() {
-  if (!activeId.value) return
+  if (!activeId.value || !ensureActiveEditable()) return
   openTrade(null, 'BUY')
 }
 
 function openTrade(row, side) {
+  if (!ensureActiveEditable()) return
   tradeTarget.value = row || null
   tradeSide.value = side
   tradeDialogVisible.value = true
 }
 
 function openEdit(row) {
+  if (!ensureActiveEditable()) return
   Object.assign(form, {
     id: row.id,
     code: row.code,
@@ -1066,6 +1080,7 @@ async function addObserve(row) {
 }
 
 function openImport() {
+  if (!ensureActiveEditable()) return
   importText.value = ''
   importDialog.value = true
 }
@@ -1091,7 +1106,7 @@ async function submitImport() {
 }
 
 async function onRefreshQuotes() {
-  if (!activeId.value || !rows.value.length) return
+  if (!activeId.value || !rows.value.length || !ensureActiveEditable()) return
   refreshing.value = true
   try {
     const res = await refreshPortfolioQuotes(activeId.value, false)
@@ -1116,8 +1131,8 @@ async function onRefreshQuotes() {
 }
 
 async function onRefreshQuotesAll() {
-  if (!list.value.length) {
-    ElMessage.warning('暂无组合')
+  if (!hasEditablePortfolios.value) {
+    ElMessage.warning('暂无可刷新的归属组合')
     return
   }
   refreshing.value = true
@@ -1134,7 +1149,7 @@ async function onRefreshQuotesAll() {
 }
 
 async function onSnapshot() {
-  if (!activeId.value) return
+  if (!activeId.value || !ensureActiveEditable()) return
   snapshotting.value = true
   try {
     await snapshotPortfolio(activeId.value)
@@ -1148,6 +1163,10 @@ async function onSnapshot() {
 }
 
 async function onSnapshotAll() {
+  if (!hasEditablePortfolios.value) {
+    ElMessage.warning('暂无可写入快照的归属组合')
+    return
+  }
   snapshotting.value = true
   try {
     const res = await snapshotAllPortfolios()
@@ -1467,15 +1486,15 @@ onBeforeUnmount(() => {
         <p>跟踪自己的或别人的实盘；详情区与「真实持仓」同风格，可导入与每日浮盈快照。</p>
       </div>
       <div class="portfolio-desktop-toolbar" aria-label="组合操作">
-        <el-button type="primary" :icon="Plus" :disabled="!detail" @click="openCreate">买入</el-button>
+        <el-button type="primary" :icon="Plus" :disabled="!detail || !activeEditable" @click="openCreate">买入</el-button>
         <el-button plain :icon="FolderAdd" @click="openCreatePf">新建组合</el-button>
         <span class="portfolio-toolbar-divider" aria-hidden="true"></span>
-        <el-button plain :icon="Upload" :disabled="!detail" @click="openImport">导入</el-button>
+        <el-button plain :icon="Upload" :disabled="!detail || !activeEditable" @click="openImport">导入</el-button>
         <el-button
           plain
           :icon="Refresh"
           :loading="refreshing"
-          :disabled="!rows.length"
+          :disabled="!rows.length || !activeEditable"
           title="刷新当前组合行情与日线"
           @click="onRefreshQuotes"
         >
@@ -1489,11 +1508,11 @@ onBeforeUnmount(() => {
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="trades">交易记录</el-dropdown-item>
-              <el-dropdown-item command="snapshot" :disabled="!detail || snapshotting">打今日快照</el-dropdown-item>
-              <el-dropdown-item command="refresh-all" :disabled="!list.length || refreshing" divided>
+              <el-dropdown-item command="snapshot" :disabled="!detail || !activeEditable || snapshotting">打今日快照</el-dropdown-item>
+              <el-dropdown-item command="refresh-all" :disabled="!hasEditablePortfolios || refreshing" divided>
                 刷新全部行情
               </el-dropdown-item>
-              <el-dropdown-item command="snapshot-all" :disabled="!list.length || snapshotting">
+              <el-dropdown-item command="snapshot-all" :disabled="!hasEditablePortfolios || snapshotting">
                 全部打快照
               </el-dropdown-item>
               <el-dropdown-item command="holding">打开真实持仓</el-dropdown-item>
@@ -1510,14 +1529,19 @@ onBeforeUnmount(() => {
         class="side"
         :class="{ collapsed: sideCollapsed && !isMobileViewport }"
       >
-        <div v-if="isMobileViewport" class="mobile-list-toolbar">
+        <div
+          v-if="isMobileViewport"
+          class="mobile-list-toolbar"
+          :class="{ 'can-sort': canSortPortfolios }"
+        >
           <div class="mobile-list-heading">
-            <strong>我的组合</strong>
+            <strong>共享组合</strong>
             <span>{{ list.length }} 组</span>
           </div>
           <el-checkbox v-model="includeArchived" size="small">含归档</el-checkbox>
           <el-button class="mobile-create-button" type="primary" @click="openCreatePf">新建</el-button>
           <el-button
+            v-if="canSortPortfolios"
             class="mobile-sort-button"
             plain
             :icon="Rank"
@@ -1532,8 +1556,8 @@ onBeforeUnmount(() => {
               <el-dropdown-menu>
                 <el-dropdown-item command="trades">交易记录</el-dropdown-item>
                 <el-dropdown-item command="today-share" :disabled="!list.length">今日战绩拼图</el-dropdown-item>
-                <el-dropdown-item command="refresh-all">刷新全部行情</el-dropdown-item>
-                <el-dropdown-item command="snapshot-all">全部打快照</el-dropdown-item>
+                <el-dropdown-item command="refresh-all" :disabled="!hasEditablePortfolios">刷新全部行情</el-dropdown-item>
+                <el-dropdown-item command="snapshot-all" :disabled="!hasEditablePortfolios">全部打快照</el-dropdown-item>
                 <el-dropdown-item command="holding" divided>真实持仓</el-dropdown-item>
                 <el-dropdown-item command="refresh-list">刷新组合列表</el-dropdown-item>
               </el-dropdown-menu>
@@ -1594,7 +1618,7 @@ onBeforeUnmount(() => {
           >
             <div class="pf-top" :class="{ 'is-mobile-sort': isMobileViewport && mobileSortMode }">
               <button
-                v-if="!isMobileViewport"
+                v-if="!isMobileViewport && canSortPortfolios"
                 type="button"
                 class="pf-sort-handle"
                 title="拖动调整组合顺序"
@@ -1604,6 +1628,7 @@ onBeforeUnmount(() => {
               >
                 <el-icon><Rank /></el-icon>
               </button>
+              <span v-else-if="!isMobileViewport" class="pf-sort-placeholder" aria-hidden="true"></span>
               <div v-else-if="mobileSortMode" class="pf-mobile-sort-controls" @click.stop>
                 <button
                   type="button"
@@ -1641,7 +1666,7 @@ onBeforeUnmount(() => {
               </span>
               <el-icon v-if="isMobileViewport" class="pf-card-arrow"><ArrowRight /></el-icon>
               <el-dropdown
-                v-else
+                v-else-if="row.editable"
                 class="pf-card-menu"
                 trigger="click"
                 placement="bottom-end"
@@ -1664,6 +1689,7 @@ onBeforeUnmount(() => {
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
+              <span v-else-if="!isMobileViewport" class="pf-card-menu-placeholder" aria-hidden="true"></span>
             </div>
             <div v-if="!isMobileViewport" class="pf-summary">
               <span class="pf-meta">{{ row.positionCount || 0 }} 只</span>
@@ -1709,12 +1735,12 @@ onBeforeUnmount(() => {
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="trades">交易记录</el-dropdown-item>
-                <el-dropdown-item command="edit">编辑组合</el-dropdown-item>
-                <el-dropdown-item command="refresh" :disabled="!rows.length">刷新行情和日线</el-dropdown-item>
-                <el-dropdown-item command="import">导入持仓</el-dropdown-item>
-                <el-dropdown-item command="snapshot">打今日快照</el-dropdown-item>
+                <el-dropdown-item v-if="detail.editable" command="edit">编辑组合</el-dropdown-item>
+                <el-dropdown-item v-if="detail.editable" command="refresh" :disabled="!rows.length">刷新行情和日线</el-dropdown-item>
+                <el-dropdown-item v-if="detail.editable" command="import">导入持仓</el-dropdown-item>
+                <el-dropdown-item v-if="detail.editable" command="snapshot">打今日快照</el-dropdown-item>
                 <el-dropdown-item v-if="detail.isDefault" command="holding" divided>打开持仓页</el-dropdown-item>
-                <el-dropdown-item v-if="!detail.isDefault" command="remove" divided>删除组合</el-dropdown-item>
+                <el-dropdown-item v-if="detail.editable && !detail.isDefault" command="remove" divided>删除组合</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -1828,9 +1854,9 @@ onBeforeUnmount(() => {
 
         <div v-if="!loading && !refreshing && !rows.length" class="page-empty">
           <h3>该组合还没有持仓</h3>
-          <p>可直接买入，或粘贴导入代码/数量/成本</p>
-          <el-button type="primary" :icon="Plus" @click="openCreate">买入</el-button>
-          <el-button plain @click="openImport">导入</el-button>
+          <p>{{ activeEditable ? '可直接买入，或粘贴导入代码/数量/成本' : '暂无持仓数据' }}</p>
+          <el-button v-if="activeEditable" type="primary" :icon="Plus" @click="openCreate">买入</el-button>
+          <el-button v-if="activeEditable" plain @click="openImport">导入</el-button>
         </div>
 
         <section v-if="rows.length" class="theme-panel">
@@ -1904,7 +1930,13 @@ onBeforeUnmount(() => {
               :sortable="!sharingCapture"
             >
               <template #default="{ row }">
-                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                <StockIdentity
+                  class="portfolio-stock-identity"
+                  :security="row"
+                  interactive
+                  compact
+                  @select="router.push(`/stock/${row.code}`)"
+                />
               </template>
             </el-table-column>
             <el-table-column
@@ -1922,7 +1954,7 @@ onBeforeUnmount(() => {
                   :class="Number(row.pnl) >= 0 ? 'up' : 'down'"
                 >
                   <b>{{ fmtSignedMoney(row.pnl) }}</b>
-                  <small v-if="row.pnlPct != null">{{ fmtPct(row.pnlPct) }}</small>
+                  <small v-if="row.pnlPct != null">{{ fmtSignedPct(row.pnlPct) }}</small>
                 </div>
                 <span v-else class="muted">-</span>
               </template>
@@ -2113,22 +2145,28 @@ onBeforeUnmount(() => {
             <el-table-column
               v-if="!sharingCapture"
               label="操作"
-              width="52"
+              width="44"
               :fixed="isMobileViewport ? false : 'right'"
               align="center"
               class-name="ops-column"
               label-class-name="ops-column"
             >
               <template #default="{ row }">
-                <el-dropdown trigger="click" placement="bottom-end" popper-class="portfolio-row-actions-menu" @command="handleHoldingAction($event, row)">
+                <el-dropdown
+                  trigger="click"
+                  placement="bottom-end"
+                  :show-arrow="false"
+                  popper-class="portfolio-row-actions-menu"
+                  @command="handleHoldingAction($event, row)"
+                >
                   <button type="button" class="portfolio-row-actions-trigger" :aria-label="`${row.name || row.code}更多操作`" @click.stop>
-                    <el-icon><MoreFilled /></el-icon>
+                    <el-icon><Operation /></el-icon>
                   </button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item command="buy" :icon="Plus" class="row-action-buy">买入</el-dropdown-item>
-                      <el-dropdown-item command="sell" :icon="Minus" class="row-action-sell">卖出</el-dropdown-item>
-                      <el-dropdown-item command="edit" :icon="EditPen">编辑持仓</el-dropdown-item>
+                      <el-dropdown-item v-if="activeEditable" command="buy" :icon="Plus" class="row-action-buy">买入</el-dropdown-item>
+                      <el-dropdown-item v-if="activeEditable" command="sell" :icon="Minus" class="row-action-sell">卖出</el-dropdown-item>
+                      <el-dropdown-item v-if="activeEditable" command="edit" :icon="EditPen" divided>编辑持仓</el-dropdown-item>
                       <el-dropdown-item command="observe" :icon="View">加入观察池</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
@@ -2651,6 +2689,11 @@ onBeforeUnmount(() => {
 .pf-sort-handle:active {
   cursor: grabbing;
 }
+.pf-sort-placeholder {
+  display: block;
+  width: 32px;
+  height: 34px;
+}
 .pf-name {
   display: flex;
   align-items: center;
@@ -2678,6 +2721,11 @@ onBeforeUnmount(() => {
   margin-right: 0;
 }
 .pf-card-menu {
+  width: 32px;
+  height: 32px;
+}
+.pf-card-menu-placeholder {
+  display: block;
   width: 32px;
   height: 32px;
 }
@@ -3442,29 +3490,34 @@ onBeforeUnmount(() => {
 .portfolio-row-actions-trigger {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: var(--slate);
+  color: #737b8c;
   font-size: 15px;
   cursor: pointer;
+  transition: color 0.16s ease, background-color 0.16s ease;
 }
 
 .portfolio-row-actions-trigger:hover,
 .portfolio-row-actions-trigger:focus-visible,
 .portfolio-row-actions-trigger[aria-expanded="true"] {
-  border-color: var(--line-strong);
-  background: var(--glass-tint);
+  border-color: transparent;
+  background: rgba(0, 113, 227, 0.06);
+  color: var(--accent);
   outline: none;
 }
 
 :global(.portfolio-row-actions-menu) {
-  min-width: 136px;
-  padding: 4px;
+  min-width: 120px;
+  padding: 3px;
+  border: 1px solid rgba(20, 38, 64, 0.1);
   border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(20, 38, 64, 0.12);
 }
 
 :global(.portfolio-row-actions-menu .el-dropdown-menu) {
@@ -3474,18 +3527,30 @@ onBeforeUnmount(() => {
 :global(.portfolio-row-actions-menu .el-dropdown-menu__item) {
   min-height: 32px;
   gap: 8px;
-  padding: 0 10px;
-  border-radius: 5px;
-  color: var(--ink-soft);
-  font-size: 13px;
+  padding: 0 9px;
+  border-radius: 6px;
+  color: #354258;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+:global(.portfolio-row-actions-menu .el-dropdown-menu__item:not(.is-disabled):hover),
+:global(.portfolio-row-actions-menu .el-dropdown-menu__item:not(.is-disabled):focus) {
+  background: #f3f6fa !important;
+  color: #354258;
 }
 
 :global(.portfolio-row-actions-menu .row-action-buy) {
-  color: var(--down);
+  color: #b54747 !important;
 }
 
 :global(.portfolio-row-actions-menu .row-action-sell) {
-  color: var(--up);
+  color: #218052 !important;
+}
+
+:global(.portfolio-row-actions-menu .el-dropdown-menu__item--divided) {
+  margin-top: 4px;
+  border-top-color: rgba(20, 38, 64, 0.09);
 }
 .daily-chart {
   height: 260px;
@@ -3565,6 +3630,41 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 820px) {
+  .holding-table :deep(.el-table__body td.el-table__cell) {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .holding-table :deep(.portfolio-stock-identity.stock-identity) {
+    min-height: 32px;
+    margin: 0;
+    padding: 2px 0;
+    gap: 1px;
+  }
+
+  .holding-table :deep(.portfolio-stock-identity .stock-identity__name) {
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .holding-table :deep(.portfolio-stock-identity .stock-identity__meta-line) {
+    height: 16px;
+    gap: 3px;
+  }
+
+  .holding-table :deep(.portfolio-stock-identity .stock-identity__code) {
+    height: 16px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+
+  .holding-table :deep(.portfolio-stock-identity .security-market-badge) {
+    min-width: 17px;
+    height: 16px;
+    padding: 0 3px;
+    font-size: 8px;
+  }
+
   .layout,
   .layout.is-side-collapsed {
     display: block;
@@ -3580,12 +3680,16 @@ onBeforeUnmount(() => {
 
   .mobile-list-toolbar {
     display: grid;
-    grid-template-columns: minmax(72px, 1fr) auto auto auto 44px;
+    grid-template-columns: minmax(72px, 1fr) auto auto 44px;
     align-items: center;
     gap: 8px;
     margin-bottom: 0;
     padding: 0 2px 10px;
     border-bottom: 1px solid var(--line);
+  }
+
+  .mobile-list-toolbar.can-sort {
+    grid-template-columns: minmax(72px, 1fr) auto auto auto 44px;
   }
 
   .mobile-list-heading {
@@ -3872,8 +3976,12 @@ onBeforeUnmount(() => {
 
 @media (max-width: 360px) {
   .mobile-list-toolbar {
-    grid-template-columns: minmax(56px, 1fr) auto auto auto 44px;
+    grid-template-columns: minmax(56px, 1fr) auto auto 44px;
     gap: 6px;
+  }
+
+  .mobile-list-toolbar.can-sort {
+    grid-template-columns: minmax(56px, 1fr) auto auto auto 44px;
   }
 
   .mobile-list-heading span {

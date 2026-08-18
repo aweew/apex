@@ -138,7 +138,7 @@ public class ApexUserAuthServiceImpl implements ApexUserAuthService {
 
         Portfolio portfolio = Portfolio.builder()
                 .userId(user.getId())
-                .name("我的持仓")
+                .name(req.getNickName().trim())
                 .note("用户初始化默认组合")
                 .ownerLabel(req.getNickName().trim())
                 .isDefault(1)

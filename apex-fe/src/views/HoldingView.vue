@@ -903,7 +903,7 @@ onBeforeUnmount(() => {
               :class="Number(row.pnl) >= 0 ? 'up' : 'down'"
             >
               <b>{{ fmtSignedMoney(row.pnl) }}</b>
-              <small v-if="row.pnlPct != null">{{ fmtPct(row.pnlPct) }}</small>
+              <small v-if="row.pnlPct != null">{{ fmtSignedPct(row.pnlPct) }}</small>
             </div>
             <span v-else class="muted">-</span>
           </template>

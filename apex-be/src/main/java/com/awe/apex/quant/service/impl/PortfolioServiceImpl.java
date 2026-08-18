@@ -31,6 +31,7 @@ import com.awe.apex.quant.mapper.PortfolioHoldingMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
@@ -100,6 +101,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
 
     @Resource
     private IPortfolioTradeRecordService tradeRecordService;
+
+    @Resource
+    private ApexUserAuthService userAuthService;
 
     @Lazy
     @Resource
@@ -200,9 +204,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     public List<PortfolioSummaryResp> listPortfolios(boolean includeArchived) {
         ensureDefaultPortfolio();
-        Long currentUserId = currentUserId();
         var query = Wrappers.<Portfolio>lambdaQuery()
-                .eq(Portfolio::getUserId, currentUserId)
                 .orderByAsc(Portfolio::getSortNo).orderByDesc(Portfolio::getUpdateTime);
         if (!includeArchived) {
             query.eq(Portfolio::getStatus, STATUS_ACTIVE);
@@ -264,7 +266,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
         }
         LocalDateTime now = LocalDateTime.now();
         if (Objects.nonNull(req.getId())) {
-            Portfolio exist = requirePortfolio(req.getId());
+            Portfolio exist = requireOwnedPortfolio(req.getId());
             if (Objects.equals(exist.getIsDefault(), 1) && STATUS_ARCHIVED.equals(status)) {
                 throw new BusinessException("默认组合不能归档");
             }
@@ -319,8 +321,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
         if (portfolioIdSet.size() != req.getPortfolioIds().size() || portfolioIdSet.contains(null)) {
             throw new BusinessException("组合排序包含重复或无效ID");
         }
+        userAuthService.requireAdmin();
         for (int index = 0; index < req.getPortfolioIds().size(); index++) {
-            Portfolio portfolio = requirePortfolio(req.getPortfolioIds().get(index));
+            Portfolio portfolio = requireVisiblePortfolio(req.getPortfolioIds().get(index));
             portfolio.setSortNo(index);
             portfolio.setUpdateTime(LocalDateTime.now());
             portfolioMapper.updateById(portfolio);
@@ -335,7 +338,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void removePortfolio(Long id) {
-        Portfolio portfolio = requirePortfolio(id);
+        Portfolio portfolio = requireOwnedPortfolio(id);
         if (Objects.equals(portfolio.getIsDefault(), 1)) {
             throw new BusinessException("默认组合不可删除");
         }
@@ -355,7 +358,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     public PortfolioSummaryResp detail(Long id) {
         ensureDefaultPortfolio();
-        Portfolio portfolio = requirePortfolio(id);
+        Portfolio portfolio = requireVisiblePortfolio(id);
         return buildSummary(portfolio, true);
     }
 
@@ -385,7 +388,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Transactional(rollbackFor = Exception.class)
     public PortfolioHolding saveHolding(Long portfolioId, PortfolioHoldingSaveReq req,
                                         PortfolioTradeSourceEnum source, String sourceRef) {
-        Portfolio portfolio = requirePortfolio(portfolioId);
+        Portfolio portfolio = requireOwnedPortfolio(portfolioId);
         if (Objects.isNull(req) || StringUtils.isBlank(req.getCode())) {
             throw new BusinessException("证券代码不能为空");
         }
@@ -508,7 +511,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Transactional(rollbackFor = Exception.class)
     public PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req,
                                          PortfolioTradeSourceEnum source) {
-        Portfolio portfolio = requirePortfolio(portfolioId);
+        Portfolio portfolio = requireOwnedPortfolio(portfolioId);
         if (Objects.isNull(req)) {
             throw new BusinessException("成交请求不能为空");
         }
@@ -624,7 +627,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Transactional(rollbackFor = Exception.class)
     public void removeHolding(Long portfolioId, Long holdingId,
                               PortfolioTradeSourceEnum source, String sourceRef) {
-        Portfolio portfolio = requirePortfolio(portfolioId);
+        Portfolio portfolio = requireOwnedPortfolio(portfolioId);
         PortfolioHolding holding = portfolioHoldingMapper.selectById(holdingId);
         if (Objects.isNull(holding) || !Objects.equals(holding.getPortfolioId(), portfolioId)) {
             throw new BusinessException("持仓不存在");
@@ -655,7 +658,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PortfolioImportResp importHoldings(Long portfolioId, PortfolioImportReq req) {
-        requirePortfolio(portfolioId);
+        requireOwnedPortfolio(portfolioId);
         if (Objects.isNull(req) || StringUtils.isBlank(req.getText())) {
             throw new BusinessException("导入文本不能为空");
         }
@@ -697,6 +700,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PortfolioDaily snapshot(Long portfolioId) {
+        requireOwnedPortfolio(portfolioId);
         PortfolioSummaryResp summary = detail(portfolioId);
         LocalDate tradeDate = LocalDate.now();
         LocalDateTime now = LocalDateTime.now();
@@ -806,7 +810,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
      */
     @Override
     public List<PortfolioDaily> listDaily(Long portfolioId, Integer days) {
-        requirePortfolio(portfolioId);
+        requireVisiblePortfolio(portfolioId);
         int limit = Objects.nonNull(days) && days > 0 ? Math.min(days, 365) : 60;
         return portfolioDailyMapper.selectList(Wrappers.<PortfolioDaily>lambdaQuery()
                 .eq(PortfolioDaily::getPortfolioId, portfolioId)
@@ -823,7 +827,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
      */
     @Override
     public Map<String, Object> refreshQuotes(Long portfolioId, Boolean onlyMissing) {
-        requirePortfolio(portfolioId);
+        requireOwnedPortfolio(portfolioId);
         List<PortfolioHolding> holdings = portfolioHoldingMapper.selectList(Wrappers.<PortfolioHolding>lambdaQuery()
                 .eq(PortfolioHolding::getPortfolioId, portfolioId)
                 .orderByAsc(PortfolioHolding::getCode));
@@ -1116,12 +1120,15 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
             topHoldings = tops;
         }
+        boolean editable = Objects.equals(currentUserId(), portfolio.getUserId());
+        boolean currentDefault = editable && Objects.equals(portfolio.getIsDefault(), 1);
         return PortfolioSummaryResp.builder()
                 .id(portfolio.getId())
-                .name(portfolio.getName())
+                .name(currentDefault ? DEFAULT_NAME : portfolio.getName())
                 .note(portfolio.getNote())
                 .ownerLabel(portfolio.getOwnerLabel())
-                .isDefault(Objects.equals(portfolio.getIsDefault(), 1))
+                .isDefault(currentDefault)
+                .editable(editable)
                 .status(portfolio.getStatus())
                 .sortNo(portfolio.getSortNo())
                 .positionCount(holdings.size())
@@ -1467,17 +1474,23 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 .build());
     }
 
-    private Portfolio requirePortfolio(Long id) {
+    private Portfolio requireVisiblePortfolio(Long id) {
         if (Objects.isNull(id)) {
             throw new BusinessException("组合ID不能为空");
         }
+        currentUserId();
         Portfolio portfolio = portfolioMapper.selectById(id);
         if (Objects.isNull(portfolio)) {
             throw new BusinessException("组合不存在");
         }
+        return portfolio;
+    }
+
+    private Portfolio requireOwnedPortfolio(Long id) {
+        Portfolio portfolio = requireVisiblePortfolio(id);
         Long currentUserId = currentUserId();
         if (!Objects.equals(currentUserId, portfolio.getUserId())) {
-            throw new BusinessException("无权访问该组合");
+            throw new BusinessException("无权修改该组合");
         }
         return portfolio;
     }

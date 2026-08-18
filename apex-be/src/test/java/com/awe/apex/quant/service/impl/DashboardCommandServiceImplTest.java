@@ -2,6 +2,7 @@ package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.domain.bo.DashboardCommandContextBO;
 import com.awe.apex.quant.domain.dto.DashboardCommandResp;
+import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
@@ -14,11 +15,13 @@ import com.awe.apex.quant.domain.enums.OperationGuideCodeEnum;
 import com.awe.apex.quant.domain.enums.OperationGuideStatusEnum;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DashboardCommandServiceImplTest {
@@ -67,8 +70,9 @@ class DashboardCommandServiceImplTest {
         assertEquals(TRADE_DATE, command.getTradeDate());
         assertEquals(PREVIOUS_TRADE_DATE, command.getMarketDataAsOf());
         assertEquals(PREVIOUS_TRADE_DATE, command.getDecisionDataAsOf());
-        assertTrue(command.getPreMarketSummary().getHeadline().contains("防守"));
-        assertTrue(command.getPreMarketSummary().getHeadline().contains("市场广度偏弱"));
+        assertTrue(command.getPreMarketSummary().getHeadline().contains("2 个卖出项"));
+        assertTrue(command.getPreMarketSummary().getHeadline().contains("3 个可执行新仓候选"));
+        assertFalse(command.getPreMarketSummary().getHeadline().contains("市场广度"));
         assertTrue(command.getPreMarketSummary().getOpportunityItems().size() <= 2);
         assertTrue(command.getPreMarketSummary().getRiskItems().size() <= 2);
         assertTrue(command.getPreMarketSummary().getEvidenceItems().size() <= 4);
@@ -178,9 +182,72 @@ class DashboardCommandServiceImplTest {
 
         assertEquals(DashboardCommandStatusEnum.PARTIAL.getCode(), command.getStatus());
         assertGuideItem(command, 0, OperationGuideCodeEnum.RISK_FIRST,
-                OperationGuideStatusEnum.DONE, 0);
+                OperationGuideStatusEnum.WAIT, 0);
         assertGuideItem(command, 1, OperationGuideCodeEnum.BUY_CONDITIONALLY,
                 OperationGuideStatusEnum.WAIT, 0);
+        assertTrue(command.getPreMarketSummary().getHeadline().contains("目标交易日决策尚未生成"));
+        assertTrue(command.getPreMarketSummary().getHeadline().contains(TRADE_DATE.toString()));
+        assertFalse(command.getPreMarketSummary().getHeadline().contains("..."));
+        assertFalse(command.getPreMarketSummary().getHeadline().contains("A股"));
+        assertTrue(command.getPreMarketSummary().getEvidenceItems().isEmpty());
+        assertTrue(command.getPreMarketSummary().getOpportunityItems().isEmpty());
+        assertEquals(1, command.getPreMarketSummary().getWatchConditions().size());
+        assertTrue(command.getOperationGuide().getSummary().contains("先复核持仓风险"));
+    }
+
+    @Test
+    void shouldUseUserActionsInsteadOfBroadMarketAsSummaryEvidence() {
+        DecisionItemResp buyItem = DecisionItemResp.builder()
+                .code("300750")
+                .name("宁德时代")
+                .action("BUY")
+                .score(new BigDecimal("88"))
+                .mainlineMatch(true)
+                .mainlineName("储能")
+                .executableHint(true)
+                .entryGatePassed(true)
+                .build();
+        DecisionItemResp sellItem = DecisionItemResp.builder()
+                .code("600000")
+                .name("浦发银行")
+                .action("SELL")
+                .exitRule("跌破止损价 9.80 元")
+                .build();
+        DecisionTodayResp decision = DecisionTodayResp.builder()
+                .actionDate(TRADE_DATE)
+                .asOfTime(TRADE_DATE.atTime(6, 50))
+                .dataAsOf(PREVIOUS_TRADE_DATE)
+                .generated(true)
+                .buys(List.of(buyItem))
+                .sells(List.of(sellItem))
+                .sellCount(1)
+                .executableCount(1)
+                .mainlineMatchCount(1)
+                .build();
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(8, 10))
+                .marketBriefing(readyMarket())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .summary("隔夜科技股普涨")
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(decision)
+                .observeAlerts(List.of())
+                .build());
+
+        assertEquals(DashboardCommandStatusEnum.READY.getCode(), command.getStatus());
+        assertTrue(command.getPreMarketSummary().getHeadline().contains("1 个卖出项"));
+        assertTrue(command.getPreMarketSummary().getHeadline().contains("1 个可执行新仓候选"));
+        assertFalse(command.getPreMarketSummary().getHeadline().contains("市场广度"));
+        assertTrue(command.getPreMarketSummary().getEvidenceItems().isEmpty());
+        assertEquals("宁德时代", command.getPreMarketSummary().getOpportunityItems().get(0).getName());
+        assertTrue(command.getPreMarketSummary().getOpportunityItems().get(0).getReason().contains("储能"));
+        assertTrue(command.getPreMarketSummary().getOpportunityItems().get(0).getReason().contains("评分 88"));
+        assertEquals("浦发银行", command.getPreMarketSummary().getRiskItems().get(0).getName());
+        assertEquals("跌破止损价 9.80 元", command.getPreMarketSummary().getRiskItems().get(0).getReason());
+        assertTrue(command.getPreMarketSummary().getWatchConditions().get(0).getCondition().contains("开仓门禁"));
     }
 
     @Test
@@ -329,6 +396,8 @@ class DashboardCommandServiceImplTest {
                 OperationGuideStatusEnum.WAIT, 1);
         assertGuideItem(command, 1, OperationGuideCodeEnum.BUY_CONDITIONALLY,
                 OperationGuideStatusEnum.WAIT, 1);
+        assertTrue(command.getPreMarketSummary().getHeadline().contains("目标交易日决策尚未生成"));
+        assertTrue(command.getOperationGuide().getSummary().contains("先复核持仓风险"));
     }
 
     private MarketBriefingResp readyMarket() {

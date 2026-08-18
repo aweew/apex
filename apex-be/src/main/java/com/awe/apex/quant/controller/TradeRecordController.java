@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 用户交易记录。
+ * 共享组合交易记录。
  */
 @RestController
 @RequestMapping("/api/trades")
@@ -23,7 +23,7 @@ public class TradeRecordController {
     private IPortfolioTradeRecordService tradeRecordService;
 
     /**
-     * 分页查询当前用户交易记录。
+     * 分页查询共享组合交易记录。
      *
      * @param portfolioId 组合ID
      * @param code        证券代码
@@ -44,7 +44,7 @@ public class TradeRecordController {
     }
 
     /**
-     * 查询当前用户指定证券的 K 线交易标记。
+     * 查询共享组合指定证券的 K 线交易标记。
      *
      * @param code 证券代码
      * @return K 线交易标记

@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -156,7 +157,7 @@ class PortfolioTradeRecordServiceImplTest {
     }
 
     @Test
-    void markerQueryIsUserScopedAndCalculatesPostSellPerformance() {
+    void markerQueryReadsSharedPortfolioTradesAndCalculatesPostSellPerformance() {
         JournalTrade sell = JournalTrade.builder()
                 .id(8L)
                 .userId(7L)
@@ -191,14 +192,15 @@ class PortfolioTradeRecordServiceImplTest {
         ArgumentCaptor<Wrapper<JournalTrade>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(journalTradeMapper).selectList(queryCaptor.capture());
         AbstractWrapper<?, ?, ?> query = (AbstractWrapper<?, ?, ?>) queryCaptor.getValue();
-        assertTrue(query.getSqlSegment().contains("user_id"));
-        assertTrue(query.getParamNameValuePairs().containsValue(7L));
+        assertFalse(query.getSqlSegment().contains("user_id"));
+        assertFalse(query.getParamNameValuePairs().containsValue(7L));
         assertTrue(query.getParamNameValuePairs().containsValue("600519"));
         assertTrue(query.getSqlSegment().toUpperCase().contains("TRADE_DATE DESC"));
+        verify(userContext).currentUserId();
     }
 
     @Test
-    void pageQueryReturnsOnlyCurrentUsersRecords() {
+    void pageQueryReadsAllSharedPortfolioRecords() {
         when(journalTradeMapper.selectPage(any(), any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         PageResponse<TradeRecordResp> response = service.page(null, null, null, null, 1, 20);
@@ -207,7 +209,8 @@ class PortfolioTradeRecordServiceImplTest {
         ArgumentCaptor<Wrapper<JournalTrade>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(journalTradeMapper).selectPage(any(), queryCaptor.capture());
         AbstractWrapper<?, ?, ?> query = (AbstractWrapper<?, ?, ?>) queryCaptor.getValue();
-        assertTrue(query.getSqlSegment().contains("user_id"));
-        assertTrue(query.getParamNameValuePairs().containsValue(7L));
+        assertFalse(query.getSqlSegment().contains("user_id"));
+        assertFalse(query.getParamNameValuePairs().containsValue(7L));
+        verify(userContext).currentUserId();
     }
 }

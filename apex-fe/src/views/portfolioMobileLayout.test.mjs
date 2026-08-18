@@ -9,7 +9,8 @@ test('mobile portfolio controls share one compact list toolbar', () => {
   assert.match(portfolioSource, /class="mobile-list-toolbar"/)
   assert.match(portfolioSource, /class="mobile-create-button"/)
   assert.match(portfolioSource, /class="mobile-sort-button"/)
-  assert.match(portfolioSource, /grid-template-columns:\s*minmax\(72px, 1fr\) auto auto auto 44px;/)
+  assert.match(portfolioSource, /grid-template-columns:\s*minmax\(72px, 1fr\) auto auto 44px;/)
+  assert.match(portfolioSource, /\.mobile-list-toolbar\.can-sort\s*\{[\s\S]*?grid-template-columns:\s*minmax\(72px, 1fr\) auto auto auto 44px;/)
   assert.doesNotMatch(portfolioSource, /class="mobile-header-actions"/)
   assert.match(portfolioSource, /\.portfolio-page \.portfolio-header\s*\{\s*display:\s*none;/)
 })
@@ -56,13 +57,27 @@ test('holding tables keep stock links blue and avoid fixed columns on mobile', (
   assert.match(holdingSource, /:fixed="mobileRowActions \? false : 'left'"/)
   assert.match(holdingSource, /:fixed="mobileRowActions \? false : 'right'"/)
   assert.match(portfolioSource, /:fixed="isMobileViewport \? false : 'right'"/)
-  assert.match(portfolioSource, /<StockIdentity :security="row" interactive compact/)
+  assert.match(portfolioSource, /<StockIdentity[\s\S]*?:security="row"[\s\S]*?interactive[\s\S]*?compact/)
   assert.match(holdingSource, /<StockIdentity :security="row" interactive compact/)
+})
+
+test('mobile portfolio stock cells use a compact table-specific identity layout', () => {
+  assert.match(portfolioSource, /security: isMobileViewport\.value \? 116 : 128/)
+  assert.match(portfolioSource, /class="portfolio-stock-identity"/)
+  assert.match(portfolioSource, /\.holding-table :deep\(\.el-table__body td\.el-table__cell\)[\s\S]*?padding-top:\s*4px;[\s\S]*?padding-bottom:\s*4px;/)
+  assert.match(portfolioSource, /\.holding-table :deep\(\.portfolio-stock-identity\.stock-identity\)[\s\S]*?min-height:\s*32px;[\s\S]*?gap:\s*1px;/)
+  assert.match(portfolioSource, /\.portfolio-stock-identity \.stock-identity__meta-line[\s\S]*?height:\s*16px;/)
+  assert.match(portfolioSource, /\.portfolio-stock-identity \.security-market-badge[\s\S]*?height:\s*16px;/)
+})
+
+test('holding P&L percentages use an explicit sign on both holding surfaces', () => {
+  assert.match(portfolioSource, /<small v-if="row\.pnlPct != null">\{\{ fmtSignedPct\(row\.pnlPct\) \}\}<\/small>/)
+  assert.match(holdingSource, /<small v-if="row\.pnlPct != null">\{\{ fmtSignedPct\(row\.pnlPct\) \}\}<\/small>/)
 })
 
 test('holding tables keep all actions inside one compact overflow menu', () => {
   assert.match(holdingSource, /width="52"[\s\S]*?:fixed="mobileRowActions \? false : 'right'"/)
-  assert.match(portfolioSource, /width="52"[\s\S]*?:fixed="isMobileViewport \? false : 'right'"/)
+  assert.match(portfolioSource, /width="44"[\s\S]*?:fixed="isMobileViewport \? false : 'right'"/)
   assert.match(holdingSource, /class="row-actions-trigger"/)
   assert.match(portfolioSource, /class="portfolio-row-actions-trigger"/)
   assert.match(holdingSource, /class="row-actions-trigger"[^>]*@click\.stop/)
@@ -70,11 +85,23 @@ test('holding tables keep all actions inside one compact overflow menu', () => {
   assert.doesNotMatch(holdingSource, /class="row-inline-actions"/)
   assert.doesNotMatch(portfolioSource, /class="portfolio-row-inline-actions"/)
   assert.match(holdingSource, /width: 28px;/)
-  assert.match(portfolioSource, /width: 28px;/)
+  assert.match(portfolioSource, /width: 30px;/)
   assert.doesNotMatch(holdingSource, /box-shadow:\s*10px 0 18px -18px/)
   assert.doesNotMatch(portfolioSource, /box-shadow:\s*10px 0 18px -18px/)
   assert.match(holdingSource, /border-right:\s*1px solid var\(--line\)/)
   assert.match(portfolioSource, /border-right:\s*1px solid var\(--line\)/)
+})
+
+test('portfolio holding actions use a compact arrowless menu with transaction priority', () => {
+  assert.match(portfolioSource, /:show-arrow="false"/)
+  assert.match(portfolioSource, /<el-icon><Operation \/><\/el-icon>/)
+  assert.match(portfolioSource, /command="edit" :icon="EditPen" divided/)
+  assert.match(portfolioSource, /min-width:\s*120px;/)
+  assert.match(portfolioSource, /border-radius:\s*6px;/)
+  assert.match(portfolioSource, /background:\s*rgba\(0, 113, 227, 0\.06\);/)
+  assert.match(portfolioSource, /el-dropdown-menu__item:not\(\.is-disabled\):focus[\s\S]*?background:\s*#f3f6fa !important;/)
+  assert.match(portfolioSource, /row-action-buy[\s\S]*?color:\s*#b54747 !important;/)
+  assert.match(portfolioSource, /row-action-sell[\s\S]*?color:\s*#218052 !important;/)
 })
 
 test('holding quantity headers reserve room for their sort indicator', () => {
@@ -89,6 +116,9 @@ test('portfolio list holding summaries omit market badges', () => {
 })
 
 test('mobile portfolio ordering uses direct up and down controls while desktop keeps drag sorting', () => {
+  assert.match(portfolioSource, /import \{ getCurrentUser \} from '\.\.\/api\/auth'/)
+  assert.match(portfolioSource, /const canSortPortfolios = computed\(\(\) => currentUser\?\.role === 'ADMIN'\)/)
+  assert.match(portfolioSource, /v-if="canSortPortfolios"[\s\S]*?class="mobile-sort-button"/)
   assert.match(portfolioSource, /class="mobile-sort-button"/)
   assert.match(portfolioSource, /mobileSortMode \? '完成' : '排序'/)
   assert.match(portfolioSource, /function movePortfolio\(row, direction\)/)
@@ -98,11 +128,23 @@ test('mobile portfolio ordering uses direct up and down controls while desktop k
   assert.match(portfolioSource, /grid-template-columns:\s*76px minmax\(48px, 1fr\) auto 18px;/)
   assert.match(portfolioSource, /width: 36px;/)
   assert.match(portfolioSource, /height: 44px;/)
-  assert.match(portfolioSource, /v-if="!isMobileViewport"[\s\S]*?class="pf-sort-handle"/)
+  assert.match(portfolioSource, /v-if="!isMobileViewport && canSortPortfolios"[\s\S]*?class="pf-sort-handle"/)
   assert.match(portfolioSource, /async function persistPortfolioOrder\(fromId, toId, placeAfter\)/)
   assert.match(portfolioSource, /await sortPortfolios\(list\.value\.map\(\(row\) => row\.id\)\)/)
   assert.match(portfolioSource, /class="pf-sort-handle"/)
   assert.match(portfolioSource, /:data-portfolio-id="row\.id"/)
+})
+
+test('shared portfolios expose write controls only for their owner', () => {
+  assert.match(portfolioSource, /const activeEditable = computed\(\(\) => activeSummary\.value\?\.editable === true\)/)
+  assert.match(portfolioSource, /<strong>共享组合<\/strong>/)
+  assert.match(portfolioSource, /v-else-if="row\.editable"[\s\S]*?class="pf-card-menu"/)
+  assert.match(portfolioSource, /<el-dropdown-item v-if="detail\.editable" command="edit">编辑组合<\/el-dropdown-item>/)
+  assert.match(portfolioSource, /<el-dropdown-item v-if="detail\.editable" command="import">导入持仓<\/el-dropdown-item>/)
+  assert.match(portfolioSource, /v-if="activeEditable"[\s\S]*?command="buy"/)
+  assert.match(portfolioSource, /v-if="activeEditable"[\s\S]*?command="sell"/)
+  assert.match(portfolioSource, /v-if="activeEditable"[\s\S]*?command="edit"/)
+  assert.match(portfolioSource, /command="observe" :icon="View">加入观察池<\/el-dropdown-item>/)
 })
 
 test('desktop portfolio actions use one grouped toolbar', () => {

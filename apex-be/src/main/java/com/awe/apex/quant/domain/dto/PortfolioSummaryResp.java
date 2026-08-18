@@ -46,6 +46,11 @@ public class PortfolioSummaryResp {
     private Boolean isDefault;
 
     /**
+     * 当前用户是否可编辑
+     */
+    private Boolean editable;
+
+    /**
      * 状态
      */
     private String status;

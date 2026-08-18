@@ -573,23 +573,8 @@ onMounted(() => {
         <div class="command-column command-summary">
           <div class="command-column-head">
             <h4>盘前总结</h4>
-            <span>{{ dataLevelLabel(command.dataLevel) }}</span>
           </div>
           <p class="command-headline">{{ command.preMarketSummary?.headline || '盘前结论待生成' }}</p>
-
-          <div v-if="command.preMarketSummary?.evidenceItems?.length" class="command-evidence">
-            <span class="command-evidence-title">核心依据</span>
-            <div class="command-evidence-grid">
-              <span
-                v-for="item in command.preMarketSummary.evidenceItems.slice(0, 4)"
-                :key="`${item.label}-${item.value}`"
-                class="command-evidence-item"
-              >
-                <span class="command-evidence-label">{{ item.label }}</span>
-                <b class="command-evidence-value">{{ item.value }}</b>
-              </span>
-            </div>
-          </div>
 
           <div
             v-if="command.preMarketSummary?.opportunityItems?.length || command.preMarketSummary?.riskItems?.length"
@@ -624,7 +609,7 @@ onMounted(() => {
           <p class="command-guide-summary">
             {{ command.operationGuide?.summary || command.operationGuide?.blockedReason || '今日操作指引待生成' }}
           </p>
-          <div v-if="command.operationGuide" class="command-position">
+          <div v-if="command.operationGuide && command.status === 'READY'" class="command-position">
             <span>
               目标仓位
               <b>{{ fmtPct(command.operationGuide.targetPositionMin, 0) }} - {{ fmtPct(command.operationGuide.targetPositionMax, 0) }}</b>
@@ -676,8 +661,14 @@ onMounted(() => {
           >
             {{ dataLevelLabel(morningBriefing.dataLevel) }}
           </el-tag>
-          <time>{{ fmtBriefingTime(morningBriefing?.generatedAt) }}</time>
-          <el-button link type="primary" @click="router.push('/news')">消息面</el-button>
+          <span class="morning-context-time">
+            <span class="morning-context-time-label">更新</span>
+            <time>{{ fmtBriefingTime(morningBriefing?.generatedAt) }}</time>
+          </span>
+          <el-button class="morning-context-link" link type="primary" @click="router.push('/news')">
+            消息面
+            <span aria-hidden="true">→</span>
+          </el-button>
         </div>
       </div>
 
@@ -754,16 +745,19 @@ onMounted(() => {
             <div v-if="newsPulse" class="news-counts">
               <span class="bull">利好 <b>{{ newsPulse.bullCount ?? 0 }}</b></span>
               <span class="bear">利空 <b>{{ newsPulse.bearCount ?? 0 }}</b></span>
-              <span>{{ newsPulse.biasLabel || '中性' }}</span>
+              <span class="news-bias">{{ newsPulse.biasLabel || '中性' }}</span>
             </div>
           </div>
-          <p class="morning-news-summary">
-            {{
-              newsPulse?.executiveSummary
-                || morningBriefing?.summary
-                || (loading || refreshing ? '正在生成消息面摘要…' : '今日消息面暂未生成')
-            }}
-          </p>
+          <div class="morning-news-lead">
+            <span class="morning-news-summary-label">核心结论</span>
+            <p class="morning-news-summary">
+              {{
+                newsPulse?.executiveSummary
+                  || morningBriefing?.summary
+                  || (loading || refreshing ? '正在生成消息面摘要…' : '今日消息面暂未生成')
+              }}
+            </p>
+          </div>
           <div v-if="morningNewsCards.length" class="morning-news-list">
             <article v-for="item in morningNewsCards" :key="item.id || item.title" class="morning-news-item">
               <span
@@ -799,7 +793,10 @@ onMounted(() => {
           @click="router.push(`/stock/${item.code}`)"
         >
           <StockIdentity class="observe-chip__identity" :security="item" compact />
-          <em>{{ item.status === 'TRIGGERED' ? '已触发' : '接近' }}</em>
+          <em>
+            <span class="observe-chip__status-dot" aria-hidden="true"></span>
+            {{ item.status === 'TRIGGERED' ? '已触发' : '接近' }}
+          </em>
         </button>
       </div>
     </section>
@@ -1249,53 +1246,95 @@ onMounted(() => {
 }
 
 .observe-chips {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
   gap: 8px;
 }
 
 .observe-chip {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 200px;
+  max-width: 260px;
+  min-height: 54px;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  box-sizing: border-box;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.65);
-  border-radius: 999px;
-  padding: 6px 12px;
+  border-radius: 8px;
+  padding: 7px 8px 7px 10px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink);
   font: inherit;
   cursor: pointer;
+  text-align: left;
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.observe-chip:hover {
+  border-color: rgba(35, 99, 235, 0.26);
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+}
+
+.observe-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .observe-chip :deep(.observe-chip__identity) {
   width: auto;
-  max-width: calc(100% - 48px);
-  gap: 2px;
+  max-width: 100%;
+  gap: 3px;
 }
 
-.observe-chip b {
-  font-weight: 700;
+.observe-chip :deep(.stock-identity__name) {
+  font-size: 13px;
+  font-weight: 650;
 }
 
-.observe-chip span {
-  font-size: 12px;
-  color: var(--slate);
+.observe-chip :deep(.stock-identity__meta-line) {
+  gap: 3px;
+}
+
+.observe-chip :deep(.stock-identity__code) {
+  font-size: 10px;
 }
 
 .observe-chip em {
+  display: inline-flex;
+  min-width: 48px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  box-sizing: border-box;
+  border-left: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 4px;
+  padding: 4px 6px 4px 8px;
   font-style: normal;
   font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 999px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.observe-chip__status-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .observe-chip.near em {
-  background: rgba(255, 159, 10, 0.15);
-  color: #c93400;
+  background: rgba(234, 88, 12, 0.07);
+  color: #c2410c;
 }
 
 .observe-chip.trig em {
-  background: rgba(255, 59, 48, 0.12);
-  color: var(--up);
+  background: rgba(220, 38, 38, 0.07);
+  color: #c62828;
 }
 
 /* —— stance hero —— */
@@ -1900,50 +1939,6 @@ onMounted(() => {
   font-weight: 620;
 }
 
-.command-evidence {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(15, 23, 42, 0.07);
-}
-
-.command-evidence-title {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.command-evidence-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px 14px;
-  margin-top: 4px;
-}
-
-.command-evidence-item {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.command-evidence-label,
-.command-evidence-value {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.command-evidence-label {
-  color: var(--muted);
-}
-
-.command-evidence-value {
-  color: var(--ink-soft);
-  font-weight: 650;
-  text-align: right;
-}
-
 .command-directions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2126,7 +2121,7 @@ onMounted(() => {
 
 .morning-context {
   margin: 0 0 14px;
-  padding: 15px 2px 16px;
+  padding: 18px 2px 20px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   letter-spacing: 0;
@@ -2134,15 +2129,18 @@ onMounted(() => {
 
 .morning-context-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .morning-context-head h3 {
   margin: 0;
-  font-size: 15px;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
   line-height: 1.35;
   letter-spacing: 0;
 }
@@ -2158,27 +2156,51 @@ onMounted(() => {
 .morning-context-meta {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 24px;
+  gap: 10px;
+  min-height: 28px;
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+.morning-context-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.morning-context-time-label {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.morning-context-time time {
+  color: var(--slate);
+}
+
+.morning-context-link :deep(span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 650;
+}
+
 .morning-context-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
+  gap: 28px;
+  margin-top: 16px;
 }
 
 .morning-context-block {
+  align-self: start;
   min-width: 0;
-  padding: 2px 18px 0 0;
+  padding: 0;
 }
 
 .morning-news-block {
-  padding: 2px 0 0 18px;
+  padding-left: 28px;
   border-left: 1px solid var(--line);
 }
 
@@ -2187,14 +2209,14 @@ onMounted(() => {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  min-height: 22px;
-  margin-bottom: 7px;
+  min-height: 24px;
+  margin-bottom: 10px;
 }
 
 .morning-block-head h4 {
   margin: 0;
-  color: var(--ink-soft);
-  font-size: 12px;
+  color: var(--ink);
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.4;
   letter-spacing: 0;
@@ -2207,8 +2229,8 @@ onMounted(() => {
 }
 
 .overnight-layer + .overnight-layer {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 13px;
+  padding-top: 12px;
   border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
@@ -2218,7 +2240,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 10px;
   min-height: 20px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .overnight-layer-head h5 {
@@ -2239,7 +2261,10 @@ onMounted(() => {
 .overnight-index-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  column-gap: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .overnight-theme-grid {
@@ -2260,9 +2285,20 @@ onMounted(() => {
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
-  min-height: 34px;
+  min-height: 36px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
   font-variant-numeric: tabular-nums;
+}
+
+.overnight-index-grid .overnight-quote {
+  min-height: 44px;
+  padding: 0 10px;
+  border-right: 1px solid rgba(15, 23, 42, 0.07);
+  border-bottom: 0;
+}
+
+.overnight-index-grid .overnight-quote:last-child {
+  border-right: 0;
 }
 
 .overnight-index-grid .overnight-quote:nth-last-child(-n + 3),
@@ -2309,7 +2345,7 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  min-height: 43px;
+  min-height: 46px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
   font-variant-numeric: tabular-nums;
 }
@@ -2374,7 +2410,7 @@ onMounted(() => {
 .news-counts {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   color: var(--muted);
   font-size: 10px;
   white-space: nowrap;
@@ -2388,12 +2424,38 @@ onMounted(() => {
 .news-counts .bull { color: var(--up); }
 .news-counts .bear { color: var(--down); }
 
+.news-bias {
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.morning-news-lead {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent);
+  background: rgba(22, 105, 201, 0.045);
+}
+
+.morning-news-summary-label {
+  padding-top: 2px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
 .morning-news-summary {
-  min-height: 2.9em;
-  margin: 0 0 7px;
+  max-width: 78ch;
+  margin: 0;
   color: var(--ink-soft);
   font-size: 12px;
-  line-height: 1.45;
+  font-weight: 500;
+  line-height: 1.55;
   letter-spacing: 0;
 }
 
@@ -2405,8 +2467,8 @@ onMounted(() => {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
+  gap: 10px;
+  min-height: 36px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
   font-size: 11px;
 }
@@ -2416,10 +2478,11 @@ onMounted(() => {
 }
 
 .news-sentiment {
-  min-width: 26px;
+  min-width: 28px;
   color: var(--muted);
   font-size: 10px;
-  text-align: center;
+  font-weight: 600;
+  text-align: left;
 }
 
 .news-sentiment.bull { color: var(--up); }
@@ -2442,8 +2505,10 @@ onMounted(() => {
 }
 
 .morning-news-item small {
+  min-width: 26px;
   color: var(--muted);
   font-size: 10px;
+  text-align: right;
 }
 
 .morning-context-empty {
@@ -2454,6 +2519,17 @@ onMounted(() => {
 }
 
 @media (max-width: 560px) {
+  .observe-chips {
+    grid-template-columns: 1fr;
+  }
+
+  .observe-chip {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: 56px;
+  }
+
   .effect-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -2462,11 +2538,7 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .command-evidence-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .morning-context-head {
+  .morning-context .morning-context-head {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
@@ -2477,7 +2549,19 @@ onMounted(() => {
     width: 100%;
   }
 
-  .overnight-index-grid,
+  .morning-context-time-label,
+  .morning-block-head > span {
+    display: none;
+  }
+
+  .overnight-index-grid .overnight-quote {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 8px;
+  }
+
   .overnight-star-grid {
     column-gap: 12px;
   }
@@ -2496,6 +2580,35 @@ onMounted(() => {
 
   .overnight-quote-name small {
     display: none;
+  }
+
+  .morning-news-lead {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 9px 10px;
+  }
+
+  .morning-news-summary-label {
+    padding-top: 0;
+  }
+
+  .morning-news-item {
+    align-items: start;
+    min-height: 44px;
+    padding: 7px 0;
+  }
+
+  .morning-news-item a,
+  .morning-news-title {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .morning-news-item small {
+    padding-top: 1px;
   }
 }
 
@@ -2531,6 +2644,7 @@ onMounted(() => {
 
   .morning-context-grid {
     grid-template-columns: 1fr;
+    gap: 0;
   }
 
   .morning-context-block {
@@ -2538,9 +2652,14 @@ onMounted(() => {
   }
 
   .morning-news-block {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--line);
+    order: -1;
+    margin-top: 0;
+    margin-bottom: 12px;
+    padding-top: 0;
+    padding-bottom: 12px;
+    padding-left: 0;
+    border-top: 0;
+    border-bottom: 1px solid var(--line);
     border-left: 0;
   }
 }

@@ -189,7 +189,7 @@ public class PortfolioTradeRecordServiceImpl implements IPortfolioTradeRecordSer
     }
 
     /**
-     * 分页查询当前用户交易记录。
+     * 分页查询共享组合交易记录。
      *
      * @param portfolioId 组合ID
      * @param code        证券代码
@@ -202,10 +202,10 @@ public class PortfolioTradeRecordServiceImpl implements IPortfolioTradeRecordSer
     @Override
     public PageResponse<TradeRecordResp> page(Long portfolioId, String code, String side, String source,
                                               Integer page, Integer size) {
+        userContext.currentUserId();
         long currentPage = Objects.nonNull(page) ? Math.max(1, page) : 1;
         long pageSize = Objects.nonNull(size) ? Math.max(1, Math.min(size, 100)) : 20;
-        var query = Wrappers.<JournalTrade>lambdaQuery()
-                .eq(JournalTrade::getUserId, userContext.currentUserId());
+        var query = Wrappers.<JournalTrade>lambdaQuery();
         if (Objects.nonNull(portfolioId)) {
             query.eq(JournalTrade::getPortfolioId, portfolioId);
         }
@@ -235,19 +235,19 @@ public class PortfolioTradeRecordServiceImpl implements IPortfolioTradeRecordSer
     }
 
     /**
-     * 查询当前用户指定证券的 K 线交易标记。
+     * 查询共享组合指定证券的 K 线交易标记。
      *
      * @param code 证券代码
      * @return 交易标记
      */
     @Override
     public List<TradeRecordResp> listMarkers(String code) {
+        userContext.currentUserId();
         String normalizedCode = MarketCodeUtils.normalizeHoldingCode(code);
         if (StringUtils.isBlank(normalizedCode)) {
             throw new BusinessException("证券代码无效");
         }
         List<JournalTrade> latestTrades = journalTradeMapper.selectList(Wrappers.<JournalTrade>lambdaQuery()
-                .eq(JournalTrade::getUserId, userContext.currentUserId())
                 .eq(JournalTrade::getCode, normalizedCode)
                 .orderByDesc(JournalTrade::getTradeDate)
                 .orderByDesc(JournalTrade::getTradeTime)

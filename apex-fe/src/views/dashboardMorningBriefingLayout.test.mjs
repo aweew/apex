@@ -57,11 +57,12 @@ test('dashboard renders position controls and at most three command actions in b
   assert.match(dashboardSource, /\{\{ item\.targetCount \}\}/)
 })
 
-test('dashboard shows at most four pre-market evidence items with labels and values', () => {
-  assert.match(dashboardSource, /command\.preMarketSummary\.evidenceItems\.slice\(0,\s*4\)/)
-  assert.match(dashboardSource, /v-for="item in command\.preMarketSummary\.evidenceItems\.slice\(0, 4\)"/)
-  assert.match(dashboardSource, /class="command-evidence-label">\{\{ item\.label \}\}/)
-  assert.match(dashboardSource, /class="command-evidence-value">\{\{ item\.value \}\}/)
+test('dashboard omits repeated broad-market evidence from the pre-market summary', () => {
+  assert.doesNotMatch(dashboardSource, /class="command-evidence"/)
+  assert.doesNotMatch(dashboardSource, /preMarketSummary\.evidenceItems/)
+  assert.doesNotMatch(dashboardSource, />核心依据<\/span>/)
+  assert.doesNotMatch(dashboardSource, /<h4>盘前总结<\/h4>\s*<span>/)
+  assert.match(dashboardSource, /command\.operationGuide && command\.status === 'READY'/)
 })
 
 test('dashboard command band is two-column on desktop and safe on phone layouts', () => {
@@ -85,6 +86,26 @@ test('dashboard morning context has a compact responsive layout', () => {
     /@media \(max-width: 900px\)[\s\S]*\.morning-context-grid\s*\{[^}]*grid-template-columns:\s*1fr/s,
   )
   assert.match(dashboardSource, /v-for="item in morningNewsCards"/)
+})
+
+test('dashboard morning context leads with a conclusion and keeps supporting evidence quiet', () => {
+  assert.match(dashboardSource, /class="morning-context-time-label">更新<\/span>/)
+  assert.match(dashboardSource, /class="morning-news-lead"/)
+  assert.match(dashboardSource, /class="morning-news-summary-label">核心结论<\/span>/)
+  assert.match(
+    dashboardSource,
+    /\.morning-news-lead\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);[^}]*border-left:\s*2px solid/s,
+  )
+  assert.match(dashboardSource, /\.morning-news-summary\s*\{[^}]*max-width:\s*78ch;/s)
+  assert.match(dashboardSource, /\.morning-context-block\s*\{[^}]*align-self:\s*start;/s)
+  assert.match(
+    dashboardSource,
+    /@media \(max-width: 900px\)[\s\S]*?\.morning-news-block\s*\{[^}]*order:\s*-1;[^}]*border-bottom:\s*1px solid/s,
+  )
+  assert.match(
+    dashboardSource,
+    /@media \(max-width: 560px\)[\s\S]*?\.morning-news-item a,[\s\S]*?\.morning-news-title\s*\{[^}]*-webkit-line-clamp:\s*2;/s,
+  )
 })
 
 test('dashboard separates overnight indexes, market themes and star quotes with legacy fallback', () => {
