@@ -1,13 +1,20 @@
-package com.awe.apex.quant.config;
+package com.awe.apex.quant.migration;
 
+import db.migration.V44__Reconcile_market_schema;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -17,11 +24,35 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-class MarketSchemaBootstrapTest {
+class MarketSchemaMigrationTest {
+
+    @Test
+    void schemaMigrationDoesNotRunAsSpringStartupComponent() {
+        assertFalse(ApplicationRunner.class.isAssignableFrom(MarketSchemaMigration.class));
+        assertFalse(MarketSchemaMigration.class.isAnnotationPresent(Component.class));
+    }
+
+    @Test
+    void flywayRunsSchemaReconciliationOnceAfterExistingSchemaBaseline() {
+        V44__Reconcile_market_schema migration = new V44__Reconcile_market_schema();
+        assertEquals("44", migration.getVersion().getVersion());
+
+        YamlPropertiesFactoryBean propertiesFactory = new YamlPropertiesFactoryBean();
+        propertiesFactory.setResources(new ClassPathResource("application.yml"));
+        Properties properties = propertiesFactory.getObject();
+
+        assertNotNull(properties);
+        assertEquals("true", properties.getProperty("spring.flyway.enabled"));
+        assertEquals("classpath:db/migration", properties.getProperty("spring.flyway.locations"));
+        assertEquals("true", properties.getProperty("spring.flyway.baseline-on-migrate"));
+        assertEquals("43", properties.getProperty("spring.flyway.baseline-version"));
+        assertEquals("true", properties.getProperty("spring.flyway.validate-on-migrate"));
+        assertEquals("true", properties.getProperty("spring.flyway.clean-disabled"));
+    }
 
     @Test
     void createsDecisionTablesAndAddsDailyActionTraceColumns() {
-        List<String> executed = runBootstrap(null, "NO", 0);
+        List<String> executed = runMigration(null, "NO", 0);
 
         assertContains(executed, "CREATE TABLE IF NOT EXISTS decision_run");
         assertContains(executed, "UNIQUE KEY uk_decision_run_no (run_no)");
@@ -119,7 +150,7 @@ class MarketSchemaBootstrapTest {
 
     @Test
     void doesNotAlterDailyActionWhenColumnsAlreadyExist() {
-        List<String> executed = runBootstrap(1, "YES", 1);
+        List<String> executed = runMigration(1, "YES", 1);
 
         assertFalse(executed.stream().anyMatch(sql -> sql.startsWith("ALTER TABLE daily_action")));
         assertFalse(executed.stream().anyMatch(sql -> sql.contains("MODIFY COLUMN action_id")));
@@ -134,18 +165,17 @@ class MarketSchemaBootstrapTest {
     }
 
     @Test
-    void failsApplicationStartupWhenSchemaBootstrapFails() {
+    void failsMigrationWhenSchemaReconciliationFails() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         doAnswer(invocation -> {
             throw new IllegalStateException("database unavailable");
         }).when(jdbcTemplate).execute(anyString());
-        MarketSchemaBootstrap bootstrap = new MarketSchemaBootstrap();
-        ReflectionTestUtils.setField(bootstrap, "jdbcTemplate", jdbcTemplate);
+        MarketSchemaMigration migration = new MarketSchemaMigration(jdbcTemplate);
 
-        assertThrows(IllegalStateException.class, () -> bootstrap.run(null));
+        assertThrows(IllegalStateException.class, migration::migrate);
     }
 
-    private List<String> runBootstrap(Integer columnCount, String actionIdNullable, Integer indexCount) {
+    private List<String> runMigration(Integer columnCount, String actionIdNullable, Integer indexCount) {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         List<String> executed = new ArrayList<>();
         doAnswer(invocation -> {
@@ -162,9 +192,8 @@ class MarketSchemaBootstrapTest {
         when(jdbcTemplate.queryForObject(anyString(), eq(String.class), any(), any()))
                 .thenReturn(actionIdNullable);
 
-        MarketSchemaBootstrap bootstrap = new MarketSchemaBootstrap();
-        ReflectionTestUtils.setField(bootstrap, "jdbcTemplate", jdbcTemplate);
-        bootstrap.run(null);
+        MarketSchemaMigration migration = new MarketSchemaMigration(jdbcTemplate);
+        migration.migrate();
         return executed;
     }
 

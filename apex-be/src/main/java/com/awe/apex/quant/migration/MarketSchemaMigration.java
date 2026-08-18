@@ -1,31 +1,31 @@
-package com.awe.apex.quant.config;
+package com.awe.apex.quant.migration;
 
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Component;
 
 import java.util.Objects;
 
 /**
- * 启动时补齐关键业务表（幂等）
+ * 补齐历史版本遗留的关键业务结构。
  */
 @Slf4j
-@Component
-public class MarketSchemaBootstrap implements ApplicationRunner {
+public class MarketSchemaMigration {
 
-    @Resource
-    private JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate jdbcTemplate;
 
     /**
-     * 启动补表
+     * 创建数据库结构迁移器。
      *
-     * @param args 参数
+     * @param jdbcTemplate Flyway 当前迁移连接
      */
-    @Override
-    public void run(ApplicationArguments args) {
+    public MarketSchemaMigration(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * 执行一次性结构兼容迁移。
+     */
+    public void migrate() {
         try {
             jdbcTemplate.execute("""
                     CREATE TABLE IF NOT EXISTS market_briefing_snapshot (
@@ -137,8 +137,8 @@ public class MarketSchemaBootstrap implements ApplicationRunner {
             ensureCompanyProfileRevenueColumns();
             ensureStockBasicPeColumns();
         } catch (Exception ex) {
-            log.error("数据库结构初始化失败", ex);
-            throw new IllegalStateException("关键数据库结构初始化失败", ex);
+            log.error("数据库结构迁移失败", ex);
+            throw new IllegalStateException("关键数据库结构迁移失败", ex);
         }
     }
 
