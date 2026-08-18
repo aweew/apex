@@ -53,6 +53,9 @@ public class ScreenerStrategyResp {
     /** 模板风险说明 */
     private String disclaimer;
 
+    /** 策略通俗指南 */
+    private ScreenerStrategyGuideResp guide;
+
     /** 规则列表 */
     private List<ScreenerStrategyRuleResp> rules;
 

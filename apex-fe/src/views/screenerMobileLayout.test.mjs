@@ -65,6 +65,25 @@ test('screener exposes free and strategy modes with a single primary strategy ac
   assert.match(screenerSource, /class="strategy-rule-list"/)
 })
 
+test('desktop strategy workspace exposes all templates and practical explanations', () => {
+  assert.match(screenerSource, /class="strategy-workspace"/)
+  assert.match(screenerSource, /class="strategy-catalog"/)
+  assert.match(screenerSource, /v-for="strategy in systemStrategies"/)
+  assert.match(screenerSource, /item\.templateKey === 'PUBLIC_FIRST_BOARD_DISPERSION'/)
+  assert.match(screenerSource, /class="strategy-core-idea"/)
+  assert.match(screenerSource, />通俗理解</)
+  assert.match(screenerSource, />操作方法</)
+  assert.match(screenerSource, />风险纪律</)
+  assert.match(screenerSource, /selectedStrategy\.guide\.executionSteps/)
+  assert.match(screenerSource, /selectedStrategy\.guide\.riskNotes/)
+  assert.match(screenerSource, /\.strategy-definition\s*\{[\s\S]*?max-width:\s*1160px;/)
+})
+
+test('strategy workspace collapses to one column on mobile', () => {
+  assert.match(screenerSource, /\.strategy-workspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(220px, 280px\) minmax\(0, 1fr\);/)
+  assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.strategy-workspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+})
+
 test('strategy maintenance supports copy edit toggle delete and ordering', () => {
   assert.match(screenerSource, /copyScreenerTemplate/)
   assert.match(screenerSource, /updateScreenerStrategy/)
@@ -85,7 +104,7 @@ test('strategy results show data cutoffs issues and per-stock evidence', () => {
 })
 
 test('strategy definition identifies realtime and close run modes', () => {
-  assert.match(screenerSource, /selectedStrategy\.runMode === 'CLOSE' \? '收盘' : '实时'/)
+  assert.match(screenerSource, /selectedStrategy\.runMode === 'CLOSE' \? '收盘策略' : '实时策略'/)
 })
 
 test('changing strategy clears results from the previously selected strategy', () => {

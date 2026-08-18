@@ -331,7 +331,7 @@ async function loadStrategies(preserveSelection = true) {
     const currentExists = strategies.value.some((item) => strategyKey(item) === selectedStrategyKey.value)
     if (!preserveSelection || !currentExists) {
       const recommended = strategies.value.find(
-        (item) => item.templateKey === 'MAIN_BOARD_STRONG_ACCEPTANCE',
+        (item) => item.templateKey === 'PUBLIC_FIRST_BOARD_DISPERSION',
       ) || strategies.value[0]
       selectedStrategyKey.value = recommended ? strategyKey(recommended) : ''
     }
@@ -361,6 +361,13 @@ function onStrategyChange() {
   batchRows.value = []
   screeningActive.value = false
   strategyRunResult.value = null
+}
+
+function selectStrategy(strategy) {
+  const nextStrategyKey = strategyKey(strategy)
+  if (selectedStrategyKey.value === nextStrategyKey) return
+  selectedStrategyKey.value = nextStrategyKey
+  onStrategyChange()
 }
 
 async function onRunStrategy() {
@@ -1101,7 +1108,11 @@ onBeforeUnmount(() => {
 
     <section v-else class="strategy-panel" aria-label="策略选股">
       <div class="strategy-toolbar">
-        <div class="strategy-selector">
+        <div v-if="!isMobileViewport" class="strategy-library-heading">
+          <span>策略库</span>
+          <strong>{{ systemStrategies.length }} 套系统模板<span v-if="userStrategies.length"> · {{ userStrategies.length }} 套我的策略</span></strong>
+        </div>
+        <div v-else class="strategy-selector">
           <span>选择策略</span>
           <el-select
             v-model="selectedStrategyKey"
@@ -1185,29 +1196,109 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="selectedStrategy" class="strategy-definition">
-        <div class="strategy-title-line">
-          <div>
-            <h2>{{ selectedStrategy.name }}</h2>
-            <p>{{ selectedStrategy.description || '未填写策略说明' }}</p>
+      <div v-if="selectedStrategy" class="strategy-workspace">
+        <nav v-if="!isMobileViewport" class="strategy-catalog" aria-label="策略库">
+          <section class="strategy-catalog-group">
+            <h2>系统策略 <small>{{ systemStrategies.length }}</small></h2>
+            <button
+              v-for="strategy in systemStrategies"
+              :key="strategyKey(strategy)"
+              type="button"
+              :class="{ 'is-active': strategyKey(strategy) === selectedStrategyKey }"
+              :aria-current="strategyKey(strategy) === selectedStrategyKey ? 'true' : undefined"
+              @click="selectStrategy(strategy)"
+            >
+              <span>
+                <b>{{ strategy.name }}</b>
+                <small>{{ strategy.guide?.category || '系统模板' }}</small>
+              </span>
+              <em>{{ strategy.runMode === 'CLOSE' ? '收盘' : '实时' }}</em>
+            </button>
+          </section>
+          <section v-if="userStrategies.length" class="strategy-catalog-group">
+            <h2>我的策略 <small>{{ userStrategies.length }}</small></h2>
+            <button
+              v-for="strategy in userStrategies"
+              :key="strategyKey(strategy)"
+              type="button"
+              :class="{ 'is-active': strategyKey(strategy) === selectedStrategyKey }"
+              :aria-current="strategyKey(strategy) === selectedStrategyKey ? 'true' : undefined"
+              @click="selectStrategy(strategy)"
+            >
+              <span>
+                <b>{{ strategy.name }}</b>
+                <small>{{ strategy.enabled ? '已启用' : '已停用' }}</small>
+              </span>
+              <em>{{ strategy.runMode === 'CLOSE' ? '收盘' : '实时' }}</em>
+            </button>
+          </section>
+        </nav>
+
+        <article class="strategy-definition">
+          <div class="strategy-title-line">
+            <div>
+              <p v-if="selectedStrategy.guide?.category" class="strategy-category">{{ selectedStrategy.guide.category }}</p>
+              <h2>{{ selectedStrategy.name }}</h2>
+              <p>{{ selectedStrategy.description || '未填写策略说明' }}</p>
+            </div>
+            <div class="strategy-flags">
+              <el-tag size="small" effect="plain">{{ selectedStrategy.template ? '系统模板' : `版本 ${selectedStrategy.versionNo}` }}</el-tag>
+              <el-tag size="small" :type="selectedStrategy.runMode === 'CLOSE' ? 'warning' : 'info'" effect="plain">
+                {{ selectedStrategy.runMode === 'CLOSE' ? '收盘策略' : '实时策略' }}
+              </el-tag>
+              <el-tag v-if="!selectedStrategy.template" size="small" :type="selectedStrategy.enabled ? 'success' : 'info'" effect="plain">
+                {{ selectedStrategy.enabled ? '已启用' : '已停用' }}
+              </el-tag>
+            </div>
           </div>
-          <div class="strategy-flags">
-            <el-tag size="small" effect="plain">{{ selectedStrategy.template ? '系统模板' : `版本 ${selectedStrategy.versionNo}` }}</el-tag>
-            <el-tag size="small" :type="selectedStrategy.runMode === 'CLOSE' ? 'warning' : 'info'" effect="plain">
-              {{ selectedStrategy.runMode === 'CLOSE' ? '收盘' : '实时' }}
-            </el-tag>
-            <el-tag v-if="!selectedStrategy.template" size="small" :type="selectedStrategy.enabled ? 'success' : 'info'" effect="plain">
-              {{ selectedStrategy.enabled ? '已启用' : '已停用' }}
-            </el-tag>
-          </div>
-        </div>
-        <p v-if="selectedStrategy.disclaimer" class="strategy-disclaimer">{{ selectedStrategy.disclaimer }}</p>
-        <ol class="strategy-rule-list">
-          <li v-for="rule in selectedStrategy.rules" :key="rule.id || `${rule.ruleType}-${rule.sortNo}`">
-            <span>{{ rule.ruleName }}</span>
-            <b>{{ rule.summary }}</b>
-          </li>
-        </ol>
+
+          <template v-if="selectedStrategy.guide">
+            <section class="strategy-core-idea">
+              <span>核心逻辑</span>
+              <p>{{ selectedStrategy.guide.coreIdea }}</p>
+            </section>
+
+            <div class="strategy-guide-overview">
+              <section>
+                <h3>通俗理解</h3>
+                <p>{{ selectedStrategy.guide.plainExplanation }}</p>
+              </section>
+              <section>
+                <h3>适用环境</h3>
+                <p>{{ selectedStrategy.guide.suitableMarket }}</p>
+              </section>
+            </div>
+
+            <div class="strategy-playbook-grid">
+              <section>
+                <h3>操作方法</h3>
+                <ol>
+                  <li v-for="step in selectedStrategy.guide.executionSteps" :key="step">{{ step }}</li>
+                </ol>
+              </section>
+              <section class="strategy-risk-section">
+                <h3>风险纪律</h3>
+                <ul>
+                  <li v-for="risk in selectedStrategy.guide.riskNotes" :key="risk">{{ risk }}</li>
+                </ul>
+              </section>
+            </div>
+          </template>
+
+          <section class="strategy-rules-section">
+            <div class="strategy-rules-heading">
+              <h3>筛选条件</h3>
+              <span>{{ selectedStrategy.rules?.length || 0 }} 条规则，全部满足才会命中</span>
+            </div>
+            <ol class="strategy-rule-list">
+              <li v-for="rule in selectedStrategy.rules" :key="rule.id || `${rule.ruleType}-${rule.sortNo}`">
+                <span>{{ rule.ruleName }}</span>
+                <b>{{ rule.summary }}</b>
+              </li>
+            </ol>
+          </section>
+          <p v-if="selectedStrategy.disclaimer" class="strategy-disclaimer">{{ selectedStrategy.disclaimer }}</p>
+        </article>
       </div>
 
       <div v-else-if="!strategyLoading" class="strategy-empty">
@@ -1687,7 +1778,7 @@ onBeforeUnmount(() => {
 
 .strategy-panel {
   margin-bottom: 14px;
-  padding: 14px 0;
+  padding: 0 0 16px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
@@ -1705,6 +1796,32 @@ onBeforeUnmount(() => {
 .strategy-rule-editor-heading {
   justify-content: space-between;
   gap: 16px;
+}
+
+.strategy-toolbar {
+  min-height: 64px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.strategy-library-heading {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.strategy-library-heading > span,
+.strategy-category {
+  margin: 0;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.strategy-library-heading strong {
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 650;
 }
 
 .strategy-selector {
@@ -1734,10 +1851,103 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
-.strategy-definition {
-  margin-top: 14px;
-  padding-top: 13px;
+.strategy-workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  min-width: 0;
+}
+
+.strategy-catalog {
+  min-width: 0;
+  padding: 16px 14px 4px 0;
+  border-right: 1px solid var(--line);
+}
+
+.strategy-catalog-group + .strategy-catalog-group {
+  margin-top: 18px;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+
+.strategy-catalog-group h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.strategy-catalog-group h2 small {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategy-catalog-group button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 7px 9px 7px 11px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0 5px 5px 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.strategy-catalog-group button:hover {
+  background: var(--fill);
+}
+
+.strategy-catalog-group button:focus-visible {
+  outline: 3px solid rgba(0, 113, 227, 0.18);
+  outline-offset: -1px;
+}
+
+.strategy-catalog-group button.is-active {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+}
+
+.strategy-catalog-group button > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.strategy-catalog-group button b {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-catalog-group button small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.strategy-catalog-group button em {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.strategy-definition {
+  width: 100%;
+  max-width: 1160px;
+  min-width: 0;
+  padding: 18px 0 2px 22px;
 }
 
 .strategy-title-line {
@@ -1747,7 +1957,7 @@ onBeforeUnmount(() => {
 .strategy-title-line h2 {
   margin: 0 0 3px;
   color: var(--ink);
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1.35;
   letter-spacing: 0;
 }
@@ -1756,18 +1966,115 @@ onBeforeUnmount(() => {
 .strategy-disclaimer {
   margin: 0;
   color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.strategy-core-idea {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 5px 5px 0;
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+}
+
+.strategy-core-idea span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.strategy-core-idea p,
+.strategy-guide-overview p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.strategy-guide-overview,
+.strategy-playbook-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.strategy-guide-overview > section,
+.strategy-playbook-grid > section {
+  min-width: 0;
+  padding: 13px 16px 13px 0;
+}
+
+.strategy-guide-overview > section + section,
+.strategy-playbook-grid > section + section {
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
+.strategy-guide-overview h3,
+.strategy-playbook-grid h3,
+.strategy-rules-heading h3 {
+  margin: 0 0 7px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.strategy-playbook-grid {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.strategy-playbook-grid ol,
+.strategy-playbook-grid ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ink-soft);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.6;
+}
+
+.strategy-risk-section h3,
+.strategy-risk-section li::marker {
+  color: #9a5d00;
+}
+
+.strategy-rules-section {
+  margin-top: 18px;
+}
+
+.strategy-rules-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.strategy-rules-heading h3 {
+  margin-bottom: 0;
+}
+
+.strategy-rules-heading span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .strategy-disclaimer {
-  margin-top: 7px;
+  margin-top: 10px;
   color: #8a5a14;
+  font-size: 11px;
 }
 
 .strategy-rule-list {
   display: grid;
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   padding: 0;
   border-top: 1px solid var(--line);
   list-style: none;
@@ -2763,12 +3070,14 @@ onBeforeUnmount(() => {
 
   .strategy-panel {
     margin: 0 0 14px;
-    padding: 12px 0 14px;
+    padding: 0 0 14px;
   }
 
   .strategy-toolbar {
     display: grid;
     gap: 10px;
+    min-height: 0;
+    padding: 12px 0;
   }
 
   .strategy-selector {
@@ -2790,6 +3099,14 @@ onBeforeUnmount(() => {
     margin: 0;
   }
 
+  .strategy-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .strategy-definition {
+    padding: 14px 0 0;
+  }
+
   .strategy-title-line {
     display: grid;
     gap: 8px;
@@ -2801,6 +3118,37 @@ onBeforeUnmount(() => {
 
   .strategy-flags {
     flex-wrap: wrap;
+  }
+
+  .strategy-core-idea {
+    margin-top: 13px;
+    padding: 11px 12px;
+  }
+
+  .strategy-guide-overview,
+  .strategy-playbook-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .strategy-guide-overview > section,
+  .strategy-playbook-grid > section {
+    padding: 12px 0;
+  }
+
+  .strategy-guide-overview > section + section,
+  .strategy-playbook-grid > section + section {
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .strategy-playbook-grid > section:first-child {
+    padding-top: 12px;
+  }
+
+  .strategy-rules-heading {
+    display: grid;
+    gap: 3px;
   }
 
   .strategy-rule-list li {
