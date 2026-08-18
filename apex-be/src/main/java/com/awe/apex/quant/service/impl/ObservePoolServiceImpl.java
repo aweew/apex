@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -86,6 +87,28 @@ public class ObservePoolServiceImpl implements IObservePoolService {
 
     @Resource
     private StrategyParams strategyParams;
+
+    /**
+     * 查询当前用户未归档观察股代码，不加载行情和技术指标。
+     *
+     * @return 未归档观察股代码
+     */
+    @Override
+    public List<String> listActiveCodes() {
+        List<ObservePool> rows = observePoolMapper.selectList(Wrappers.<ObservePool>lambdaQuery()
+                .select(ObservePool::getCode)
+                .eq(ObservePool::getUserId, currentUserId())
+                .ne(ObservePool::getStatus, "ARCHIVED")
+                .orderByAsc(ObservePool::getCode));
+        Set<String> uniqueCodes = new LinkedHashSet<>();
+        for (ObservePool row : rows) {
+            String code = MarketCodeUtils.normalizeHoldingCode(row.getCode());
+            if (StringUtils.isNotBlank(code)) {
+                uniqueCodes.add(code);
+            }
+        }
+        return new ArrayList<>(uniqueCodes);
+    }
 
     /**
      * 观察池列表（含现场评估）

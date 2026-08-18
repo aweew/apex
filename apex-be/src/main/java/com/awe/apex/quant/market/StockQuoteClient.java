@@ -46,11 +46,9 @@ public class StockQuoteClient {
      * @return 基本信息
      */
     public StockBasic fetchBasic(String code) {
-        String pure = MarketCodeUtils.normalizeHoldingCode(code);
-        String market = MarketCodeUtils.resolveMarket(pure);
-        StockBasic basic = fetchFromSina(pure, market);
-        // 腾讯覆盖现价/涨跌幅：新浪盘后偶发 0 价或空字段，导致持仓现价/涨跌错乱
-        overwriteRealtimeFromTencent(basic);
+        StockBasic basic = fetchRealtime(code);
+        String pure = basic.getCode();
+        String market = basic.getMarket();
         // 港股估值/行业补充易踩空，有现价即可；A 股继续补估值
         if (!"HK".equals(market) && needValuationFallback(basic)) {
             enrichFromTencentValuation(basic);
@@ -65,6 +63,21 @@ public class StockQuoteClient {
                 && !isEastMoneyCoolingDown()) {
             enrichIndustryFromEastMoney(basic);
         }
+        return basic;
+    }
+
+    /**
+     * 仅拉取实时价、涨跌幅和证券名称，不补估值及公司资料。
+     *
+     * @param code 证券代码
+     * @return 实时行情快照
+     */
+    public StockBasic fetchRealtime(String code) {
+        String pure = MarketCodeUtils.normalizeHoldingCode(code);
+        String market = MarketCodeUtils.resolveMarket(pure);
+        StockBasic basic = fetchFromSina(pure, market);
+        // 腾讯覆盖现价/涨跌幅：新浪盘后偶发 0 价或空字段，导致持仓现价/涨跌错乱
+        overwriteRealtimeFromTencent(basic);
         return basic;
     }
 

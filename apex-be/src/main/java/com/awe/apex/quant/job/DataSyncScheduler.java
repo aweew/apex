@@ -12,19 +12,30 @@ import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IHotService;
+import com.awe.apex.quant.service.IMyHoldingService;
+import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.ISectorBoardService;
-import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IWatchlistService;
 
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 可选定时同步（默认关闭，配置 auto_sync_enabled=true 开启）
@@ -32,6 +43,12 @@ import java.util.List;
 @Slf4j
 @Component
 public class DataSyncScheduler {
+
+    private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
+
+    private final AtomicBoolean focusQuoteSyncRunning = new AtomicBoolean(false);
+
+    private Clock clock = Clock.system(SHANGHAI_ZONE);
 
     @Resource
     private IConfigService configService;
@@ -58,10 +75,85 @@ public class DataSyncScheduler {
     private IObservePoolService observePoolService;
 
     @Resource
+    private IMyHoldingService myHoldingService;
+
+    @Resource
     private ApexUserAuthService userAuthService;
 
     @Resource
     private ApexUserContext userContext;
+
+    /**
+     * 交易时段每三分钟刷新持仓股和未归档观察股的轻量行情。
+     */
+    @Scheduled(cron = "0 */3 9-11,13-15 * * MON-FRI", zone = "Asia/Shanghai")
+    public void refreshFocusQuotesIntraday() {
+        ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(SHANGHAI_ZONE);
+        refreshFocusQuotes(now.toLocalDate(), now.toLocalTime());
+    }
+
+    /**
+     * 按指定交易时间刷新重点证券行情，并重估各用户观察池。
+     *
+     * @param tradeDate 交易日期
+     * @param tradeTime 交易时间
+     */
+    public void refreshFocusQuotes(LocalDate tradeDate, LocalTime tradeTime) {
+        if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+            return;
+        }
+        boolean morningSession = !tradeTime.isBefore(LocalTime.of(9, 30))
+                && !tradeTime.isAfter(LocalTime.of(11, 30));
+        boolean afternoonSession = !tradeTime.isBefore(LocalTime.of(13, 0))
+                && !tradeTime.isAfter(LocalTime.of(15, 0));
+        if (!TradingCalendar.isTradingDay(tradeDate) || (!morningSession && !afternoonSession)) {
+            return;
+        }
+        if (!focusQuoteSyncRunning.compareAndSet(false, true)) {
+            log.info("盘中重点行情快刷跳过：上一轮仍在执行，交易日期={}，交易时间={}", tradeDate, tradeTime);
+            return;
+        }
+
+        long startedAtNanos = System.nanoTime();
+        List<Long> userIds = queryEnabledUserIds("盘中重点行情快刷");
+        Set<String> focusCodes = new LinkedHashSet<>();
+        try {
+            // 1. 按用户读取私有持仓和观察池，再合并为共享行情代码。
+            for (Long userId : userIds) {
+                try {
+                    List<String> userCodes = userContext.runAsUser(userId, () -> {
+                        Set<String> codes = new LinkedHashSet<>(myHoldingService.listHoldingCodes());
+                        codes.addAll(observePoolService.listActiveCodes());
+                        return new ArrayList<>(codes);
+                    });
+                    focusCodes.addAll(userCodes);
+                } catch (Exception ex) {
+                    log.warn("盘中重点行情读取用户资产失败，用户编号={}，原因={}", userId, ex.getMessage());
+                }
+            }
+
+            // 2. 全局代码去重后仅刷新 stock_basic，不同步日线。
+            Map<String, Object> quoteResult = focusCodes.isEmpty()
+                    ? Map.of("success", 0, "fail", 0)
+                    : myHoldingService.refreshRealtimeQuotesForCodes(new ArrayList<>(focusCodes), false);
+
+            // 3. 使用同一轮最新快照重估每个用户的观察池状态。
+            for (Long userId : userIds) {
+                try {
+                    userContext.runAsUser(userId, observePoolService::refresh);
+                } catch (Exception ex) {
+                    log.warn("盘中重点行情重估观察池失败，用户编号={}，原因={}", userId, ex.getMessage());
+                }
+            }
+            long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
+            log.info("盘中重点行情快刷完成，用户数量={}，证券数量={}，成功数量={}，失败数量={}，耗时毫秒={}",
+                    userIds.size(), focusCodes.size(), quoteResult.get("success"), quoteResult.get("fail"), durationMs);
+        } catch (Exception ex) {
+            log.warn("盘中重点行情快刷失败，证券数量={}，原因={}", focusCodes.size(), ex.getMessage());
+        } finally {
+            focusQuoteSyncRunning.set(false);
+        }
+    }
 
     /**
      * 交易时段按本地行情快照重估观察池，不依赖外部同步开关

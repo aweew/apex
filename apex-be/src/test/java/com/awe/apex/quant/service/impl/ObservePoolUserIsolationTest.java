@@ -65,6 +65,24 @@ class ObservePoolUserIsolationTest {
     }
 
     @Test
+    void activeCodeQueryFiltersCurrentUserAndArchivedRows() {
+        when(observePoolMapper.selectList(any())).thenReturn(List.of(
+                ObservePool.builder().code("600519").build(),
+                ObservePool.builder().code("600519").build(),
+                ObservePool.builder().code("000858").build()));
+
+        List<String> codes = service.listActiveCodes();
+
+        assertEquals(List.of("600519", "000858"), codes);
+        ArgumentCaptor<Wrapper<ObservePool>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(observePoolMapper).selectList(queryCaptor.capture());
+        Wrapper<ObservePool> query = queryCaptor.getValue();
+        assertUserFilter(query);
+        assertTrue(query.getSqlSegment().contains("status"));
+        assertTrue(((AbstractWrapper<?, ?, ?>) query).getParamNameValuePairs().containsValue("ARCHIVED"));
+    }
+
+    @Test
     void decisionSyncScopesQueriesAndWritesOwner() {
         when(stockBasicMapper.selectOne(any())).thenReturn(StockBasic.builder()
                 .code("600519")

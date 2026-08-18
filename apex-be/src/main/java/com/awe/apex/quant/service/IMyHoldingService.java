@@ -80,4 +80,13 @@ public interface IMyHoldingService {
      * @return success/fail/message
      */
     Map<String, Object> refreshQuotesForCodes(List<String> codes, Boolean onlyMissing);
+
+    /**
+     * 按代码列表仅刷新实时价、涨跌幅和行情时间。
+     *
+     * @param codes       代码
+     * @param onlyMissing 是否只刷本地无现价的
+     * @return success/fail/message
+     */
+    Map<String, Object> refreshRealtimeQuotesForCodes(List<String> codes, Boolean onlyMissing);
 }

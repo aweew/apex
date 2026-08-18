@@ -9,6 +9,7 @@ import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
 import com.awe.apex.quant.market.TradingCalendar;
+import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IWatchlistService;
@@ -18,9 +19,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.Clock;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -39,6 +40,9 @@ public class BotAlertScheduler {
 
     @Resource
     private ApexBotProperties properties;
+
+    @Resource
+    private IConfigService configService;
 
     @Resource
     private IWatchlistService watchlistService;
@@ -61,7 +65,7 @@ public class BotAlertScheduler {
     /**
      * 交易时段每三分钟扫描自选、观察池和持仓风险。
      */
-    @Scheduled(cron = "0 */3 9-11,13-14 * * MON-FRI", zone = "Asia/Shanghai")
+    @Scheduled(cron = "30 */3 9-11,13-15 * * MON-FRI", zone = "Asia/Shanghai")
     public void scanMarketAlerts() {
         if (!properties.getWeclaw().isEnabled()) {
             return;
@@ -81,11 +85,13 @@ public class BotAlertScheduler {
         }
         try {
             userContext.runAsUser(userId, () -> {
-                // 1. 刷新绑定用户自选和持仓的轻量行情快照
+                // 1. 自选行情独立刷新；自动盘中快刷关闭时再兜底刷新持仓。
                 watchlistService.refreshQuotes(group, 20, false);
-                List<String> holdingCodes = myHoldingService.listHoldingCodes();
-                if (CollUtil.isNotEmpty(holdingCodes)) {
-                    myHoldingService.refreshQuotesForCodes(holdingCodes, false);
+                if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+                    List<String> holdingCodes = myHoldingService.listHoldingCodes();
+                    if (CollUtil.isNotEmpty(holdingCodes)) {
+                        myHoldingService.refreshRealtimeQuotesForCodes(holdingCodes, false);
+                    }
                 }
 
                 // 2. 基于同一轮最新快照计算三类告警

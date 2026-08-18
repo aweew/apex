@@ -461,6 +461,23 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
      */
     @Override
     public Map<String, Object> refreshQuotesForCodes(List<String> codes, Boolean onlyMissing) {
+        return refreshQuotesForCodes(codes, onlyMissing, false);
+    }
+
+    /**
+     * 按代码列表仅刷新实时价、涨跌幅和行情时间。
+     *
+     * @param codes       代码
+     * @param onlyMissing 是否只刷本地无现价的
+     * @return 结果
+     */
+    @Override
+    public Map<String, Object> refreshRealtimeQuotesForCodes(List<String> codes, Boolean onlyMissing) {
+        return refreshQuotesForCodes(codes, onlyMissing, true);
+    }
+
+    private Map<String, Object> refreshQuotesForCodes(List<String> codes, Boolean onlyMissing,
+                                                      boolean realtimeOnly) {
         boolean missingOnly = !Boolean.FALSE.equals(onlyMissing);
         int success = 0;
         int fail = 0;
@@ -483,7 +500,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 continue;
             }
             try {
-                StockBasic synced = upsertQuote(code);
+                StockBasic synced = upsertQuote(code, realtimeOnly);
                 if (Objects.nonNull(synced) && Objects.nonNull(synced.getLatestPrice())) {
                     success++;
                 } else {
@@ -509,8 +526,10 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     /**
      * 拉取行情并写入 stock_basic；拒绝 0 价覆盖，日线收盘兜底
      */
-    private StockBasic upsertQuote(String code) {
-        StockBasic fetched = stockQuoteClient.fetchBasic(code);
+    private StockBasic upsertQuote(String code, boolean realtimeOnly) {
+        StockBasic fetched = realtimeOnly
+                ? stockQuoteClient.fetchRealtime(code)
+                : stockQuoteClient.fetchBasic(code);
         fillPriceFromBarIfNeeded(fetched);
         LocalDateTime now = LocalDateTime.now();
         StockBasic existing = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()

@@ -7,14 +7,17 @@ import com.awe.apex.quant.bot.service.IBotNotificationService;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
+import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IWatchlistService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.lang.reflect.Method;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -38,6 +41,7 @@ class BotAlertSchedulerTest {
 
     private BotAlertScheduler scheduler;
     private ApexBotProperties properties;
+    private IConfigService configService;
     private IWatchlistService watchlistService;
     private IMyHoldingService myHoldingService;
     private IObservePoolService observePoolService;
@@ -51,6 +55,7 @@ class BotAlertSchedulerTest {
         properties = new ApexBotProperties();
         properties.getWeclaw().setEnabled(true);
         properties.setApexUserId(11L);
+        configService = mock(IConfigService.class);
         watchlistService = mock(IWatchlistService.class);
         myHoldingService = mock(IMyHoldingService.class);
         observePoolService = mock(IObservePoolService.class);
@@ -58,12 +63,22 @@ class BotAlertSchedulerTest {
         notificationService = mock(IBotNotificationService.class);
         userContext = new ApexUserContext();
         ReflectionTestUtils.setField(scheduler, "properties", properties);
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
         ReflectionTestUtils.setField(scheduler, "watchlistService", watchlistService);
         ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
         ReflectionTestUtils.setField(scheduler, "observePoolService", observePoolService);
         ReflectionTestUtils.setField(scheduler, "botHoldingRiskService", botHoldingRiskService);
         ReflectionTestUtils.setField(scheduler, "notificationService", notificationService);
         ReflectionTestUtils.setField(scheduler, "userContext", userContext);
+    }
+
+    @Test
+    void schedulesAlertScanAfterFocusQuoteRefresh() throws Exception {
+        Method method = BotAlertScheduler.class.getMethod("scanMarketAlerts");
+        Scheduled scheduled = method.getAnnotation(Scheduled.class);
+
+        assertEquals("30 */3 9-11,13-15 * * MON-FRI", scheduled.cron());
+        assertEquals("Asia/Shanghai", scheduled.zone());
     }
 
     @Test
@@ -79,7 +94,8 @@ class BotAlertSchedulerTest {
         verify(watchlistService).refreshQuotes("我的自选", 20, false);
         verify(myHoldingService).listHoldingCodes();
         verify(myHoldingService, never()).listHoldings();
-        verify(myHoldingService).refreshQuotesForCodes(List.of("600000"), false);
+        verify(myHoldingService).refreshRealtimeQuotesForCodes(List.of("600000"), false);
+        verify(myHoldingService, never()).refreshQuotesForCodes(any(), any());
         verify(myHoldingService, never()).refreshQuotes(false);
         verify(notificationService).notifyMarketAlerts(any(), eq(List.of()), any());
     }
@@ -92,6 +108,23 @@ class BotAlertSchedulerTest {
 
         verify(watchlistService, never()).refreshQuotes(anyString(), anyInt(), any());
         verify(notificationService, never()).notifyMarketAlerts(any(), any(), any());
+    }
+
+    @Test
+    void skipsHoldingQuoteRefreshWhenAutomaticSyncIsEnabled() {
+        setTime("2026-08-13T02:00:00Z");
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(watchlistService.movers(anyString(), any(), anyInt())).thenReturn(new WatchlistMoverResp());
+        when(observePoolService.listReadyAlerts(anyInt())).thenReturn(List.of());
+        when(botHoldingRiskService.analyze()).thenReturn(new BotHoldingRiskResp());
+
+        scheduler.scanMarketAlerts();
+
+        verify(watchlistService).refreshQuotes("我的自选", 20, false);
+        verify(myHoldingService, never()).listHoldingCodes();
+        verify(myHoldingService, never()).refreshRealtimeQuotesForCodes(any(), any());
+        verify(myHoldingService, never()).refreshQuotesForCodes(any(), any());
+        verify(notificationService).notifyMarketAlerts(any(), eq(List.of()), any());
     }
 
     @Test

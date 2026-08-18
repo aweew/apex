@@ -33,6 +33,13 @@ public interface IObservePoolService {
     List<ObservePoolResp> listReadyAlerts(int limit);
 
     /**
+     * 查询当前用户未归档观察股代码，不加载行情和技术指标。
+     *
+     * @return 未归档观察股代码
+     */
+    List<String> listActiveCodes();
+
+    /**
      * 新增或更新
      *
      * @param req 请求

@@ -7,6 +7,7 @@ import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDataSyncJobService;
+import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -15,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,9 +26,109 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class DataSyncSchedulerTest {
+
+    @Test
+    void schedulesFocusQuoteRefreshEveryThreeMinutes() throws Exception {
+        Method method = DataSyncScheduler.class.getMethod("refreshFocusQuotesIntraday");
+        Scheduled scheduled = method.getAnnotation(Scheduled.class);
+
+        assertEquals("0 */3 9-11,13-15 * * MON-FRI", scheduled.cron());
+        assertEquals("Asia/Shanghai", scheduled.zone());
+    }
+
+    @Test
+    void refreshesDistinctHoldingAndObserveCodesForAllEnabledUsers() {
+        IConfigService configService = mock(IConfigService.class);
+        IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
+        IObservePoolService observePoolService = mock(IObservePoolService.class);
+        ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+        ApexUserContext userContext = new ApexUserContext();
+        List<Long> evaluatedUserIds = new ArrayList<>();
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(11L, 22L));
+        when(myHoldingService.listHoldingCodes()).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L
+                        ? List.of("600000", "000001")
+                        : List.of("000001", "300750"));
+        when(observePoolService.listActiveCodes()).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L
+                        ? List.of("300750", "600519")
+                        : List.of("600519", "000858"));
+        when(observePoolService.refresh()).thenAnswer(invocation -> {
+            evaluatedUserIds.add(userContext.currentUserId());
+            return Map.of();
+        });
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
+        ReflectionTestUtils.setField(scheduler, "observePoolService", observePoolService);
+        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
+        ReflectionTestUtils.setField(scheduler, "userContext", userContext);
+
+        try (MockedStatic<StpUtil> stpUtil = mockStatic(StpUtil.class)) {
+            stpUtil.when(StpUtil::getLoginIdAsLong).thenReturn(99L);
+
+            scheduler.refreshFocusQuotes(LocalDate.of(2026, 8, 13), LocalTime.of(10, 0));
+
+            verify(myHoldingService).refreshRealtimeQuotesForCodes(
+                    List.of("600000", "000001", "300750", "600519", "000858"), false);
+            verify(myHoldingService, never()).refreshQuotesForCodes(org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any());
+            verify(myHoldingService, never()).refreshQuotes(false);
+            assertEquals(List.of(11L, 22L), evaluatedUserIds);
+            assertEquals(99L, userContext.currentUserId());
+        }
+    }
+
+    @Test
+    void skipsFocusQuoteRefreshOutsideTradingSession() {
+        IConfigService configService = mock(IConfigService.class);
+        IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
+        ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
+        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+
+        scheduler.refreshFocusQuotes(LocalDate.of(2026, 8, 13), LocalTime.of(12, 0));
+
+        verifyNoInteractions(myHoldingService, userAuthService);
+    }
+
+    @Test
+    void skipsFocusQuoteRefreshOnNonTradingDay() {
+        IConfigService configService = mock(IConfigService.class);
+        IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+
+        scheduler.refreshFocusQuotes(LocalDate.of(2026, 8, 15), LocalTime.of(10, 0));
+
+        verifyNoInteractions(myHoldingService);
+    }
+
+    @Test
+    void skipsFocusQuoteRefreshWhenAutomaticSyncIsDisabled() {
+        IConfigService configService = mock(IConfigService.class);
+        IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
+        ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
+        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("false");
+
+        scheduler.refreshFocusQuotes(LocalDate.of(2026, 8, 13), LocalTime.of(10, 0));
+
+        verifyNoInteractions(myHoldingService, userAuthService);
+    }
 
     @Test
     void schedulesObservePoolRefreshDuringTradingSessions() throws Exception {
