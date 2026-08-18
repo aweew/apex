@@ -43,7 +43,7 @@ public class SyncJob implements Serializable {
     private String taskName;
 
     /**
-     * 状态 PENDING/RUNNING/SUCCESS/FAILED/CANCELLED
+     * 状态 PENDING/RUNNING/SUCCESS/PARTIAL/FAILED/CANCELLED
      */
     private String status;
 

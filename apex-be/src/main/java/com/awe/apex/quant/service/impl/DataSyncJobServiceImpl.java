@@ -24,6 +24,7 @@ import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IWatchlistService;
+import com.awe.apex.quant.sync.SyncJobLeaseService;
 import com.awe.apex.quant.sync.SyncTaskHealth;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
 import com.awe.apex.quant.sync.SyncTaskSpec;
@@ -44,16 +45,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -70,7 +74,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private static final Pattern STEP_PATTERN = Pattern.compile("\\[(\\d+)\\s*/\\s*(\\d+)]");
     /** 编排脚本阶段进度，例如“步骤 1/5：index” */
     private static final Pattern SCRIPT_STEP_PATTERN = Pattern.compile("(?:步骤|step)\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PARTIAL_COUNT_PATTERN = Pattern.compile(
+            "成功(?:数|数据源数)=(\\d+).*失败(?:数|数据源数)=(\\d+)");
     private static final int LOG_MAX = 12000;
+    private static final long ORPHAN_RECONCILE_GRACE_SECONDS = 300;
 
     @Resource
     private SyncJobMapper syncJobMapper;
@@ -114,6 +121,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     @Resource
     private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
 
+    @Resource
+    private SyncJobLeaseService syncJobLeaseService;
+
     @Value("${apex.sync.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
 
@@ -130,9 +140,11 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private final Map<Long, Future<?>> runningFutures = new ConcurrentHashMap<>();
     private final Map<Long, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
     private final Map<Long, Long> runningDecisionJobs = new ConcurrentHashMap<>();
+    private final Map<Long, String> runningLeaseKeys = new ConcurrentHashMap<>();
+    private final Map<Long, String> runningLeaseOwners = new ConcurrentHashMap<>();
 
     /**
-     * 进程重启后，内存里的运行句柄已丢，库中 RUNNING/PENDING 视为僵尸任务
+     * 清理超过任务超时窗口的僵尸记录，保留可能由其他实例执行的近期任务。
      */
     @PostConstruct
     public void reconcileOrphanJobs() {
@@ -143,12 +155,27 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
         LocalDateTime now = LocalDateTime.now();
         for (SyncJob job : orphans) {
+            SyncTaskSpec spec;
+            try {
+                spec = syncTaskRegistry.require(job.getTaskType());
+            } catch (Exception ex) {
+                log.warn("保留无法识别的运行中任务，任务编号={}，任务类型={}", job.getId(), job.getTaskType());
+                continue;
+            }
+            LocalDateTime startedAt = job.getStartedAt();
+            LocalDateTime staleAfter = Objects.nonNull(startedAt)
+                    ? startedAt.plusSeconds(spec.getTimeoutSec() + ORPHAN_RECONCILE_GRACE_SECONDS) : null;
+            if (Objects.nonNull(staleAfter) && now.isBefore(staleAfter)) {
+                log.info("保留可能由其他实例执行的同步任务，任务编号={}，任务类型={}，超时判定时间={}",
+                        job.getId(), job.getTaskType(), staleAfter);
+                continue;
+            }
             job.setStatus("FAILED");
-            job.setMessage("服务重启，任务中断（僵尸任务已清理）");
+            job.setMessage("任务超过运行时限（僵尸任务已清理）");
             job.setFinishedAt(now);
-            appendLog(job, "\n[僵尸任务] 服务已重启，任务标记为失败\n");
+            appendLog(job, "\n[僵尸任务] 超过运行时限，任务标记为失败\n");
             syncJobMapper.updateById(job);
-            log.warn("清理僵尸同步任务，任务编号={}，任务类型={}，原状态=运行中或等待中",
+            log.warn("清理超时僵尸同步任务，任务编号={}，任务类型={}，原状态=运行中或等待中",
                     job.getId(), job.getTaskType());
         }
     }
@@ -200,7 +227,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                         ? success.getFinishedAt() : success.getStartedAt();
             }
             boolean latestFailed = Objects.nonNull(latest) && "FAILED".equals(latest.getStatus());
-            String health = SyncTaskHealth.resolve(isRunning, lastSuccessAt, latestFailed, LocalDateTime.now());
+            String health = "PARTIAL".equals(Objects.nonNull(latest) ? latest.getStatus() : null)
+                    ? "YELLOW" : SyncTaskHealth.resolve(isRunning, lastSuccessAt, latestFailed, LocalDateTime.now());
             tasks.add(SyncTaskDefResp.builder()
                     .taskType(spec.getTaskType())
                     .name(spec.getName())
@@ -283,67 +311,96 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             throw new BusinessException("请指定 taskType");
         }
         SyncTaskSpec spec = syncTaskRegistry.require(req.getTaskType());
-        var runningQuery = Wrappers.<SyncJob>lambdaQuery()
-                .eq(SyncJob::getTaskType, spec.getTaskType())
-                .in(SyncJob::getStatus, List.of("PENDING", "RUNNING"));
-        if ("DECISION".equals(spec.getTaskType()) && Objects.isNull(userId)) {
-            throw new BusinessException("智能决策缺少运行用户");
+        String leaseKey = "apex:sync:lease:" + spec.getTaskType()
+                + ("DECISION".equals(spec.getTaskType()) ? ":" + userId : "");
+        String leaseOwner = UUID.randomUUID().toString();
+        Duration leaseTtl = Duration.ofSeconds(Math.max(spec.getTimeoutSec() + ORPHAN_RECONCILE_GRACE_SECONDS, 600));
+        if (!syncJobLeaseService.tryAcquire(leaseKey, leaseOwner, leaseTtl)) {
+            throw new BusinessException(spec.getName() + " 已由其他服务实例启动，请等待完成");
         }
-        if ("DECISION".equals(spec.getTaskType())) {
-            if (runningDecisionJobs.containsKey(userId)) {
-                throw new BusinessException(spec.getName() + " 正在运行中（jobId=" + runningDecisionJobs.get(userId) + "），请等待完成");
-            }
-        } else {
-            SyncJob running = syncJobMapper.selectOne(runningQuery
-                    .orderByDesc(SyncJob::getId)
-                    .last("LIMIT 1"));
-            if (Objects.nonNull(running)) {
-                throw new BusinessException(spec.getName() + " 正在运行中（jobId=" + running.getId() + "），请先停止");
-            }
-        }
-
-        Path script = null;
-        if (!"DECISION".equals(spec.getTaskType())) {
-            Path scriptDir = resolveScriptDir();
-            script = scriptDir.resolve(spec.getScriptFile());
-            if (!Files.isRegularFile(script)) {
-                throw new BusinessException("未找到脚本 " + spec.getScriptFile() + "，请配置 apex.sync.script-dir");
-            }
-        }
-        List<String> scriptArgs = syncTaskRegistry.buildArgs(spec, req);
-        String paramsJson;
+        boolean leaseRegistered = false;
         try {
-            paramsJson = objectMapper.writeValueAsString(scriptArgs);
-        } catch (Exception ex) {
-            paramsJson = String.join(" ", scriptArgs);
-        }
+            var runningQuery = Wrappers.<SyncJob>lambdaQuery()
+                    .eq(SyncJob::getTaskType, spec.getTaskType())
+                    .in(SyncJob::getStatus, List.of("PENDING", "RUNNING"));
+            if ("DECISION".equals(spec.getTaskType()) && Objects.isNull(userId)) {
+                throw new BusinessException("智能决策缺少运行用户");
+            }
+            if ("DECISION".equals(spec.getTaskType())) {
+                if (runningDecisionJobs.containsKey(userId)) {
+                    throw new BusinessException(spec.getName() + " 正在运行中（jobId="
+                            + runningDecisionJobs.get(userId) + "），请等待完成");
+                }
+            } else {
+                SyncJob running = syncJobMapper.selectOne(runningQuery
+                        .orderByDesc(SyncJob::getId)
+                        .last("LIMIT 1"));
+                if (Objects.nonNull(running)) {
+                    throw new BusinessException(spec.getName() + " 正在运行中（jobId="
+                            + running.getId() + "），请先停止");
+                }
+            }
 
-        SyncJob job = SyncJob.builder()
-                .taskType(spec.getTaskType())
-                .taskName(spec.getName())
-                .status("PENDING")
-                .paramsJson(paramsJson)
-                .progressPct(0)
-                .message("排队启动")
-                .logTail("")
-                .startedAt(LocalDateTime.now())
-                .build();
-        syncJobMapper.insert(job);
-        if ("DECISION".equals(spec.getTaskType())) {
-            runningDecisionJobs.put(userId, job.getId());
-        }
+            Path script = null;
+            if (!"DECISION".equals(spec.getTaskType())) {
+                Path scriptDir = resolveScriptDir();
+                script = scriptDir.resolve(spec.getScriptFile());
+                if (!Files.isRegularFile(script)) {
+                    throw new BusinessException("未找到脚本 " + spec.getScriptFile() + "，请配置 apex.sync.script-dir");
+                }
+            }
+            List<String> scriptArgs = syncTaskRegistry.buildArgs(spec, req);
+            String paramsJson;
+            try {
+                paramsJson = objectMapper.writeValueAsString(scriptArgs);
+            } catch (Exception ex) {
+                paramsJson = String.join(" ", scriptArgs);
+            }
 
-        AtomicBoolean cancelled = new AtomicBoolean(false);
-        cancelFlags.put(job.getId(), cancelled);
-        Future<?> future;
-        if ("DECISION".equals(spec.getTaskType())) {
-            future = executor.submit(() -> runDecisionJob(job.getId(), req, userId, cancelled));
-        } else {
-            Path jobScript = script;
-            future = executor.submit(() -> runJob(job.getId(), spec, jobScript, scriptArgs, cancelled));
+            SyncJob job = SyncJob.builder()
+                    .taskType(spec.getTaskType())
+                    .taskName(spec.getName())
+                    .status("PENDING")
+                    .paramsJson(paramsJson)
+                    .progressPct(0)
+                    .message("排队启动")
+                    .logTail("")
+                    .startedAt(LocalDateTime.now())
+                    .build();
+            syncJobMapper.insert(job);
+            runningLeaseKeys.put(job.getId(), leaseKey);
+            runningLeaseOwners.put(job.getId(), leaseOwner);
+            leaseRegistered = true;
+            if ("DECISION".equals(spec.getTaskType())) {
+                runningDecisionJobs.put(userId, job.getId());
+            }
+
+            AtomicBoolean cancelled = new AtomicBoolean(false);
+            cancelFlags.put(job.getId(), cancelled);
+            try {
+                Runnable jobTask;
+                if ("DECISION".equals(spec.getTaskType())) {
+                    jobTask = () -> runDecisionJob(job.getId(), req, userId, cancelled);
+                } else {
+                    Path jobScript = script;
+                    jobTask = () -> runJob(job.getId(), spec, jobScript, scriptArgs, cancelled);
+                }
+                FutureTask<Void> future = new FutureTask<>(jobTask, null);
+                runningFutures.put(job.getId(), future);
+                executor.execute(future);
+                return toResp(job);
+            } catch (RuntimeException ex) {
+                if (Objects.nonNull(userId)) {
+                    runningDecisionJobs.remove(userId, job.getId());
+                }
+                cleanup(job.getId());
+                throw ex;
+            }
+        } finally {
+            if (!leaseRegistered) {
+                syncJobLeaseService.release(leaseKey, leaseOwner);
+            }
         }
-        runningFutures.put(job.getId(), future);
-        return toResp(job);
     }
 
     private void runDecisionJob(Long jobId, SyncStartReq syncRequest, Long userId, AtomicBoolean cancelled) {
@@ -420,10 +477,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         if (Objects.isNull(job)) {
             throw new BusinessException("任务不存在: " + jobId);
         }
-        // 运行中补充进度文件
-        if ("RUNNING".equals(job.getStatus())) {
-            enrichProgressFromFile(job);
-            syncJobMapper.updateById(job);
+        // 仅脚本进度文件需要回写；条件更新避免轮询用旧 RUNNING 覆盖任务终态
+        if ("RUNNING".equals(job.getStatus()) && enrichProgressFromFile(job)) {
+            int updated = syncJobMapper.update(job, Wrappers.<SyncJob>lambdaUpdate()
+                    .eq(SyncJob::getId, jobId)
+                    .eq(SyncJob::getStatus, "RUNNING"));
+            if (updated == 0) {
+                SyncJob latestJob = syncJobMapper.selectById(jobId);
+                if (Objects.nonNull(latestJob)) {
+                    job = latestJob;
+                }
+            }
         }
         return toResp(job);
     }
@@ -494,6 +558,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         return list;
     }
 
+    /**
+     * 停止任务线程并释放本实例持有的跨实例租约。
+     */
     @PreDestroy
     public void shutdown() {
         for (Map.Entry<Long, Process> entry : runningProcesses.entrySet()) {
@@ -502,7 +569,14 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 ProcessIoUtils.destroyProcessTree(p);
             }
         }
+        for (Future<?> future : new ArrayList<>(runningFutures.values())) {
+            future.cancel(true);
+        }
         executor.shutdownNow();
+        for (Long jobId : new ArrayList<>(runningLeaseKeys.keySet())) {
+            cleanup(jobId);
+        }
+        runningDecisionJobs.clear();
     }
 
     private void runJob(Long jobId, SyncTaskSpec spec, Path script, List<String> scriptArgs, AtomicBoolean cancelled) {
@@ -558,7 +632,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                         }
                         if (!cancelled.get()) {
                             updateProgressFromLine(runningJob, line, lineNo);
-                            syncJobMapper.updateById(runningJob);
+                            syncJobMapper.update(runningJob, Wrappers.<SyncJob>lambdaUpdate()
+                                    .eq(SyncJob::getId, jobId)
+                                    .eq(SyncJob::getStatus, "RUNNING"));
                         }
                     }
                 } catch (Exception ex) {
@@ -568,7 +644,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     }
                     if (!cancelled.get()) {
                         try {
-                            syncJobMapper.updateById(runningJob);
+                            syncJobMapper.update(runningJob, Wrappers.<SyncJob>lambdaUpdate()
+                                    .eq(SyncJob::getId, jobId)
+                                    .eq(SyncJob::getStatus, "RUNNING"));
                         } catch (Exception updateEx) {
                             log.warn("持久化同步输出异常失败，任务编号={}，异常={}", jobId, updateEx.getMessage());
                         }
@@ -622,16 +700,18 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             job.setLogTail(logText);
             enrichProgressFromFile(job);
+            boolean partialScriptResult = isPartialScriptResult(snapshot);
             if (!cancelled.get()) {
                 invalidateMarketBriefingCache(job, spec.getTaskType());
             }
             if (cancelled.get()) {
                 job.setStatus("CANCELLED");
                 job.setMessage("用户停止");
-            } else if (exit != 0) {
+            } else if (exit != 0 && !partialScriptResult) {
                 job.setStatus("FAILED");
                 job.setMessage("脚本退出码 " + exit);
             } else {
+                String postProcessingWarning = "";
                 if ("CLOSE_BUNDLE".equals(spec.getTaskType())) {
                     job.setProgressPct(Math.min(99, Math.max(90,
                             Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0)));
@@ -641,10 +721,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     appendLog(job, "[收盘后处理] 已开始\n");
                     syncJobMapper.updateById(job);
                 }
-                onMarketDataSynced(job, cancelled);
+                if (exit == 0) {
+                    postProcessingWarning = onMarketDataSynced(job, cancelled);
+                }
                 if (cancelled.get()) {
                     job.setStatus("CANCELLED");
                     job.setMessage("用户停止");
+                } else if (partialScriptResult || StringUtils.isNotBlank(postProcessingWarning)) {
+                    job.setStatus("PARTIAL");
+                    job.setProgressPct(100);
+                    job.setMessage(StringUtils.isNotBlank(postProcessingWarning)
+                            ? clip(postProcessingWarning, 400) : "完成，但部分条目失败（详见日志）");
                 } else {
                     job.setStatus("SUCCESS");
                     job.setProgressPct(100);
@@ -710,13 +797,13 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     /**
      * 市场相关同步成功后刷新依赖数据
      */
-    private void onMarketDataSynced(SyncJob job, AtomicBoolean cancelled) {
+    private String onMarketDataSynced(SyncJob job, AtomicBoolean cancelled) {
         if (Objects.isNull(job) || StringUtils.isBlank(job.getTaskType())) {
-            return;
+            return "";
         }
         String type = job.getTaskType().trim().toUpperCase(Locale.ROOT);
         if (!"CLOSE_BUNDLE".equals(type)) {
-            return;
+            return "";
         }
 
         ensurePostProcessingActive(cancelled);
@@ -742,7 +829,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             job.setMessage("收盘后处理：无启用用户，已跳过用户数据刷新");
             appendLog(job, "[收盘后处理] 没有启用用户，已跳过用户数据刷新\n");
             syncJobMapper.updateById(job);
-            return;
+            return "";
         }
 
         String syncGroup = group;
@@ -759,8 +846,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     + String.join("；", failureMessages);
             appendLog(job, "[错误] " + failureSummary + "\n");
             syncJobMapper.updateById(job);
-            throw new BusinessException(failureSummary);
+            return failureSummary;
         }
+        return "";
     }
 
     private void invalidateMarketBriefingCache(SyncJob job, String taskType) {
@@ -912,6 +1000,21 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         return value instanceof Number count ? count.intValue() : 0;
     }
 
+    private boolean isPartialScriptResult(String logText) {
+        if (StringUtils.isBlank(logText)) {
+            return false;
+        }
+        String[] lines = logText.split("\\n");
+        for (String line : lines) {
+            Matcher matcher = PARTIAL_COUNT_PATTERN.matcher(line);
+            if (matcher.find() && Integer.parseInt(matcher.group(1)) > 0
+                    && Integer.parseInt(matcher.group(2)) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void updateProgressFromLine(SyncJob job, String line, long lineNo) {
         if (StringUtils.isBlank(line)) {
             return;
@@ -962,20 +1065,20 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         return text;
     }
 
-    private void enrichProgressFromFile(SyncJob job) {
+    private boolean enrichProgressFromFile(SyncJob job) {
         SyncTaskSpec spec;
         try {
             spec = syncTaskRegistry.require(job.getTaskType());
         } catch (Exception ex) {
-            return;
+            return false;
         }
         if (StringUtils.isBlank(spec.getProgressFile())) {
-            return;
+            return false;
         }
         Path dir = resolveScriptDir();
         Path file = dir.resolve(spec.getProgressFile());
         if (!Files.isRegularFile(file)) {
-            return;
+            return false;
         }
         try {
             JsonNode root = objectMapper.readTree(file.toFile());
@@ -997,6 +1100,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 if (total > 0) {
                     job.setProgressPct(Math.min(99, done * 100 / total));
                 }
+                return true;
             } else if ("FUNDAMENTALS".equals(spec.getTaskType()) && root.isObject()) {
                 int done = 0;
                 int buckets = 0;
@@ -1014,10 +1118,12 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 if (done > 0) {
                     job.setProgressPct(Math.min(99, 10 + Math.min(80, done / 5)));
                 }
+                return true;
             }
         } catch (Exception ex) {
             log.debug("读取进度文件失败，文件路径={}，异常={}", file, ex.getMessage());
         }
+        return false;
     }
 
     private Path resolveScriptDir() {
@@ -1054,6 +1160,11 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         runningProcesses.remove(jobId);
         runningFutures.remove(jobId);
         cancelFlags.remove(jobId);
+        String leaseKey = runningLeaseKeys.remove(jobId);
+        String leaseOwner = runningLeaseOwners.remove(jobId);
+        if (Objects.nonNull(syncJobLeaseService)) {
+            syncJobLeaseService.release(leaseKey, leaseOwner);
+        }
     }
 
     private boolean isDecisionRequest(SyncStartReq req) {

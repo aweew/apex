@@ -7,6 +7,8 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
+  EditPen,
   FolderAdd,
   Minus,
   MoreFilled,
@@ -14,6 +16,7 @@ import {
   Rank,
   Refresh,
   Upload,
+  View,
 } from '@element-plus/icons-vue'
 import { saveObserve } from '../api/observe'
 import {
@@ -54,7 +57,6 @@ import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 import HoldingTradeDialog from '../components/HoldingTradeDialog.vue'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
-import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 
 const router = useRouter()
@@ -77,7 +79,6 @@ const mobileDetailOpen = computed(() => {
   const portfolioId = Number(route.query.portfolio)
   return isMobileViewport.value && Number.isFinite(portfolioId) && portfolioId > 0
 })
-const showActionColumn = computed(() => resolveActionColumnVisible(viewportWidth.value))
 let chart = null
 let industryChart = null
 let themeChart = null
@@ -93,6 +94,7 @@ const tradeTarget = ref(null)
 const tradeSide = ref('BUY')
 const snapshotting = ref(false)
 const sorting = ref(false)
+const mobileSortMode = ref(false)
 const draggingPortfolioId = ref(null)
 const dropPortfolioId = ref(null)
 const dropAfter = ref(false)
@@ -180,7 +182,6 @@ const shareCol = computed(() =>
         qty: 104,
         cost: 84,
         note: 100,
-        ops: 232,
       },
 )
 
@@ -645,6 +646,14 @@ async function persistPortfolioOrder(fromId, toId, placeAfter) {
   } finally {
     sorting.value = false
   }
+}
+
+function movePortfolio(row, direction) {
+  const currentIndex = list.value.findIndex((item) => Number(item.id) === Number(row.id))
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  const targetRow = list.value[targetIndex]
+  if (currentIndex < 0 || !targetRow || sorting.value) return
+  persistPortfolioOrder(row.id, targetRow.id, direction === 'down')
 }
 
 function onPortfolioCardClick(row) {
@@ -1421,6 +1430,7 @@ async function onDownloadShare() {
 
 function onResize() {
   viewportWidth.value = window.innerWidth
+  if (!isMobileViewport.value) mobileSortMode.value = false
   chart?.resize()
   industryChart?.resize()
   themeChart?.resize()
@@ -1507,6 +1517,13 @@ onBeforeUnmount(() => {
           </div>
           <el-checkbox v-model="includeArchived" size="small">含归档</el-checkbox>
           <el-button class="mobile-create-button" type="primary" @click="openCreatePf">新建</el-button>
+          <el-button
+            class="mobile-sort-button"
+            plain
+            :icon="Rank"
+            :disabled="list.length < 2 || sorting"
+            @click="mobileSortMode = !mobileSortMode"
+          >{{ mobileSortMode ? '完成' : '排序' }}</el-button>
           <el-dropdown trigger="click" placement="bottom-end" @command="handleMobileListAction">
             <button type="button" class="portfolio-more-trigger" aria-label="组合更多操作" title="更多操作">
               <el-icon><MoreFilled /></el-icon>
@@ -1575,8 +1592,9 @@ onBeforeUnmount(() => {
             @keydown.enter.self.prevent="onPortfolioCardClick(row)"
             @keydown.space.self.prevent="onPortfolioCardClick(row)"
           >
-            <div class="pf-top">
+            <div class="pf-top" :class="{ 'is-mobile-sort': isMobileViewport && mobileSortMode }">
               <button
+                v-if="!isMobileViewport"
                 type="button"
                 class="pf-sort-handle"
                 title="拖动调整组合顺序"
@@ -1586,6 +1604,26 @@ onBeforeUnmount(() => {
               >
                 <el-icon><Rank /></el-icon>
               </button>
+              <div v-else-if="mobileSortMode" class="pf-mobile-sort-controls" @click.stop>
+                <button
+                  type="button"
+                  class="pf-mobile-sort-button"
+                  aria-label="上移组合"
+                  :disabled="sorting || list[0]?.id === row.id"
+                  @click="movePortfolio(row, 'up')"
+                >
+                  <el-icon><ArrowUp /></el-icon>
+                </button>
+                <button
+                  type="button"
+                  class="pf-mobile-sort-button"
+                  aria-label="下移组合"
+                  :disabled="sorting || list[list.length - 1]?.id === row.id"
+                  @click="movePortfolio(row, 'down')"
+                >
+                  <el-icon><ArrowDown /></el-icon>
+                </button>
+              </div>
               <el-checkbox
                 v-if="!isMobileViewport"
                 :model-value="isSelected(row.id)"
@@ -1867,24 +1905,6 @@ onBeforeUnmount(() => {
             >
               <template #default="{ row }">
                 <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
-                <el-dropdown
-                  v-if="isMobileViewport"
-                  trigger="click"
-                  placement="bottom-end"
-                  @command="handleHoldingAction($event, row)"
-                >
-                  <button type="button" class="mobile-holding-actions" aria-label="持仓操作" @click.stop>
-                    <el-icon><MoreFilled /></el-icon>
-                  </button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="buy" :icon="Plus">买入</el-dropdown-item>
-                      <el-dropdown-item command="sell" :icon="Minus">卖出</el-dropdown-item>
-                      <el-dropdown-item command="edit">编辑持仓</el-dropdown-item>
-                      <el-dropdown-item command="observe">加入观察池</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
               </template>
             </el-table-column>
             <el-table-column
@@ -2091,19 +2111,28 @@ onBeforeUnmount(() => {
               sortable
             />
             <el-table-column
-              v-if="!sharingCapture && showActionColumn"
+              v-if="!sharingCapture"
               label="操作"
-              :width="shareCol.ops"
-              fixed="right"
+              width="52"
+              :fixed="isMobileViewport ? false : 'right'"
               align="center"
               class-name="ops-column"
               label-class-name="ops-column"
             >
               <template #default="{ row }">
-                <el-button link type="success" :icon="Plus" @click="openTrade(row, 'BUY')">买入</el-button>
-                <el-button link type="danger" :icon="Minus" @click="openTrade(row, 'SELL')">卖出</el-button>
-                <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-                <el-button link type="warning" @click="addObserve(row)">观察</el-button>
+                <el-dropdown trigger="click" placement="bottom-end" popper-class="portfolio-row-actions-menu" @command="handleHoldingAction($event, row)">
+                  <button type="button" class="portfolio-row-actions-trigger" :aria-label="`${row.name || row.code}更多操作`" @click.stop>
+                    <el-icon><MoreFilled /></el-icon>
+                  </button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="buy" :icon="Plus" class="row-action-buy">买入</el-dropdown-item>
+                      <el-dropdown-item command="sell" :icon="Minus" class="row-action-sell">卖出</el-dropdown-item>
+                      <el-dropdown-item command="edit" :icon="EditPen">编辑持仓</el-dropdown-item>
+                      <el-dropdown-item command="observe" :icon="View">加入观察池</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -3048,27 +3077,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
   opacity: 0.85;
 }
-.mobile-holding-actions {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-top: 4px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  color: var(--slate);
-  background: transparent;
-  font-size: 18px;
-  cursor: pointer;
-}
-.mobile-holding-actions:hover,
-.mobile-holding-actions:focus-visible,
-.mobile-holding-actions[aria-expanded="true"] {
-  color: var(--accent);
-  background: var(--accent-soft);
-  outline: none;
-}
 .holding-layout {
   margin-top: 14px;
   min-width: 0;
@@ -3419,21 +3427,65 @@ onBeforeUnmount(() => {
 .holding-table {
   width: 100%;
   min-width: 0;
+  --el-table-fixed-left-column: none;
+  --el-table-fixed-right-column: none;
 }
 .holding-table :deep(.ops-column) {
-  background: rgba(255, 255, 255, 0.97) !important;
-  box-shadow: -10px 0 18px -18px rgba(29, 29, 31, 0.65);
+  border-left: 1px solid var(--line);
 }
 .holding-table :deep(.security-column) {
-  background: rgba(255, 255, 255, 0.97) !important;
-  box-shadow: 10px 0 18px -18px rgba(29, 29, 31, 0.65);
+  border-right: 1px solid var(--line);
 }
 .holding-table :deep(.ops-column .cell) {
   white-space: nowrap;
 }
-.holding-table :deep(.el-table__body tr:hover > .ops-column),
-.holding-table :deep(.el-table__body tr:hover > .security-column) {
-  background: #f1f7fd !important;
+.portfolio-row-actions-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--slate);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.portfolio-row-actions-trigger:hover,
+.portfolio-row-actions-trigger:focus-visible,
+.portfolio-row-actions-trigger[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  background: var(--glass-tint);
+  outline: none;
+}
+
+:global(.portfolio-row-actions-menu) {
+  min-width: 136px;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+:global(.portfolio-row-actions-menu .el-dropdown-menu) {
+  padding: 0;
+}
+
+:global(.portfolio-row-actions-menu .el-dropdown-menu__item) {
+  min-height: 32px;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 5px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+:global(.portfolio-row-actions-menu .row-action-buy) {
+  color: var(--down);
+}
+
+:global(.portfolio-row-actions-menu .row-action-sell) {
+  color: var(--up);
 }
 .daily-chart {
   height: 260px;
@@ -3528,7 +3580,7 @@ onBeforeUnmount(() => {
 
   .mobile-list-toolbar {
     display: grid;
-    grid-template-columns: minmax(72px, 1fr) auto auto 44px;
+    grid-template-columns: minmax(72px, 1fr) auto auto auto 44px;
     align-items: center;
     gap: 8px;
     margin-bottom: 0;
@@ -3580,6 +3632,15 @@ onBeforeUnmount(() => {
     font-size: 13px;
   }
 
+  .mobile-list-toolbar :deep(.mobile-sort-button) {
+    min-width: 60px;
+    height: 44px;
+    margin: 0;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
   .pf-card {
     margin: 10px 0 0;
     padding: 11px 10px 12px;
@@ -3611,7 +3672,7 @@ onBeforeUnmount(() => {
 
   .pf-top {
     display: grid;
-    grid-template-columns: 24px minmax(56px, 1fr) auto 18px;
+    grid-template-columns: minmax(56px, 1fr) auto 18px;
     min-height: 32px;
     gap: 8px;
     padding-right: 0;
@@ -3621,6 +3682,35 @@ onBeforeUnmount(() => {
     width: 24px;
     height: 32px;
     margin-left: 0;
+  }
+
+  .pf-top.is-mobile-sort {
+    grid-template-columns: 76px minmax(48px, 1fr) auto 18px;
+  }
+
+  .pf-mobile-sort-controls {
+    display: grid;
+    grid-template-columns: repeat(2, 36px);
+    align-items: center;
+    gap: 4px;
+    height: 44px;
+  }
+
+  .pf-mobile-sort-button {
+    display: inline-grid;
+    width: 36px;
+    height: 44px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 15px;
+  }
+
+  .pf-mobile-sort-button:disabled {
+    color: var(--line-strong);
   }
 
   .pf-name {
@@ -3782,7 +3872,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 360px) {
   .mobile-list-toolbar {
-    grid-template-columns: minmax(64px, 1fr) auto auto 44px;
+    grid-template-columns: minmax(56px, 1fr) auto auto auto 44px;
     gap: 6px;
   }
 
@@ -3793,6 +3883,11 @@ onBeforeUnmount(() => {
   .mobile-list-toolbar :deep(.mobile-create-button) {
     min-width: 58px;
     padding: 0 10px;
+  }
+
+  .mobile-list-toolbar :deep(.mobile-sort-button) {
+    min-width: 54px;
+    padding: 0 8px;
   }
 
   .pf-mobile-pnl-label,

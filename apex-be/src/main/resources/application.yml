@@ -84,6 +84,8 @@ sa-token:
 
 # Apex 业务配置
 apex:
+  scheduler:
+    enabled: ${APEX_SCHEDULER_ENABLED:true}
   mx-output-dir: ${user.dir}/../../.mx_output
   local-username: admin
   local-password: admin123

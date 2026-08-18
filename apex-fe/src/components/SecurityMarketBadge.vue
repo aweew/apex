@@ -30,56 +30,18 @@ const badge = computed(() => securityMarketBadge(props.security, { includeMain: 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 18px;
-  width: 18px;
+  flex: 0 0 auto;
+  min-width: 18px;
   height: 18px;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  padding: 0 4px;
+  border: 1px solid #e3bb8d;
+  border-radius: 3px;
   box-sizing: border-box;
-  font-size: 10px;
-  font-weight: 750;
+  color: #a85d1e;
+  background: #fffaf5;
+  font-size: 9px;
+  font-weight: 700;
   line-height: 1;
-}
-
-.security-market-badge.is-star {
-  color: #0a66c2;
-  background: rgba(0, 113, 227, 0.09);
-  border-color: rgba(0, 113, 227, 0.18);
-}
-
-.security-market-badge.is-chinext {
-  color: #16775d;
-  background: rgba(42, 157, 143, 0.1);
-  border-color: rgba(42, 157, 143, 0.2);
-}
-
-.security-market-badge.is-bj {
-  color: #a86400;
-  background: rgba(255, 159, 10, 0.11);
-  border-color: rgba(255, 159, 10, 0.22);
-}
-
-.security-market-badge.is-hk {
-  color: #6b4fbb;
-  background: rgba(107, 79, 187, 0.1);
-  border-color: rgba(107, 79, 187, 0.2);
-}
-
-.security-market-badge.is-us {
-  color: #515154;
-  background: rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.1);
-}
-
-.security-market-badge.is-sh {
-  color: #4d6074;
-  background: rgba(71, 85, 105, 0.08);
-  border-color: rgba(71, 85, 105, 0.18);
-}
-
-.security-market-badge.is-sz {
-  color: #176b72;
-  background: rgba(13, 148, 136, 0.08);
-  border-color: rgba(13, 148, 136, 0.18);
+  letter-spacing: 0;
 }
 </style>

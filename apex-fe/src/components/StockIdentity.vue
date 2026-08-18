@@ -86,25 +86,31 @@ function selectSecurity() {
       <span class="stock-identity__name" :title="displayName">
         <slot name="name" :name="displayName">{{ displayName }}</slot>
       </span>
-      <SecurityMarketBadge :security="normalizedSecurity" :include-main="includeMain" />
     </span>
-    <span v-if="hasSecondaryCode" class="stock-identity__code" :title="displayCode">
-      <slot name="code" :code="displayCode">{{ displayCode }}</slot>
+    <span v-if="hasSecondaryCode" class="stock-identity__meta-line">
+      <span class="stock-identity__code" :title="displayCode">
+        <slot name="code" :code="displayCode">{{ displayCode }}</slot>
+      </span>
+      <SecurityMarketBadge :security="normalizedSecurity" :include-main="includeMain" />
     </span>
   </component>
 </template>
 
 <style scoped>
 .stock-identity {
+  --stock-identity-width: 112px;
+
   display: inline-flex;
+  width: var(--stock-identity-width);
   min-width: 0;
   max-width: 100%;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 2px;
+  gap: 4px;
   border: 0;
   border-radius: 6px;
+  box-sizing: border-box;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -116,10 +122,9 @@ function selectSecurity() {
 
 .stock-identity__name-line {
   display: flex;
+  width: 100%;
   min-width: 0;
-  max-width: 100%;
   align-items: center;
-  gap: 5px;
 }
 
 .stock-identity__name {
@@ -133,15 +138,27 @@ function selectSecurity() {
   white-space: nowrap;
 }
 
+.stock-identity__meta-line {
+  display: flex;
+  width: 100%;
+  height: 18px;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
 .stock-identity__code {
-  max-width: 100%;
+  display: inline-flex;
+  min-width: 0;
+  height: 18px;
+  align-items: center;
   overflow: hidden;
   color: var(--accent);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
-  line-height: 1.2;
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -151,7 +168,11 @@ function selectSecurity() {
 }
 
 .stock-identity.is-compact .stock-identity__code {
-  font-size: 11px;
+  font-size: 10px;
+}
+
+.stock-identity.is-prominent {
+  --stock-identity-width: auto;
 }
 
 .stock-identity.is-prominent .stock-identity__name {
@@ -160,7 +181,7 @@ function selectSecurity() {
 }
 
 .stock-identity.is-prominent .stock-identity__code {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .stock-identity.is-interactive {

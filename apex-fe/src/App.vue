@@ -634,7 +634,7 @@ onBeforeUnmount(() => {
           <template v-else-if="!query.trim()">
             <div v-if="recentStocks.length" class="search-recent">
               <div class="search-tip">最近浏览</div>
-              <ul class="search-list">
+              <ul class="search-list search-recent-list">
                 <li v-for="item in recentStocks" :key="item.code">
                   <button type="button" class="search-item" @click="goStock(item.code, item.name)">
                     <StockIdentity :security="item" include-main />
@@ -1183,7 +1183,24 @@ onBeforeUnmount(() => {
 .search-list {
   list-style: none;
   margin: 0;
-  padding: 8px;
+  padding: 12px 16px 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.search-list > li {
+  min-width: 0;
+}
+
+.search-recent-list > li:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+}
+
+.search-recent-list > li:last-child:nth-child(odd) .search-item {
+  width: min(100%, 196px);
 }
 
 .search-item {
@@ -1192,7 +1209,7 @@ onBeforeUnmount(() => {
   align-items: center;
   border: 0;
   background: transparent;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 11px 12px;
   text-align: left;
   cursor: pointer;
@@ -1610,7 +1627,17 @@ onBeforeUnmount(() => {
   }
 
   .search-list {
+    grid-template-columns: 1fr;
+    gap: 2px;
     padding: 4px 8px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .search-recent-list > li:last-child:nth-child(odd) {
+    display: block;
+  }
+
+  .search-recent-list > li:last-child:nth-child(odd) .search-item {
+    width: 100%;
   }
 
   .search-item {

@@ -18,6 +18,7 @@ import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IWatchlistService;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
+import com.awe.apex.quant.sync.SyncJobLeaseService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -61,6 +63,7 @@ class DataSyncJobServiceExecutionTest {
     private final IPortfolioService portfolioService = mock(IPortfolioService.class);
     private final IConfigService configService = mock(IConfigService.class);
     private final ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+    private final SyncJobLeaseService syncJobLeaseService = mock(SyncJobLeaseService.class);
     private final DataSyncJobServiceImpl service = new DataSyncJobServiceImpl();
     private final AtomicReference<SyncJob> savedJob = new AtomicReference<>();
     private final CopyOnWriteArrayList<SyncJob> updates = new CopyOnWriteArrayList<>();
@@ -86,6 +89,7 @@ class DataSyncJobServiceExecutionTest {
         ReflectionTestUtils.setField(service, "userContext", new ApexUserContext());
         ReflectionTestUtils.setField(service, "objectMapper", new ObjectMapper());
         ReflectionTestUtils.setField(service, "scriptDatabaseEnvironment", mock(ScriptDatabaseEnvironment.class));
+        ReflectionTestUtils.setField(service, "syncJobLeaseService", syncJobLeaseService);
         ReflectionTestUtils.setField(service, "pythonCmd", scriptRunner.toString());
         ReflectionTestUtils.setField(service, "scriptDirConfig", scriptDir.toString());
 
@@ -103,8 +107,19 @@ class DataSyncJobServiceExecutionTest {
             updates.add(job);
             return 1;
         });
+        when(syncJobMapper.update(any(SyncJob.class), any())).thenAnswer(invocation -> {
+            SyncJob currentJob = savedJob.get();
+            if (Objects.isNull(currentJob) || !"RUNNING".equals(currentJob.getStatus())) {
+                return 0;
+            }
+            SyncJob job = copyJob(invocation.getArgument(0));
+            savedJob.set(job);
+            updates.add(job);
+            return 1;
+        });
         when(configService.getString("auto_sync_group", "我的自选")).thenReturn("我的自选");
         when(userAuthService.listEnabledUserIds()).thenReturn(List.of());
+        when(syncJobLeaseService.tryAcquire(any(), any(), any())).thenReturn(true);
         when(watchlistService.refreshQuotes(any(), any(), any())).thenReturn(Map.of("successCount", 1));
         when(myHoldingService.refreshQuotes(false)).thenReturn(Map.of("successCount", 1));
         when(portfolioService.refreshQuotesAll(false)).thenReturn(
@@ -176,14 +191,14 @@ class DataSyncJobServiceExecutionTest {
     }
 
     @Test
-    void reportedPostProcessingFailureContinuesRemainingStagesAndMarksJobFailed() throws Exception {
+    void reportedPostProcessingFailureContinuesRemainingStagesAndMarksJobPartial() throws Exception {
         when(userAuthService.listEnabledUserIds()).thenReturn(List.of(7L));
         when(myHoldingService.refreshQuotes(false)).thenReturn(Map.of("fail", 11, "barFail", 0));
 
         SyncJob result = runCloseBundle("exit 0\n");
 
-        assertEquals("FAILED", result.getStatus());
-        assertEquals(99, result.getProgressPct());
+        assertEquals("PARTIAL", result.getStatus());
+        assertEquals(100, result.getProgressPct());
         assertEquals(4, result.getDoneItems());
         assertEquals(4, result.getTotalItems());
         assertTrue(result.getMessage().contains("持仓行情刷新失败 11 项"), result::toString);
@@ -193,6 +208,21 @@ class DataSyncJobServiceExecutionTest {
         verify(portfolioService).refreshQuotesAll(false);
         verify(portfolioService).snapshotAll();
         verify(barDailyService).syncStaleWatchlist("我的自选", 80);
+    }
+
+    @Test
+    void turnoverItemFailureFinishesAsPartialInsteadOfGenericFailure() throws Exception {
+        Files.writeString(scriptDir.resolve("backfill_turnover.py"),
+                "echo '完成，成功数=49，失败数=1，更新数=1200'\nexit 1\n");
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("TURNOVER");
+
+        service.startSystemTask(request);
+        SyncJob result = waitForTerminal();
+
+        assertEquals("PARTIAL", result.getStatus());
+        assertEquals(100, result.getProgressPct());
+        assertTrue(result.getMessage().contains("部分条目失败"), result::toString);
     }
 
     @Test
@@ -225,6 +255,7 @@ class DataSyncJobServiceExecutionTest {
         SyncJob result = waitForTerminal();
         assertEquals("FAILED", result.getStatus());
         assertTrue(result.getLogTail().contains("步骤 1/5：index"), result::toString);
+        verify(syncJobMapper, atLeastOnce()).update(any(SyncJob.class), any());
     }
 
     @Test
@@ -258,6 +289,33 @@ class DataSyncJobServiceExecutionTest {
         verify(barDailyService, never()).syncStaleWatchlist(any(), any());
     }
 
+    @Test
+    void progressPollingReloadsTerminalJobWhenRunningUpdateLosesRace() throws Exception {
+        Path progressDir = scriptDir.resolve(".progress");
+        Files.createDirectories(progressDir);
+        Files.writeString(progressDir.resolve("bars_progress.json"), "{\"000001\":{\"ok\":true}}");
+        SyncJob runningJob = SyncJob.builder()
+                .id(701L)
+                .taskType("A_SHARE_BARS")
+                .status("RUNNING")
+                .progressPct(99)
+                .build();
+        SyncJob successJob = SyncJob.builder()
+                .id(701L)
+                .taskType("A_SHARE_BARS")
+                .status("SUCCESS")
+                .progressPct(100)
+                .build();
+        when(syncJobMapper.selectById(701L)).thenReturn(runningJob, successJob);
+        when(syncJobMapper.update(any(SyncJob.class), any())).thenReturn(0);
+
+        SyncJobResp response = service.getJob(701L);
+
+        assertEquals("SUCCESS", response.getStatus());
+        assertEquals(100, response.getProgressPct());
+        verify(syncJobMapper).update(any(SyncJob.class), any());
+    }
+
     private SyncJob runCloseBundle(String scriptContent) throws Exception {
         Files.writeString(scriptDir.resolve("sync_close_bundle.py"), scriptContent);
         SyncStartReq request = new SyncStartReq();
@@ -270,7 +328,7 @@ class DataSyncJobServiceExecutionTest {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (System.nanoTime() < deadline) {
             SyncJob job = savedJob.get();
-            if (Objects.nonNull(job) && List.of("SUCCESS", "FAILED", "CANCELLED").contains(job.getStatus())) {
+            if (Objects.nonNull(job) && List.of("SUCCESS", "PARTIAL", "FAILED", "CANCELLED").contains(job.getStatus())) {
                 return job;
             }
             Thread.sleep(10L);

@@ -27,6 +27,7 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xms256m -Xmx1024m}
       SPRING_PROFILES_ACTIVE: prod
+      APEX_SCHEDULER_ENABLED: ${APEX_SCHEDULER_ENABLED:-true}
       SPRING_DATASOURCE_URL: jdbc:p6spy:mysql://${MYSQL_HOST:?Set MYSQL_HOST}:${MYSQL_PORT:-3306}/${MYSQL_DATABASE:-apex}?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_0900_ai_ci&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:?Set MYSQL_USER}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}

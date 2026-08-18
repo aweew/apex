@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -19,6 +19,8 @@ const router = useRouter()
 const loading = ref(false)
 const overview = ref(null)
 const activeJob = ref(null)
+const detailPanelRef = ref(null)
+const detailLoadingJobId = ref(null)
 /** 用户当前盯着的任务，避免轮询用列表摘要冲掉详情日志 */
 const pinnedJobId = ref(null)
 let detailRequestId = 0
@@ -69,6 +71,7 @@ const activeLogText = computed(() => {
 
 function statusType(s) {
   if (s === 'SUCCESS') return 'success'
+  if (s === 'PARTIAL') return 'warning'
   if (s === 'FAILED') return 'danger'
   if (s === 'CANCELLED') return 'info'
   if (s === 'RUNNING' || s === 'PENDING') return 'warning'
@@ -93,6 +96,7 @@ function healthLabel(level) {
 
 function statusLabel(s) {
   if (s === 'SUCCESS') return '成功'
+  if (s === 'PARTIAL') return '部分完成'
   if (s === 'FAILED') return '失败'
   if (s === 'PENDING') return '等待'
   if (s === 'CANCELLED') return '已取消'
@@ -306,12 +310,17 @@ async function onStop(job) {
 async function selectJob(job) {
   if (!job?.id) return
   pinnedJobId.value = job.id
+  detailLoadingJobId.value = job.id
   try {
     const res = await fetchSyncJob(job.id)
     activeJob.value = res.data
     if (res.data.status === 'RUNNING' || res.data.status === 'PENDING') ensurePoll()
+    await nextTick()
+    detailPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   } catch (e) {
     ElMessage.error(e.message || '加载任务失败')
+  } finally {
+    if (detailLoadingJobId.value === job.id) detailLoadingJobId.value = null
   }
 }
 
@@ -425,6 +434,7 @@ onUnmounted(stopPoll)
                   v-if="task.latestJob"
                   size="small"
                   link
+                  :loading="detailLoadingJobId === task.latestJob.id"
                   @click="selectJob(task.latestJob)"
                 >
                   看日志
@@ -462,7 +472,7 @@ onUnmounted(stopPoll)
       </section>
 
       <aside class="side">
-        <div class="panel">
+        <div ref="detailPanelRef" class="panel" v-loading="detailLoadingJobId != null">
           <div class="panel-head">
             <h3>当前任务</h3>
             <el-button

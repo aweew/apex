@@ -34,14 +34,23 @@ test('mobile trade records use cards instead of a squeezed desktop table', () =>
 test('portfolio and holding workspaces use the shared buy and sell dialog', () => {
   assert.match(portfolioSource, /HoldingTradeDialog/)
   assert.match(holdingSource, /HoldingTradeDialog/)
-  assert.match(portfolioSource, />买入</)
-  assert.match(portfolioSource, />卖出</)
-  assert.match(holdingSource, />买入</)
-  assert.match(holdingSource, />卖出</)
+  assert.match(portfolioSource, /function handleHoldingAction\(command, row\)/)
+  assert.match(portfolioSource, /command === 'buy' \|\| command === 'sell'/)
+  assert.match(holdingSource, /function handleRowAction\(command, row\)/)
+  assert.match(holdingSource, /command === 'buy' \|\| command === 'sell'/)
   assert.match(tradeDialogSource, /value="BUY"/)
   assert.match(tradeDialogSource, /value="SELL"/)
   assert.match(tradeDialogSource, /form\.tradePrice/)
   assert.match(tradeDialogSource, /form\.tradeTime/)
+})
+
+test('trade dialog presents compact order-entry controls and an estimated amount', () => {
+  assert.match(tradeDialogSource, /width="520px"/)
+  assert.match(tradeDialogSource, /trade-input-grid/)
+  assert.match(tradeDialogSource, /可卖 \{\{ currentQuantity\.toLocaleString\('zh-CN'\) \}\} 股/)
+  assert.match(tradeDialogSource, /预计成交额/)
+  assert.match(tradeDialogSource, /estimatedAmount/)
+  assert.match(tradeDialogSource, /@media \(max-width: 560px\)/)
 })
 
 test('trade APIs are explicit and holding pages no longer expose delete actions', () => {

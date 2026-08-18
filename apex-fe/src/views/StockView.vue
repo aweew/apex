@@ -779,6 +779,79 @@ function tradeMarkerTooltip(groups) {
   return `<div class="kline-tip__trades">${rows.join('')}</div>`
 }
 
+function buildTradeGuideSeries(side, markers) {
+  const buy = side === 'BUY'
+  const color = buy ? '#e5484d' : '#1677ff'
+  const direction = buy ? 1 : -1
+  return {
+    id: `user-trade-${side.toLowerCase()}`,
+    name: buy ? '买入记录' : '卖出记录',
+    type: 'custom',
+    coordinateSystem: 'cartesian2d',
+    xAxisIndex: 0,
+    yAxisIndex: 0,
+    data: markers,
+    encode: { x: 0, y: 1 },
+    z: 30,
+    clip: false,
+    silent: true,
+    legendHoverLink: false,
+    tooltip: { show: false },
+    renderItem(params, api) {
+      const point = api.coord([api.value(0), api.value(1)])
+      if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return null
+      const labelText = String(params.data?.labelText || (buy ? 'B' : 'S'))
+      const labelWidth = Math.min(96, Math.max(30, Array.from(labelText).length * 11 + 16))
+      const leaderEndY = point[1] + direction * 34
+      const labelHeight = 20
+      const labelTop = buy ? leaderEndY + 6 : leaderEndY - labelHeight - 6
+      const labelLeft = point[0] - labelWidth / 2
+      return {
+        type: 'group',
+        children: [
+          {
+            type: 'circle',
+            shape: { cx: point[0], cy: point[1], r: 2.5 },
+            style: { fill: color, stroke: '#fff', lineWidth: 1 },
+          },
+          {
+            type: 'line',
+            shape: { x1: point[0], y1: point[1], x2: point[0], y2: leaderEndY },
+            style: { stroke: color, lineWidth: 1.25, lineDash: [4, 3] },
+          },
+          {
+            type: 'rect',
+            shape: { x: labelLeft, y: labelTop, width: labelWidth, height: labelHeight, r: 4 },
+            style: { fill: 'rgba(255,255,255,0.96)', stroke: color, lineWidth: 1 },
+          },
+          {
+            type: 'text',
+            style: {
+              x: labelLeft + 6,
+              y: labelTop + labelHeight / 2,
+              text: buy ? 'B' : 'S',
+              fill: color,
+              font: '700 11px sans-serif',
+              textVerticalAlign: 'middle',
+            },
+          },
+          {
+            type: 'text',
+            style: {
+              x: labelLeft + 17,
+              y: labelTop + labelHeight / 2,
+              text: labelText.slice(1).trim(),
+              fill: '#475569',
+              font: '600 10px sans-serif',
+              textVerticalAlign: 'middle',
+            },
+          },
+        ],
+      }
+    },
+  }
+}
+
 async function renderChart(list) {
   if (!list.length) {
     macdTip.value = ''
@@ -1313,63 +1386,8 @@ async function renderChart(list) {
         legendHoverLink: false,
         tooltip: { show: false },
       },
-      {
-        id: 'user-trade-buy',
-        name: '买入记录',
-        type: 'scatter',
-        data: userTradeMarkers.buy,
-        symbol: 'triangle',
-        symbolSize: 14,
-        z: 30,
-        clip: false,
-        legendHoverLink: false,
-        tooltip: { show: false },
-        labelLayout: { hideOverlap: true },
-        itemStyle: { color: '#c43d4a', borderColor: '#ffffff', borderWidth: 1 },
-        label: {
-          show: true,
-          position: 'bottom',
-          distance: 5,
-          formatter: (params) => params.data?.labelText || 'B',
-          color: '#9f2f3b',
-          backgroundColor: 'rgba(255, 247, 248, 0.94)',
-          borderColor: 'rgba(196, 61, 74, 0.22)',
-          borderWidth: 1,
-          borderRadius: 4,
-          padding: [3, 5],
-          fontSize: 10,
-          fontWeight: 700,
-        },
-      },
-      {
-        id: 'user-trade-sell',
-        name: '卖出记录',
-        type: 'scatter',
-        data: userTradeMarkers.sell,
-        symbol: 'triangle',
-        symbolRotate: 180,
-        symbolSize: 14,
-        z: 30,
-        clip: false,
-        legendHoverLink: false,
-        tooltip: { show: false },
-        labelLayout: { hideOverlap: true },
-        itemStyle: { color: '#16775d', borderColor: '#ffffff', borderWidth: 1 },
-        label: {
-          show: true,
-          position: 'top',
-          distance: 5,
-          formatter: (params) => params.data?.labelText || 'S',
-          color: '#11634d',
-          backgroundColor: 'rgba(245, 252, 249, 0.94)',
-          borderColor: 'rgba(22, 119, 93, 0.22)',
-          borderWidth: 1,
-          borderRadius: 4,
-          padding: [3, 5],
-          fontSize: 10,
-          fontWeight: 700,
-        },
-      },
+      buildTradeGuideSeries('BUY', userTradeMarkers.buy),
+      buildTradeGuideSeries('SELL', userTradeMarkers.sell),
       {
         name: '成交量',
         type: 'bar',

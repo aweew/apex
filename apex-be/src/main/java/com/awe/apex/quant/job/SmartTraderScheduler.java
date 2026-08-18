@@ -2,6 +2,7 @@ package com.awe.apex.quant.job;
 
 import com.awe.apex.quant.service.ISmartTraderAnalyticsService;
 import jakarta.annotation.Resource;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -9,6 +10,7 @@ import java.time.LocalDate;
 
 /** Smart Trader 日终投影刷新。 */
 @Component
+@ConditionalOnProperty(prefix = "apex.scheduler", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class SmartTraderScheduler {
 
     @Resource private ISmartTraderAnalyticsService smartTraderAnalyticsService;

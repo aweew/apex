@@ -6,6 +6,9 @@ spring:
     driver-class-name: com.p6spy.engine.spy.P6SpyDriver
 
 apex:
+  # 本地实例默认不执行生产定时任务，手动同步不受影响
+  scheduler:
+    enabled: false
   mx-output-dir: ${user.dir}/../../.mx_output
   # Kimi / Moonshot（勿提交真实 Key）
   ai:

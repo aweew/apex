@@ -490,10 +490,7 @@ function handleRowAction(command, row) {
     openEdit(row)
     return
   }
-  if (command === 'observe') {
-    addObserve(row)
-    return
-  }
+  if (command === 'observe') addObserve(row)
 }
 
 function openCreate() {
@@ -1035,53 +1032,27 @@ onBeforeUnmount(() => {
         <el-table-column v-if="showIndustry" prop="industry" label="二级行业" width="100" show-overflow-tooltip sortable />
         <el-table-column prop="note" label="备注" min-width="100" show-overflow-tooltip sortable />
         <el-table-column
-          v-if="mobileRowActions"
-          width="56"
+          width="52"
           align="center"
-          class-name="mobile-ops-column"
-          label-class-name="mobile-ops-column"
+          label="操作"
+          :fixed="mobileRowActions ? false : 'right'"
+          class-name="ops-column"
+          label-class-name="ops-column"
         >
           <template #default="{ row }">
-            <el-dropdown
-              trigger="click"
-              placement="bottom-end"
-              popper-class="holding-actions-menu"
-              @command="handleRowAction($event, row)"
-            >
-              <button
-                type="button"
-                class="row-actions-trigger"
-                :aria-label="`${row.name || row.code}更多操作`"
-                title="更多操作"
-                @click.stop
-              >
+            <el-dropdown trigger="click" placement="bottom-end" popper-class="holding-row-actions-menu" @command="handleRowAction($event, row)">
+              <button type="button" class="row-actions-trigger" :aria-label="`${row.name || row.code}更多操作`" @click.stop>
                 <el-icon><MoreFilled /></el-icon>
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="buy" :icon="Plus">买入</el-dropdown-item>
-                  <el-dropdown-item command="sell" :icon="Minus">卖出</el-dropdown-item>
+                  <el-dropdown-item command="buy" :icon="Plus" class="row-action-buy">买入</el-dropdown-item>
+                  <el-dropdown-item command="sell" :icon="Minus" class="row-action-sell">卖出</el-dropdown-item>
                   <el-dropdown-item command="edit" :icon="EditPen">编辑持仓</el-dropdown-item>
                   <el-dropdown-item command="observe" :icon="View">加入观察池</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-          </template>
-        </el-table-column>
-        <el-table-column
-          v-else
-          label="操作"
-          width="232"
-          fixed="right"
-          align="center"
-          class-name="ops-column"
-          label-class-name="ops-column"
-        >
-          <template #default="{ row }">
-            <el-button link type="success" :icon="Plus" @click="openTrade(row, 'BUY')">买入</el-button>
-            <el-button link type="danger" :icon="Minus" @click="openTrade(row, 'SELL')">卖出</el-button>
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="warning" @click="addObserve(row)">观察</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -1549,16 +1520,16 @@ onBeforeUnmount(() => {
 .holding-table {
   width: 100%;
   min-width: 0;
+  --el-table-fixed-left-column: none;
+  --el-table-fixed-right-column: none;
 }
 
 .holding-table :deep(.ops-column) {
-  background: rgba(255, 255, 255, 0.97) !important;
-  box-shadow: -10px 0 18px -18px rgba(29, 29, 31, 0.65);
+  border-left: 1px solid var(--line);
 }
 
 .holding-table :deep(.security-column) {
-  background: rgba(255, 255, 255, 0.97) !important;
-  box-shadow: 10px 0 18px -18px rgba(29, 29, 31, 0.65);
+  border-right: 1px solid var(--line);
 }
 
 .holding-table :deep(.ops-column .cell) {
@@ -1568,55 +1539,50 @@ onBeforeUnmount(() => {
 .row-actions-trigger {
   display: inline-grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border: 0;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: transparent;
   color: var(--slate);
-  font-size: 20px;
+  font-size: 15px;
   cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .row-actions-trigger:hover,
 .row-actions-trigger:focus-visible,
 .row-actions-trigger[aria-expanded="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--line-strong);
+  background: var(--glass-tint);
   outline: none;
 }
 
-:global(.holding-actions-menu) {
-  min-width: 156px;
+:global(.holding-row-actions-menu) {
+  min-width: 136px;
+  padding: 4px;
   border-radius: 8px;
 }
 
-:global(.holding-actions-menu .el-dropdown-menu) {
-  padding: 4px;
+:global(.holding-row-actions-menu .el-dropdown-menu) {
+  padding: 0;
 }
 
-:global(.holding-actions-menu .el-dropdown-menu__item) {
-  min-height: 44px;
+:global(.holding-row-actions-menu .el-dropdown-menu__item) {
+  min-height: 32px;
   gap: 8px;
-  padding: 0 12px;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: 0 10px;
+  border-radius: 5px;
+  color: var(--ink-soft);
+  font-size: 13px;
 }
 
-:global(.holding-actions-menu .holding-action-danger) {
-  color: var(--el-color-danger);
+:global(.holding-row-actions-menu .row-action-buy) {
+  color: var(--down);
 }
 
-:global(.holding-actions-menu .holding-action-danger.el-dropdown-menu__item--divided) {
-  margin-top: 4px;
-}
-
-.holding-table :deep(.el-table__body tr:hover > .ops-column),
-.holding-table :deep(.el-table__body tr:hover > .security-column) {
-  background: #f1f7fd !important;
+:global(.holding-row-actions-menu .row-action-sell) {
+  color: var(--up);
 }
 
 @media (max-width: 900px) {

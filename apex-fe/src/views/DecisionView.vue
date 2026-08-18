@@ -610,9 +610,14 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div v-if="decisionAdvice?.actions?.length" class="advice-table-wrap">
-        <el-table :data="decisionAdvice.actions" size="small" class="advice-table">
+        <el-table
+          :key="`decision-advice-compact-v2-${decisionAdvice.actionDate}`"
+          :data="decisionAdvice.actions"
+          size="small"
+          class="advice-table"
+        >
           <el-table-column prop="priority" label="#" width="44" align="center" />
-          <el-table-column label="标的" min-width="118">
+          <el-table-column label="标的" width="132">
             <template #default="{ row }">
               <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
             </template>

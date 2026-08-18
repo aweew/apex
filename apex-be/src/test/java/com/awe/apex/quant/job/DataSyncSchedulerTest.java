@@ -11,6 +11,7 @@ import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -30,6 +31,21 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class DataSyncSchedulerTest {
+
+    @Test
+    void schedulersRequireTheCurrentInstanceToBeEnabled() {
+        for (Class<?> schedulerClass : List.of(
+                DataSyncScheduler.class,
+                DecisionScheduler.class,
+                MorningBriefingScheduler.class,
+                SmartTraderScheduler.class,
+                BotAlertScheduler.class)) {
+            ConditionalOnProperty condition = schedulerClass.getAnnotation(ConditionalOnProperty.class);
+            assertEquals("apex.scheduler", condition.prefix());
+            assertEquals(List.of("enabled"), List.of(condition.name()));
+            assertEquals("true", condition.havingValue());
+        }
+    }
 
     @Test
     void schedulesFocusQuoteRefreshEveryThreeMinutes() throws Exception {
@@ -196,6 +212,43 @@ class DataSyncSchedulerTest {
                     "CLOSE_BUNDLE".equals(request.getTaskType())
                             && "INDUSTRY,CONCEPT,THEME".equals(request.getTypes())));
         }
+    }
+
+    @Test
+    void intradayHotRefreshUsesTrackedSyncJob() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.startSystemTask(org.mockito.ArgumentMatchers.any())).thenReturn(
+                SyncJobResp.builder().id(303L).status("PENDING").build());
+
+        scheduler.refreshHotIntraday();
+
+        verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
+                "HOT".equals(request.getTaskType())
+                        && "eastmoney,baidu".equals(request.getSources())
+                        && Integer.valueOf(40).equals(request.getLimit())));
+    }
+
+    @Test
+    void intradaySectorRefreshUsesTrackedSyncJob() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.startSystemTask(org.mockito.ArgumentMatchers.any())).thenReturn(
+                SyncJobResp.builder().id(304L).status("PENDING").build());
+
+        scheduler.refreshSectorIntraday();
+
+        verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
+                "SECTOR_QUOTE".equals(request.getTaskType())
+                        && "INDUSTRY,CONCEPT,THEME".equals(request.getTypes())));
     }
 
     @Test

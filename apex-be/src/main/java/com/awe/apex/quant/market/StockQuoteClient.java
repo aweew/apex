@@ -39,6 +39,9 @@ public class StockQuoteClient {
     private final AtomicInteger eastMoneyFailCount = new AtomicInteger(0);
     private final AtomicLong eastMoneyCooldownUntil = new AtomicLong(0);
 
+    private String sinaQuoteUrl = "https://hq.sinajs.cn/list=";
+    private String tencentQuoteUrl = "https://qt.gtimg.cn/q=";
+
     /**
      * 拉取并组装基本信息
      *
@@ -75,7 +78,25 @@ public class StockQuoteClient {
     public StockBasic fetchRealtime(String code) {
         String pure = MarketCodeUtils.normalizeHoldingCode(code);
         String market = MarketCodeUtils.resolveMarket(pure);
-        StockBasic basic = fetchFromSina(pure, market);
+        StockBasic basic;
+        try {
+            basic = fetchFromSina(pure, market);
+        } catch (BusinessException sinaException) {
+            LocalDateTime now = LocalDateTime.now();
+            basic = StockBasic.builder()
+                    .code(pure)
+                    .market(market)
+                    .quoteTime(now)
+                    .createTime(now)
+                    .updateTime(now)
+                    .deleted(0)
+                    .build();
+            if (!overwriteRealtimeFromTencent(basic)) {
+                throw sinaException;
+            }
+            log.warn("新浪行情失败，已使用腾讯行情兜底，证券代码={}，原因={}", pure, sinaException.getMessage());
+            return basic;
+        }
         // 腾讯覆盖现价/涨跌幅：新浪盘后偶发 0 价或空字段，导致持仓现价/涨跌错乱
         overwriteRealtimeFromTencent(basic);
         return basic;
@@ -83,7 +104,7 @@ public class StockQuoteClient {
 
     private StockBasic fetchFromSina(String code, String market) {
         String symbol = toSinaSymbol(code, market);
-        String url = "https://hq.sinajs.cn/list=" + symbol;
+        String url = sinaQuoteUrl + symbol;
         try (HttpResponse response = HttpRequest.get(url)
                 .timeout(12000)
                 .header("User-Agent", browserUa())
@@ -199,10 +220,10 @@ public class StockQuoteClient {
     /**
      * 腾讯实时价/涨跌幅覆盖（优先于新浪空价/0价）
      */
-    private void overwriteRealtimeFromTencent(StockBasic basic) {
+    private boolean overwriteRealtimeFromTencent(StockBasic basic) {
         String[] parts = fetchTencentParts(basic);
         if (Objects.isNull(parts) || parts.length < 33) {
-            return;
+            return false;
         }
         if (StringUtils.isBlank(basic.getName()) && StringUtils.isNotBlank(parts[1])) {
             basic.setName(parts[1]);
@@ -216,10 +237,12 @@ public class StockQuoteClient {
                 basic.setPctChg(tPct);
             }
             appendSource(basic, "tencent-rt");
+            return true;
         } else if (Objects.isNull(basic.getPctChg()) && Objects.nonNull(tPct)) {
             basic.setPctChg(tPct);
             appendSource(basic, "tencent-rt");
         }
+        return false;
     }
 
     /**
@@ -260,7 +283,7 @@ public class StockQuoteClient {
             return null;
         }
         String symbol = toSinaSymbol(basic.getCode(), basic.getMarket());
-        String url = "https://qt.gtimg.cn/q=" + symbol;
+        String url = tencentQuoteUrl + symbol;
         try (HttpResponse response = HttpRequest.get(url)
                 .timeout(10000)
                 .header("User-Agent", browserUa())

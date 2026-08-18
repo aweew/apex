@@ -8,6 +8,8 @@ const holdingSource = await readFile(new URL('./HoldingView.vue', import.meta.ur
 test('mobile portfolio controls share one compact list toolbar', () => {
   assert.match(portfolioSource, /class="mobile-list-toolbar"/)
   assert.match(portfolioSource, /class="mobile-create-button"/)
+  assert.match(portfolioSource, /class="mobile-sort-button"/)
+  assert.match(portfolioSource, /grid-template-columns:\s*minmax\(72px, 1fr\) auto auto auto 44px;/)
   assert.doesNotMatch(portfolioSource, /class="mobile-header-actions"/)
   assert.match(portfolioSource, /\.portfolio-page \.portfolio-header\s*\{\s*display:\s*none;/)
 })
@@ -52,12 +54,27 @@ test('portfolio summary keeps only action-oriented metrics', () => {
 test('holding tables keep stock links blue and avoid fixed columns on mobile', () => {
   assert.match(portfolioSource, /:fixed="sharingCapture \|\| isMobileViewport \? false : 'left'"/)
   assert.match(holdingSource, /:fixed="mobileRowActions \? false : 'left'"/)
-  const mobileActionsStart = holdingSource.indexOf('v-if="mobileRowActions"')
-  const mobileActionsEnd = holdingSource.indexOf('</el-table-column>', mobileActionsStart)
-  const mobileActionsColumn = holdingSource.slice(mobileActionsStart, mobileActionsEnd)
-  assert.doesNotMatch(mobileActionsColumn, /fixed="right"/)
+  assert.match(holdingSource, /:fixed="mobileRowActions \? false : 'right'"/)
+  assert.match(portfolioSource, /:fixed="isMobileViewport \? false : 'right'"/)
   assert.match(portfolioSource, /<StockIdentity :security="row" interactive compact/)
   assert.match(holdingSource, /<StockIdentity :security="row" interactive compact/)
+})
+
+test('holding tables keep all actions inside one compact overflow menu', () => {
+  assert.match(holdingSource, /width="52"[\s\S]*?:fixed="mobileRowActions \? false : 'right'"/)
+  assert.match(portfolioSource, /width="52"[\s\S]*?:fixed="isMobileViewport \? false : 'right'"/)
+  assert.match(holdingSource, /class="row-actions-trigger"/)
+  assert.match(portfolioSource, /class="portfolio-row-actions-trigger"/)
+  assert.match(holdingSource, /class="row-actions-trigger"[^>]*@click\.stop/)
+  assert.match(portfolioSource, /class="portfolio-row-actions-trigger"[^>]*@click\.stop/)
+  assert.doesNotMatch(holdingSource, /class="row-inline-actions"/)
+  assert.doesNotMatch(portfolioSource, /class="portfolio-row-inline-actions"/)
+  assert.match(holdingSource, /width: 28px;/)
+  assert.match(portfolioSource, /width: 28px;/)
+  assert.doesNotMatch(holdingSource, /box-shadow:\s*10px 0 18px -18px/)
+  assert.doesNotMatch(portfolioSource, /box-shadow:\s*10px 0 18px -18px/)
+  assert.match(holdingSource, /border-right:\s*1px solid var\(--line\)/)
+  assert.match(portfolioSource, /border-right:\s*1px solid var\(--line\)/)
 })
 
 test('holding quantity headers reserve room for their sort indicator', () => {
@@ -71,9 +88,17 @@ test('portfolio list holding summaries omit market badges', () => {
   assert.doesNotMatch(portfolioListTemplate, /<SecurityMarketBadge :security="h"/)
 })
 
-test('portfolio cards support long-press drag ordering with persistent sort numbers', () => {
-  assert.match(portfolioSource, /function onSortHandlePointerDown\(row, event\)/)
-  assert.match(portfolioSource, /window\.setTimeout\(\(\) => startPortfolioDrag\(row\.id\), 350\)/)
+test('mobile portfolio ordering uses direct up and down controls while desktop keeps drag sorting', () => {
+  assert.match(portfolioSource, /class="mobile-sort-button"/)
+  assert.match(portfolioSource, /mobileSortMode \? '完成' : '排序'/)
+  assert.match(portfolioSource, /function movePortfolio\(row, direction\)/)
+  assert.match(portfolioSource, /class="pf-mobile-sort-controls"/)
+  assert.match(portfolioSource, /aria-label="上移组合"/)
+  assert.match(portfolioSource, /aria-label="下移组合"/)
+  assert.match(portfolioSource, /grid-template-columns:\s*76px minmax\(48px, 1fr\) auto 18px;/)
+  assert.match(portfolioSource, /width: 36px;/)
+  assert.match(portfolioSource, /height: 44px;/)
+  assert.match(portfolioSource, /v-if="!isMobileViewport"[\s\S]*?class="pf-sort-handle"/)
   assert.match(portfolioSource, /async function persistPortfolioOrder\(fromId, toId, placeAfter\)/)
   assert.match(portfolioSource, /await sortPortfolios\(list\.value\.map\(\(row\) => row\.id\)\)/)
   assert.match(portfolioSource, /class="pf-sort-handle"/)

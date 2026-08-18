@@ -4,13 +4,31 @@ import { readFileSync } from 'node:fs'
 
 const readSource = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-test('stock identity keeps the market badge beside the name and code secondary', () => {
+test('stock identity stacks the name above code and keeps the market badge beside the code', () => {
   const source = readSource('./StockIdentity.vue')
 
-  assert.match(source, /class="stock-identity__name-line"[\s\S]*?<SecurityMarketBadge[\s\S]*?class="stock-identity__code"/)
+  assert.match(source, /class="stock-identity__name-line"[\s\S]*?class="stock-identity__name"[\s\S]*?class="stock-identity__meta-line"[\s\S]*?class="stock-identity__code"[\s\S]*?<SecurityMarketBadge/)
+  assert.doesNotMatch(source, /class="stock-identity__name-line"[\s\S]*?<SecurityMarketBadge[\s\S]*?class="stock-identity__meta-line"/)
+  assert.match(source, /--stock-identity-width:\s*112px/)
+  assert.doesNotMatch(source, /is-compact\s*\{[\s\S]*?--stock-identity-width/)
+  assert.match(source, /is-compact \.stock-identity__code[\s\S]*?font-size:\s*10px/)
+  assert.match(source, /\.stock-identity__meta-line[\s\S]*?height:\s*18px/)
+  assert.match(source, /\.stock-identity__code[\s\S]*?color:\s*var\(--accent\)/)
+  assert.match(source, /\.stock-identity__code[\s\S]*?height:\s*18px/)
+  assert.match(source, /\.stock-identity__code[\s\S]*?font-variant-numeric:\s*tabular-nums/)
   assert.match(source, /include-main/)
   assert.match(source, /:aria-label="accessibleLabel"/)
   assert.match(source, /min-height:\s*44px/)
+})
+
+test('market badges use one restrained outlined treatment without decorative markers', () => {
+  const source = readSource('./SecurityMarketBadge.vue')
+
+  assert.match(source, /height:\s*18px/)
+  assert.match(source, /border:\s*1px solid #e3bb8d/)
+  assert.match(source, /background:\s*#fffaf5/)
+  assert.doesNotMatch(source, /::before/)
+  assert.doesNotMatch(source, /\.security-market-badge\.is-/)
 })
 
 test('primary stock surfaces reuse the shared stock identity', () => {

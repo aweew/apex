@@ -13,6 +13,12 @@ test('desktop decision table uses the shared name-first stock identity', () => {
   assert.doesNotMatch(decisionTable, /label="代码"|label="名称"/)
 })
 
+test('observe reminder chips use a content-width stock identity instead of table alignment', () => {
+  assert.match(dashboardSource, /<StockIdentity class="observe-chip__identity" :security="item" compact \/>/)
+  assert.match(dashboardSource, /\.observe-chip :deep\(\.observe-chip__identity\)\s*\{[\s\S]*?width:\s*auto;/)
+  assert.match(dashboardSource, /\.observe-chip :deep\(\.observe-chip__identity\)\s*\{[\s\S]*?gap:\s*2px;/)
+})
+
 test('desktop decision table reserves one complete cue column for linkage and mainline tags', () => {
   const tableStart = dashboardSource.indexOf(':data="topBuys"')
   const tableEnd = dashboardSource.indexOf('</el-table>', tableStart)

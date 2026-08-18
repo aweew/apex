@@ -4,7 +4,9 @@ function tradeDateOf(record) {
 }
 
 function markerLabel(record) {
-  return String(record?.ownerLabel || record?.portfolioName || '交易').trim()
+  const portfolioName = String(record?.portfolioName || '').trim()
+  const ownerLabel = String(record?.ownerLabel || '').trim()
+  return Array.from(portfolioName || ownerLabel || '我').slice(0, 3).join('')
 }
 
 function mappedBarIndex(tradeDate, bars) {

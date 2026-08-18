@@ -15,6 +15,7 @@ import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IWatchlistService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -32,6 +33,7 @@ import java.util.Objects;
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "apex.scheduler", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class BotAlertScheduler {
 
     private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");

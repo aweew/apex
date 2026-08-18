@@ -464,26 +464,26 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (!dataSufficient) {
             stance = "防守";
             buyFactor = new BigDecimal("0.40");
-            positionAdvice = "数据不足：建议空仓观望或极低仓，先补齐同步";
+            positionAdvice = "数据不足：不开新仓；先补齐指数、涨停池和板块数据。";
         } else if (score >= 65) {
             stance = "进攻";
             buyFactor = new BigDecimal("1.10");
-            positionAdvice = "建议总仓 6–8 成，可对共振/主线标的正常/略抬仓";
+            positionAdvice = "总仓上限8成；只做主线内放量突破、且广度未转弱的标的；高开回落和跟风票不追。";
         } else if (score <= 40) {
             stance = "防守";
             buyFactor = new BigDecimal("0.55");
-            positionAdvice = "建议总仓 2–4 成，新建仓降权，优先处理卖出/止损";
+            positionAdvice = "总仓控制在2-4成；不开弱势反抽，新开仓只允许小仓试错；先处理跌破止损线的持仓。";
         } else {
             stance = "均衡";
             buyFactor = BigDecimal.ONE;
-            positionAdvice = "建议总仓 4–6 成，精选共振/主线，避免无脑铺开";
+            positionAdvice = "总仓控制在4-6成；只在主线内放量突破时开仓；非主线和冲高回落不追。";
         }
         resp.setStance(stance);
         resp.setStanceScore(score);
         resp.setBuyWeightFactor(buyFactor);
         resp.setPositionAdvice(positionAdvice);
         resp.setDataSufficient(dataSufficient);
-        resp.setStanceReason("评分 " + score + "/100 · 综合大盘、趋势、量能、风格、广度与涨停情绪");
+        resp.setStanceReason(buildStanceReason(resp, dayAvg, shPct));
         if (Objects.nonNull(resp.getAsOf())) {
             resp.setMessage("市场简报 · " + resp.getAsOf() + " · 立场「" + stance + "」· 数据" + dataLevelLabel(dataLevel));
         }
@@ -519,6 +519,43 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             return "偏空";
         }
         return "中性";
+    }
+
+    private String buildStanceReason(MarketBriefingResp briefing, BigDecimal dayAvg, BigDecimal shPct) {
+        List<String> facts = new ArrayList<>();
+        if (Objects.nonNull(dayAvg) && Objects.nonNull(shPct)) {
+            String indexState = dayAvg.multiply(shPct).compareTo(ZERO) < 0 ? "指数分化" : "指数同向";
+            facts.add(indexState + "：全A均价" + fmtPct(dayAvg) + "，上证" + fmtPct(shPct));
+        } else if (Objects.nonNull(dayAvg)) {
+            facts.add("全A均价" + fmtPct(dayAvg));
+        }
+        if (Objects.nonNull(briefing.getBreadthUp()) && Objects.nonNull(briefing.getBreadthDown())) {
+            String breadthState = "，广度均衡";
+            if (briefing.getBreadthDown() > briefing.getBreadthUp() * 1.5) {
+                breadthState = "，广度偏弱";
+            } else if (briefing.getBreadthUp() > briefing.getBreadthDown() * 1.5) {
+                breadthState = "，广度偏强";
+            }
+            facts.add("上涨" + briefing.getBreadthUp() + "家、下跌" + briefing.getBreadthDown() + "家" + breadthState);
+        }
+        if (Objects.nonNull(briefing.getLimitUpCount())) {
+            String limitDownText = Objects.nonNull(briefing.getLimitDownCount())
+                    ? "、跌停" + briefing.getLimitDownCount() + "家" : "";
+            String sentiment = "中性";
+            if (briefing.getLimitUpCount() >= 80) {
+                sentiment = "活跃";
+            } else if (briefing.getLimitUpCount() <= 30) {
+                sentiment = "偏冷";
+            }
+            facts.add("涨停" + briefing.getLimitUpCount() + "家" + limitDownText + "，短线情绪" + sentiment);
+        }
+        if (StringUtils.isNotBlank(briefing.getVolumeLabel())) {
+            facts.add("量能" + briefing.getVolumeLabel());
+        }
+        if (CollUtil.isEmpty(facts)) {
+            return "关键市场数据尚未齐备，当前立场仅用于风险控制。";
+        }
+        return String.join("；", facts);
     }
 
     private String volumeSignalOf(String trend, BigDecimal shPct) {
@@ -1507,26 +1544,32 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (!dataSufficient) {
             stance = "防守";
             buyFactor = new BigDecimal("0.40");
-            positionAdvice = "数据不足：建议空仓观望或极低仓，先补齐同步";
+            positionAdvice = "数据不足：不开新仓；先补齐指数、涨停池和板块数据。";
             tips.add(0, tip("danger", "数据门禁生效：强制防守，买入仓位已大幅降权。"));
         } else if (score >= 65) {
             stance = "进攻";
             buyFactor = new BigDecimal("1.10");
-            positionAdvice = "建议总仓 6–8 成，可对共振/主线标的正常/略抬仓";
+            positionAdvice = "总仓上限8成；只做主线内放量突破、且广度未转弱的标的；高开回落和跟风票不追。";
             tips.add(0, tip("info", "综合评分偏进攻：可执行买入计划，但仍控制单票上限。"));
         } else if (score <= 40) {
             stance = "防守";
             buyFactor = new BigDecimal("0.55");
-            positionAdvice = "建议总仓 2–4 成，新建仓降权，优先处理卖出/止损";
+            positionAdvice = "总仓控制在2-4成；不开弱势反抽，新开仓只允许小仓试错；先处理跌破止损线的持仓。";
             tips.add(0, tip("danger", "综合评分偏防守：今日买入建议已自动降权，优先风控与持仓体检。"));
         } else {
             stance = "均衡";
             buyFactor = BigDecimal.ONE;
-            positionAdvice = "建议总仓 4–6 成，精选共振/主线，避免无脑铺开";
+            positionAdvice = "总仓控制在4-6成；只在主线内放量突破时开仓；非主线和冲高回落不追。";
             tips.add(0, tip("info", "市场中性偏均衡：有信号再做，仓位中等、纪律优先。"));
         }
 
-        String stanceReason = "评分 " + score + "/100 · 综合大盘、趋势、量能、风格、广度与涨停情绪";
+        String stanceReason = buildStanceReason(MarketBriefingResp.builder()
+                .breadthUp(breadthUp)
+                .breadthDown(breadthDown)
+                .limitUpCount(resolveLimitUpCount(lu))
+                .limitDownCount(resolveLimitDownCount())
+                .volumeLabel(Objects.nonNull(vol) ? vol.label : null)
+                .build(), dayAvg, shPct);
         if (tips.size() > 10) {
             tips = new ArrayList<>(tips.subList(0, 10));
         }

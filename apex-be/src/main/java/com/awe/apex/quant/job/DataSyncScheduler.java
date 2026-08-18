@@ -1,8 +1,6 @@
 package com.awe.apex.quant.job;
 
 import com.awe.apex.quant.domain.dto.BarSyncResp;
-import com.awe.apex.quant.domain.dto.HotRefreshResp;
-import com.awe.apex.quant.domain.dto.SectorRefreshResp;
 import com.awe.apex.quant.domain.dto.SyncJobResp;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
 import com.awe.apex.quant.context.ApexUserContext;
@@ -11,11 +9,9 @@ import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDataSyncJobService;
-import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPortfolioService;
-import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.IWatchlistService;
 
 import java.time.Clock;
@@ -26,6 +22,7 @@ import java.time.ZonedDateTime;
 
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -42,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "apex.scheduler", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class DataSyncScheduler {
 
     private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
@@ -58,12 +56,6 @@ public class DataSyncScheduler {
 
     @Resource
     private IWatchlistService watchlistService;
-
-    @Resource
-    private IHotService hotService;
-
-    @Resource
-    private ISectorBoardService sectorBoardService;
 
     @Resource
     private IDataSyncJobService dataSyncJobService;
@@ -297,11 +289,15 @@ public class DataSyncScheduler {
         if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
             return;
         }
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("HOT");
+        request.setSources("eastmoney,baidu");
+        request.setLimit(40);
         try {
-            HotRefreshResp resp = hotService.refresh("eastmoney,baidu", 40);
-            log.info("定时热点刷新完成，结果={}", resp.getMessage());
+            SyncJobResp job = dataSyncJobService.startSystemTask(request);
+            log.info("定时热点刷新已提交统一任务，任务编号={}，状态={}", job.getId(), job.getStatus());
         } catch (Exception ex) {
-            log.warn("定时热点刷新失败: {}", ex.getMessage());
+            log.warn("定时热点刷新提交失败，原因={}", ex.getMessage());
         }
     }
 
@@ -313,11 +309,14 @@ public class DataSyncScheduler {
         if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
             return;
         }
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("SECTOR_QUOTE");
+        request.setTypes("INDUSTRY,CONCEPT,THEME");
         try {
-            SectorRefreshResp resp = sectorBoardService.refresh("INDUSTRY,CONCEPT,THEME");
-            log.info("定时板块刷新完成，结果={}", resp.getMessage());
+            SyncJobResp job = dataSyncJobService.startSystemTask(request);
+            log.info("定时板块刷新已提交统一任务，任务编号={}，状态={}", job.getId(), job.getStatus());
         } catch (Exception ex) {
-            log.warn("定时板块刷新失败: {}", ex.getMessage());
+            log.warn("定时板块刷新提交失败，原因={}", ex.getMessage());
         }
     }
 

@@ -21,7 +21,7 @@ test('maps trades into the containing aggregated K-line period', () => {
   ], chartBars)
 
   assert.equal(result.buy[0].value[0], '2026-08-15')
-  assert.equal(result.buy[0].labelText, 'B 张三')
+  assert.equal(result.buy[0].labelText, 'B 疯锅')
 })
 
 test('groups same-period same-side records and keeps every owner in details', () => {
@@ -45,7 +45,7 @@ test('groups same-period same-side records and keeps every owner in details', ()
   ], chartBars)
 
   assert.equal(result.sell.length, 1)
-  assert.equal(result.sell[0].labelText, 'S 张三 +1')
+  assert.equal(result.sell[0].labelText, 'S 疯锅 +1')
   assert.deepEqual(result.sell[0].records.map((row) => row.ownerLabel), ['张三', '李四'])
 })
 

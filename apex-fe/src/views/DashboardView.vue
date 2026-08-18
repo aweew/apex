@@ -798,7 +798,7 @@ onMounted(() => {
           :class="item.status === 'TRIGGERED' ? 'trig' : 'near'"
           @click="router.push(`/stock/${item.code}`)"
         >
-          <StockIdentity :security="item" compact />
+          <StockIdentity class="observe-chip__identity" :security="item" compact />
           <em>{{ item.status === 'TRIGGERED' ? '已触发' : '接近' }}</em>
         </button>
       </div>
@@ -1264,6 +1264,12 @@ onMounted(() => {
   padding: 6px 12px;
   font: inherit;
   cursor: pointer;
+}
+
+.observe-chip :deep(.observe-chip__identity) {
+  width: auto;
+  max-width: calc(100% - 48px);
+  gap: 2px;
 }
 
 .observe-chip b {

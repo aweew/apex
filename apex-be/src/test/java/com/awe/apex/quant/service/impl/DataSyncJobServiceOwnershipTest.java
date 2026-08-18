@@ -14,6 +14,7 @@ import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.TaskProgressListener;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
+import com.awe.apex.quant.sync.SyncJobLeaseService;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -25,10 +26,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.concurrent.atomic.AtomicReference;
+import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -51,6 +54,7 @@ class DataSyncJobServiceOwnershipTest {
     private final IConfigService configService = mock(IConfigService.class);
     private final ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
     private final ApexUserContext userContext = mock(ApexUserContext.class);
+    private final SyncJobLeaseService syncJobLeaseService = mock(SyncJobLeaseService.class);
     private final DataSyncJobServiceImpl service = new DataSyncJobServiceImpl();
     private final AtomicReference<SyncJob> savedJob = new AtomicReference<>();
 
@@ -64,7 +68,9 @@ class DataSyncJobServiceOwnershipTest {
         ReflectionTestUtils.setField(service, "configService", configService);
         ReflectionTestUtils.setField(service, "userAuthService", userAuthService);
         ReflectionTestUtils.setField(service, "userContext", userContext);
+        ReflectionTestUtils.setField(service, "syncJobLeaseService", syncJobLeaseService);
         when(userContext.currentUserId()).thenReturn(7L);
+        when(syncJobLeaseService.tryAcquire(any(), any(), any())).thenReturn(true);
         when(syncJobMapper.selectOne(any())).thenReturn(null);
         when(syncJobMapper.insert(any(SyncJob.class))).thenAnswer(invocation -> {
             SyncJob job = invocation.getArgument(0);
@@ -107,10 +113,87 @@ class DataSyncJobServiceOwnershipTest {
     }
 
     @Test
+    void runningDecisionOnAnotherInstancePreventsDuplicateStart() {
+        when(syncJobLeaseService.tryAcquire(any(), any(), any())).thenReturn(false);
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("DECISION");
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.startForUser(request, 9L));
+
+        assertTrue(exception.getMessage().contains("其他服务实例"));
+        verify(syncJobMapper, never()).insert(any(SyncJob.class));
+    }
+
+    @Test
     void sharedDecisionJobIsVisibleToAllUsers() {
         savedJob.set(SyncJob.builder().id(201L).taskType("DECISION").status("SUCCESS").build());
 
         assertEquals(201L, service.getJob(201L).getId());
+    }
+
+    @Test
+    void pollingRunningDecisionJobDoesNotWriteStaleStatus() {
+        savedJob.set(SyncJob.builder()
+                .id(201L)
+                .taskType("DECISION")
+                .status("RUNNING")
+                .progressPct(99)
+                .build());
+
+        assertEquals(99, service.getJob(201L).getProgressPct());
+
+        verify(syncJobMapper, never()).updateById(any(SyncJob.class));
+        verify(syncJobMapper, never()).update(any(SyncJob.class), any());
+    }
+
+    @Test
+    void reconcileKeepsRecentJobPossiblyOwnedByAnotherInstance() {
+        SyncJob runningJob = SyncJob.builder()
+                .id(202L)
+                .taskType("DECISION")
+                .status("RUNNING")
+                .startedAt(LocalDateTime.now().minusMinutes(10))
+                .build();
+        when(syncJobMapper.selectList(any())).thenReturn(java.util.List.of(runningJob));
+
+        service.reconcileOrphanJobs();
+
+        assertEquals("RUNNING", runningJob.getStatus());
+        verify(syncJobMapper, never()).updateById(any(SyncJob.class));
+    }
+
+    @Test
+    void reconcileFailsJobPastTimeoutAndGracePeriod() {
+        SyncJob runningJob = SyncJob.builder()
+                .id(203L)
+                .taskType("DECISION")
+                .status("RUNNING")
+                .startedAt(LocalDateTime.now().minusMinutes(36))
+                .build();
+        when(syncJobMapper.selectList(any())).thenReturn(java.util.List.of(runningJob));
+
+        service.reconcileOrphanJobs();
+
+        assertEquals("FAILED", runningJob.getStatus());
+        assertEquals("任务超过运行时限（僵尸任务已清理）", runningJob.getMessage());
+        assertNotNull(runningJob.getFinishedAt());
+        verify(syncJobMapper).updateById(runningJob);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shutdownReleasesRegisteredTaskLease() {
+        Map<Long, String> leaseKeys = (Map<Long, String>) ReflectionTestUtils.getField(service, "runningLeaseKeys");
+        Map<Long, String> leaseOwners = (Map<Long, String>) ReflectionTestUtils.getField(service, "runningLeaseOwners");
+        assertNotNull(leaseKeys);
+        assertNotNull(leaseOwners);
+        leaseKeys.put(901L, "apex:sync:lease:CLOSE_BUNDLE");
+        leaseOwners.put(901L, "owner-901");
+
+        service.shutdown();
+
+        verify(syncJobLeaseService).release("apex:sync:lease:CLOSE_BUNDLE", "owner-901");
     }
 
     @Test
