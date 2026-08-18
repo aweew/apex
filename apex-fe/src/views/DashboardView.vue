@@ -34,7 +34,20 @@ function writeHomeCache(data) {
 const market = computed(() => home.value?.market || null)
 const morningBriefing = computed(() => home.value?.morningBriefing || null)
 const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
-const overnightQuotes = computed(() => morningBriefing.value?.marketQuotes || [])
+const legacyIndexSymbols = new Set(['usIXIC', 'usDJI', 'usINX'])
+const overnightIndexes = computed(() => {
+  const indexQuotes = morningBriefing.value?.indexQuotes
+  if (Array.isArray(indexQuotes)) return indexQuotes
+  const marketQuotes = morningBriefing.value?.marketQuotes || []
+  return marketQuotes.filter((quote) => legacyIndexSymbols.has(quote.symbol))
+})
+const overnightThemes = computed(() => morningBriefing.value?.marketThemes || [])
+const overnightStars = computed(() => {
+  const starQuotes = morningBriefing.value?.starQuotes
+  if (Array.isArray(starQuotes)) return starQuotes
+  const marketQuotes = morningBriefing.value?.marketQuotes || []
+  return marketQuotes.filter((quote) => !legacyIndexSymbols.has(quote.symbol))
+})
 const morningNewsCards = computed(() => {
   const cards = newsPulse.value?.cards || []
   if (cards.length) return cards.slice(0, 3)
@@ -511,20 +524,67 @@ onMounted(() => {
         <div class="morning-context-block overnight-block">
           <div class="morning-block-head">
             <h4>隔夜美股</h4>
-            <span>三大指数与重点个股</span>
+            <span>指数温度 · 主题强弱 · 明星异动</span>
           </div>
-          <div v-if="overnightQuotes.length" class="overnight-quote-grid">
-            <div v-for="quote in overnightQuotes" :key="quote.symbol" class="overnight-quote">
-              <div class="overnight-quote-name">
-                <strong>{{ quote.name || quote.symbol }}</strong>
-                <small v-if="fmtQuotePrice(quote.latestPrice)">{{ fmtQuotePrice(quote.latestPrice) }}</small>
-              </div>
-              <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
+
+          <div class="overnight-layer">
+            <div class="overnight-layer-head">
+              <h5>市场温度</h5>
+              <span>三大指数</span>
             </div>
+            <div v-if="overnightIndexes.length" class="overnight-index-grid">
+              <div v-for="quote in overnightIndexes" :key="quote.symbol" class="overnight-quote">
+                <div class="overnight-quote-name">
+                  <strong>{{ quote.name || quote.symbol }}</strong>
+                  <small v-if="fmtQuotePrice(quote.latestPrice)">{{ fmtQuotePrice(quote.latestPrice) }}</small>
+                </div>
+                <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
+              </div>
+            </div>
+            <p v-else class="morning-context-empty">
+              {{ loading || refreshing ? '正在读取隔夜行情…' : '隔夜行情暂未获取' }}
+            </p>
           </div>
-          <p v-else class="morning-context-empty">
-            {{ loading || refreshing ? '正在读取隔夜行情…' : '隔夜行情暂未获取' }}
-          </p>
+
+          <div class="overnight-layer">
+            <div class="overnight-layer-head">
+              <h5>主题情绪</h5>
+              <span>按涨跌幅中位数排序</span>
+            </div>
+            <div v-if="overnightThemes.length" class="overnight-theme-grid">
+              <div v-for="theme in overnightThemes" :key="theme.code || theme.name" class="overnight-theme">
+                <div class="overnight-theme-copy">
+                  <strong>{{ theme.name }}</strong>
+                  <small v-if="theme.leaderQuote">
+                    领涨 {{ theme.leaderQuote.name || theme.leaderQuote.symbol }}
+                    {{ fmtIndexPct(theme.leaderQuote.pctChg) }}
+                  </small>
+                </div>
+                <div class="overnight-theme-stats">
+                  <b :class="pctDir(theme.medianPctChg)">{{ fmtIndexPct(theme.medianPctChg) }}</b>
+                  <span>{{ theme.upCount ?? 0 }}/{{ theme.quoteCount ?? 0 }} 上涨</span>
+                </div>
+              </div>
+            </div>
+            <p v-else class="morning-context-empty">主题情绪暂未生成</p>
+          </div>
+
+          <div class="overnight-layer">
+            <div class="overnight-layer-head">
+              <h5>明星异动</h5>
+              <span>按绝对涨跌幅排序</span>
+            </div>
+            <div v-if="overnightStars.length" class="overnight-star-grid">
+              <div v-for="quote in overnightStars" :key="quote.symbol" class="overnight-quote">
+                <div class="overnight-quote-name">
+                  <strong>{{ quote.name || quote.symbol }}</strong>
+                  <small v-if="fmtQuotePrice(quote.latestPrice)">{{ fmtQuotePrice(quote.latestPrice) }}</small>
+                </div>
+                <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
+              </div>
+            </div>
+            <p v-else class="morning-context-empty">明星异动暂未生成</p>
+          </div>
         </div>
 
         <div class="morning-context-block morning-news-block">
@@ -1643,7 +1703,49 @@ onMounted(() => {
   letter-spacing: 0;
 }
 
-.overnight-quote-grid {
+.overnight-layer + .overnight-layer {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.overnight-layer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 20px;
+  margin-bottom: 4px;
+}
+
+.overnight-layer-head h5 {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.overnight-layer-head span {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.overnight-index-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 14px;
+}
+
+.overnight-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 18px;
+}
+
+.overnight-star-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 18px;
@@ -1660,7 +1762,8 @@ onMounted(() => {
   font-variant-numeric: tabular-nums;
 }
 
-.overnight-quote:nth-last-child(-n + 2) {
+.overnight-index-grid .overnight-quote:nth-last-child(-n + 3),
+.overnight-star-grid .overnight-quote:nth-last-child(-n + 2) {
   border-bottom-color: transparent;
 }
 
@@ -1696,6 +1799,74 @@ onMounted(() => {
 
 .overnight-quote > b.up { color: var(--up); }
 .overnight-quote > b.down { color: var(--down); }
+
+.overnight-theme {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 43px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  font-variant-numeric: tabular-nums;
+}
+
+.overnight-theme:nth-last-child(-n + 2) {
+  border-bottom-color: transparent;
+}
+
+.overnight-theme-copy,
+.overnight-theme-stats {
+  display: flex;
+  min-width: 0;
+}
+
+.overnight-theme-copy {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.overnight-theme-copy strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overnight-theme-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overnight-theme-stats {
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.overnight-theme-stats b {
+  color: var(--slate);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.overnight-theme-stats b.up { color: var(--up); }
+.overnight-theme-stats b.down { color: var(--down); }
+
+.overnight-theme-stats span {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0;
+}
 
 .news-counts {
   display: flex;
@@ -1795,8 +1966,21 @@ onMounted(() => {
     width: 100%;
   }
 
-  .overnight-quote-grid {
+  .overnight-index-grid,
+  .overnight-star-grid {
     column-gap: 12px;
+  }
+
+  .overnight-theme-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overnight-theme:nth-last-child(-n + 2) {
+    border-bottom-color: rgba(15, 23, 42, 0.07);
+  }
+
+  .overnight-theme:last-child {
+    border-bottom-color: transparent;
   }
 
   .overnight-quote-name small {

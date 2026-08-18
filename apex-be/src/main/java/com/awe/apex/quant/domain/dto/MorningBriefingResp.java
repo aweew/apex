@@ -28,6 +28,21 @@ public class MorningBriefingResp {
     private List<OvernightMarketQuote> marketQuotes;
 
     /**
+     * 市场指数报价。
+     */
+    private List<OvernightMarketQuote> indexQuotes;
+
+    /**
+     * 明星异动报价。
+     */
+    private List<OvernightMarketQuote> starQuotes;
+
+    /**
+     * 美股主题情绪。
+     */
+    private List<OvernightMarketTheme> marketThemes;
+
+    /**
      * 夜间重点新闻标题。
      */
     private List<String> newsTitles;
