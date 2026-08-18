@@ -68,6 +68,11 @@ const RULE_CATALOG = [
   { value: 'RS20', label: '20日相对强度（%）', kind: 'number', operator: 'GTE' },
   { value: 'ATR_PCT', label: 'ATR14/现价（%）', kind: 'number', operator: 'BETWEEN' },
   { value: 'PRICE_POSITION', label: '区间价格位置（%）', kind: 'number', operator: 'LTE', lookback: true },
+  { value: 'DAYS_SINCE_LIMIT_UP', label: '距最近涨停天数', kind: 'integer', operator: 'LTE', lookback: true, defaultLookback: 10 },
+  { value: 'VOLUME_MA_RATIO', label: '量能相对均量（%）', kind: 'number', operator: 'BETWEEN', lookback: true, defaultLookback: 5 },
+  { value: 'CLOSE_MA_DISTANCE_PCT', label: '收盘相对均线距离（%）', kind: 'number', operator: 'BETWEEN', lookback: true, defaultLookback: 10 },
+  { value: 'BREAKOUT_PREVIOUS_HIGH', label: '突破前期高点', kind: 'boolean', operator: 'EQ', lookback: true, defaultLookback: 3 },
+  { value: 'MA_BULLISH_ALIGNMENT', label: 'MA5/MA10/MA20 多头排列', kind: 'boolean', operator: 'EQ' },
   { value: 'INTRADAY_ABOVE_AVG_RATIO', label: '均价线上方占比（%）', kind: 'number', operator: 'GTE' },
   { value: 'INTRADAY_CURRENT_ABOVE_AVG', label: '当前价不低于均价', kind: 'boolean', operator: 'EQ' },
   { value: 'INTRADAY_MAX_BELOW_MINUTES', label: '连续跌破均价分钟数', kind: 'integer', operator: 'LTE' },
@@ -131,7 +136,7 @@ function newStrategyRule(ruleType = 'PCT_CHG') {
     intValue: catalog.kind === 'integer' ? 1 : null,
     textValue: catalog.kind === 'market' ? 'MAIN_BOARD' : catalog.kind === 'time' ? '103000' : '',
     boolValue: catalog.kind === 'boolean' ? true : null,
-    lookbackDays: catalog.lookback ? 20 : null,
+    lookbackDays: catalog.lookback ? (catalog.defaultLookback || 20) : null,
     toleranceValue: null,
   }
 }
@@ -1188,6 +1193,9 @@ onBeforeUnmount(() => {
           </div>
           <div class="strategy-flags">
             <el-tag size="small" effect="plain">{{ selectedStrategy.template ? '系统模板' : `版本 ${selectedStrategy.versionNo}` }}</el-tag>
+            <el-tag size="small" :type="selectedStrategy.runMode === 'CLOSE' ? 'warning' : 'info'" effect="plain">
+              {{ selectedStrategy.runMode === 'CLOSE' ? '收盘' : '实时' }}
+            </el-tag>
             <el-tag v-if="!selectedStrategy.template" size="small" :type="selectedStrategy.enabled ? 'success' : 'info'" effect="plain">
               {{ selectedStrategy.enabled ? '已启用' : '已停用' }}
             </el-tag>

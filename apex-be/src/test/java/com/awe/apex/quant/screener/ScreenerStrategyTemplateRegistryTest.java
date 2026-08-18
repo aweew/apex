@@ -48,4 +48,45 @@ class ScreenerStrategyTemplateRegistryTest {
                 .anyMatch(rule -> ScreenerRuleTypeEnum.INTRADAY_ABOVE_AVG_RATIO.getCode()
                         .equals(rule.getRuleType())));
     }
+
+    @Test
+    void shouldExposeFourCommonShortTermTemplates() {
+        ScreenerStrategyTemplateRegistry registry = new ScreenerStrategyTemplateRegistry();
+
+        assertEquals(10, registry.listTemplates().size());
+
+        ScreenerStrategyResp resonance = registry.getTemplate("SECTOR_RESONANCE_FIRST_BOARD");
+        assertNotNull(resonance);
+        assertEquals("板块共振首板", resonance.getName());
+        assertEquals("REALTIME", resonance.getRunMode());
+        assertTrue(hasRule(resonance, ScreenerRuleTypeEnum.LIMIT_UP_LEVEL));
+        assertTrue(hasRule(resonance, ScreenerRuleTypeEnum.THEME_LINKAGE_COUNT));
+
+        ScreenerStrategyResp lowPosition = registry.getTemplate("LOW_POSITION_FIRST_BOARD");
+        assertNotNull(lowPosition);
+        assertEquals("低位首板", lowPosition.getName());
+        assertTrue(hasRule(lowPosition, ScreenerRuleTypeEnum.PRICE_POSITION));
+        assertTrue(hasRule(lowPosition, ScreenerRuleTypeEnum.LIMIT_UP_LEVEL));
+
+        ScreenerStrategyResp comeback = registry.getTemplate("LIMIT_UP_COMEBACK");
+        assertNotNull(comeback);
+        assertEquals("涨停回马枪", comeback.getName());
+        assertEquals("CLOSE", comeback.getRunMode());
+        assertTrue(hasRule(comeback, ScreenerRuleTypeEnum.MARKET_BOARD));
+        assertTrue(hasRule(comeback, ScreenerRuleTypeEnum.DAYS_SINCE_LIMIT_UP));
+        assertTrue(hasRule(comeback, ScreenerRuleTypeEnum.VOLUME_MA_RATIO));
+        assertTrue(hasRule(comeback, ScreenerRuleTypeEnum.BREAKOUT_PREVIOUS_HIGH));
+
+        ScreenerStrategyResp pullback = registry.getTemplate("VOLUME_CONTRACTION_PULLBACK");
+        assertNotNull(pullback);
+        assertEquals("缩量回踩", pullback.getName());
+        assertEquals("CLOSE", pullback.getRunMode());
+        assertTrue(hasRule(pullback, ScreenerRuleTypeEnum.MA_BULLISH_ALIGNMENT));
+        assertTrue(hasRule(pullback, ScreenerRuleTypeEnum.CLOSE_MA_DISTANCE_PCT));
+        assertTrue(hasRule(pullback, ScreenerRuleTypeEnum.VOLUME_MA_RATIO));
+    }
+
+    private boolean hasRule(ScreenerStrategyResp strategy, ScreenerRuleTypeEnum ruleType) {
+        return strategy.getRules().stream().anyMatch(rule -> ruleType.getCode().equals(rule.getRuleType()));
+    }
 }

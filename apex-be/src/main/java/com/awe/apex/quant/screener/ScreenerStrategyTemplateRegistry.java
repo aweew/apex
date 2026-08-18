@@ -33,6 +33,10 @@ public class ScreenerStrategyTemplateRegistry {
         registerLowPositionVolume();
         registerMidCapValuation();
         registerPublicFirstBoard();
+        registerSectorResonanceFirstBoard();
+        registerLowPositionFirstBoard();
+        registerLimitUpComeback();
+        registerVolumeContractionPullback();
     }
 
     /**
@@ -149,13 +153,103 @@ public class ScreenerStrategyTemplateRegistry {
                 "基于公开首板方法的可解释候选过滤，关注封板质量、流动性和题材联动；仅用于选股，不包含下单规则。", rules);
     }
 
+    private void registerSectorResonanceFirstBoard() {
+        List<ScreenerStrategyRuleResp> rules = new ArrayList<>();
+        rules.add(textRule(ScreenerRuleTypeEnum.MARKET_BOARD, "MAIN_BOARD", "沪深主板", 10));
+        rules.add(booleanRule(ScreenerRuleTypeEnum.EXCLUDE_ST, true, "排除 ST", 20));
+        rules.add(integerRule(ScreenerRuleTypeEnum.LIMIT_UP_LEVEL, ScreenerOperatorEnum.EQ,
+                1, null, "当日首板", 30));
+        rules.add(integerRule(ScreenerRuleTypeEnum.THEME_LINKAGE_COUNT, ScreenerOperatorEnum.GTE,
+                3, null, "同题材涨停至少 3 家", 40));
+        rules.add(textComparisonRule(ScreenerRuleTypeEnum.FIRST_SEAL_TIME, ScreenerOperatorEnum.LTE,
+                "103000", "首次封板不晚于 10:30", 50));
+        rules.add(textComparisonRule(ScreenerRuleTypeEnum.LAST_SEAL_TIME, ScreenerOperatorEnum.LTE,
+                "140000", "最后封板不晚于 14:00", 60));
+        rules.add(integerRule(ScreenerRuleTypeEnum.BREAK_COUNT, ScreenerOperatorEnum.LTE,
+                1, null, "炸板不超过 1 次", 70));
+        rules.add(numberRule(ScreenerRuleTypeEnum.SEAL_AMOUNT, ScreenerOperatorEnum.GTE,
+                "30000000", "封单金额至少 3000万", 80));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.TURNOVER_RATE, "3", "20", "换手率 3% - 20%", 90));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.AMOUNT, "300000000", "3000000000",
+                "成交额 3亿 - 30亿", 100));
+        register("SECTOR_RESONANCE_FIRST_BOARD", "板块共振首板",
+                "用同题材多股涨停确认板块联动，再筛选早封、少炸板且流动性适中的主板首板。", rules);
+    }
+
+    private void registerLowPositionFirstBoard() {
+        List<ScreenerStrategyRuleResp> rules = new ArrayList<>();
+        rules.add(textRule(ScreenerRuleTypeEnum.MARKET_BOARD, "MAIN_BOARD", "沪深主板", 10));
+        rules.add(booleanRule(ScreenerRuleTypeEnum.EXCLUDE_ST, true, "排除 ST", 20));
+        rules.add(numberRule(ScreenerRuleTypeEnum.PRICE_POSITION, ScreenerOperatorEnum.LTE,
+                "30", "最新价位于近 120 日价格区间下方 30%", 30, 120));
+        rules.add(integerRule(ScreenerRuleTypeEnum.LIMIT_UP_LEVEL, ScreenerOperatorEnum.EQ,
+                1, null, "当日首板", 40));
+        rules.add(integerRule(ScreenerRuleTypeEnum.THEME_LINKAGE_COUNT, ScreenerOperatorEnum.GTE,
+                2, null, "同题材涨停至少 2 家", 50));
+        rules.add(textComparisonRule(ScreenerRuleTypeEnum.FIRST_SEAL_TIME, ScreenerOperatorEnum.LTE,
+                "140000", "首次封板不晚于 14:00", 60));
+        rules.add(integerRule(ScreenerRuleTypeEnum.BREAK_COUNT, ScreenerOperatorEnum.LTE,
+                2, null, "炸板不超过 2 次", 70));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.TURNOVER_RATE, "3", "20", "换手率 3% - 20%", 80));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.AMOUNT, "300000000", "3000000000",
+                "成交额 3亿 - 30亿", 90));
+        register("LOW_POSITION_FIRST_BOARD", "低位首板",
+                "在阶段低位中筛选有题材联动、换手和成交额适中的主板首板，降低纯高位接力暴露。", rules);
+    }
+
+    private void registerLimitUpComeback() {
+        List<ScreenerStrategyRuleResp> rules = new ArrayList<>();
+        rules.add(textRule(ScreenerRuleTypeEnum.MARKET_BOARD, "MAIN_BOARD", "沪深主板", 10));
+        rules.add(booleanRule(ScreenerRuleTypeEnum.EXCLUDE_ST, true, "排除 ST", 20));
+        rules.add(integerRule(ScreenerRuleTypeEnum.DAYS_SINCE_LIMIT_UP, ScreenerOperatorEnum.GTE,
+                2, 10, "距最近涨停至少 2 个交易日", 30));
+        rules.add(integerRule(ScreenerRuleTypeEnum.DAYS_SINCE_LIMIT_UP, ScreenerOperatorEnum.LTE,
+                10, 10, "距最近涨停不超过 10 个交易日", 40));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.CLOSE_MA_DISTANCE_PCT, "0", "5",
+                "收盘位于 MA10 上方 0% - 5%", 50, 10));
+        rules.add(numberRule(ScreenerRuleTypeEnum.VOLUME_MA_RATIO, ScreenerOperatorEnum.GTE,
+                "120", "最新成交量至少为前 5 日均量的 120%", 60, 5));
+        rules.add(booleanRule(ScreenerRuleTypeEnum.BREAKOUT_PREVIOUS_HIGH, true,
+                "收盘突破前 3 日高点", 70, 3));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.PCT_CHG, "1", "7", "当日涨幅 1% - 7%", 80));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.AMOUNT, "300000000", "5000000000",
+                "成交额 3亿 - 50亿", 90));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.ATR_PCT, "1", "6", "ATR14 占现价 1% - 6%", 100));
+        register("LIMIT_UP_COMEBACK", "涨停回马枪",
+                "筛选主板前期涨停后经过整理、重新放量突破短期前高且仍站在 MA10 上方的候选。",
+                ScreenerRunModeEnum.CLOSE.getCode(), rules);
+    }
+
+    private void registerVolumeContractionPullback() {
+        List<ScreenerStrategyRuleResp> rules = new ArrayList<>();
+        rules.add(booleanRule(ScreenerRuleTypeEnum.EXCLUDE_ST, true, "排除 ST", 10));
+        rules.add(booleanRule(ScreenerRuleTypeEnum.MA_BULLISH_ALIGNMENT, true,
+                "MA5 > MA10 > MA20", 20));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.CLOSE_MA_DISTANCE_PCT, "0", "3",
+                "收盘位于 MA10 上方 0% - 3%", 30, 10));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.VOLUME_MA_RATIO, "30", "80",
+                "最新成交量为前 5 日均量的 30% - 80%", 40, 5));
+        rules.add(numberRule(ScreenerRuleTypeEnum.RS20, ScreenerOperatorEnum.GTE,
+                "2", "20 日相对沪深300强度至少 2%", 50));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.ATR_PCT, "1", "5", "ATR14 占现价 1% - 5%", 60));
+        rules.add(rangeRule(ScreenerRuleTypeEnum.PCT_CHG, "-2", "3", "当日涨幅 -2% - 3%", 70));
+        register("VOLUME_CONTRACTION_PULLBACK", "缩量回踩",
+                "在均线多头和相对强势前提下，筛选缩量回踩 MA10 但仍收在均线上方的候选。",
+                ScreenerRunModeEnum.CLOSE.getCode(), rules);
+    }
+
     private void register(String key, String name, String description, List<ScreenerStrategyRuleResp> rules) {
+        register(key, name, description, ScreenerRunModeEnum.REALTIME.getCode(), rules);
+    }
+
+    private void register(String key, String name, String description, String runMode,
+                          List<ScreenerStrategyRuleResp> rules) {
         templateMap.put(key, ScreenerStrategyResp.builder()
                 .templateKey(key)
                 .name(name)
                 .description(description)
                 .sourceType("SYSTEM_TEMPLATE")
-                .runMode(ScreenerRunModeEnum.REALTIME.getCode())
+                .runMode(runMode)
                 .enabled(true)
                 .sortNo(templateMap.size() * 10 + 10)
                 .versionNo(1)
@@ -207,8 +301,13 @@ public class ScreenerStrategyTemplateRegistry {
 
     private ScreenerStrategyRuleResp booleanRule(ScreenerRuleTypeEnum type, boolean value,
                                                   String summary, int sortNo) {
+        return booleanRule(type, value, summary, sortNo, null);
+    }
+
+    private ScreenerStrategyRuleResp booleanRule(ScreenerRuleTypeEnum type, boolean value,
+                                                  String summary, int sortNo, Integer lookbackDays) {
         return rule(type, ScreenerOperatorEnum.EQ, null, null, null, null, value,
-                null, summary, sortNo);
+                lookbackDays, summary, sortNo);
     }
 
     private ScreenerStrategyRuleResp rule(ScreenerRuleTypeEnum type, ScreenerOperatorEnum operator,

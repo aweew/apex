@@ -8,6 +8,7 @@ import com.awe.apex.quant.domain.dto.ScreenerStrategyResp;
 import com.awe.apex.quant.domain.dto.ScreenerStrategyRuleResp;
 import com.awe.apex.quant.domain.dto.ScreenerStrategyRunReq;
 import com.awe.apex.quant.domain.dto.ScreenerStrategyRunResp;
+import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
@@ -21,7 +22,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,6 +39,7 @@ class ScreenerStrategyExecutionServiceImplTest {
     private ScreenerStrategyExecutionServiceImpl service;
     private IScreenerStrategyService strategyService;
     private ScreenerMarketSnapshotClient snapshotClient;
+    private BarDailyMapper barDailyMapper;
 
     @BeforeEach
     void setUp() {
@@ -55,7 +59,8 @@ class ScreenerStrategyExecutionServiceImplTest {
         ReflectionTestUtils.setField(service, "metricCalculator", new ScreenerMetricCalculator());
         ReflectionTestUtils.setField(service, "intradayReviewService", mock(ScreenerIntradayReviewService.class));
         ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
-        ReflectionTestUtils.setField(service, "barDailyMapper", mock(BarDailyMapper.class));
+        barDailyMapper = mock(BarDailyMapper.class);
+        ReflectionTestUtils.setField(service, "barDailyMapper", barDailyMapper);
         ReflectionTestUtils.setField(service, "limitUpPoolMapper", mock(LimitUpPoolMapper.class));
         ReflectionTestUtils.setField(service, "intradayMaxCandidates", 120);
     }
@@ -108,6 +113,39 @@ class ScreenerStrategyExecutionServiceImplTest {
         assertFalse(result.getDataStatus().getDegraded());
     }
 
+    @Test
+    void shouldRejectCloseStrategyWhenDailyBarIsOlderThanSnapshot() {
+        ScreenerStrategyRuleResp rule = ScreenerStrategyRuleResp.builder()
+                .ruleType("MA_BULLISH_ALIGNMENT")
+                .ruleName("均线多头排列")
+                .operatorCode("EQ")
+                .boolValue(true)
+                .build();
+        ScreenerStrategyResp strategy = strategy(List.of(rule));
+        strategy.setRunMode("CLOSE");
+        when(strategyService.resolveRunnable(null, "TEST")).thenReturn(strategy);
+        when(snapshotClient.fetchAll()).thenReturn(ScreenerMarketSnapshotBatch.builder()
+                .asOf(LocalDateTime.of(2026, 8, 18, 16, 0))
+                .items(List.of(ScreenerMarketSnapshot.builder()
+                        .code("600001")
+                        .name("示例股份")
+                        .market("SH")
+                        .pctChg(new BigDecimal("2.5"))
+                        .build()))
+                .build());
+        when(barDailyMapper.selectList(any())).thenReturn(risingBarsEndingAt(LocalDate.of(2026, 8, 17)))
+                .thenReturn(new ArrayList<>());
+
+        ScreenerStrategyRunResp result = service.run(ScreenerStrategyRunReq.builder()
+                .templateKey("TEST")
+                .build());
+
+        assertEquals(0, result.getMatchedCount());
+        assertTrue(result.getDataStatus().getDegraded());
+        assertTrue(result.getDataStatus().getIssues().stream()
+                .anyMatch(issue -> "CLOSE_DAILY_BAR_STALE".equals(issue.getIssueType())));
+    }
+
     private ScreenerStrategyResp strategy(List<ScreenerStrategyRuleResp> rules) {
         return ScreenerStrategyResp.builder()
                 .templateKey("TEST")
@@ -116,5 +154,20 @@ class ScreenerStrategyExecutionServiceImplTest {
                 .enabled(true)
                 .rules(rules)
                 .build();
+    }
+
+    private List<BarDaily> risingBarsEndingAt(LocalDate endDate) {
+        List<BarDaily> bars = new ArrayList<>();
+        for (int index = 0; index < 20; index++) {
+            bars.add(BarDaily.builder()
+                    .code("600001")
+                    .tradeDate(endDate.minusDays(19L - index))
+                    .closePrice(BigDecimal.valueOf(index + 1L))
+                    .highPrice(BigDecimal.valueOf(index + 1L))
+                    .lowPrice(BigDecimal.valueOf(index + 1L))
+                    .volume(BigDecimal.valueOf(100))
+                    .build());
+        }
+        return bars;
     }
 }

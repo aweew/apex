@@ -84,7 +84,19 @@ test('strategy results show data cutoffs issues and per-stock evidence', () => {
   assert.match(screenerSource, /class="mobile-evidence-line"/)
 })
 
+test('strategy definition identifies realtime and close run modes', () => {
+  assert.match(screenerSource, /selectedStrategy\.runMode === 'CLOSE' \? '收盘' : '实时'/)
+})
+
 test('changing strategy clears results from the previously selected strategy', () => {
   assert.match(screenerSource, /@change="onStrategyChange"/)
   assert.match(screenerSource, /function onStrategyChange\(\) \{[\s\S]*strategyRunResult\.value = null[\s\S]*\}/)
+})
+
+test('strategy editor exposes reusable short-term daily rules', () => {
+  assert.match(screenerSource, /value: 'DAYS_SINCE_LIMIT_UP'[\s\S]*?kind: 'integer'[\s\S]*?lookback: true/)
+  assert.match(screenerSource, /value: 'VOLUME_MA_RATIO'[\s\S]*?kind: 'number'[\s\S]*?lookback: true/)
+  assert.match(screenerSource, /value: 'CLOSE_MA_DISTANCE_PCT'[\s\S]*?kind: 'number'[\s\S]*?lookback: true/)
+  assert.match(screenerSource, /value: 'BREAKOUT_PREVIOUS_HIGH'[\s\S]*?kind: 'boolean'[\s\S]*?lookback: true/)
+  assert.match(screenerSource, /value: 'MA_BULLISH_ALIGNMENT'[\s\S]*?kind: 'boolean'/)
 })

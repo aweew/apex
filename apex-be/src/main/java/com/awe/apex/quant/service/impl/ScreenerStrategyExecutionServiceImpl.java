@@ -22,6 +22,7 @@ import com.awe.apex.quant.domain.dto.StockIntradayResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.LimitUpPool;
 import com.awe.apex.quant.domain.entity.StockBasic;
+import com.awe.apex.quant.domain.enums.ScreenerRunModeEnum;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
@@ -181,13 +182,20 @@ public class ScreenerStrategyExecutionServiceImpl implements IScreenerStrategyEx
             for (ScreenerCandidateBO candidate : snapshotMatches) {
                 List<BarDaily> bars = barMap.getOrDefault(candidate.getSnapshot().getCode(), List.of());
                 candidate.setBars(bars);
+                LocalDate candidateDate = null;
                 if (CollUtil.isNotEmpty(bars)) {
-                    LocalDate candidateDate = bars.get(bars.size() - 1).getTradeDate();
+                    candidateDate = bars.get(bars.size() - 1).getTradeDate();
                     candidate.setDailyAsOf(candidateDate);
                     if (Objects.nonNull(candidateDate)
                             && (Objects.isNull(dailyAsOf) || candidateDate.isAfter(dailyAsOf))) {
                         dailyAsOf = candidateDate;
                     }
+                }
+                if (ScreenerRunModeEnum.CLOSE.getCode().equals(strategy.getRunMode())
+                        && !Objects.equals(asOfDate, candidateDate)) {
+                    recordIssue(issueMap, STAGE_HISTORY, "CLOSE_DAILY_BAR_STALE", 1,
+                            "收盘策略日线未同步到实时截面交易日");
+                    continue;
                 }
                 if (passesHistoricalRules(candidate, strategy.getRules(), benchmarkRet20, issueMap)) {
                     historicalMatches.add(candidate);
@@ -445,6 +453,11 @@ public class ScreenerStrategyExecutionServiceImpl implements IScreenerStrategyEx
                 .rs20(candidate.getRs20())
                 .atrPct(candidate.getAtrPct())
                 .pricePosition(candidate.getPricePosition())
+                .daysSinceLimitUp(candidate.getDaysSinceLimitUp())
+                .volumeMaRatio(candidate.getVolumeMaRatio())
+                .closeMaDistancePct(candidate.getCloseMaDistancePct())
+                .breakoutPreviousHigh(candidate.getBreakoutPreviousHigh())
+                .maBullishAlignment(candidate.getMaBullishAlignment())
                 .firstSealTime(Objects.nonNull(limitUp) ? limitUp.getFirstSealTime() : null)
                 .lastSealTime(Objects.nonNull(limitUp) ? limitUp.getLastSealTime() : null)
                 .breakCount(Objects.nonNull(limitUp) ? limitUp.getBreakCount() : null)
@@ -564,6 +577,9 @@ public class ScreenerStrategyExecutionServiceImpl implements IScreenerStrategyEx
         List<String> notes = new ArrayList<>();
         notes.add("同一策略内所有规则按 AND 执行，任一必需数据缺失即不命中。");
         notes.add("盘中分时规则表示截至当前；收盘后运行才代表完整交易日。");
+        if (ScreenerRunModeEnum.CLOSE.getCode().equals(strategy.getRunMode())) {
+            notes.add("收盘策略要求日线已同步到实时截面交易日，盘中或日线未更新时不会产生候选。");
+        }
         if (Boolean.TRUE.equals(strategy.getTemplate()) && StringUtils.isNotBlank(strategy.getDisclaimer())) {
             notes.add(strategy.getDisclaimer());
         }

@@ -31,7 +31,12 @@ public class ScreenerStrategyRuleEvaluator {
             ScreenerRuleTypeEnum.UP_DAYS,
             ScreenerRuleTypeEnum.RS20,
             ScreenerRuleTypeEnum.ATR_PCT,
-            ScreenerRuleTypeEnum.PRICE_POSITION
+            ScreenerRuleTypeEnum.PRICE_POSITION,
+            ScreenerRuleTypeEnum.DAYS_SINCE_LIMIT_UP,
+            ScreenerRuleTypeEnum.VOLUME_MA_RATIO,
+            ScreenerRuleTypeEnum.CLOSE_MA_DISTANCE_PCT,
+            ScreenerRuleTypeEnum.BREAKOUT_PREVIOUS_HIGH,
+            ScreenerRuleTypeEnum.MA_BULLISH_ALIGNMENT
     );
 
     private static final EnumSet<ScreenerRuleTypeEnum> INTRADAY_RULES = EnumSet.of(
@@ -179,6 +184,46 @@ public class ScreenerStrategyRuleEvaluator {
                 BigDecimal value = metricCalculator.calculatePricePositionPct(bars, lookback);
                 candidate.setPricePosition(value);
                 yield evaluateDecimal(value, rule);
+            }
+            case DAYS_SINCE_LIMIT_UP -> {
+                if (Objects.isNull(bars) || bars.size() <= lookback) {
+                    yield missing("距最近涨停计算所需日线不足，至少需要 " + (lookback + 1) + " 条");
+                }
+                Integer value = metricCalculator.calculateDaysSinceLimitUp(bars, lookback);
+                candidate.setDaysSinceLimitUp(value);
+                yield evaluateInteger(value, rule);
+            }
+            case VOLUME_MA_RATIO -> {
+                if (Objects.isNull(bars) || bars.size() <= lookback) {
+                    yield missing("量能相对均量计算所需日线不足，至少需要 " + (lookback + 1) + " 条");
+                }
+                BigDecimal value = metricCalculator.calculateVolumeMaRatioPct(bars, lookback);
+                candidate.setVolumeMaRatio(value);
+                yield evaluateDecimal(value, rule);
+            }
+            case CLOSE_MA_DISTANCE_PCT -> {
+                if (Objects.isNull(bars) || bars.size() < lookback) {
+                    yield missing("收盘相对均线距离计算所需日线不足，至少需要 " + lookback + " 条");
+                }
+                BigDecimal value = metricCalculator.calculateCloseMaDistancePct(bars, lookback);
+                candidate.setCloseMaDistancePct(value);
+                yield evaluateDecimal(value, rule);
+            }
+            case BREAKOUT_PREVIOUS_HIGH -> {
+                if (Objects.isNull(bars) || bars.size() <= lookback) {
+                    yield missing("前高突破计算所需日线不足，至少需要 " + (lookback + 1) + " 条");
+                }
+                Boolean value = metricCalculator.isBreakoutPreviousHigh(bars, lookback);
+                candidate.setBreakoutPreviousHigh(value);
+                yield evaluateBoolean(value, rule);
+            }
+            case MA_BULLISH_ALIGNMENT -> {
+                if (Objects.isNull(bars) || bars.size() < 20) {
+                    yield missing("均线多头排列计算所需日线不足，至少需要 20 条");
+                }
+                Boolean value = metricCalculator.isMaBullishAlignment(bars);
+                candidate.setMaBullishAlignment(value);
+                yield evaluateBoolean(value, rule);
             }
             default -> failed("规则不属于历史日线阶段");
         };

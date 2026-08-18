@@ -475,6 +475,8 @@ public class ScreenerStrategyServiceImpl implements IScreenerStrategyService {
                     || ScreenerRuleTypeEnum.RS20.equals(type)
                     || ScreenerRuleTypeEnum.ATR_PCT.equals(type)
                     || ScreenerRuleTypeEnum.PRICE_POSITION.equals(type)
+                    || ScreenerRuleTypeEnum.VOLUME_MA_RATIO.equals(type)
+                    || ScreenerRuleTypeEnum.CLOSE_MA_DISTANCE_PCT.equals(type)
                     || ScreenerRuleTypeEnum.INTRADAY_ABOVE_AVG_RATIO.equals(type)) {
                 return value + "%";
             }
@@ -484,7 +486,7 @@ public class ScreenerStrategyServiceImpl implements IScreenerStrategyService {
             String unit = switch (type) {
                 case LIMIT_UP_LEVEL -> "板";
                 case LIMIT_UP_COUNT, BREAK_COUNT -> "次";
-                case UP_DAYS -> "天";
+                case UP_DAYS, DAYS_SINCE_LIMIT_UP -> "天";
                 case INTRADAY_MAX_BELOW_MINUTES -> "分钟";
                 case THEME_LINKAGE_COUNT -> "家";
                 default -> "";

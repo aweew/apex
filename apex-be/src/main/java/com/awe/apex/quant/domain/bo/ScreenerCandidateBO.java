@@ -56,6 +56,21 @@ public class ScreenerCandidateBO {
     /** 区间价格位置 */
     private BigDecimal pricePosition;
 
+    /** 距最近涨停交易日数 */
+    private Integer daysSinceLimitUp;
+
+    /** 最新成交量相对前期均量百分比 */
+    private BigDecimal volumeMaRatio;
+
+    /** 最新收盘价相对均线距离百分比 */
+    private BigDecimal closeMaDistancePct;
+
+    /** 是否突破前期高点 */
+    private Boolean breakoutPreviousHigh;
+
+    /** MA5、MA10、MA20是否多头排列 */
+    private Boolean maBullishAlignment;
+
     /** 分时承接指标 */
     private IntradayAcceptanceMetric intradayMetric;
 
