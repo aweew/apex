@@ -544,6 +544,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                         lineNo++;
                         synchronized (logBuf) {
                             appendLine(logBuf, line);
+                            runningJob.setLogTail(trimLog(logBuf.toString()));
                         }
                         if (!cancelled.get()) {
                             updateProgressFromLine(runningJob, line, lineNo);
@@ -551,6 +552,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                         }
                     }
                 } catch (Exception ex) {
+                    synchronized (logBuf) {
+                        appendLine(logBuf, "[error] 读取同步输出失败：" + errorMessage(ex));
+                        runningJob.setLogTail(trimLog(logBuf.toString()));
+                    }
+                    if (!cancelled.get()) {
+                        try {
+                            syncJobMapper.updateById(runningJob);
+                        } catch (Exception updateEx) {
+                            log.warn("持久化同步输出异常失败 jobId={} err={}", jobId, updateEx.getMessage());
+                        }
+                    }
                     log.warn("读同步输出失败 jobId={} err={}", jobId, ex.getMessage());
                 }
             }, "apex-sync-drain-" + jobId);
@@ -600,6 +612,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             job.setLogTail(logText);
             enrichProgressFromFile(job);
+            if (!cancelled.get()) {
+                invalidateMarketBriefingCache(job, spec.getTaskType());
+            }
             if (cancelled.get()) {
                 job.setStatus("CANCELLED");
                 job.setMessage("用户停止");
@@ -607,7 +622,6 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 job.setStatus("FAILED");
                 job.setMessage("脚本退出码 " + exit);
             } else {
-                invalidateMarketBriefingCache(job, spec.getTaskType());
                 if ("CLOSE_BUNDLE".equals(spec.getTaskType())) {
                     job.setProgressPct(Math.min(99, Math.max(90,
                             Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0)));
@@ -724,10 +738,18 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         String syncGroup = group;
         int totalStages = userIds.size() * 4;
         AtomicInteger completedStages = new AtomicInteger();
+        List<String> failureMessages = new ArrayList<>();
         for (Long userId : userIds) {
             ensurePostProcessingActive(cancelled);
             userContext.runAsUser(userId, () -> runCloseBundlePostProcessing(
-                    job, syncGroup, userId, cancelled, completedStages, totalStages));
+                    job, syncGroup, userId, cancelled, completedStages, totalStages, failureMessages));
+        }
+        if (CollUtil.isNotEmpty(failureMessages)) {
+            String failureSummary = "收盘后处理失败 " + failureMessages.size() + " 项："
+                    + String.join("；", failureMessages);
+            appendLog(job, "[error] " + failureSummary + "\n");
+            syncJobMapper.updateById(job);
+            throw new BusinessException(failureSummary);
         }
     }
 
@@ -756,8 +778,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     }
 
     private void runCloseBundlePostProcessing(SyncJob job, String group, Long userId, AtomicBoolean cancelled,
-                                              AtomicInteger completedStages, int totalStages) {
+                                              AtomicInteger completedStages, int totalStages,
+                                              List<String> failureMessages) {
         persistPostProcessingStage(job, userId, "自选行情", completedStages.get(), totalStages, cancelled);
+        boolean watchlistSuccess = true;
         try {
             Map<String, Object> quoteResp = watchlistService.refreshQuotes(group, 80, false);
             int failCount = resultCount(quoteResp, "failCount");
@@ -766,11 +790,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             log.info("CLOSE_BUNDLE 后刷自选行情 userId={} success={}", userId, quoteResp.get("successCount"));
         } catch (Exception ex) {
-            throw postProcessingFailure(userId, "自选行情", ex);
+            watchlistSuccess = false;
+            recordPostProcessingFailure(job, userId, "自选行情", ex, failureMessages,
+                    completedStages, totalStages, cancelled);
         }
-        persistPostProcessingStage(job, userId, "自选行情完成", completedStages.incrementAndGet(), totalStages, cancelled);
+        if (watchlistSuccess) {
+            persistPostProcessingStage(job, userId, "自选行情完成",
+                    completedStages.incrementAndGet(), totalStages, cancelled);
+        }
 
         persistPostProcessingStage(job, userId, "持仓行情", completedStages.get(), totalStages, cancelled);
+        boolean holdingSuccess = true;
         try {
             Map<String, Object> holdingResp = myHoldingService.refreshQuotes(false);
             int failCount = resultCount(holdingResp, "fail") + resultCount(holdingResp, "barFail");
@@ -779,11 +809,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             log.info("CLOSE_BUNDLE 后刷持仓行情完成 userId={}", userId);
         } catch (Exception ex) {
-            throw postProcessingFailure(userId, "持仓行情", ex);
+            holdingSuccess = false;
+            recordPostProcessingFailure(job, userId, "持仓行情", ex, failureMessages,
+                    completedStages, totalStages, cancelled);
         }
-        persistPostProcessingStage(job, userId, "持仓行情完成", completedStages.incrementAndGet(), totalStages, cancelled);
+        if (holdingSuccess) {
+            persistPostProcessingStage(job, userId, "持仓行情完成",
+                    completedStages.incrementAndGet(), totalStages, cancelled);
+        }
 
         persistPostProcessingStage(job, userId, "组合行情与快照", completedStages.get(), totalStages, cancelled);
+        boolean portfolioSuccess = true;
         try {
             Map<String, Object> portfolioResp = portfolioService.refreshQuotesAll(false);
             int failCount = resultCount(portfolioResp, "fail") + resultCount(portfolioResp, "barFail");
@@ -795,12 +831,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     userId, portfolioResp.get("portfolioCount"), portfolioResp.get("success"),
                     portfolioResp.get("fail"), snapshotCount);
         } catch (Exception ex) {
-            throw postProcessingFailure(userId, "组合行情与快照", ex);
+            portfolioSuccess = false;
+            recordPostProcessingFailure(job, userId, "组合行情与快照", ex, failureMessages,
+                    completedStages, totalStages, cancelled);
         }
-        persistPostProcessingStage(job, userId, "组合行情与快照完成",
-                completedStages.incrementAndGet(), totalStages, cancelled);
+        if (portfolioSuccess) {
+            persistPostProcessingStage(job, userId, "组合行情与快照完成",
+                    completedStages.incrementAndGet(), totalStages, cancelled);
+        }
 
         persistPostProcessingStage(job, userId, "自选日线", completedStages.get(), totalStages, cancelled);
+        boolean watchlistBarSuccess = true;
         try {
             BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);
             int failCount = Objects.nonNull(barResp.getFailCount()) ? barResp.getFailCount() : 0;
@@ -810,9 +851,14 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             log.info("CLOSE_BUNDLE 后刷自选日线 userId={} success={} fail={}",
                     userId, barResp.getSuccessCount(), barResp.getFailCount());
         } catch (Exception ex) {
-            throw postProcessingFailure(userId, "自选日线", ex);
+            watchlistBarSuccess = false;
+            recordPostProcessingFailure(job, userId, "自选日线", ex, failureMessages,
+                    completedStages, totalStages, cancelled);
         }
-        persistPostProcessingStage(job, userId, "自选日线完成", completedStages.incrementAndGet(), totalStages, cancelled);
+        if (watchlistBarSuccess) {
+            persistPostProcessingStage(job, userId, "自选日线完成",
+                    completedStages.incrementAndGet(), totalStages, cancelled);
+        }
     }
 
     private void persistPostProcessingStage(SyncJob job, Long userId, String stage, int completedStages,
@@ -833,10 +879,15 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
     }
 
-    private BusinessException postProcessingFailure(Long userId, String stage, Exception ex) {
-        String message = "收盘后处理失败：用户 " + userId + " · " + stage + "：" + errorMessage(ex);
+    private void recordPostProcessingFailure(SyncJob job, Long userId, String stage, Exception ex,
+                                             List<String> failureMessages, AtomicInteger completedStages,
+                                             int totalStages, AtomicBoolean cancelled) {
+        String failureMessage = "用户 " + userId + " · " + stage + "：" + errorMessage(ex);
+        failureMessages.add(failureMessage);
+        appendLog(job, "[error] 收盘后处理失败：" + failureMessage + "\n");
         log.warn("CLOSE_BUNDLE 后处理失败 userId={} stage={} reason={}", userId, stage, errorMessage(ex));
-        return new BusinessException(message, ex);
+        persistPostProcessingStage(job, userId, stage + "失败，继续后续任务",
+                completedStages.incrementAndGet(), totalStages, cancelled);
     }
 
     private String errorMessage(Exception ex) {

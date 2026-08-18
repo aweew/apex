@@ -24,6 +24,10 @@ export function savePortfolioHolding(portfolioId, payload) {
   return http.post(`/api/portfolio/${portfolioId}/holding/save`, payload)
 }
 
+export function tradePortfolioHolding(portfolioId, payload) {
+  return http.post(`/api/portfolio/${portfolioId}/holding/trade`, payload)
+}
+
 export function removePortfolioHolding(portfolioId, holdingId) {
   return http.delete(`/api/portfolio/${portfolioId}/holding/${holdingId}`)
 }

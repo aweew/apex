@@ -4,17 +4,21 @@ import com.awe.apex.quant.context.ApexUserContext;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
-import com.awe.apex.quant.domain.dto.MyHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.BarSyncReq;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
+import com.awe.apex.quant.domain.dto.HoldingTradeReq;
+import com.awe.apex.quant.domain.dto.MyHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.TechRegimeResult;
 import com.awe.apex.quant.domain.dto.ValuationBriefResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.MyHolding;
+import com.awe.apex.quant.domain.entity.Portfolio;
+import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.domain.entity.SectorBasic;
 import com.awe.apex.quant.domain.entity.SectorConstituent;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StockCompanyProfile;
+import com.awe.apex.quant.domain.enums.PortfolioTradeSourceEnum;
 import com.awe.apex.quant.holding.ThemeBucketMatcher;
 import com.awe.apex.quant.indicator.BenchmarkBarLoader;
 import com.awe.apex.quant.indicator.RelativeStrengthUtils;
@@ -316,6 +320,48 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         fillPnlFromBasic(created, basic);
         portfolioService.mirrorMyHoldingSave(created, req.getTradePrice(), req.getTradeTime());
         return created;
+    }
+
+    /**
+     * 买入或卖出真实持仓。
+     *
+     * @param req 成交请求
+     * @return 变更后的持仓，全部卖出时返回空
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MyHolding tradeHolding(HoldingTradeReq req) {
+        if (Objects.isNull(req)) {
+            throw new BusinessException("成交请求不能为空");
+        }
+        String code = MarketCodeUtils.normalizeHoldingCode(req.getCode());
+        String name = StringUtils.trim(req.getName());
+        if (Objects.nonNull(req.getHoldingId())) {
+            MyHolding holding = myHoldingMapper.selectById(req.getHoldingId());
+            if (Objects.isNull(holding) || !currentUserId().equals(holding.getUserId())) {
+                throw new BusinessException("无权访问该持仓");
+            }
+            code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+            name = holding.getName();
+        }
+
+        HoldingTradeReq portfolioTradeReq = new HoldingTradeReq();
+        portfolioTradeReq.setCode(code);
+        portfolioTradeReq.setName(name);
+        portfolioTradeReq.setSide(req.getSide());
+        portfolioTradeReq.setQuantity(req.getQuantity());
+        portfolioTradeReq.setTradePrice(req.getTradePrice());
+        portfolioTradeReq.setTradeTime(req.getTradeTime());
+        Portfolio defaultPortfolio = portfolioService.ensureDefaultPortfolio();
+        PortfolioHolding portfolioHolding = portfolioService.tradeHolding(defaultPortfolio.getId(),
+                portfolioTradeReq, PortfolioTradeSourceEnum.HOLDING_WEB);
+        if (Objects.isNull(portfolioHolding)) {
+            return null;
+        }
+        return myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
+                .eq(MyHolding::getUserId, currentUserId())
+                .eq(MyHolding::getCode, code)
+                .last("LIMIT 1"));
     }
 
     /**

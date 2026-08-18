@@ -11,7 +11,7 @@ Send `POST /apex/bot/v1/ask` with JSON:
 }
 ```
 
-`question` and `userId` are required. `question` must contain the user's original question, while `userId` must match the external identity bound to this HMAC client in Apex. The endpoint is read-only and supports stock analysis, market summaries, default-portfolio today's profit or loss, portfolio risk, and current decision queries. For example, `我今天亏多少` returns the default portfolio's current-day profit or loss when holdings and quotes are available.
+`question` and `userId` are required. `question` must contain the user's original question, while `userId` must match the external identity bound to this HMAC client in Apex. The endpoint supports stock analysis, market summaries, default-portfolio today's profit or loss, portfolio risk, current decision queries, and controlled observation-pool additions. For example, `我今天亏多少` returns the default portfolio's current-day profit or loss when holdings and quotes are available. `把贵州茅台加入观察池` adds the stock only when Apex resolves an exact six-digit code or an exact, unique stock name.
 
 `requestId` and `conversationId` are optional request fields. The bundled script reads `userId` from `APEX_BOT_EXTERNAL_USER_ID`; Apex generates a request ID when one is not supplied.
 
@@ -66,6 +66,8 @@ The response uses the Apex result envelope:
 ```
 
 Treat Apex as the authoritative source. Present `data.answer` and preserve `data.dataAsOf`, `data.dataLevel`, and the investment-risk notice in the answer. `aiEnhanced=false` means Apex returned its deterministic fallback answer; it is still valid and must not be replaced with an invented conclusion. On any non-2xx response, surface the returned error and do not invent a fallback conclusion.
+
+An observation-pool addition is confirmed only when a successful response has `data.intent: "OBSERVE_ADD"`. `OBSERVE_ADD_UNRESOLVED` means the stock was not found by an exact code or name, and `OBSERVE_ADD_AMBIGUOUS` means more than one exact name matched. Both outcomes leave the observation pool unchanged. Never infer a code or claim persistence for either outcome.
 
 `dataLevel` is `GREEN`, `YELLOW`, or `RED`. It describes data completeness and freshness, not a buy or sell signal.
 

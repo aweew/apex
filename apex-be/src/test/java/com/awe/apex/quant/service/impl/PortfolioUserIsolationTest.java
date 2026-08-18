@@ -52,6 +52,7 @@ class PortfolioUserIsolationTest {
     static void initTableInfo() {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, Portfolio.class);
+        TableInfoHelper.initTableInfo(assistant, PortfolioHolding.class);
         TableInfoHelper.initTableInfo(assistant, MyHolding.class);
     }
 
@@ -90,6 +91,31 @@ class PortfolioUserIsolationTest {
         for (Wrapper<Portfolio> query : queryCaptor.getAllValues()) {
             assertUserFilter(query);
         }
+    }
+
+    @Test
+    void activeHoldingCodesUseAllCurrentUsersActivePortfoliosAndDeduplicate() {
+        doReturn(Portfolio.builder().id(1L).userId(7L).build()).when(service).ensureDefaultPortfolio();
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(
+                Portfolio.builder().id(1L).userId(7L).status("ACTIVE").build(),
+                Portfolio.builder().id(2L).userId(7L).status("ACTIVE").build()));
+        when(portfolioHoldingMapper.selectList(any())).thenReturn(List.of(
+                PortfolioHolding.builder().portfolioId(1L).code("SH.600519").quantity(100).build(),
+                PortfolioHolding.builder().portfolioId(2L).code("600519").quantity(200).build(),
+                PortfolioHolding.builder().portfolioId(2L).code("000001").quantity(50).build(),
+                PortfolioHolding.builder().portfolioId(2L).code("300750").quantity(0).build()));
+
+        List<String> codes = service.listActiveHoldingCodes();
+
+        assertEquals(List.of("600519", "000001"), codes);
+        ArgumentCaptor<Wrapper<Portfolio>> portfolioQueryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(portfolioMapper).selectList(portfolioQueryCaptor.capture());
+        assertUserFilter(portfolioQueryCaptor.getValue());
+        assertTrue(portfolioQueryCaptor.getValue().getSqlSegment().contains("status"));
+        ArgumentCaptor<Wrapper<PortfolioHolding>> holdingQueryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(portfolioHoldingMapper).selectList(holdingQueryCaptor.capture());
+        assertTrue(holdingQueryCaptor.getValue().getSqlSegment().contains("portfolio_id"));
+        assertTrue(holdingQueryCaptor.getValue().getSqlSegment().contains("quantity"));
     }
 
     @Test

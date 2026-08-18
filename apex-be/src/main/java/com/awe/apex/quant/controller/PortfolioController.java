@@ -1,6 +1,7 @@
 package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
+import com.awe.apex.quant.domain.dto.HoldingTradeReq;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportResp;
@@ -103,6 +104,18 @@ public class PortfolioController {
     @PostMapping("/{id}/holding/save")
     public Result<PortfolioHolding> saveHolding(@PathVariable Long id, @RequestBody PortfolioHoldingSaveReq req) {
         return Result.success(portfolioService.saveHolding(id, req));
+    }
+
+    /**
+     * 买入或卖出组合持仓
+     *
+     * @param id  组合ID
+     * @param req 成交请求
+     * @return 变更后的持仓，全部卖出时为空
+     */
+    @PostMapping("/{id}/holding/trade")
+    public Result<PortfolioHolding> tradeHolding(@PathVariable Long id, @RequestBody HoldingTradeReq req) {
+        return Result.success(portfolioService.tradeHolding(id, req));
     }
 
     /**

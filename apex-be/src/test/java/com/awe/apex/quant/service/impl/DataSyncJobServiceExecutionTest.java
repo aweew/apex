@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
@@ -12,6 +13,7 @@ import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IWatchlistService;
@@ -52,6 +54,7 @@ class DataSyncJobServiceExecutionTest {
 
     private final SyncJobMapper syncJobMapper = mock(SyncJobMapper.class);
     private final IMarketBriefingService marketBriefingService = mock(IMarketBriefingService.class);
+    private final IMorningBriefingService morningBriefingService = mock(IMorningBriefingService.class);
     private final IWatchlistService watchlistService = mock(IWatchlistService.class);
     private final IBarDailyService barDailyService = mock(IBarDailyService.class);
     private final IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
@@ -73,6 +76,7 @@ class DataSyncJobServiceExecutionTest {
         ReflectionTestUtils.setField(service, "syncJobMapper", syncJobMapper);
         ReflectionTestUtils.setField(service, "syncTaskRegistry", new SyncTaskRegistry());
         ReflectionTestUtils.setField(service, "marketBriefingService", marketBriefingService);
+        ReflectionTestUtils.setField(service, "morningBriefingService", morningBriefingService);
         ReflectionTestUtils.setField(service, "watchlistService", watchlistService);
         ReflectionTestUtils.setField(service, "barDailyService", barDailyService);
         ReflectionTestUtils.setField(service, "myHoldingService", myHoldingService);
@@ -124,6 +128,7 @@ class DataSyncJobServiceExecutionTest {
         assertEquals("FAILED", result.getStatus());
         assertTrue(result.getMessage().startsWith("脚本退出码 "));
         verify(marketBriefingService).invalidateCache();
+        verify(morningBriefingService).invalidateCache();
         verify(userAuthService, never()).listEnabledUserIds();
         verify(watchlistService, never()).refreshQuotes(any(), any(), any());
     }
@@ -171,16 +176,55 @@ class DataSyncJobServiceExecutionTest {
     }
 
     @Test
-    void reportedPostProcessingFailureMarksJobFailed() throws Exception {
+    void reportedPostProcessingFailureContinuesRemainingStagesAndMarksJobFailed() throws Exception {
         when(userAuthService.listEnabledUserIds()).thenReturn(List.of(7L));
-        when(watchlistService.refreshQuotes(eq("我的自选"), eq(80), eq(false))).thenReturn(
-                Map.of("successCount", 0, "failCount", 1));
+        when(myHoldingService.refreshQuotes(false)).thenReturn(Map.of("fail", 11, "barFail", 0));
 
         SyncJob result = runCloseBundle("exit 0\n");
 
         assertEquals("FAILED", result.getStatus());
-        assertTrue(result.getMessage().contains("自选行情刷新失败 1 项"), result::toString);
-        verify(myHoldingService, never()).refreshQuotes(false);
+        assertEquals(99, result.getProgressPct());
+        assertEquals(4, result.getDoneItems());
+        assertEquals(4, result.getTotalItems());
+        assertTrue(result.getMessage().contains("持仓行情刷新失败 11 项"), result::toString);
+        assertTrue(result.getLogTail().contains("[error] 收盘后处理失败：用户 7 · 持仓行情：持仓行情刷新失败 11 项"),
+                result::toString);
+        assertTrue(result.getLogTail().contains("stage=自选日线完成"), result::toString);
+        verify(portfolioService).refreshQuotesAll(false);
+        verify(portfolioService).snapshotAll();
+        verify(barDailyService).syncStaleWatchlist("我的自选", 80);
+    }
+
+    @Test
+    void processOutputIsPersistedWhileScriptIsRunning() throws Exception {
+        Path script = scriptDir.resolve("sync_close_bundle.py");
+        Path releaseFile = scriptDir.resolve("sync_close_bundle.py.release");
+        Files.writeString(script, "echo '[CLOSE_BUNDLE] step 1/5: index'\n"
+                + "while [ ! -f \"${0}.release\" ]; do sleep 0.02; done\n"
+                + "exit 3\n");
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("CLOSE_BUNDLE");
+
+        service.startSystemTask(request);
+        SyncJob runningJob = null;
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (System.nanoTime() < deadline) {
+            SyncJob currentJob = savedJob.get();
+            if (Objects.nonNull(currentJob)
+                    && "RUNNING".equals(currentJob.getStatus())
+                    && StringUtils.isNotBlank(currentJob.getLogTail())
+                    && currentJob.getLogTail().contains("step 1/5: index")) {
+                runningJob = currentJob;
+                break;
+            }
+            Thread.sleep(10L);
+        }
+        Files.writeString(releaseFile, "continue\n");
+
+        assertNotNull(runningJob, () -> String.valueOf(savedJob.get()));
+        SyncJob result = waitForTerminal();
+        assertEquals("FAILED", result.getStatus());
+        assertTrue(result.getLogTail().contains("step 1/5: index"), result::toString);
     }
 
     @Test

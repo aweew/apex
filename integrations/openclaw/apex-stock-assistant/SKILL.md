@@ -1,6 +1,6 @@
 ---
 name: apex-stock-assistant
-description: Query Apex for A-share analysis, market summaries, portfolio status, and controlled named-portfolio holding imports. MUST use for questions about a named portfolio or its holdings; for a complete holding update, call HOLDING_IMPORT and report success only from its Apex response.
+description: Query Apex for A-share analysis, market summaries, portfolio status, observation-pool additions, and controlled named-portfolio holding imports. MUST use for questions about a named portfolio or its holdings; confirm writes only from Apex's matching success intent.
 ---
 
 # Apex Stock Assistant
@@ -14,6 +14,12 @@ For questions such as `我今天亏多少`、`今天赚了多少`、`今日盈�
 1. Run `scripts/apex_ask.sh "<用户原始问题>"`.
 2. Return Apex's answer faithfully and preserve its data time, completeness warning, and investment-risk notice.
 3. If the request fails, report the API error. Do not substitute an unsupported market conclusion.
+
+## Add To Observation Pool
+
+For natural-language requests such as `把贵州茅台加入观察池`、`将宁德时代加到观察池`、`帮我关注 600519`, run `scripts/apex_ask.sh` with the user's original request. Apex resolves only an exact six-digit code or an exact, unique stock name; never infer or substitute a stock code in OpenClaw.
+
+The addition is confirmed only when the successful Apex response has `data.intent` exactly equal to `OBSERVE_ADD`. Return `data.answer` unchanged. `OBSERVE_ADD_UNRESOLVED`, `OBSERVE_ADD_AMBIGUOUS`, an API error, or an assistant statement does not prove persistence and must not be described as a successful addition.
 
 ## Structured Tools
 

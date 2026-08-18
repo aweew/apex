@@ -8,6 +8,7 @@ import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StrategySignalMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
+import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.strategy.SignalSide;
 import com.awe.apex.quant.strategy.Strategy;
 import com.awe.apex.quant.strategy.StrategySignalResult;
@@ -47,6 +48,7 @@ class SignalServiceUserIsolationTest {
     private final WatchlistMapper watchlistMapper = mock(WatchlistMapper.class);
     private final ApexUserContext userContext = mock(ApexUserContext.class);
     private final TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
+    private final IPortfolioService portfolioService = mock(IPortfolioService.class);
     private final Strategy strategy = mock(Strategy.class);
     private final SignalServiceImpl service = new SignalServiceImpl();
 
@@ -64,8 +66,10 @@ class SignalServiceUserIsolationTest {
         ReflectionTestUtils.setField(service, "watchlistMapper", watchlistMapper);
         ReflectionTestUtils.setField(service, "userContext", userContext);
         ReflectionTestUtils.setField(service, "transactionTemplate", transactionTemplate);
+        ReflectionTestUtils.setField(service, "portfolioService", portfolioService);
         ReflectionTestUtils.setField(service, "strategies", List.of(strategy));
         when(userContext.currentUserId()).thenReturn(7L);
+        when(portfolioService.listActiveHoldingCodes()).thenReturn(List.of());
         doAnswer(invocation -> {
             Consumer<TransactionStatus> callback = invocation.getArgument(0);
             callback.accept(mock(TransactionStatus.class));

@@ -22,6 +22,11 @@ public class SignalRunReq {
     private List<String> strategyIds;
 
     /**
+     * 卖出信号关注代码，空值则使用当前用户全部活跃组合持仓
+     */
+    private List<String> sellCodes;
+
+    /**
      * 是否使用最新股票池
      */
     private Boolean useUniverse;

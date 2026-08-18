@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service;
 
 import com.awe.apex.quant.domain.dto.MyHoldingSaveReq;
+import com.awe.apex.quant.domain.dto.HoldingTradeReq;
 import com.awe.apex.quant.domain.entity.MyHolding;
 
 import java.util.List;
@@ -47,6 +48,14 @@ public interface IMyHoldingService {
      * @return 持仓
      */
     MyHolding save(MyHoldingSaveReq req);
+
+    /**
+     * 买入或卖出真实持仓。
+     *
+     * @param req 成交请求
+     * @return 变更后的持仓，全部卖出时返回空
+     */
+    MyHolding tradeHolding(HoldingTradeReq req);
 
     /**
      * 删除持仓

@@ -8,6 +8,10 @@ export function saveHolding(payload) {
   return http.post('/api/holding/save', payload)
 }
 
+export function tradeHolding(payload) {
+  return http.post('/api/holding/trade', payload)
+}
+
 export function removeHolding(id) {
   return http.delete(`/api/holding/${id}`)
 }

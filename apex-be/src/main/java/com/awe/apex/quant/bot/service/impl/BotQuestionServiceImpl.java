@@ -11,6 +11,8 @@ import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.DecisionAdviceActionResp;
 import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.ObservePoolResp;
+import com.awe.apex.quant.domain.dto.ObservePoolSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.dto.PortfolioTopHoldingResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisAiResp;
@@ -19,6 +21,7 @@ import com.awe.apex.quant.domain.dto.StockAnalysisResp;
 import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IStockAnalysisService;
 import com.awe.apex.quant.service.IStockService;
@@ -30,6 +33,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -64,6 +68,9 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
     @Resource
     private IDecisionService decisionService;
 
+    @Resource
+    private IObservePoolService observePoolService;
+
     /**
      * 识别问题意图并读取 Apex 业务数据生成回答。
      *
@@ -76,18 +83,23 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
         String requestId = StringUtils.isNotBlank(request.getRequestId())
                 ? request.getRequestId().trim() : UUID.randomUUID().toString();
 
-        // 1. 明确股票代码优先，避免通用买卖关键词覆盖个股问题
+        // 1. 写操作优先识别，避免六位代码被普通个股分析提前消费
+        if (isObserveAddQuestion(question)) {
+            return addStockToObservePool(requestId, question);
+        }
+
+        // 2. 明确股票代码优先，避免通用买卖关键词覆盖个股问题
         Matcher codeMatcher = STOCK_CODE_PATTERN.matcher(question);
         if (codeMatcher.find()) {
             return answerStock(requestId, codeMatcher.group(1), null);
         }
 
-        // 2. 市场问题不做股票名称猜测
+        // 3. 市场问题不做股票名称猜测
         if (containsAny(question, "大盘", "市场", "指数", "热点", "板块", "赚钱效应", "成交量")) {
             return answerMarket(requestId);
         }
 
-        // 3. 优先匹配真实组合名称，再处理默认持仓和通用决策
+        // 4. 优先匹配真实组合名称，再处理默认持仓和通用决策
         long portfolioListStartedAt = System.nanoTime();
         List<PortfolioSummaryResp> portfolios = portfolioService.listPortfolios(false);
         log.info("Bot 组合列表查询完成 requestId={} portfolioCount={} durationMs={}",
@@ -123,7 +135,7 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
             return answerDecision(requestId);
         }
 
-        // 4. 尝试从自然语言中抽取股票名称
+        // 5. 尝试从自然语言中抽取股票名称
         String stockKeyword = extractStockKeyword(question);
         if (StringUtils.isNotBlank(stockKeyword)) {
             List<StockSearchItem> stocks = stockService.search(stockKeyword, 5);
@@ -414,6 +426,130 @@ public class BotQuestionServiceImpl implements IBotQuestionService {
                 .dataLevel(Objects.nonNull(advice.getActionDate()) ? "GREEN" : "YELLOW")
                 .aiEnhanced(Boolean.TRUE.equals(advice.getAiEnhanced()))
                 .build();
+    }
+
+    private BotAskResp addStockToObservePool(String requestId, String question) {
+        long startedAt = System.nanoTime();
+        Matcher codeMatcher = STOCK_CODE_PATTERN.matcher(question);
+        String stockKeyword = codeMatcher.find() ? codeMatcher.group(1) : extractObserveStockKeyword(question);
+        if (StringUtils.isBlank(stockKeyword)) {
+            return BotAskResp.builder()
+                    .requestId(requestId)
+                    .intent("OBSERVE_ADD_UNRESOLVED")
+                    .answer("没有识别到要关注的股票，未加入观察池。请提供六位股票代码或完整股票名称。\n" + DISCLAIMER)
+                    .dataLevel("YELLOW")
+                    .aiEnhanced(false)
+                    .build();
+        }
+
+        List<StockSearchItem> stocks = stockService.search(stockKeyword, 10);
+        List<StockSearchItem> exactMatches = new ArrayList<>();
+        if (CollUtil.isNotEmpty(stocks)) {
+            for (StockSearchItem stock : stocks) {
+                boolean exactCode = stockKeyword.equals(stock.getCode());
+                boolean exactName = stockKeyword.equals(stock.getName());
+                if ((exactCode || exactName) && StringUtils.isNotBlank(stock.getCode())
+                        && StringUtils.isNotBlank(stock.getName())) {
+                    exactMatches.add(stock);
+                }
+            }
+        }
+        if (CollUtil.isEmpty(exactMatches)) {
+            log.info("Bot 观察池写入未解析 requestId={} keyword={} durationMs={}",
+                    requestId, stockKeyword, elapsedMillis(startedAt));
+            return BotAskResp.builder()
+                    .requestId(requestId)
+                    .intent("OBSERVE_ADD_UNRESOLVED")
+                    .answer("没有在本地股票库找到“" + stockKeyword
+                            + "”，未加入观察池。请使用六位代码或完整股票名称。\n" + DISCLAIMER)
+                    .dataLevel("YELLOW")
+                    .aiEnhanced(false)
+                    .build();
+        }
+        if (exactMatches.size() > 1) {
+            log.info("Bot 观察池写入名称歧义 requestId={} keyword={} matchCount={} durationMs={}",
+                    requestId, stockKeyword, exactMatches.size(), elapsedMillis(startedAt));
+            return BotAskResp.builder()
+                    .requestId(requestId)
+                    .intent("OBSERVE_ADD_AMBIGUOUS")
+                    .answer("找到多个同名标的“" + stockKeyword + "”，未加入观察池。请改用六位股票代码。\n" + DISCLAIMER)
+                    .dataLevel("YELLOW")
+                    .aiEnhanced(false)
+                    .build();
+        }
+
+        StockSearchItem stock = exactMatches.get(0);
+        List<ObservePoolResp> existingItems = observePoolService.list(null, null, stock.getCode());
+        if (CollUtil.isNotEmpty(existingItems)) {
+            for (ObservePoolResp existingItem : existingItems) {
+                if (stock.getCode().equals(existingItem.getCode())) {
+                    log.info("Bot 观察池股票已存在 requestId={} code={} durationMs={}",
+                            requestId, stock.getCode(), elapsedMillis(startedAt));
+                    return BotAskResp.builder()
+                            .requestId(requestId)
+                            .intent("OBSERVE_ADD")
+                            .stockCode(stock.getCode())
+                            .stockName(stock.getName())
+                            .answer(stock.getName() + "（" + stock.getCode()
+                                    + "）已在观察池中，无需重复加入。\n" + DISCLAIMER)
+                            .dataLevel("GREEN")
+                            .aiEnhanced(false)
+                            .build();
+                }
+            }
+        }
+
+        ObservePoolSaveReq saveRequest = ObservePoolSaveReq.builder()
+                .code(stock.getCode())
+                .name(stock.getName())
+                .market(stock.getMarket())
+                .side("BUY")
+                .reason("微信 Bot 手动加入")
+                .priority(3)
+                .status("WATCHING")
+                .tags("微信Bot,手动")
+                .build();
+        observePoolService.save(saveRequest);
+        log.info("Bot 观察池写入完成 requestId={} code={} durationMs={}",
+                requestId, stock.getCode(), elapsedMillis(startedAt));
+        return BotAskResp.builder()
+                .requestId(requestId)
+                .intent("OBSERVE_ADD")
+                .stockCode(stock.getCode())
+                .stockName(stock.getName())
+                .answer("已将" + stock.getName() + "（" + stock.getCode()
+                        + "）加入观察池，当前状态为观察中。\n" + DISCLAIMER)
+                .dataLevel("GREEN")
+                .aiEnhanced(false)
+                .build();
+    }
+
+    private boolean isObserveAddQuestion(String question) {
+        if (containsAny(question, "取消关注", "不要关注", "不想关注", "不需要关注", "不用关注", "无需关注",
+                "不关注", "别关注", "移出观察池", "删除观察池", "不要加入", "不想加入", "不需要加入",
+                "不用加入", "无需加入", "别加入", "不要加到", "不加到", "别加到", "不要放入", "不放入",
+                "别放入")) {
+            return false;
+        }
+        boolean explicitObserveAdd = question.contains("观察池")
+                && containsAny(question, "加入", "加到", "加进", "添加", "放到", "放进", "放入", "纳入");
+        String trimmedQuestion = question.trim();
+        return explicitObserveAdd || trimmedQuestion.startsWith("关注")
+                || containsAny(question, "帮我关注", "请关注", "我想关注", "想要关注", "想关注", "麻烦关注",
+                "给我关注", "关注一下");
+    }
+
+    private String extractObserveStockKeyword(String question) {
+        String keyword = question;
+        String[] stopWords = {"我想关注一下", "想要关注一下", "想关注一下", "关注一下", "帮我关注", "我想关注",
+                "想要关注", "麻烦关注", "给我关注", "请关注", "想关注", "加入到", "添加到", "观察池", "关注",
+                "添加", "加入", "加到", "加进", "放到", "放进", "放入", "纳入", "帮我", "请", "把", "将",
+                "我的", "一下", "这只", "股票", "个股", "？", "?", "。", "，", ","};
+        for (String stopWord : stopWords) {
+            keyword = keyword.replace(stopWord, "");
+        }
+        keyword = keyword.trim();
+        return keyword.length() >= 2 && keyword.length() <= 20 ? keyword : null;
     }
 
     private String extractStockKeyword(String question) {

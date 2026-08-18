@@ -2,9 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, EditPen, MoreFilled, View } from '@element-plus/icons-vue'
-import { listHoldings, refreshHoldingQuotes, removeHolding, saveHolding } from '../api/holding'
+import { ElMessage } from 'element-plus'
+import { EditPen, Minus, MoreFilled, Plus, View } from '@element-plus/icons-vue'
+import { listHoldings, refreshHoldingQuotes, saveHolding, tradeHolding } from '../api/holding'
 import { saveObserve } from '../api/observe'
 import {
   HOLDING_SHARE_WIDTH,
@@ -20,6 +20,7 @@ import {
 import { securityMarketBadge } from '../utils/securityMarket.js'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
+import HoldingTradeDialog from '../components/HoldingTradeDialog.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -334,6 +335,10 @@ function verdictClass(verdict) {
 
 const dialogVisible = ref(false)
 const saving = ref(false)
+const tradeDialogVisible = ref(false)
+const tradeSaving = ref(false)
+const tradeTarget = ref(null)
+const tradeSide = ref('BUY')
 const form = reactive({
   id: null,
   code: '',
@@ -478,6 +483,10 @@ function onResize() {
 }
 
 function handleRowAction(command, row) {
+  if (command === 'buy' || command === 'sell') {
+    openTrade(row, command.toUpperCase())
+    return
+  }
   if (command === 'edit') {
     openEdit(row)
     return
@@ -486,19 +495,16 @@ function handleRowAction(command, row) {
     addObserve(row)
     return
   }
-  if (command === 'remove') onRemove(row)
 }
 
 function openCreate() {
-  form.id = null
-  form.code = ''
-  form.name = ''
-  form.quantity = 100
-  form.costPrice = ''
-  form.stopLoss = ''
-  form.takeProfit = ''
-  form.note = ''
-  dialogVisible.value = true
+  openTrade(null, 'BUY')
+}
+
+function openTrade(row, side) {
+  tradeTarget.value = row || null
+  tradeSide.value = side
+  tradeDialogVisible.value = true
 }
 
 function openEdit(row) {
@@ -540,6 +546,20 @@ async function onSave() {
   }
 }
 
+async function onTrade(payload) {
+  tradeSaving.value = true
+  try {
+    await tradeHolding(payload)
+    ElMessage.success(payload.side === 'SELL' ? '卖出已成交' : '买入已成交')
+    tradeDialogVisible.value = false
+    await load({ silent: true })
+  } catch (e) {
+    ElMessage.error(e.message || '成交失败')
+  } finally {
+    tradeSaving.value = false
+  }
+}
+
 async function addObserve(row) {
   if (!row?.code) return
   try {
@@ -558,21 +578,6 @@ async function addObserve(row) {
     ElMessage.success(`${row.code} 已进观察池`)
   } catch (e) {
     ElMessage.error(e.message || '加入失败')
-  }
-}
-
-async function onRemove(row) {
-  try {
-    await ElMessageBox.confirm(`确认删除持仓 ${row.code} ${row.name || ''}？`, '删除持仓', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-    })
-    await removeHolding(row.id)
-    ElMessage.success('已删除')
-    await load({ silent: true })
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.message || '删除失败')
   }
 }
 
@@ -757,7 +762,7 @@ onBeforeUnmount(() => {
         <p>手动维护；决策卖出/持有读这里。日常点「刷新行情+日线」更新价格与 K 线。亦可在「组合」中查看默认仓。</p>
       </div>
       <div class="actions">
-        <el-button type="primary" @click="openCreate">添加持仓</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">买入</el-button>
         <el-button
           plain
           :loading="refreshing"
@@ -808,7 +813,7 @@ onBeforeUnmount(() => {
     <div v-if="!loading && !refreshing && !rows.length" class="page-empty">
       <h3>还没有持仓</h3>
       <p>录入后，智能决策会据此给出卖出 / 继续持有建议</p>
-      <el-button type="primary" @click="openCreate">添加持仓</el-button>
+      <el-button type="primary" :icon="Plus" @click="openCreate">买入</el-button>
     </div>
 
     <section v-if="rows.length" class="theme-panel">
@@ -1066,11 +1071,10 @@ onBeforeUnmount(() => {
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item command="buy" :icon="Plus">买入</el-dropdown-item>
+                  <el-dropdown-item command="sell" :icon="Minus">卖出</el-dropdown-item>
                   <el-dropdown-item command="edit" :icon="EditPen">编辑持仓</el-dropdown-item>
                   <el-dropdown-item command="observe" :icon="View">加入观察池</el-dropdown-item>
-                  <el-dropdown-item command="remove" :icon="Delete" divided class="holding-action-danger">
-                    删除持仓
-                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -1079,34 +1083,29 @@ onBeforeUnmount(() => {
         <el-table-column
           v-else
           label="操作"
-          width="168"
+          width="232"
           fixed="right"
           align="center"
           class-name="ops-column"
           label-class-name="ops-column"
         >
           <template #default="{ row }">
+            <el-button link type="success" :icon="Plus" @click="openTrade(row, 'BUY')">买入</el-button>
+            <el-button link type="danger" :icon="Minus" @click="openTrade(row, 'SELL')">卖出</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button link type="warning" @click="addObserve(row)">观察</el-button>
-            <el-button link type="danger" @click="onRemove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑持仓' : '添加持仓'" width="480px">
+    <el-dialog v-model="dialogVisible" :title="'编辑持仓'" width="480px">
       <el-form label-width="80px">
         <el-form-item label="代码" required>
           <el-input v-model="form.code" placeholder="如 600519" :disabled="!!form.id" />
         </el-form-item>
         <el-form-item label="名称">
           <el-input v-model="form.name" placeholder="可空，自动补全" />
-        </el-form-item>
-        <el-form-item label="数量">
-          <el-input-number v-model="form.quantity" :min="0" :step="100" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="成本价">
-          <el-input v-model="form.costPrice" placeholder="可选" />
         </el-form-item>
         <el-form-item label="止损">
           <el-input v-model="form.stopLoss" placeholder="可选" />
@@ -1123,6 +1122,14 @@ onBeforeUnmount(() => {
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <HoldingTradeDialog
+      v-model="tradeDialogVisible"
+      :holding="tradeTarget"
+      :initial-side="tradeSide"
+      :loading="tradeSaving"
+      @submit="onTrade"
+    />
 
     <el-dialog
       v-model="shareOpen"

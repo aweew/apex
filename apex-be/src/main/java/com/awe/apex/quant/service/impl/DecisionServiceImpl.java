@@ -87,6 +87,7 @@ import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IObservePoolService;
+import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IRiskService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.awe.apex.quant.service.ISignalService;
@@ -176,6 +177,9 @@ public class DecisionServiceImpl implements IDecisionService {
 
     @Resource
     private IObservePoolService observePoolService;
+
+    @Resource
+    private IPortfolioService portfolioService;
 
     @Resource
     private ILimitUpLadderService limitUpLadderService;
@@ -321,11 +325,22 @@ public class DecisionServiceImpl implements IDecisionService {
         RiskOverviewResp risk = portfolioRiskOverview(portfolioSnapshot);
         progressListener.onProgress(20, 100, "组合快照完成，正在读取全市场股票池");
 
-        // 2. 默认组合持仓仅用于卖出/持有和风险预算；买入候选不从持仓里挑
+        // 2. 默认组合快照继续负责持有和风险预算；实时卖出范围覆盖全部活跃组合
         List<MyHolding> holdings = toDecisionHoldings(portfolioSnapshot.getHoldings());
         Map<String, MyHolding> posMap = new HashMap<>();
         for (MyHolding holding : holdings) {
             posMap.put(holding.getCode(), holding);
+        }
+        Set<String> sellHoldingCodes = new HashSet<>();
+        if (context.getMode() == DecisionMode.REPLAY) {
+            for (MyHolding holding : holdings) {
+                String normalizedCode = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+                if (StringUtils.isNotBlank(normalizedCode)) {
+                    sellHoldingCodes.add(normalizedCode);
+                }
+            }
+        } else {
+            sellHoldingCodes.addAll(portfolioService.listActiveHoldingCodes());
         }
 
         // 3. 读取管理员发布的全A共享股票池；回放只使用截止日已存在的批次
@@ -338,7 +353,7 @@ public class DecisionServiceImpl implements IDecisionService {
         boolean includeBj = Boolean.TRUE.equals(safe.getIncludeBj());
         progressListener.onProgress(24, 100, "股票池已就绪，正在准备策略扫描");
 
-        // 4. 跑 S1/S2/S3：全A质量池 + 热点；持仓仅附加以便产出卖出信号（观察池不同步卖出）
+        // 4. 跑 S1/S2/S3：买入扫描全A质量池+热点，卖出单独扫描全部活跃组合持仓
         List<String> signalCodes = new ArrayList<>();
         Set<String> signalCodeSet = new HashSet<>();
         if (CollUtil.isNotEmpty(universeList)) {
@@ -364,18 +379,17 @@ public class DecisionServiceImpl implements IDecisionService {
                 hotScanCount++;
             }
         }
-        for (MyHolding holding : holdings) {
-            if (StringUtils.isNotBlank(holding.getCode()) && signalCodeSet.add(holding.getCode())) {
-                signalCodes.add(holding.getCode());
-            }
-        }
         SignalRunReq signalReq = new SignalRunReq();
         signalReq.setAsOfDate(actionDate);
+        signalReq.setSellCodes(new ArrayList<>(sellHoldingCodes));
         if (CollUtil.isNotEmpty(signalCodes)) {
             signalReq.setCodes(signalCodes);
         } else {
             signalReq.setUseUniverse(true);
         }
+        Set<String> allScanCodes = new HashSet<>(signalCodeSet);
+        allScanCodes.addAll(sellHoldingCodes);
+        int signalScanCount = allScanCodes.size();
         List<StrategySignalEntity> signals;
         if (progressEnabled) {
             signals = signalService.run(signalReq, (completed, total, message) -> {
@@ -462,7 +476,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 ? Map.of() : valuationService.briefBatch(buyValCodes);
         progressListener.onProgress(82, 100, "估值完成，正在生成买卖决策");
 
-        // 6. 组装决策：买入=全A机会；卖出=仅我的持仓；另收集「值得观察」候选（不要求马上买）
+        // 6. 组装决策：买入=全A机会；卖出=全部活跃组合持仓；另收集「值得观察」候选
         List<DecisionItemResp> buys = new ArrayList<>();
         List<DecisionItemResp> sells = new ArrayList<>();
         List<DecisionItemResp> holds = new ArrayList<>();
@@ -483,9 +497,10 @@ public class DecisionServiceImpl implements IDecisionService {
                 name = holdingInMap.getName();
             }
 
-            // 卖出：只处理「我的持仓」；池内未持仓的卖出信号忽略
+            // 卖出：只处理全部活跃组合持仓；股票池内未持仓的卖出信号忽略
             if ("SELL".equals(side)) {
-                if (Objects.isNull(holdingInMap)) {
+                String normalizedCode = MarketCodeUtils.normalizeHoldingCode(code);
+                if (!sellHoldingCodes.contains(normalizedCode)) {
                     continue;
                 }
                 SignalConfluenceItem cf = sellConfluence.get(code);
@@ -1084,7 +1099,7 @@ public class DecisionServiceImpl implements IDecisionService {
                         + " · 股票池 " + universeCount
                         + " · 持仓 " + holdings.size()
                         + " · 热点扩扫 " + hotScanCount
-                        + " · 扫描 " + signalCodes.size()
+                        + " · 扫描 " + signalScanCount
                         + " · 观察池写入 " + observeUpserted
                         + "（新" + observeCreated + "/更" + observeUpdated + "）"
                         + barFreshnessHint)

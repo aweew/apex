@@ -1,5 +1,6 @@
 package com.awe.apex.quant.service;
 
+import com.awe.apex.quant.domain.dto.HoldingTradeReq;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportResp;
@@ -36,6 +37,13 @@ public interface IPortfolioService {
      * @return 列表
      */
     List<PortfolioSummaryResp> listPortfolios(boolean includeArchived);
+
+    /**
+     * 查询当前用户全部活跃组合的持仓代码并集
+     *
+     * @return 去重后的持仓代码
+     */
+    List<String> listActiveHoldingCodes();
 
     /**
      * 保存组合（新建/改名/归档）
@@ -87,6 +95,25 @@ public interface IPortfolioService {
      */
     PortfolioHolding saveHolding(Long portfolioId, PortfolioHoldingSaveReq req,
                                  PortfolioTradeSourceEnum source, String sourceRef);
+
+    /**
+     * 买入或卖出组合持仓。
+     *
+     * @param portfolioId 组合ID
+     * @param req         成交请求
+     * @return 变更后的持仓，全部卖出时返回空
+     */
+    PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req);
+
+    /**
+     * 按指定来源买入或卖出组合持仓。
+     *
+     * @param portfolioId 组合ID
+     * @param req         成交请求
+     * @param source      变动来源
+     * @return 变更后的持仓，全部卖出时返回空
+     */
+    PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req, PortfolioTradeSourceEnum source);
 
     /**
      * 删除持仓

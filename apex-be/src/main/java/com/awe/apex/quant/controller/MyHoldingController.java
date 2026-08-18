@@ -2,6 +2,7 @@ package com.awe.apex.quant.controller;
 
 import com.awe.apex.common.api.Result;
 import com.awe.apex.quant.domain.dto.MyHoldingSaveReq;
+import com.awe.apex.quant.domain.dto.HoldingTradeReq;
 import com.awe.apex.quant.domain.entity.MyHolding;
 import com.awe.apex.quant.service.IMyHoldingService;
 import jakarta.annotation.Resource;
@@ -46,6 +47,17 @@ public class MyHoldingController {
     @PostMapping("/save")
     public Result<MyHolding> save(@RequestBody MyHoldingSaveReq req) {
         return Result.success(myHoldingService.save(req));
+    }
+
+    /**
+     * 买入或卖出真实持仓
+     *
+     * @param req 成交请求
+     * @return 变更后的持仓，全部卖出时为空
+     */
+    @PostMapping("/trade")
+    public Result<MyHolding> tradeHolding(@RequestBody HoldingTradeReq req) {
+        return Result.success(myHoldingService.tradeHolding(req));
     }
 
     /**

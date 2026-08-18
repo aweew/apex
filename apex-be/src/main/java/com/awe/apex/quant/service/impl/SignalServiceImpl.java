@@ -22,6 +22,7 @@ import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StrategySignalMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
+import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.ISignalService;
 import com.awe.apex.quant.service.IUniverseService;
 import com.awe.apex.quant.service.TaskProgressListener;
@@ -77,6 +78,9 @@ public class SignalServiceImpl implements ISignalService {
     private IUniverseService universeService;
 
     @Resource
+    private IPortfolioService portfolioService;
+
+    @Resource
     private TransactionTemplate transactionTemplate;
 
     @Resource
@@ -102,11 +106,31 @@ public class SignalServiceImpl implements ISignalService {
      */
     @Override
     public List<StrategySignalEntity> run(SignalRunReq req, TaskProgressListener progressListener) {
-        List<String> codes = resolveCodes(req);
+        List<String> buyCodes = resolveCodes(req);
+        List<String> configuredSellCodes = Objects.nonNull(req) && Objects.nonNull(req.getSellCodes())
+                ? req.getSellCodes() : portfolioService.listActiveHoldingCodes();
+        Set<String> buyCodeSet = new HashSet<>();
+        List<String> codes = new ArrayList<>();
+        for (String code : buyCodes) {
+            String normalizedCode = MarketCodeUtils.normalizeHoldingCode(code);
+            if (StringUtils.isNotBlank(normalizedCode) && buyCodeSet.add(normalizedCode)) {
+                codes.add(normalizedCode);
+            }
+        }
+        Set<String> sellCodeSet = new HashSet<>();
+        if (CollUtil.isNotEmpty(configuredSellCodes)) {
+            for (String code : configuredSellCodes) {
+                String normalizedCode = MarketCodeUtils.normalizeHoldingCode(code);
+                if (StringUtils.isNotBlank(normalizedCode) && sellCodeSet.add(normalizedCode)
+                        && !buyCodeSet.contains(normalizedCode)) {
+                    codes.add(normalizedCode);
+                }
+            }
+        }
         if (CollUtil.isEmpty(codes)) {
             throw new BusinessException("无可用股票代码");
         }
-        List<Strategy> selected = selectStrategies(req.getStrategyIds());
+        List<Strategy> selected = selectStrategies(Objects.nonNull(req) ? req.getStrategyIds() : null);
         List<StrategySignalEntity> saved = new ArrayList<>();
         // 按 code|side 各留最高分，避免卖出分更高时把买入机会挤掉
         Map<String, StrategySignalEntity> bestByCodeSide = new HashMap<>();
@@ -114,7 +138,8 @@ public class SignalServiceImpl implements ISignalService {
         // 全市场扫描逐批完成查询与评估，避免百万级日线实体同时驻留 JVM 堆。
         for (int start = 0; start < codes.size(); start += BAR_QUERY_BATCH_SIZE) {
             List<String> codeBatch = codes.subList(start, Math.min(start + BAR_QUERY_BATCH_SIZE, codes.size()));
-            Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(codeBatch, req.getAsOfDate());
+            Map<String, List<BarDaily>> barsByCode = loadBarsGrouped(
+                    codeBatch, Objects.nonNull(req) ? req.getAsOfDate() : null);
             for (String code : codeBatch) {
                 List<BarDaily> bars = barsByCode.get(code);
                 if (Objects.isNull(bars) || bars.size() < 60) {
@@ -128,6 +153,13 @@ public class SignalServiceImpl implements ISignalService {
                     }
                     StrategySignalEntity entity = toEntity(result);
                     String side = StringUtils.isNotBlank(entity.getSide()) ? entity.getSide().toUpperCase() : "NA";
+                    String normalizedCode = MarketCodeUtils.normalizeHoldingCode(entity.getCode());
+                    if ("SELL".equals(side) && !sellCodeSet.contains(normalizedCode)) {
+                        continue;
+                    }
+                    if (!"SELL".equals(side) && !buyCodeSet.contains(normalizedCode)) {
+                        continue;
+                    }
                     String key = code + "|" + side;
                     StrategySignalEntity existBest = bestByCodeSide.get(key);
                     if (Objects.isNull(existBest) || entity.getScore().compareTo(existBest.getScore()) > 0) {
@@ -168,19 +200,20 @@ public class SignalServiceImpl implements ISignalService {
     @Override
     public List<StrategySignalEntity> latest(int limit, boolean dedupeByCode) {
         int size = Math.max(1, Math.min(limit, 200));
-        if (!dedupeByCode) {
-            return strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
-                    .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
-                    .orderByDesc(StrategySignalEntity::getId)
-                    .last("limit " + size));
-        }
         List<StrategySignalEntity> raw = strategySignalMapper.selectList(Wrappers.<StrategySignalEntity>lambdaQuery()
                 .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
                 .orderByDesc(StrategySignalEntity::getId)
                 .last("limit 500"));
+        List<StrategySignalEntity> scoped = filterCurrentSellScope(raw);
+        if (!dedupeByCode) {
+            if (scoped.size() <= size) {
+                return scoped;
+            }
+            return new ArrayList<>(scoped.subList(0, size));
+        }
         Map<String, StrategySignalEntity> unique = new HashMap<>();
         List<StrategySignalEntity> result = new ArrayList<>();
-        for (StrategySignalEntity item : raw) {
+        for (StrategySignalEntity item : scoped) {
             if (unique.containsKey(item.getCode())) {
                 continue;
             }
@@ -242,6 +275,7 @@ public class SignalServiceImpl implements ISignalService {
                 .ge(StrategySignalEntity::getSignalDate, LocalDate.now().minusDays(n))
                 .orderByDesc(StrategySignalEntity::getId)
                 .last("limit 1000"));
+        list = filterCurrentSellScope(list);
         int buy = 0;
         int sell = 0;
         Map<String, Integer> byStrategy = new HashMap<>();
@@ -297,6 +331,9 @@ public class SignalServiceImpl implements ISignalService {
                 .le(StrategySignalEntity::getSignalDate, cutoff)
                 .orderByDesc(StrategySignalEntity::getId)
                 .last("limit 2000"));
+        if (!cutoff.isBefore(LocalDate.now())) {
+            list = filterCurrentSellScope(list);
+        }
         // key = code|side
         Map<String, Set<String>> strategies = new HashMap<>();
         Map<String, BigDecimal> scoreSum = new HashMap<>();
@@ -575,6 +612,28 @@ public class SignalServiceImpl implements ISignalService {
             codes.add(item.getCode());
         }
         return codes;
+    }
+
+    private List<StrategySignalEntity> filterCurrentSellScope(List<StrategySignalEntity> signals) {
+        if (CollUtil.isEmpty(signals)) {
+            return new ArrayList<>();
+        }
+        Set<String> holdingCodes = new HashSet<>(portfolioService.listActiveHoldingCodes());
+        List<StrategySignalEntity> scoped = new ArrayList<>();
+        for (StrategySignalEntity signal : signals) {
+            if (Objects.isNull(signal)) {
+                continue;
+            }
+            if (!"SELL".equalsIgnoreCase(signal.getSide())) {
+                scoped.add(signal);
+                continue;
+            }
+            String normalizedCode = MarketCodeUtils.normalizeHoldingCode(signal.getCode());
+            if (holdingCodes.contains(normalizedCode)) {
+                scoped.add(signal);
+            }
+        }
+        return scoped;
     }
 
     private List<Strategy> selectStrategies(List<String> strategyIds) {

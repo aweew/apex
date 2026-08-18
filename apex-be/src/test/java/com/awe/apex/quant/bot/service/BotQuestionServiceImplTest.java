@@ -6,6 +6,8 @@ import com.awe.apex.quant.domain.dto.BotHoldingRiskItem;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.ObservePoolResp;
+import com.awe.apex.quant.domain.dto.ObservePoolSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.dto.PortfolioTopHoldingResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisFreshnessResp;
@@ -14,12 +16,14 @@ import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.bot.service.IBotHoldingRiskService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IStockAnalysisService;
 import com.awe.apex.quant.service.IStockService;
 import com.awe.apex.quant.bot.service.impl.BotQuestionServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -29,11 +33,13 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,6 +53,7 @@ class BotQuestionServiceImplTest {
     private IBotHoldingRiskService botHoldingRiskService;
     private IPortfolioService portfolioService;
     private IDecisionService decisionService;
+    private IObservePoolService observePoolService;
 
     @BeforeEach
     void setUp() {
@@ -57,12 +64,14 @@ class BotQuestionServiceImplTest {
         botHoldingRiskService = mock(IBotHoldingRiskService.class);
         portfolioService = mock(IPortfolioService.class);
         decisionService = mock(IDecisionService.class);
+        observePoolService = mock(IObservePoolService.class);
         ReflectionTestUtils.setField(service, "stockService", stockService);
         ReflectionTestUtils.setField(service, "stockAnalysisService", stockAnalysisService);
         ReflectionTestUtils.setField(service, "marketBriefingService", marketBriefingService);
         ReflectionTestUtils.setField(service, "botHoldingRiskService", botHoldingRiskService);
         ReflectionTestUtils.setField(service, "portfolioService", portfolioService);
         ReflectionTestUtils.setField(service, "decisionService", decisionService);
+        ReflectionTestUtils.setField(service, "observePoolService", observePoolService);
     }
 
     @Test
@@ -87,6 +96,119 @@ class BotQuestionServiceImplTest {
         assertTrue(response.getAnswer().contains("2026-08-13"));
         verify(stockService).search("宁德时代", 5);
         verify(stockAnalysisService).analyze("300750", "BUY", 120, true, false);
+    }
+
+    @Test
+    void addsExactStockNameToObservePool() {
+        when(stockService.search("贵州茅台", 10)).thenReturn(List.of(StockSearchItem.builder()
+                .code("600519").name("贵州茅台").market("SH").build()));
+        when(observePoolService.list(null, null, "600519")).thenReturn(List.of());
+
+        BotAskResp response = service.ask(request("把贵州茅台加入观察池"));
+
+        assertEquals("OBSERVE_ADD", response.getIntent());
+        assertEquals("600519", response.getStockCode());
+        assertEquals("贵州茅台", response.getStockName());
+        assertTrue(response.getAnswer().contains("已将贵州茅台（600519）加入观察池"));
+        ArgumentCaptor<ObservePoolSaveReq> requestCaptor = ArgumentCaptor.forClass(ObservePoolSaveReq.class);
+        verify(observePoolService).save(requestCaptor.capture());
+        assertEquals("600519", requestCaptor.getValue().getCode());
+        assertEquals("贵州茅台", requestCaptor.getValue().getName());
+        assertEquals("SH", requestCaptor.getValue().getMarket());
+        assertEquals("BUY", requestCaptor.getValue().getSide());
+        assertEquals("WATCHING", requestCaptor.getValue().getStatus());
+        assertEquals("微信 Bot 手动加入", requestCaptor.getValue().getReason());
+        assertEquals("微信Bot,手动", requestCaptor.getValue().getTags());
+        assertEquals(3, requestCaptor.getValue().getPriority());
+        verify(stockAnalysisService, never()).analyze(anyString(), anyString(), anyInt(), anyBoolean(), anyBoolean());
+    }
+
+    @Test
+    void addsStockCodeToObservePool() {
+        when(stockService.search("600519", 10)).thenReturn(List.of(StockSearchItem.builder()
+                .code("600519").name("贵州茅台").market("SH").build()));
+        when(observePoolService.list(null, null, "600519")).thenReturn(List.of());
+
+        BotAskResp response = service.ask(request("帮我关注 600519"));
+
+        assertEquals("OBSERVE_ADD", response.getIntent());
+        assertTrue(response.getAnswer().contains("贵州茅台（600519）"));
+        verify(observePoolService).save(any(ObservePoolSaveReq.class));
+        verify(stockAnalysisService, never()).analyze(anyString(), anyString(), anyInt(), anyBoolean(), anyBoolean());
+    }
+
+    @Test
+    void addsStockFromNaturalFollowRequest() {
+        when(stockService.search("贵州茅台", 10)).thenReturn(List.of(StockSearchItem.builder()
+                .code("600519").name("贵州茅台").market("SH").build()));
+        when(observePoolService.list(null, null, "600519")).thenReturn(List.of());
+
+        BotAskResp response = service.ask(request("我想关注一下贵州茅台"));
+
+        assertEquals("OBSERVE_ADD", response.getIntent());
+        verify(observePoolService).save(any(ObservePoolSaveReq.class));
+    }
+
+    @Test
+    void addsStockWhenObservePoolPhraseContainsModifiers() {
+        when(stockService.search("中兴通讯", 10)).thenReturn(List.of(StockSearchItem.builder()
+                .code("000063").name("中兴通讯").market("SZ").build()));
+        when(observePoolService.list(null, null, "000063")).thenReturn(List.of());
+
+        BotAskResp response = service.ask(request("请把中兴通讯加入到我的观察池"));
+
+        assertEquals("OBSERVE_ADD", response.getIntent());
+        verify(observePoolService).save(any(ObservePoolSaveReq.class));
+    }
+
+    @Test
+    void negatedFollowRequestDoesNotWriteObservePool() {
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(stockService.search(anyString(), anyInt())).thenReturn(List.of());
+
+        BotAskResp response = service.ask(request("我不想关注贵州茅台"));
+
+        assertNotEquals("OBSERVE_ADD", response.getIntent());
+        verify(observePoolService, never()).save(any(ObservePoolSaveReq.class));
+    }
+
+    @Test
+    void existingObserveItemIsNotOverwritten() {
+        when(stockService.search("宁德时代", 10)).thenReturn(List.of(StockSearchItem.builder()
+                .code("300750").name("宁德时代").market("SZ").build()));
+        when(observePoolService.list(null, null, "300750")).thenReturn(List.of(ObservePoolResp.builder()
+                .code("300750").name("宁德时代").build()));
+
+        BotAskResp response = service.ask(request("将宁德时代加到观察池"));
+
+        assertEquals("OBSERVE_ADD", response.getIntent());
+        assertTrue(response.getAnswer().contains("已在观察池中"));
+        verify(observePoolService, never()).save(any(ObservePoolSaveReq.class));
+    }
+
+    @Test
+    void unknownStockIsNotAddedToObservePool() {
+        when(stockService.search("虚构科技", 10)).thenReturn(List.of());
+
+        BotAskResp response = service.ask(request("把虚构科技加入观察池"));
+
+        assertEquals("OBSERVE_ADD_UNRESOLVED", response.getIntent());
+        assertTrue(response.getAnswer().contains("未加入观察池"));
+        verify(observePoolService, never()).save(any(ObservePoolSaveReq.class));
+    }
+
+    @Test
+    void ambiguousStockNameIsNotAddedToObservePool() {
+        when(stockService.search("同名科技", 10)).thenReturn(List.of(
+                StockSearchItem.builder().code("600001").name("同名科技").market("SH").build(),
+                StockSearchItem.builder().code("000001").name("同名科技").market("SZ").build()));
+
+        BotAskResp response = service.ask(request("把同名科技加入观察池"));
+
+        assertEquals("OBSERVE_ADD_AMBIGUOUS", response.getIntent());
+        assertTrue(response.getAnswer().contains("找到多个同名标的"));
+        assertTrue(response.getAnswer().contains("未加入观察池"));
+        verify(observePoolService, never()).save(any(ObservePoolSaveReq.class));
     }
 
     @Test

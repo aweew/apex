@@ -114,7 +114,7 @@ public class DecisionPlaybookServiceImpl implements IDecisionPlaybookService {
                 ))
                 .sellRules(List.of(
                         "优先级：持仓止损/止盈触价 → 策略 SELL → 其余 HOLD",
-                        "策略卖出信号只作用于「我的持仓」，未持仓忽略",
+                        "策略卖出信号只作用于当前用户所有活跃组合持仓，未持仓忽略",
                         "S1 跌破快线；S2 RSI超买/跌破均线；S3 跌破突破日低点",
                         "止损/止盈卖出评分固定 90，优先处理",
                         "持仓缺止损或止盈时，按 ATR14×倍数（或 -8%/+20%）自动生成并回写",

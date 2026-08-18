@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   ArrowRight,
   FolderAdd,
+  Minus,
   MoreFilled,
   Plus,
   Rank,
@@ -15,7 +16,6 @@ import {
   Upload,
 } from '@element-plus/icons-vue'
 import { saveObserve } from '../api/observe'
-import { searchStock } from '../api/stock'
 import {
   importPortfolioHoldings,
   listPortfolioDaily,
@@ -24,12 +24,12 @@ import {
   refreshPortfolioQuotes,
   refreshAllPortfolioQuotes,
   removePortfolio,
-  removePortfolioHolding,
   savePortfolio,
   savePortfolioHolding,
   sortPortfolios,
   snapshotAllPortfolios,
   snapshotPortfolio,
+  tradePortfolioHolding,
 } from '../api/portfolio'
 import {
   HOLDING_SHARE_WIDTH,
@@ -52,6 +52,7 @@ import {
 } from '../utils/shareCapture.js'
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
+import HoldingTradeDialog from '../components/HoldingTradeDialog.vue'
 import { securityMarketBadge } from '../utils/securityMarket.js'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
 import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
@@ -86,9 +87,11 @@ const showIndustry = ref(false)
 const pfDialog = ref(false)
 const dialogVisible = ref(false)
 const importDialog = ref(false)
-const searchLoading = ref(false)
-const searchOptions = ref([])
 const saving = ref(false)
+const tradeDialogVisible = ref(false)
+const tradeSaving = ref(false)
+const tradeTarget = ref(null)
+const tradeSide = ref('BUY')
 const snapshotting = ref(false)
 const sorting = ref(false)
 const draggingPortfolioId = ref(null)
@@ -178,7 +181,7 @@ const shareCol = computed(() =>
         qty: 104,
         cost: 84,
         note: 100,
-        ops: 168,
+        ops: 232,
       },
 )
 
@@ -960,18 +963,13 @@ async function onRemovePf(row) {
 
 function openCreate() {
   if (!activeId.value) return
-  Object.assign(form, {
-    id: null,
-    code: '',
-    name: '',
-    quantity: 100,
-    costPrice: '',
-    stopLoss: '',
-    takeProfit: '',
-    note: '',
-  })
-  searchOptions.value = []
-  dialogVisible.value = true
+  openTrade(null, 'BUY')
+}
+
+function openTrade(row, side) {
+  tradeTarget.value = row || null
+  tradeSide.value = side
+  tradeDialogVisible.value = true
 }
 
 function openEdit(row) {
@@ -985,30 +983,7 @@ function openEdit(row) {
     takeProfit: row.takeProfit ?? '',
     note: row.note || '',
   })
-  searchOptions.value = row.code ? [{ code: row.code, name: row.name || row.code }] : []
   dialogVisible.value = true
-}
-
-async function onSearchStock(q) {
-  const keyword = String(q || '').trim()
-  if (!keyword) {
-    searchOptions.value = []
-    return
-  }
-  searchLoading.value = true
-  try {
-    const res = await searchStock(keyword)
-    searchOptions.value = res?.data || []
-  } catch {
-    searchOptions.value = []
-  } finally {
-    searchLoading.value = false
-  }
-}
-
-function onPickStock(code) {
-  const hit = searchOptions.value.find((x) => x.code === code)
-  if (hit) form.name = hit.name || form.name
 }
 
 async function onSave() {
@@ -1038,15 +1013,31 @@ async function onSave() {
   }
 }
 
-async function onRemove(row) {
+async function onTrade(payload) {
+  if (!activeId.value) return
+  tradeSaving.value = true
   try {
-    await ElMessageBox.confirm(`删除 ${row.code} ${row.name || ''}？`, '删除持仓', { type: 'warning' })
-    await removePortfolioHolding(activeId.value, row.id)
-    ElMessage.success('已删除')
+    await tradePortfolioHolding(activeId.value, payload)
+    ElMessage.success(payload.side === 'SELL' ? '卖出已成交' : '买入已成交')
+    tradeDialogVisible.value = false
     await loadList(true)
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.message || '删除失败')
+    ElMessage.error(e.message || '成交失败')
+  } finally {
+    tradeSaving.value = false
   }
+}
+
+function handleHoldingAction(command, row) {
+  if (command === 'buy' || command === 'sell') {
+    openTrade(row, command.toUpperCase())
+    return
+  }
+  if (command === 'edit') {
+    openEdit(row)
+    return
+  }
+  if (command === 'observe') addObserve(row)
 }
 
 async function addObserve(row) {
@@ -1467,7 +1458,7 @@ onBeforeUnmount(() => {
         <p>跟踪自己的或别人的实盘；详情区与「真实持仓」同风格，可导入与每日浮盈快照。</p>
       </div>
       <div class="portfolio-desktop-toolbar" aria-label="组合操作">
-        <el-button type="primary" :icon="Plus" :disabled="!detail" @click="openCreate">添加持仓</el-button>
+        <el-button type="primary" :icon="Plus" :disabled="!detail" @click="openCreate">买入</el-button>
         <el-button plain :icon="FolderAdd" @click="openCreatePf">新建组合</el-button>
         <span class="portfolio-toolbar-divider" aria-hidden="true"></span>
         <el-button plain :icon="Upload" :disabled="!detail" @click="openImport">导入</el-button>
@@ -1800,8 +1791,8 @@ onBeforeUnmount(() => {
 
         <div v-if="!loading && !refreshing && !rows.length" class="page-empty">
           <h3>该组合还没有持仓</h3>
-          <p>可手动添加，或粘贴导入代码/数量/成本</p>
-          <el-button type="primary" @click="openCreate">添加持仓</el-button>
+          <p>可直接买入，或粘贴导入代码/数量/成本</p>
+          <el-button type="primary" :icon="Plus" @click="openCreate">买入</el-button>
           <el-button plain @click="openImport">导入</el-button>
         </div>
 
@@ -1888,6 +1879,24 @@ onBeforeUnmount(() => {
                   </span>
                   <span class="security-code">{{ row.code }}</span>
                 </button>
+                <el-dropdown
+                  v-if="isMobileViewport"
+                  trigger="click"
+                  placement="bottom-end"
+                  @command="handleHoldingAction($event, row)"
+                >
+                  <button type="button" class="mobile-holding-actions" aria-label="持仓操作" @click.stop>
+                    <el-icon><MoreFilled /></el-icon>
+                  </button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="buy" :icon="Plus">买入</el-dropdown-item>
+                      <el-dropdown-item command="sell" :icon="Minus">卖出</el-dropdown-item>
+                      <el-dropdown-item command="edit">编辑持仓</el-dropdown-item>
+                      <el-dropdown-item command="observe">加入观察池</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
             <el-table-column
@@ -2103,9 +2112,10 @@ onBeforeUnmount(() => {
               label-class-name="ops-column"
             >
               <template #default="{ row }">
+                <el-button link type="success" :icon="Plus" @click="openTrade(row, 'BUY')">买入</el-button>
+                <el-button link type="danger" :icon="Minus" @click="openTrade(row, 'SELL')">卖出</el-button>
                 <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
                 <el-button link type="warning" @click="addObserve(row)">观察</el-button>
-                <el-button link type="danger" @click="onRemove(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -2176,42 +2186,17 @@ onBeforeUnmount(() => {
 
     <el-dialog
       v-model="dialogVisible"
-      :title="form.id ? '编辑持仓' : '添加持仓'"
+      :title="'编辑持仓'"
       width="480px"
       append-to-body
       align-center
     >
       <el-form label-width="80px">
         <el-form-item label="代码" required>
-          <el-select
-            v-if="!form.id"
-            v-model="form.code"
-            filterable
-            remote
-            clearable
-            :remote-method="onSearchStock"
-            :loading="searchLoading"
-            placeholder="代码或名称"
-            style="width: 100%"
-            @change="onPickStock"
-          >
-            <el-option
-              v-for="opt in searchOptions"
-              :key="opt.code"
-              :label="`${opt.code} ${opt.name || ''}`"
-              :value="opt.code"
-            />
-          </el-select>
-          <el-input v-else v-model="form.code" disabled />
+          <el-input v-model="form.code" disabled />
         </el-form-item>
         <el-form-item label="名称">
           <el-input v-model="form.name" placeholder="可空，自动补全" />
-        </el-form-item>
-        <el-form-item label="数量">
-          <el-input-number v-model="form.quantity" :min="0" :step="100" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="成本价">
-          <el-input v-model="form.costPrice" placeholder="可选" />
         </el-form-item>
         <el-form-item label="止损">
           <el-input v-model="form.stopLoss" placeholder="可选" />
@@ -2228,6 +2213,14 @@ onBeforeUnmount(() => {
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <HoldingTradeDialog
+      v-model="tradeDialogVisible"
+      :holding="tradeTarget"
+      :initial-side="tradeSide"
+      :loading="tradeSaving"
+      @submit="onTrade"
+    />
 
     <el-dialog
       v-model="importDialog"
@@ -3107,6 +3100,27 @@ onBeforeUnmount(() => {
   color: inherit;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+.mobile-holding-actions {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--slate);
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+}
+.mobile-holding-actions:hover,
+.mobile-holding-actions:focus-visible,
+.mobile-holding-actions[aria-expanded="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
 }
 .market-badge {
   display: inline-flex;
