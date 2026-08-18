@@ -173,8 +173,10 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d --bui
 ```
 
 首次构建会下载 Maven、npm、Java、Python 和行情依赖，耗时取决于 NAS 性能和
-网络。Vue 使用 Node 20 构建；后端使用 Java 17，并在运行镜像中安装 Python 3
-及 `scripts/market_data/requirements.txt`。
+网络。后端构建使用国内 Maven 镜像，并通过 BuildKit 缓存 `/root/.m2`；后续修改
+`pom.xml` 时只需下载新增或变更的依赖，不会重新下载完整依赖树。不要在日常部署
+前清理 Docker 构建缓存。Vue 使用 Node 20 构建；后端使用 Java 17，并在运行镜像
+中安装 Python 3 及 `scripts/market_data/requirements.txt`。
 
 群晖 Container Manager 也可以将 `docker-compose.prod.yml` 导入为“项目”。如果
 界面不能选择 env 文件，可将 `.env.production` 另存为项目目录下的 `.env`，或在

@@ -1,11 +1,18 @@
+# syntax=docker/dockerfile:1.4
+
 FROM maven:3.9.9-eclipse-temurin-17 AS builder
 
 WORKDIR /workspace
 COPY apex-be/pom.xml apex-be/pom.xml
-RUN mvn -f apex-be/pom.xml dependency:go-offline -B
+COPY apex-be/.mvn/settings-docker.xml apex-be/.mvn/settings-docker.xml
+RUN --mount=type=cache,id=apex-maven-repository,target=/root/.m2,sharing=locked \
+    mvn --settings apex-be/.mvn/settings-docker.xml \
+    -f apex-be/pom.xml dependency:go-offline -B
 
 COPY apex-be/src apex-be/src
-RUN mvn -f apex-be/pom.xml package -DskipTests -B \
+RUN --mount=type=cache,id=apex-maven-repository,target=/root/.m2,sharing=locked \
+    mvn --settings apex-be/.mvn/settings-docker.xml \
+    -f apex-be/pom.xml package -DskipTests -B \
     && jar_path="$(find apex-be/target -maxdepth 1 -type f -name 'apex-be-*.jar' ! -name '*.original' -print -quit)" \
     && test -n "$jar_path" \
     && cp "$jar_path" /workspace/app.jar

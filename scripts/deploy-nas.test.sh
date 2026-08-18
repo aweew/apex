@@ -4,6 +4,8 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DEPLOY_SCRIPT="$SCRIPT_DIR/deploy-nas.sh"
+BACKEND_DOCKERFILE="$SCRIPT_DIR/../apex-be/Dockerfile"
+MAVEN_SETTINGS="$SCRIPT_DIR/../apex-be/.mvn/settings-docker.xml"
 TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/apex-deploy-test.XXXXXX")
 
 cleanup() {
@@ -16,6 +18,16 @@ fail() {
 }
 
 trap cleanup EXIT INT TERM
+
+grep -q '^# syntax=docker/dockerfile:1.4$' "$BACKEND_DOCKERFILE" \
+    || fail "backend Dockerfile does not enable the BuildKit Dockerfile frontend"
+test "$(grep -c -- '--mount=type=cache,id=apex-maven-repository,target=/root/.m2,sharing=locked' "$BACKEND_DOCKERFILE")" -eq 2 \
+    || fail "backend Maven commands do not share the persistent BuildKit cache"
+test "$(grep -c -- '--settings apex-be/.mvn/settings-docker.xml' "$BACKEND_DOCKERFILE")" -eq 2 \
+    || fail "backend Maven commands do not use the Docker-specific mirror settings"
+test -f "$MAVEN_SETTINGS" || fail "Docker-specific Maven settings are missing"
+grep -q '<mirrorOf>central</mirrorOf>' "$MAVEN_SETTINGS" \
+    || fail "Docker-specific Maven settings do not mirror Maven Central"
 
 sh "$DEPLOY_SCRIPT" --help | grep -q -- '--be' || fail "backend option is missing from help"
 sh "$DEPLOY_SCRIPT" --help | grep -q -- '--fe' || fail "frontend option is missing from help"
