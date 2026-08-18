@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
+import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +30,13 @@ import java.util.Objects;
 @Service
 public class MorningBriefingServiceImpl implements IMorningBriefingService {
 
+    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest";
+    private static final Duration BRIEFING_CACHE_TTL = Duration.ofHours(30);
+
+    private final Object cacheLock = new Object();
+    private MorningBriefingResp cachedBriefing;
+    private long cachedAtMs;
+
     @Resource
     private ApexBotProperties properties;
 
@@ -36,6 +45,9 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
 
     @Resource
     private INewsPulseService newsPulseService;
+
+    @Resource
+    private RedisCacheService redisCacheService;
 
     /**
      * 汇总隔夜美股和夜间新闻。
@@ -52,6 +64,9 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
             }
         }
         List<OvernightMarketQuote> marketQuotes = usMarketQuoteClient.fetch(symbols);
+        if (Objects.isNull(marketQuotes)) {
+            marketQuotes = List.of();
+        }
         NewsPulseResp newsPulse = loadNewsPulse();
         List<String> newsTitles = new ArrayList<>();
         if (Objects.nonNull(newsPulse) && CollUtil.isNotEmpty(newsPulse.getCards())) {
@@ -85,13 +100,63 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
             summary.append("暂未形成有效摘要。");
         }
         summary.append("\n仅供研究，不构成投资建议。");
-        return MorningBriefingResp.builder()
+        MorningBriefingResp briefing = MorningBriefingResp.builder()
                 .generatedAt(generatedAt)
                 .marketQuotes(marketQuotes)
                 .newsTitles(newsTitles)
+                .newsPulse(newsPulse)
                 .summary(summary.toString())
                 .dataLevel(CollUtil.isEmpty(marketQuotes) ? "YELLOW" : "GREEN")
                 .build();
+        synchronized (cacheLock) {
+            cachedBriefing = briefing;
+            cachedAtMs = System.currentTimeMillis();
+        }
+        redisCacheService.put(BRIEFING_CACHE_KEY, briefing, BRIEFING_CACHE_TTL);
+        return briefing;
+    }
+
+    /**
+     * 读取最近一次盘前晨报，缓存未命中时生成。
+     *
+     * @return 最近一次盘前晨报
+     */
+    @Override
+    public MorningBriefingResp latest() {
+        long now = System.currentTimeMillis();
+        synchronized (cacheLock) {
+            if (Objects.nonNull(cachedBriefing)
+                    && now - cachedAtMs < BRIEFING_CACHE_TTL.toMillis()) {
+                return cachedBriefing;
+            }
+        }
+        MorningBriefingResp sharedCached = redisCacheService.get(BRIEFING_CACHE_KEY, MorningBriefingResp.class);
+        if (Objects.nonNull(sharedCached)) {
+            synchronized (cacheLock) {
+                cachedBriefing = sharedCached;
+                cachedAtMs = System.currentTimeMillis();
+            }
+            return sharedCached;
+        }
+        synchronized (cacheLock) {
+            if (Objects.nonNull(cachedBriefing)
+                    && System.currentTimeMillis() - cachedAtMs < BRIEFING_CACHE_TTL.toMillis()) {
+                return cachedBriefing;
+            }
+            return generate();
+        }
+    }
+
+    /**
+     * 清除盘前晨报缓存。
+     */
+    @Override
+    public void invalidateCache() {
+        synchronized (cacheLock) {
+            cachedBriefing = null;
+            cachedAtMs = 0L;
+        }
+        redisCacheService.evict(BRIEFING_CACHE_KEY);
     }
 
     private NewsPulseResp loadNewsPulse() {

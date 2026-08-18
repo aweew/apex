@@ -338,11 +338,11 @@ def sync_bars(
     resume: bool,
     only_missing: bool,
     codes: Optional[Sequence[str]] = None,
-) -> None:
+) -> int:
     codes = list_codes(conn, limit=limit, codes=codes)
     if not codes:
         print("无待同步代码（stock_basic 为空或 --codes 无效），请先执行 --mode list")
-        return
+        return 1
 
     progress = load_progress() if resume else {}
     total = len(codes)
@@ -423,6 +423,7 @@ def sync_bars(
     save_progress(progress)
     print(f"完成：ok={ok}, fail={fail}, skip={skip}, total={total}")
     print(f"进度文件：{PROGRESS_PATH}")
+    return fail
 
 
 def parse_args():
@@ -454,10 +455,11 @@ def main() -> int:
     try:
         if args.mode in ("list", "all") and not code_list:
             sync_stock_list(conn, limit=args.limit if args.mode == "list" else None)
+        bar_failures = 0
         if args.mode in ("bars", "all"):
             # all 模式下 list 已全量写入；bars 的 limit 才限制同步数量
             bar_limit = args.limit if args.mode == "bars" else args.limit
-            sync_bars(
+            bar_failures = sync_bars(
                 conn,
                 start=args.start,
                 end=args.end,
@@ -467,7 +469,7 @@ def main() -> int:
                 only_missing=not args.full_refresh,
                 codes=code_list,
             )
-        return 0
+        return 1 if bar_failures > 0 else 0
     finally:
         conn.close()
 

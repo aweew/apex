@@ -24,6 +24,11 @@ public class DashboardHomeResp {
     private MarketBlock market;
 
     /**
+     * 隔夜美股与今日消息面
+     */
+    private MorningBriefingResp morningBriefing;
+
+    /**
      * 今日决策摘要
      */
     private DecisionBlock decision;

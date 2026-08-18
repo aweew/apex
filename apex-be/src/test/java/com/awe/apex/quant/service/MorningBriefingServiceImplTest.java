@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service;
 
 import com.awe.apex.quant.bot.config.ApexBotProperties;
+import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
@@ -16,9 +17,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MorningBriefingServiceImplTest {
@@ -26,17 +32,20 @@ class MorningBriefingServiceImplTest {
     private MorningBriefingServiceImpl service;
     private UsMarketQuoteClient usMarketQuoteClient;
     private INewsPulseService newsPulseService;
+    private RedisCacheService redisCacheService;
 
     @BeforeEach
     void setUp() {
         service = new MorningBriefingServiceImpl();
         usMarketQuoteClient = mock(UsMarketQuoteClient.class);
         newsPulseService = mock(INewsPulseService.class);
+        redisCacheService = mock(RedisCacheService.class);
         ApexBotProperties properties = new ApexBotProperties();
         properties.getMorningBriefing().setSymbols("usIXIC,usDJI,usINX,usNVDA,usBABA");
         ReflectionTestUtils.setField(service, "properties", properties);
         ReflectionTestUtils.setField(service, "usMarketQuoteClient", usMarketQuoteClient);
         ReflectionTestUtils.setField(service, "newsPulseService", newsPulseService);
+        ReflectionTestUtils.setField(service, "redisCacheService", redisCacheService);
     }
 
     @Test
@@ -47,10 +56,11 @@ class MorningBriefingServiceImplTest {
                 OvernightMarketQuote.builder().symbol("usNVDA").name("英伟达")
                         .pctChg(new BigDecimal("-1.20")).quoteTime(LocalDateTime.of(2026, 8, 14, 4, 0)).build()
         ));
-        when(newsPulseService.pulse(6, true)).thenReturn(NewsPulseResp.builder()
+        NewsPulseResp newsPulse = NewsPulseResp.builder()
                 .executiveSummary("利好方向：AI；承压方向：原油；整体偏中性。")
                 .cards(List.of(NewsPulseCardResp.builder().title("美联储公布最新经济数据").build()))
-                .build());
+                .build();
+        when(newsPulseService.pulse(6, true)).thenReturn(newsPulse);
 
         MorningBriefingResp response = service.generate();
 
@@ -60,6 +70,8 @@ class MorningBriefingServiceImplTest {
         assertTrue(response.getSummary().contains("英伟达 -1.20%"));
         assertTrue(response.getSummary().contains("AI"));
         assertEquals(List.of("美联储公布最新经济数据"), response.getNewsTitles());
+        assertSame(newsPulse, response.getNewsPulse());
+        verify(redisCacheService).put(eq("apex:morning-briefing:latest"), eq(response), any());
     }
 
     @Test
@@ -74,5 +86,21 @@ class MorningBriefingServiceImplTest {
 
         assertEquals("YELLOW", response.getDataLevel());
         assertTrue(response.getSummary().contains("美股行情暂未获取"));
+    }
+
+    @Test
+    void latestUsesCachedMorningBriefingWithoutExternalRequests() {
+        MorningBriefingResp cached = MorningBriefingResp.builder()
+                .generatedAt(LocalDateTime.of(2026, 8, 18, 6, 35))
+                .dataLevel("GREEN")
+                .build();
+        when(redisCacheService.get("apex:morning-briefing:latest", MorningBriefingResp.class))
+                .thenReturn(cached);
+
+        MorningBriefingResp response = service.latest();
+
+        assertSame(cached, response);
+        verify(usMarketQuoteClient, never()).fetch(anyList());
+        verify(newsPulseService, never()).pulse(6, true);
     }
 }

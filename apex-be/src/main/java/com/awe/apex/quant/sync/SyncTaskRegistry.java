@@ -3,8 +3,10 @@ package com.awe.apex.quant.sync;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
+import com.awe.apex.quant.market.TradingCalendar;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -38,6 +40,15 @@ public class SyncTaskRegistry {
                 .scriptFile("sync_close_bundle.py")
                 .defaultParamsHint("日常增量；指数默认近60日")
                 .timeoutSec(3600)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("NIGHTLY_REPAIR")
+                .name("凌晨数据补缺")
+                .groupName("每日收盘")
+                .description("依次补齐全A日线、公司资料和财务基本面")
+                .scriptFile("sync_nightly_repair.py")
+                .defaultParamsHint("每天 02:10；日线 800 只、公司资料 300 只、财务 60 只")
+                .timeoutSec(21600)
                 .build());
         register(SyncTaskSpec.builder()
                 .taskType("A_SHARE_LIST")
@@ -326,6 +337,21 @@ public class SyncTaskRegistry {
                     args.add("--news-limit");
                     args.add(String.valueOf(Math.max(safe.getLimit(), 80)));
                 }
+            }
+            case "NIGHTLY_REPAIR" -> {
+                String expectedDate = StringUtils.isNotBlank(safe.getExpectedDate())
+                        ? safe.getExpectedDate().trim()
+                        : TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now().minusDays(1)).toString();
+                args.add("--expected-date");
+                args.add(expectedDate);
+                args.add("--start");
+                args.add(StringUtils.isNotBlank(safe.getStart()) ? safe.getStart().trim() : "20240101");
+                args.add("--bars-batch");
+                args.add(String.valueOf(Objects.nonNull(safe.getBatch()) && safe.getBatch() > 0
+                        ? safe.getBatch() : 80));
+                args.add("--bars-rounds");
+                args.add(String.valueOf(Objects.nonNull(safe.getRounds()) && safe.getRounds() > 0
+                        ? safe.getRounds() : 10));
             }
             case "DECISION" -> {
                 // Java 内部任务，无脚本参数。

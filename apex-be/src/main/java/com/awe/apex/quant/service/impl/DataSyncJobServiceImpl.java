@@ -20,6 +20,7 @@ import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IWatchlistService;
@@ -67,8 +68,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     private static final Pattern PCT_PATTERN = Pattern.compile("(\\d{1,3})\\s*%");
     private static final Pattern STEP_PATTERN = Pattern.compile("\\[(\\d+)\\s*/\\s*(\\d+)]");
-    /** CLOSE_BUNDLE: step 1/5: index */
-    private static final Pattern CLOSE_STEP_PATTERN = Pattern.compile("step\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+    /** 编排脚本阶段进度，例如 step 1/5: index */
+    private static final Pattern SCRIPT_STEP_PATTERN = Pattern.compile("step\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
     private static final int LOG_MAX = 12000;
 
     @Resource
@@ -79,6 +80,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Resource
     private IMarketBriefingService marketBriefingService;
+
+    @Resource
+    private IMorningBriefingService morningBriefingService;
 
     @Resource
     private IWatchlistService watchlistService;
@@ -596,9 +600,6 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             job.setLogTail(logText);
             enrichProgressFromFile(job);
-            if (!cancelled.get()) {
-                invalidateMarketBriefingCache(job, spec.getTaskType());
-            }
             if (cancelled.get()) {
                 job.setStatus("CANCELLED");
                 job.setMessage("用户停止");
@@ -606,6 +607,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 job.setStatus("FAILED");
                 job.setMessage("脚本退出码 " + exit);
             } else {
+                invalidateMarketBriefingCache(job, spec.getTaskType());
                 if ("CLOSE_BUNDLE".equals(spec.getTaskType())) {
                     job.setProgressPct(Math.min(99, Math.max(90,
                             Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0)));
@@ -734,15 +736,22 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             return;
         }
         String type = taskType.trim().toUpperCase(Locale.ROOT);
-        if (!"CLOSE_BUNDLE".equals(type) && !"INDEX".equals(type) && !"SECTOR_QUOTE".equals(type)
-                && !"LIMIT_UP".equals(type)) {
-            return;
+        if ("CLOSE_BUNDLE".equals(type) || "NIGHTLY_REPAIR".equals(type)
+                || "INDEX".equals(type) || "SECTOR_QUOTE".equals(type) || "LIMIT_UP".equals(type)) {
+            try {
+                marketBriefingService.invalidateCache();
+            } catch (Exception ex) {
+                appendLog(job, "[warning] invalidate briefing cache failed: " + ex.getMessage() + "\n");
+                log.warn("清简报缓存失败 type={} err={}", type, ex.getMessage());
+            }
         }
-        try {
-            marketBriefingService.invalidateCache();
-        } catch (Exception ex) {
-            appendLog(job, "[warning] invalidate briefing cache failed: " + ex.getMessage() + "\n");
-            log.warn("清简报缓存失败 type={} err={}", type, ex.getMessage());
+        if ("NEWS".equals(type) || "CLOSE_BUNDLE".equals(type)) {
+            try {
+                morningBriefingService.invalidateCache();
+            } catch (Exception ex) {
+                appendLog(job, "[warning] invalidate morning briefing cache failed: " + ex.getMessage() + "\n");
+                log.warn("清盘前晨报缓存失败 type={} err={}", type, ex.getMessage());
+            }
         }
     }
 
@@ -846,9 +855,13 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         if (StringUtils.isBlank(line)) {
             return;
         }
+        if ("NIGHTLY_REPAIR".equalsIgnoreCase(job.getTaskType())
+                && !line.contains("[NIGHTLY_REPAIR] step")) {
+            return;
+        }
         Matcher step = STEP_PATTERN.matcher(line);
         if (!step.find()) {
-            step = CLOSE_STEP_PATTERN.matcher(line);
+            step = SCRIPT_STEP_PATTERN.matcher(line);
             if (!step.find()) {
                 step = null;
             }

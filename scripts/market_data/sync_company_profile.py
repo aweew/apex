@@ -78,6 +78,30 @@ def list_codes(conn, codes: Optional[Sequence[str]], limit: int) -> List[str]:
         return [r["code"] for r in cur.fetchall()]
 
 
+def list_missing_codes(conn, limit: int, stale_days: int) -> List[str]:
+    sql = """
+    SELECT t1.code
+    FROM stock_basic t1
+    LEFT JOIN stock_company_profile t2 ON t2.code = t1.code AND t2.deleted = 0
+    WHERE t1.deleted = 0
+      AND (
+        t2.id IS NULL
+        OR t2.org_name IS NULL
+        OR t2.main_business IS NULL
+        OR t2.payload IS NULL
+        OR t2.update_time < DATE_SUB(NOW(), INTERVAL %s DAY)
+      )
+    ORDER BY CASE WHEN t2.id IS NULL THEN 0 ELSE 1 END, t1.code
+    """
+    params = [max(1, stale_days)]
+    if limit > 0:
+        sql += " LIMIT %s"
+        params.append(limit)
+    with conn.cursor() as cur:
+        cur.execute(sql, tuple(params))
+        return [row["code"] for row in cur.fetchall()]
+
+
 def http_get_json(url: str) -> Dict[str, Any]:
     req = urllib.request.Request(
         url,
@@ -353,17 +377,22 @@ def main() -> int:
     parser.add_argument("--codes", default="", help="逗号分隔代码")
     parser.add_argument("--limit", type=int, default=0, help="从 stock_basic 取前 N 只")
     parser.add_argument("--all", action="store_true", help="全市场")
+    parser.add_argument("--missing", action="store_true", help="仅同步缺失、不完整或过期资料")
+    parser.add_argument("--stale-days", type=int, default=90, help="超过 N 天未更新视为过期")
     parser.add_argument("--sleep", type=float, default=0.25)
     args = parser.parse_args()
 
     code_list = [c.strip() for c in args.codes.split(",") if c.strip()] if args.codes else None
-    if not code_list and not args.all and args.limit <= 0:
-        print("请指定 --codes / --limit / --all", file=sys.stderr)
+    if not code_list and not args.all and not args.missing and args.limit <= 0:
+        print("请指定 --codes / --limit / --all / --missing", file=sys.stderr)
         return 2
 
     conn = db_conn()
     try:
-        codes = list_codes(conn, code_list, 0 if args.all else args.limit)
+        if args.missing and not code_list:
+            codes = list_missing_codes(conn, args.limit, args.stale_days)
+        else:
+            codes = list_codes(conn, code_list, 0 if args.all else args.limit)
         print(f"待处理 {len(codes)} 只")
         ok = fail = 0
         for i, code in enumerate(codes, 1):

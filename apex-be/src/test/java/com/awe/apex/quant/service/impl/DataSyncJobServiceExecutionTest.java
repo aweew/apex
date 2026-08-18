@@ -129,6 +129,33 @@ class DataSyncJobServiceExecutionTest {
     }
 
     @Test
+    void nightlyRepairProgressIgnoresNestedScriptCounters() {
+        SyncJob job = SyncJob.builder()
+                .taskType("NIGHTLY_REPAIR")
+                .progressPct(0)
+                .build();
+
+        ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
+                job, "[NIGHTLY_REPAIR] step 2/3: company_profile", 10L);
+        ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
+                job, "[1/300] 000001 OK", 11L);
+
+        assertEquals(66, job.getProgressPct());
+        assertEquals(2, job.getDoneItems());
+        assertEquals(3, job.getTotalItems());
+    }
+
+    @Test
+    void nightlyRepairInvalidatesMarketBriefingCache() {
+        SyncJob job = SyncJob.builder().taskType("NIGHTLY_REPAIR").build();
+
+        ReflectionTestUtils.invokeMethod(service, "invalidateMarketBriefingCache",
+                job, "NIGHTLY_REPAIR");
+
+        verify(marketBriefingService).invalidateCache();
+    }
+
+    @Test
     void closeBundlePostProcessingFailureMarksJobFailedAfterPersistingStage() throws Exception {
         when(userAuthService.listEnabledUserIds()).thenThrow(new BusinessException("用户库不可用"));
 

@@ -33,6 +33,11 @@ public class MorningBriefingResp {
     private List<String> newsTitles;
 
     /**
+     * 今日消息面完整快照。
+     */
+    private NewsPulseResp newsPulse;
+
+    /**
      * 晨报摘要。
      */
     private String summary;

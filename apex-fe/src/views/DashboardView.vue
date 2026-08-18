@@ -6,7 +6,7 @@ import { dashboardHome } from '../api/dashboard'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v13'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v14'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
@@ -32,6 +32,17 @@ function writeHomeCache(data) {
 }
 
 const market = computed(() => home.value?.market || null)
+const morningBriefing = computed(() => home.value?.morningBriefing || null)
+const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
+const overnightQuotes = computed(() => morningBriefing.value?.marketQuotes || [])
+const morningNewsCards = computed(() => {
+  const cards = newsPulse.value?.cards || []
+  if (cards.length) return cards.slice(0, 3)
+  return (morningBriefing.value?.newsTitles || []).slice(0, 3).map((title, index) => ({
+    id: `briefing-title-${index}`,
+    title,
+  }))
+})
 const decision = computed(() => home.value?.decision || null)
 const observeAlerts = computed(() => home.value?.observeAlerts || [])
 const dataHealth = computed(() => home.value?.dataHealth || null)
@@ -76,6 +87,29 @@ function fmtIndexPct(v) {
   if (Number.isNaN(n)) return '-'
   const sign = n > 0 ? '+' : ''
   return `${sign}${n.toFixed(2)}%`
+}
+
+function fmtQuotePrice(v) {
+  if (v == null || v === '') return ''
+  const n = Number(v)
+  if (Number.isNaN(n)) return ''
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtBriefingTime(v) {
+  if (!v) return '待生成'
+  return String(v).replace('T', ' ').slice(5, 16)
+}
+
+function newsSourceLabel(source) {
+  const labels = {
+    eastmoney: '东财',
+    cls: '财联社',
+    ths: '同花顺',
+    sina: '新浪',
+    cctv: '央视',
+  }
+  return labels[source] || source || ''
 }
 
 function pctDir(v) {
@@ -449,6 +483,79 @@ onMounted(() => {
         <div class="effect-cell" :class="pctDir(effect.hs300PctChg)" title="000300 沪深300">
           <em>沪深300</em>
           <b>{{ fmtIndexPct(effect.hs300PctChg) }}</b>
+        </div>
+      </div>
+    </section>
+
+    <section class="morning-context enter delay-1" aria-label="隔夜美股与今日消息面">
+      <div class="morning-context-head">
+        <div>
+          <h3>隔夜与今日消息</h3>
+          <p>美股收盘表现与今日重要资讯</p>
+        </div>
+        <div class="morning-context-meta">
+          <el-tag
+            v-if="morningBriefing"
+            size="small"
+            effect="plain"
+            :type="dataLevelType(morningBriefing.dataLevel)"
+          >
+            {{ dataLevelLabel(morningBriefing.dataLevel) }}
+          </el-tag>
+          <time>{{ fmtBriefingTime(morningBriefing?.generatedAt) }}</time>
+          <el-button link type="primary" @click="router.push('/news')">消息面</el-button>
+        </div>
+      </div>
+
+      <div class="morning-context-grid">
+        <div class="morning-context-block overnight-block">
+          <div class="morning-block-head">
+            <h4>隔夜美股</h4>
+            <span>三大指数与重点个股</span>
+          </div>
+          <div v-if="overnightQuotes.length" class="overnight-quote-grid">
+            <div v-for="quote in overnightQuotes" :key="quote.symbol" class="overnight-quote">
+              <div class="overnight-quote-name">
+                <strong>{{ quote.name || quote.symbol }}</strong>
+                <small v-if="fmtQuotePrice(quote.latestPrice)">{{ fmtQuotePrice(quote.latestPrice) }}</small>
+              </div>
+              <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
+            </div>
+          </div>
+          <p v-else class="morning-context-empty">
+            {{ loading || refreshing ? '正在读取隔夜行情…' : '隔夜行情暂未获取' }}
+          </p>
+        </div>
+
+        <div class="morning-context-block morning-news-block">
+          <div class="morning-block-head">
+            <h4>今日消息面</h4>
+            <div v-if="newsPulse" class="news-counts">
+              <span class="bull">利好 <b>{{ newsPulse.bullCount ?? 0 }}</b></span>
+              <span class="bear">利空 <b>{{ newsPulse.bearCount ?? 0 }}</b></span>
+              <span>{{ newsPulse.biasLabel || '中性' }}</span>
+            </div>
+          </div>
+          <p class="morning-news-summary">
+            {{
+              newsPulse?.executiveSummary
+                || morningBriefing?.summary
+                || (loading || refreshing ? '正在生成消息面摘要…' : '今日消息面暂未生成')
+            }}
+          </p>
+          <div v-if="morningNewsCards.length" class="morning-news-list">
+            <article v-for="item in morningNewsCards" :key="item.id || item.title" class="morning-news-item">
+              <span
+                class="news-sentiment"
+                :class="item.sentiment === '利好' ? 'bull' : item.sentiment === '利空' ? 'bear' : ''"
+              >
+                {{ item.sentiment || '要闻' }}
+              </span>
+              <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+              <span v-else class="morning-news-title">{{ item.title }}</span>
+              <small v-if="item.source">{{ newsSourceLabel(item.source) }}</small>
+            </article>
+          </div>
         </div>
       </div>
     </section>
@@ -1454,9 +1561,272 @@ onMounted(() => {
 .effect-cell.down b { color: var(--down); }
 .effect-cell.flat b { color: var(--slate, #64748b); }
 
+.morning-context {
+  margin: 0 0 14px;
+  padding: 15px 2px 16px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  letter-spacing: 0;
+}
+
+.morning-context-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.morning-context-head h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.morning-context-head p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.morning-context-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.morning-context-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0;
+}
+
+.morning-context-block {
+  min-width: 0;
+  padding: 2px 18px 0 0;
+}
+
+.morning-news-block {
+  padding: 2px 0 0 18px;
+  border-left: 1px solid var(--line);
+}
+
+.morning-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 22px;
+  margin-bottom: 7px;
+}
+
+.morning-block-head h4 {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.morning-block-head > span {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.overnight-quote-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 18px;
+}
+
+.overnight-quote {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  min-height: 34px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  font-variant-numeric: tabular-nums;
+}
+
+.overnight-quote:nth-last-child(-n + 2) {
+  border-bottom-color: transparent;
+}
+
+.overnight-quote-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.overnight-quote-name strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overnight-quote-name small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.overnight-quote > b {
+  flex: 0 0 auto;
+  color: var(--slate);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.overnight-quote > b.up { color: var(--up); }
+.overnight-quote > b.down { color: var(--down); }
+
+.news-counts {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.news-counts b {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.news-counts .bull { color: var(--up); }
+.news-counts .bear { color: var(--down); }
+
+.morning-news-summary {
+  min-height: 2.9em;
+  margin: 0 0 7px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.morning-news-list {
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.morning-news-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  font-size: 11px;
+}
+
+.morning-news-item:last-child {
+  border-bottom-color: transparent;
+}
+
+.news-sentiment {
+  min-width: 26px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.news-sentiment.bull { color: var(--up); }
+.news-sentiment.bear { color: var(--down); }
+
+.morning-news-item a,
+.morning-news-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.morning-news-item a:hover {
+  color: var(--accent);
+}
+
+.morning-news-item small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.morning-context-empty {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
 @media (max-width: 560px) {
   .effect-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .morning-context-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .morning-context-meta {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .overnight-quote-grid {
+    column-gap: 12px;
+  }
+
+  .overnight-quote-name small {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .morning-context {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .morning-context-head {
+    align-items: center;
+  }
+
+  .morning-context-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .morning-context-block {
+    padding: 0;
+  }
+
+  .morning-news-block {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 }
 

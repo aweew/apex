@@ -95,4 +95,45 @@ class DataSyncSchedulerTest {
                             && "INDUSTRY,CONCEPT,THEME".equals(request.getTypes())));
         }
     }
+
+    @Test
+    void schedulesNightlyRepairAtTwoTen() throws Exception {
+        Method method = DataSyncScheduler.class.getMethod("repairMarketDataNightly");
+        Scheduled scheduled = method.getAnnotation(Scheduled.class);
+
+        assertEquals("0 10 2 * * *", scheduled.cron());
+        assertEquals("Asia/Shanghai", scheduled.zone());
+    }
+
+    @Test
+    void nightlyRepairUsesPreviousAvailableTradingDay() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.startSystemTask(org.mockito.ArgumentMatchers.any())).thenReturn(
+                SyncJobResp.builder().id(302L).status("PENDING").build());
+
+        scheduler.repairMarketDataNightly(LocalDate.of(2026, 8, 23));
+
+        verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
+                "NIGHTLY_REPAIR".equals(request.getTaskType())
+                        && "2026-08-21".equals(request.getExpectedDate())));
+    }
+
+    @Test
+    void skipsNightlyRepairWhenAutomaticSyncIsDisabled() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("false");
+
+        scheduler.repairMarketDataNightly(LocalDate.of(2026, 8, 18));
+
+        verify(dataSyncJobService, never()).startSystemTask(org.mockito.ArgumentMatchers.any());
+    }
 }
