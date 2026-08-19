@@ -5,6 +5,7 @@ import com.awe.apex.quant.domain.dto.HoldingTradeReq;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportReq;
 import com.awe.apex.quant.domain.dto.PortfolioImportResp;
+import com.awe.apex.quant.domain.dto.PortfolioImageImportPreviewResp;
 import com.awe.apex.quant.domain.dto.PortfolioOrderReq;
 import com.awe.apex.quant.domain.dto.PortfolioSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
@@ -12,6 +13,7 @@ import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioDaily;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.service.IPortfolioService;
+import com.awe.apex.quant.service.IPortfolioImageImportService;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.List;
@@ -35,6 +38,9 @@ public class PortfolioController {
 
     @Resource
     private IPortfolioService portfolioService;
+
+    @Resource
+    private IPortfolioImageImportService portfolioImageImportService;
 
     /**
      * 组合列表
@@ -141,6 +147,19 @@ public class PortfolioController {
     @PostMapping("/{id}/import")
     public Result<PortfolioImportResp> importHoldings(@PathVariable Long id, @RequestBody PortfolioImportReq req) {
         return Result.success(portfolioService.importHoldings(id, req));
+    }
+
+    /**
+     * 识别持仓截图并生成预览，不保存持仓
+     *
+     * @param id   组合ID
+     * @param file 持仓截图
+     * @return 可编辑识别预览
+     */
+    @PostMapping("/{id}/import/image/preview")
+    public Result<PortfolioImageImportPreviewResp> previewImageImport(
+            @PathVariable Long id, @RequestParam("file") MultipartFile file) {
+        return Result.success(portfolioImageImportService.preview(id, file));
     }
 
     /**

@@ -36,6 +36,14 @@ export function importPortfolioHoldings(portfolioId, text) {
   return http.post(`/api/portfolio/${portfolioId}/import`, { text })
 }
 
+export function recognizePortfolioImage(portfolioId, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return http.post(`/api/portfolio/${portfolioId}/import/image/preview`, formData, {
+    timeout: 90000,
+  })
+}
+
 export function snapshotPortfolio(portfolioId) {
   return http.post(`/api/portfolio/${portfolioId}/snapshot`)
 }

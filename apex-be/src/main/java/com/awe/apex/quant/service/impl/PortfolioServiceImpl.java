@@ -1421,11 +1421,6 @@ public class PortfolioServiceImpl implements IPortfolioService {
             StockBasic byName = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                     .eq(StockBasic::getName, first)
                     .last("LIMIT 1"));
-            if (Objects.isNull(byName)) {
-                byName = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
-                        .like(StockBasic::getName, first)
-                        .last("LIMIT 1"));
-            }
             if (Objects.isNull(byName) || StringUtils.isBlank(byName.getCode())) {
                 throw new BusinessException("无法识别代码/名称: " + first);
             }

@@ -22,7 +22,6 @@ import {
 import { saveObserve } from '../api/observe'
 import { getCurrentUser } from '../api/auth'
 import {
-  importPortfolioHoldings,
   listPortfolioDaily,
   listPortfolios,
   portfolioDetail,
@@ -58,6 +57,7 @@ import {
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 import HoldingTradeDialog from '../components/HoldingTradeDialog.vue'
+import PortfolioImportDialog from '../components/PortfolioImportDialog.vue'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 
@@ -258,8 +258,6 @@ const form = reactive({
   takeProfit: '',
   note: '',
 })
-
-const importText = ref('')
 
 const activeSummary = computed(() => {
   if (!activeId.value) return null
@@ -1081,28 +1079,11 @@ async function addObserve(row) {
 
 function openImport() {
   if (!ensureActiveEditable()) return
-  importText.value = ''
   importDialog.value = true
 }
 
-async function submitImport() {
-  if (!activeId.value || !importText.value.trim()) {
-    ElMessage.warning('请粘贴导入内容')
-    return
-  }
-  saving.value = true
-  try {
-    const res = await importPortfolioHoldings(activeId.value, importText.value)
-    const data = res?.data || {}
-    ElMessage.success(`导入完成：成功 ${data.success || 0}，失败 ${data.fail || 0}`)
-    if (data.errors?.length) ElMessage.warning(data.errors.slice(0, 3).join('；'))
-    importDialog.value = false
-    await loadList(true)
-  } catch (e) {
-    ElMessage.error(e.message || '导入失败')
-  } finally {
-    saving.value = false
-  }
+async function onImportCompleted() {
+  await loadList(true)
 }
 
 async function onRefreshQuotes() {
@@ -2279,26 +2260,12 @@ onBeforeUnmount(() => {
       @submit="onTrade"
     />
 
-    <el-dialog
+    <PortfolioImportDialog
       v-model="importDialog"
-      title="导入持仓"
-      width="560px"
-      destroy-on-close
-      append-to-body
-      align-center
-    >
-      <p class="muted import-tip">每行一条：代码,数量,成本 —— 也可用空格/Tab；名称可代替代码</p>
-      <el-input
-        v-model="importText"
-        type="textarea"
-        :rows="10"
-        placeholder="000001,1000,12.5&#10;600519 100 1800"
-      />
-      <template #footer>
-        <el-button @click="importDialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitImport">导入</el-button>
-      </template>
-    </el-dialog>
+      :portfolio-id="activeId"
+      :portfolio-name="activeSummary?.name || detail?.name || ''"
+      @imported="onImportCompleted"
+    />
 
     <el-dialog
       v-model="shareOpen"
@@ -2509,38 +2476,6 @@ onBeforeUnmount(() => {
 .portfolio-toolbar-more-icon {
   margin-left: 5px;
   font-size: 12px;
-}
-
-@media (min-width: 961px) {
-  .portfolio-page {
-    --portfolio-nav-height: 56px;
-    display: flex;
-    flex-direction: column;
-    height: calc(100dvh - var(--portfolio-nav-height));
-    overflow: hidden;
-  }
-
-  :global(.shell.dense) .portfolio-page {
-    --portfolio-nav-height: 48px;
-  }
-
-  .layout {
-    flex: 1;
-    min-height: 0;
-    align-items: stretch;
-  }
-
-  .side {
-    position: static;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-  }
-
-  .main {
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-  }
 }
 
 .layout {
@@ -3591,9 +3526,6 @@ onBeforeUnmount(() => {
 .daily-chart {
   height: 260px;
   width: 100%;
-}
-.import-tip {
-  margin: 0 0 10px;
 }
 .share-tip {
   margin: 0 0 10px;

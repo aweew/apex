@@ -13,6 +13,10 @@ spring:
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 9MB
   datasource:
     hikari:
       maximum-pool-size: 20

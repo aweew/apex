@@ -10,6 +10,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 
@@ -62,21 +63,74 @@ public class KimiChatClient {
         // k2.6：关闭 thinking，加快消息面摘要
         body.set("thinking", new JSONObject().set("type", "disabled"));
 
+        return execute(url, body.toString(), false);
+    }
+
+    /**
+     * 发送单张图片与文本提示，返回助手文本；失败返回 null
+     *
+     * @param systemPrompt 系统提示
+     * @param userPrompt   用户提示
+     * @param contentType  图片 MIME 类型
+     * @param imageBytes   图片内容
+     * @param maxTokens    最大输出
+     * @return 文本或 null
+     */
+    public String chatImage(String systemPrompt, String userPrompt, String contentType,
+                            byte[] imageBytes, int maxTokens) {
+        if (!available() || StringUtils.isBlank(contentType)
+                || Objects.isNull(imageBytes) || imageBytes.length == 0) {
+            return null;
+        }
+        String base = StringUtils.isBlank(properties.getBaseUrl())
+                ? "https://api.moonshot.cn/v1"
+                : properties.getBaseUrl().trim().replaceAll("/+$", "");
+        String url = base + "/chat/completions";
+
+        JSONArray messages = new JSONArray();
+        if (StringUtils.isNotBlank(systemPrompt)) {
+            messages.add(new JSONObject().set("role", "system").set("content", systemPrompt));
+        }
+        JSONArray content = new JSONArray();
+        content.add(new JSONObject().set("type", "text").set("text", userPrompt));
+        String imageUrl = "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(imageBytes);
+        content.add(new JSONObject().set("type", "image_url")
+                .set("image_url", new JSONObject().set("url", imageUrl)));
+        messages.add(new JSONObject().set("role", "user").set("content", content));
+
+        JSONObject body = new JSONObject();
+        body.set("model", properties.getModel());
+        body.set("messages", messages);
+        body.set("max_tokens", Math.max(256, maxTokens));
+        body.set("thinking", new JSONObject().set("type", "disabled"));
+        return execute(url, body.toString(), true);
+    }
+
+    private String execute(String url, String requestBody, boolean sensitive) {
+
         try (HttpResponse response = HttpRequest.post(url)
                 .header("Authorization", "Bearer " + properties.getApiKey().trim())
                 .header("Content-Type", "application/json")
                 .timeout(Math.max(5000, properties.getTimeoutMs()))
-                .body(body.toString())
+                .body(requestBody)
                 .execute()) {
             String raw = response.body();
             if (!response.isOk()) {
-                log.warn("Kimi 调用失败，状态={}，响应内容={}", response.getStatus(), trim(raw));
+                if (sensitive) {
+                    log.warn("Kimi 图片识别调用失败，状态={}", response.getStatus());
+                } else {
+                    log.warn("Kimi 调用失败，状态={}，响应内容={}", response.getStatus(), trim(raw));
+                }
                 return null;
             }
             JSONObject root = JSONUtil.parseObj(raw);
             JSONArray choices = root.getJSONArray("choices");
             if (Objects.isNull(choices) || choices.isEmpty()) {
-                log.warn("Kimi 无 choices: {}", trim(raw));
+                if (sensitive) {
+                    log.warn("Kimi 图片识别无 choices");
+                } else {
+                    log.warn("Kimi 无 choices: {}", trim(raw));
+                }
                 return null;
             }
             JSONObject message = choices.getJSONObject(0).getJSONObject("message");
@@ -86,7 +140,11 @@ public class KimiChatClient {
             String content = message.getStr("content");
             return StringUtils.isBlank(content) ? null : content.trim();
         } catch (Exception ex) {
-            log.warn("Kimi 调用异常: {}", ex.getMessage());
+            if (sensitive) {
+                log.warn("Kimi 图片识别调用异常，类型={}", ex.getClass().getSimpleName());
+            } else {
+                log.warn("Kimi 调用异常: {}", ex.getMessage());
+            }
             return null;
         }
     }
