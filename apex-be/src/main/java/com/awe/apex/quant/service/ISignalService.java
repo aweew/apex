@@ -33,6 +33,23 @@ public interface ISignalService {
     List<StrategySignalEntity> run(SignalRunReq req, TaskProgressListener progressListener);
 
     /**
+     * 扫描策略信号但不写入用户信号表。
+     *
+     * @param req 请求
+     * @param progressListener 进度监听器
+     * @return 扫描信号
+     */
+    List<StrategySignalEntity> scan(SignalRunReq req, TaskProgressListener progressListener);
+
+    /**
+     * 将指定信号写入当前用户信号表。
+     *
+     * @param signals 待保存信号
+     * @return 已保存信号
+     */
+    List<StrategySignalEntity> saveForCurrentUser(List<StrategySignalEntity> signals);
+
+    /**
      * 最近信号
      *
      * @param limit       条数

@@ -35,6 +35,8 @@ import com.awe.apex.quant.decision.DecisionScorer;
 import com.awe.apex.quant.decision.MainlineBoardRules;
 import com.awe.apex.quant.decision.MainlineMatcher;
 import com.awe.apex.quant.domain.bo.DecisionDataCutoffBO;
+import com.awe.apex.quant.domain.bo.DecisionMarketScanReq;
+import com.awe.apex.quant.domain.bo.DecisionMarketSnapshot;
 import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
 import com.awe.apex.quant.domain.dto.DecisionAdviceActionResp;
 import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
@@ -84,6 +86,7 @@ import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IDecisionService;
+import com.awe.apex.quant.service.IDecisionMarketSignalService;
 import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.service.IMarketBriefingService;
@@ -136,6 +139,9 @@ public class DecisionServiceImpl implements IDecisionService {
 
     @Resource
     private ISignalService signalService;
+
+    @Resource
+    private IDecisionMarketSignalService decisionMarketSignalService;
 
     @Resource
     private IHotService hotService;
@@ -237,6 +243,67 @@ public class DecisionServiceImpl implements IDecisionService {
     private static final BigDecimal FALLBACK_TAKE_PCT = new BigDecimal("0.20");
     private static final String BUY_AI_DISCLAIMER = "AI 总结仅供研究参考，不构成投资建议；请结合本地规则评分与风控自行决策。";
     private static final String BUY_AI_CACHE_PREFIX = "apex:decision:buy-ai:";
+
+    /**
+     * 刷新全用户共享的市场买入信号。
+     *
+     * @param req 请求
+     * @param progressListener 进度监听器
+     * @return 共享市场快照
+     */
+    @Override
+    public DecisionMarketSnapshot refreshMarketSignals(DecisionRunReq req,
+                                                        TaskProgressListener progressListener) {
+        DecisionRunReq safe = Objects.nonNull(req) ? req : new DecisionRunReq();
+        DecisionContext context = DecisionContext.from(safe);
+        LocalDate actionDate = context.getActionDate();
+        List<UniverseSnapshot> universeList = context.getMode() == DecisionMode.REPLAY
+                ? universeService.latestAsOf(actionDate) : universeService.latest();
+        if (CollUtil.isEmpty(universeList)) {
+            throw new BusinessException("共享股票池尚未发布，请管理员先刷新全市场股票池");
+        }
+        String universeBatchNo = null;
+        List<String> signalCodes = new ArrayList<>();
+        Set<String> signalCodeSet = new HashSet<>();
+        boolean includeBj = Boolean.TRUE.equals(safe.getIncludeBj());
+        for (UniverseSnapshot snapshot : universeList) {
+            if (StringUtils.isBlank(universeBatchNo) && StringUtils.isNotBlank(snapshot.getBatchNo())) {
+                universeBatchNo = snapshot.getBatchNo();
+            }
+            String code = snapshot.getCode();
+            if (StringUtils.isBlank(code) || (!includeBj && MarketCodeUtils.isBj(code))) {
+                continue;
+            }
+            if (signalCodeSet.add(code)) {
+                signalCodes.add(code);
+            }
+        }
+        if (StringUtils.isBlank(universeBatchNo)) {
+            throw new BusinessException("共享股票池批次号缺失，请管理员重新刷新全市场股票池");
+        }
+        Map<String, HotConfluenceItem> hotMap = context.getMode() == DecisionMode.REPLAY
+                ? Map.of() : hotService.confluenceMap(50);
+        int hotScanCount = 0;
+        for (String hotCode : hotMap.keySet()) {
+            if (StringUtils.isBlank(hotCode) || (!includeBj && MarketCodeUtils.isBj(hotCode))) {
+                continue;
+            }
+            if (signalCodeSet.add(hotCode)) {
+                signalCodes.add(hotCode);
+                hotScanCount++;
+            }
+        }
+        TaskProgressListener reporter = Objects.nonNull(progressListener)
+                ? progressListener : (completed, total, message) -> { };
+        return decisionMarketSignalService.refresh(DecisionMarketScanReq.builder()
+                .actionDate(actionDate)
+                .universeBatchNo(universeBatchNo)
+                .includeBj(includeBj)
+                .universeCount(universeList.size())
+                .hotScanCount(hotScanCount)
+                .codes(signalCodes)
+                .build(), reporter);
+    }
 
     /**
      * 一键生成今日决策：刷新股票池 → 跑策略 → 共振/基本面/风控 → 落库 → 同步观察池
@@ -353,69 +420,115 @@ public class DecisionServiceImpl implements IDecisionService {
         }
         int universeCount = universeList.size();
         boolean includeBj = Boolean.TRUE.equals(safe.getIncludeBj());
-        progressListener.onProgress(24, 100, "股票池已就绪，正在准备策略扫描");
-
-        // 4. 跑 S1/S2/S3：买入扫描全A质量池+热点，卖出单独扫描全部活跃组合持仓
-        List<String> signalCodes = new ArrayList<>();
-        Set<String> signalCodeSet = new HashSet<>();
-        if (CollUtil.isNotEmpty(universeList)) {
-            for (UniverseSnapshot snapshot : universeList) {
-                if (StringUtils.isNotBlank(snapshot.getCode()) && signalCodeSet.add(snapshot.getCode())) {
-                    signalCodes.add(snapshot.getCode());
-                }
+        String universeBatchNo = null;
+        for (UniverseSnapshot snapshot : universeList) {
+            if (StringUtils.isNotBlank(snapshot.getBatchNo())) {
+                universeBatchNo = snapshot.getBatchNo();
+                break;
             }
         }
+        if (StringUtils.isBlank(universeBatchNo)) {
+            throw new BusinessException("共享股票池批次号缺失，请管理员重新刷新全市场股票池");
+        }
+        progressListener.onProgress(24, 100, "股票池已就绪，正在准备策略扫描");
+
+        // 4. 实时决策复用共享买入扫描，用户侧只补充持仓卖出信号；回放保留截止日独立扫描
+        Set<String> signalCodeSet = new HashSet<>();
+        List<StrategySignalEntity> signals = new ArrayList<>();
         Map<String, HotConfluenceItem> hotMap = context.getMode() == DecisionMode.REPLAY
                 ? Map.of() : hotService.confluenceMap(50);
         int hotScanCount = 0;
-        for (String hotCode : hotMap.keySet()) {
-            if (StringUtils.isBlank(hotCode)) {
-                continue;
-            }
-            // 热点里的京市：未勾选含京市则不扫买入；已持仓京市仍可走后面持仓附加
-            if (!includeBj && MarketCodeUtils.isBj(hotCode)) {
-                continue;
-            }
-            if (signalCodeSet.add(hotCode)) {
-                signalCodes.add(hotCode);
-                hotScanCount++;
-            }
-        }
-        SignalRunReq signalReq = new SignalRunReq();
-        signalReq.setAsOfDate(actionDate);
-        signalReq.setSellCodes(new ArrayList<>(sellHoldingCodes));
-        if (CollUtil.isNotEmpty(signalCodes)) {
-            signalReq.setCodes(signalCodes);
-        } else {
-            signalReq.setUseUniverse(true);
-        }
-        Set<String> allScanCodes = new HashSet<>(signalCodeSet);
-        allScanCodes.addAll(sellHoldingCodes);
-        int signalScanCount = allScanCodes.size();
-        List<StrategySignalEntity> signals;
-        if (progressEnabled) {
-            signals = signalService.run(signalReq, (completed, total, message) -> {
-                int scanProgress = total > 0 ? 28 + completed * 42 / total : 28;
-                progressListener.onProgress(scanProgress, 100, message);
-            });
-        } else {
-            signals = signalService.run(signalReq);
-        }
-
-        // 4. 多策略共振（窗口/最少策略数可配置）
-        progressListener.onProgress(71, 100, "策略扫描完成，正在计算多策略共振");
-        SignalConfluenceResp confluenceResp = signalService.confluence(
-                strategyParams.decisionConfluenceWindow(),
-                strategyParams.decisionConfluenceMinStrategies(),
-                actionDate);
+        int signalScanCount = 0;
         Map<String, SignalConfluenceItem> buyConfluence = new HashMap<>();
         Map<String, SignalConfluenceItem> sellConfluence = new HashMap<>();
-        if (Objects.nonNull(confluenceResp) && CollUtil.isNotEmpty(confluenceResp.getItems())) {
-            for (SignalConfluenceItem item : confluenceResp.getItems()) {
-                if ("BUY".equalsIgnoreCase(item.getSide())) {
+        if (context.getMode() == DecisionMode.REPLAY) {
+            List<String> signalCodes = new ArrayList<>();
+            for (UniverseSnapshot snapshot : universeList) {
+                String code = snapshot.getCode();
+                if (StringUtils.isBlank(code) || (!includeBj && MarketCodeUtils.isBj(code))) {
+                    continue;
+                }
+                if (signalCodeSet.add(code)) {
+                    signalCodes.add(code);
+                }
+            }
+            SignalRunReq signalReq = new SignalRunReq();
+            signalReq.setAsOfDate(actionDate);
+            signalReq.setSellCodes(new ArrayList<>(sellHoldingCodes));
+            signalReq.setCodes(signalCodes);
+            Set<String> allScanCodes = new HashSet<>(signalCodeSet);
+            allScanCodes.addAll(sellHoldingCodes);
+            signalScanCount = allScanCodes.size();
+            if (progressEnabled) {
+                signals.addAll(signalService.run(signalReq, (completed, total, message) -> {
+                    int scanProgress = total > 0 ? 28 + completed * 42 / total : 28;
+                    progressListener.onProgress(scanProgress, 100, message);
+                }));
+            } else {
+                signals.addAll(signalService.run(signalReq));
+            }
+            SignalConfluenceResp confluenceResp = signalService.confluence(
+                    strategyParams.decisionConfluenceWindow(),
+                    strategyParams.decisionConfluenceMinStrategies(),
+                    actionDate);
+            if (Objects.nonNull(confluenceResp) && CollUtil.isNotEmpty(confluenceResp.getItems())) {
+                for (SignalConfluenceItem item : confluenceResp.getItems()) {
+                    if ("BUY".equalsIgnoreCase(item.getSide())) {
+                        buyConfluence.put(item.getCode(), item);
+                    } else if ("SELL".equalsIgnoreCase(item.getSide())) {
+                        sellConfluence.put(item.getCode(), item);
+                    }
+                }
+            }
+        } else {
+            DecisionMarketSnapshot marketSnapshot = decisionMarketSignalService.require(
+                    actionDate, universeBatchNo, includeBj);
+            universeCount = marketSnapshot.getUniverseCount();
+            hotScanCount = marketSnapshot.getHotScanCount();
+            signalScanCount = marketSnapshot.getScanCodeCount();
+            if (CollUtil.isNotEmpty(marketSnapshot.getSignals())) {
+                signals.addAll(marketSnapshot.getSignals());
+                for (StrategySignalEntity signal : marketSnapshot.getSignals()) {
+                    signalCodeSet.add(signal.getCode());
+                }
+            }
+            progressListener.onProgress(45, 100, "共享买入信号已就绪，正在扫描持仓卖出信号");
+            if (CollUtil.isNotEmpty(sellHoldingCodes)) {
+                SignalRunReq sellSignalReq = new SignalRunReq();
+                sellSignalReq.setAsOfDate(actionDate);
+                sellSignalReq.setCodes(new ArrayList<>(sellHoldingCodes));
+                sellSignalReq.setSellCodes(new ArrayList<>(sellHoldingCodes));
+                List<StrategySignalEntity> holdingSignals = signalService.scan(sellSignalReq,
+                        progressEnabled ? (completed, total, message) -> {
+                            int scanProgress = total > 0 ? 45 + completed * 25 / total : 45;
+                            progressListener.onProgress(scanProgress, 100, message);
+                        } : null);
+                List<StrategySignalEntity> sellSignals = new ArrayList<>();
+                for (StrategySignalEntity signal : holdingSignals) {
+                    if ("SELL".equalsIgnoreCase(signal.getSide())) {
+                        sellSignals.add(signal);
+                        signalCodeSet.add(signal.getCode());
+                    }
+                }
+                signalService.saveForCurrentUser(sellSignals);
+                signals.addAll(sellSignals);
+            }
+            SignalConfluenceResp buyConfluenceResp = decisionMarketSignalService.confluence(
+                    strategyParams.decisionConfluenceWindow(),
+                    strategyParams.decisionConfluenceMinStrategies(), actionDate, includeBj);
+            if (Objects.nonNull(buyConfluenceResp) && CollUtil.isNotEmpty(buyConfluenceResp.getItems())) {
+                for (SignalConfluenceItem item : buyConfluenceResp.getItems()) {
                     buyConfluence.put(item.getCode(), item);
-                } else if ("SELL".equalsIgnoreCase(item.getSide())) {
-                    sellConfluence.put(item.getCode(), item);
+                }
+            }
+            SignalConfluenceResp userConfluenceResp = signalService.confluence(
+                    strategyParams.decisionConfluenceWindow(),
+                    strategyParams.decisionConfluenceMinStrategies(), actionDate);
+            if (Objects.nonNull(userConfluenceResp) && CollUtil.isNotEmpty(userConfluenceResp.getItems())) {
+                for (SignalConfluenceItem item : userConfluenceResp.getItems()) {
+                    if ("SELL".equalsIgnoreCase(item.getSide())) {
+                        sellConfluence.put(item.getCode(), item);
+                    }
                 }
             }
         }

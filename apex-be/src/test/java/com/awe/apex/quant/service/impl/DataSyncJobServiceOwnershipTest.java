@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -92,24 +93,27 @@ class DataSyncJobServiceOwnershipTest {
     }
 
     @Test
-    void manualDecisionDoesNotStoreUserAndUsesSharedTaskRecord() {
+    void manualDecisionRequiresAdminAndUsesSharedTaskRecord() {
         SyncStartReq request = new SyncStartReq();
         request.setTaskType("DECISION");
 
         service.start(request);
 
         assertEquals("DECISION", savedJob.get().getTaskType());
+        verify(userAuthService).requireAdmin();
         verify(syncJobMapper, never()).selectOne(any());
     }
 
     @Test
-    void scheduledDecisionUsesExplicitRuntimeUserWithoutPersistingOwner() {
+    void perUserDecisionStartIsRejected() {
         SyncStartReq request = new SyncStartReq();
         request.setTaskType("DECISION");
 
-        service.startForUser(request, 9L);
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.startForUser(request, 9L));
 
-        assertEquals("DECISION", savedJob.get().getTaskType());
+        assertTrue(exception.getMessage().contains("系统共享任务"));
+        verify(syncJobMapper, never()).insert(any(SyncJob.class));
     }
 
     @Test
@@ -119,7 +123,7 @@ class DataSyncJobServiceOwnershipTest {
         request.setTaskType("DECISION");
 
         BusinessException exception = assertThrows(BusinessException.class,
-                () -> service.startForUser(request, 9L));
+                () -> service.startSystemTask(request));
 
         assertTrue(exception.getMessage().contains("其他服务实例"));
         verify(syncJobMapper, never()).insert(any(SyncJob.class));
@@ -286,11 +290,12 @@ class DataSyncJobServiceOwnershipTest {
     }
 
     @Test
-    void executorRunsDecisionUnderStoredOwner() throws Exception {
+    void executorProjectsDecisionForEveryEnabledUser() throws Exception {
         ApexUserContext realUserContext = new ApexUserContext();
         ReflectionTestUtils.setField(service, "userContext", realUserContext);
         AtomicLong observedUserId = new AtomicLong();
         CountDownLatch decisionFinished = new CountDownLatch(1);
+        when(userAuthService.listEnabledUserIds()).thenReturn(java.util.List.of(9L));
         when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class))).thenAnswer(invocation -> {
             observedUserId.set(realUserContext.currentUserId());
             decisionFinished.countDown();
@@ -300,28 +305,49 @@ class DataSyncJobServiceOwnershipTest {
         SyncStartReq request = new SyncStartReq();
         request.setTaskType("DECISION");
 
-        service.startForUser(request, 9L);
+        service.startSystemTask(request);
 
         assertTrue(decisionFinished.await(2, TimeUnit.SECONDS));
         assertEquals(9L, observedUserId.get());
+        verify(decisionService).refreshMarketSignals(any(DecisionRunReq.class), any(TaskProgressListener.class));
+    }
+
+    @Test
+    void oneUserFailureDoesNotSkipRemainingUsers() throws Exception {
+        ApexUserContext realUserContext = new ApexUserContext();
+        ReflectionTestUtils.setField(service, "userContext", realUserContext);
+        when(userAuthService.listEnabledUserIds()).thenReturn(java.util.List.of(9L, 10L));
+        AtomicInteger executionCount = new AtomicInteger();
+        CountDownLatch allUsersFinished = new CountDownLatch(1);
+        when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class))).thenAnswer(invocation -> {
+            int currentExecution = executionCount.incrementAndGet();
+            if (currentExecution == 1) {
+                throw new BusinessException("用户组合不可用");
+            }
+            allUsersFinished.countDown();
+            return DecisionTodayResp.builder()
+                    .runNo("RUN-10").buyCount(0).sellCount(0).holdCount(0).message("完成").build();
+        });
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("DECISION");
+
+        service.startSystemTask(request);
+
+        assertTrue(allUsersFinished.await(2, TimeUnit.SECONDS));
+        assertEquals(2, executionCount.get());
     }
 
     @Test
     void decisionJobPersistsIntermediateProgressWhileRunning() throws Exception {
         CountDownLatch progressReported = new CountDownLatch(1);
         CountDownLatch releaseDecision = new CountDownLatch(1);
-        doAnswer(invocation -> {
-            Runnable decisionTask = invocation.getArgument(1);
-            decisionTask.run();
-            return null;
-        }).when(userContext).runAsUser(any(Long.class), any(Runnable.class));
-        when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class))).thenAnswer(invocation -> {
+        when(decisionService.refreshMarketSignals(any(DecisionRunReq.class), any(TaskProgressListener.class)))
+                .thenAnswer(invocation -> {
             TaskProgressListener progressListener = invocation.getArgument(1);
             progressListener.onProgress(40, 100, "正在扫描策略信号");
             progressReported.countDown();
             assertTrue(releaseDecision.await(2, TimeUnit.SECONDS));
-            return DecisionTodayResp.builder()
-                    .runNo("RUN-3").buyCount(1).sellCount(0).holdCount(2).message("完成").build();
+            return null;
         });
         SyncStartReq request = new SyncStartReq();
         request.setTaskType("DECISION");
@@ -331,7 +357,7 @@ class DataSyncJobServiceOwnershipTest {
 
             assertTrue(progressReported.await(2, TimeUnit.SECONDS));
             assertEquals("RUNNING", savedJob.get().getStatus());
-            assertEquals(40, savedJob.get().getProgressPct());
+            assertEquals(28, savedJob.get().getProgressPct());
             assertEquals(40, savedJob.get().getDoneItems());
             assertEquals(100, savedJob.get().getTotalItems());
             assertEquals("正在扫描策略信号", savedJob.get().getMessage());

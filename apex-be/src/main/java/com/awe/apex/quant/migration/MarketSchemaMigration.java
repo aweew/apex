@@ -347,7 +347,17 @@ public class MarketSchemaMigration {
                 "ALTER TABLE strategy_signal ADD COLUMN user_id BIGINT NULL COMMENT '所属用户ID' AFTER id");
         ensureIndex("strategy_signal", "idx_strategy_signal_user_date",
                 "ALTER TABLE strategy_signal ADD KEY idx_strategy_signal_user_date (user_id, signal_date, id)");
+        ensureStrategySignalWriteIndex();
         log.info("数据库结构检查完成：用户数据隔离字段");
+    }
+
+    /**
+     * 补齐策略信号按用户写入的复合索引。
+     */
+    public void ensureStrategySignalWriteIndex() {
+        ensureIndex("strategy_signal", "idx_strategy_signal_user_code_strategy_date",
+                "ALTER TABLE strategy_signal ADD KEY idx_strategy_signal_user_code_strategy_date "
+                        + "(user_id, code, strategy_id, signal_date, deleted)");
     }
 
     /**

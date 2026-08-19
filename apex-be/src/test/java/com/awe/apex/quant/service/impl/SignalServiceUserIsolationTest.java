@@ -21,15 +21,18 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -111,6 +114,35 @@ class SignalServiceUserIsolationTest {
         ArgumentCaptor<Wrapper<StrategySignalEntity>> deleteCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(strategySignalMapper).delete(deleteCaptor.capture());
         assertUserFilter(deleteCaptor.getValue());
+    }
+
+    @Test
+    void runRetriesSignalPersistenceAfterDeadlock() {
+        when(barDailyMapper.selectList(any())).thenReturn(buildBars());
+        when(strategy.evaluate(any(), any())).thenReturn(StrategySignalResult.builder()
+                .strategyId("S1")
+                .code("600519")
+                .signalDate(LocalDate.of(2026, 3, 1))
+                .side(SignalSide.BUY)
+                .score(new BigDecimal("80"))
+                .reason(Map.of("trend", "up"))
+                .build());
+        AtomicInteger attempts = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (attempts.getAndIncrement() == 0) {
+                throw new DeadlockLoserDataAccessException("写入策略信号", new SQLException("deadlock"));
+            }
+            Consumer<TransactionStatus> callback = invocation.getArgument(0);
+            callback.accept(mock(TransactionStatus.class));
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
+        SignalRunReq request = new SignalRunReq();
+        request.setCodes(List.of("600519"));
+
+        service.run(request);
+
+        verify(transactionTemplate, times(2)).executeWithoutResult(any());
+        verify(strategySignalMapper).insert(any(StrategySignalEntity.class));
     }
 
     @Test

@@ -4,7 +4,6 @@ import com.awe.apex.quant.domain.dto.SyncStartReq;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IDecisionOutcomeService;
-import com.awe.apex.quant.service.ApexUserAuthService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -12,7 +11,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
-import java.util.List;
 
 /**
  * 智能决策自动调度。
@@ -27,9 +25,6 @@ public class DecisionScheduler {
 
     @Resource
     private IDecisionOutcomeService decisionOutcomeService;
-
-    @Resource
-    private ApexUserAuthService userAuthService;
 
     /**
      * 06:50 使用盘前已就绪数据为启用用户生成决策。
@@ -69,23 +64,13 @@ public class DecisionScheduler {
             log.info("智能决策定时任务跳过：非交易日，决策日期={}", actionDate);
             return;
         }
-        List<Long> userIds;
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("DECISION");
         try {
-            userIds = userAuthService.listEnabledUserIds();
+            dataSyncJobService.startSystemTask(request);
+            log.info("共享智能决策定时任务已提交，决策日期={}", actionDate);
         } catch (Exception ex) {
-            log.warn("智能决策定时任务读取启用用户失败，决策日期={}，原因={}", actionDate, ex.getMessage());
-            return;
-        }
-        for (Long userId : userIds) {
-            SyncStartReq request = new SyncStartReq();
-            request.setTaskType("DECISION");
-            try {
-                dataSyncJobService.startForUser(request, userId);
-                log.info("智能决策定时任务已提交，决策日期={}，用户编号={}", actionDate, userId);
-            } catch (Exception ex) {
-                log.warn("智能决策定时任务提交跳过，决策日期={}，用户编号={}，原因={}",
-                        actionDate, userId, ex.getMessage());
-            }
+            log.warn("共享智能决策定时任务提交跳过，决策日期={}，原因={}", actionDate, ex.getMessage());
         }
     }
 }

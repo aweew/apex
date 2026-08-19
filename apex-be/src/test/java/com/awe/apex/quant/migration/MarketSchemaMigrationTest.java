@@ -144,6 +144,7 @@ class MarketSchemaMigrationTest {
         assertContains(executed, "ADD UNIQUE KEY uk_journal_trade_source_ref");
         assertContains(executed, "ALTER TABLE strategy_signal ADD COLUMN user_id");
         assertContains(executed, "ADD KEY idx_strategy_signal_user_date");
+        assertContains(executed, "ADD KEY idx_strategy_signal_user_code_strategy_date");
         assertContains(executed, "ADD UNIQUE KEY uk_watchlist_user_code_group");
         assertContains(executed, "ADD UNIQUE KEY uk_my_holding_user_code");
     }

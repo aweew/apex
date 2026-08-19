@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getCurrentUser } from '../api/auth'
 import {
   fetchSyncJob,
   fetchSyncOverview,
@@ -16,6 +17,8 @@ import {
 } from './syncPolling.mjs'
 
 const router = useRouter()
+const currentUser = getCurrentUser()
+const isAdmin = computed(() => currentUser?.role === 'ADMIN')
 const loading = ref(false)
 const overview = ref(null)
 const activeJob = ref(null)
@@ -199,6 +202,10 @@ function stopPoll() {
 }
 
 async function onStart(task) {
+  if (!isAdmin.value) {
+    ElMessage.warning('共享同步任务由管理员或系统调度启动')
+    return
+  }
   const limit = defaultLimit(task.taskType)
   const tip = limit
     ? `将启动「${task.name}」（默认 limit=${limit}，可在下方高级参数改）。长任务可随时停止。`
@@ -228,6 +235,10 @@ async function onStart(task) {
 
 /** 收盘后一键：指数→板块→涨停→热点→资讯 */
 async function onCloseBundle() {
+  if (!isAdmin.value) {
+    ElMessage.warning('共享同步任务由管理员启动')
+    return
+  }
   const task = closeBundleTask.value
   if (!task) {
     ElMessage.warning('未注册一键收盘同步任务，请重启后端')
@@ -263,6 +274,10 @@ async function onCloseBundle() {
 }
 
 async function onStartCustom() {
+  if (!isAdmin.value) {
+    ElMessage.warning('共享同步任务由管理员启动')
+    return
+  }
   if (!startForm.value.taskType) {
     ElMessage.warning('请选择任务类型')
     return
@@ -335,12 +350,15 @@ onUnmounted(stopPoll)
         <p class="eyebrow">Sync</p>
         <h1>数据同步</h1>
         <p>
-          {{ overview?.message || '统一管理数据同步与智能决策任务，可看进度、可启停' }}
+          {{ isAdmin
+            ? (overview?.message || '统一管理数据同步与智能决策任务，可看进度、可启停')
+            : '查看系统共享同步与智能决策的进度和运行日志' }}
         </p>
       </div>
       <div class="actions">
         <el-tag v-if="runningCount" type="warning">运行中 {{ runningCount }}</el-tag>
         <el-button
+          v-if="isAdmin"
           type="primary"
           :disabled="!!closeBundleTask?.running"
           :loading="!!closeBundleTask?.running"
@@ -353,7 +371,7 @@ onUnmounted(stopPoll)
       </div>
     </header>
 
-    <section class="close-hero" v-if="closeBundleTask">
+    <section class="close-hero" v-if="closeBundleTask && isAdmin">
       <div class="close-copy">
         <h2>收盘后点一次就够</h2>
         <p>
@@ -414,6 +432,7 @@ onUnmounted(stopPoll)
               </div>
               <div class="task-actions">
                 <el-button
+                  v-if="isAdmin"
                   type="primary"
                   size="small"
                   :disabled="task.running"
@@ -421,8 +440,11 @@ onUnmounted(stopPoll)
                 >
                   启动
                 </el-button>
+                <span v-if="task.taskType === 'DECISION' && !isAdmin" class="system-managed">
+                  系统共享生成
+                </span>
                 <el-button
-                  v-if="task.running && task.latestJob && task.taskType !== 'DECISION'"
+                  v-if="isAdmin && task.running && task.latestJob && task.taskType !== 'DECISION'"
                   type="danger"
                   size="small"
                   plain
@@ -450,7 +472,7 @@ onUnmounted(stopPoll)
           </div>
         </div>
 
-        <div class="custom-box">
+        <div v-if="isAdmin" class="custom-box">
           <h3>高级启动</h3>
           <div class="custom-form">
             <el-select v-model="startForm.taskType" placeholder="任务类型" style="width: 200px">
@@ -476,7 +498,7 @@ onUnmounted(stopPoll)
           <div class="panel-head">
             <h3>当前任务</h3>
             <el-button
-              v-if="activeJob && activeJob.taskType !== 'DECISION' && (activeJob.status === 'RUNNING' || activeJob.status === 'PENDING')"
+              v-if="isAdmin && activeJob && activeJob.taskType !== 'DECISION' && (activeJob.status === 'RUNNING' || activeJob.status === 'PENDING')"
               type="danger"
               size="small"
               @click="onStop(activeJob)"
@@ -502,7 +524,11 @@ onUnmounted(stopPoll)
             <el-progress :percentage="Number(activeJob.progressPct || 0)" :stroke-width="10" />
             <pre class="log">{{ activeLogText || '暂无日志' }}</pre>
           </template>
-          <el-empty v-else description="选择任务或启动同步后在此查看进度" :image-size="64" />
+          <el-empty
+            v-else
+            :description="isAdmin ? '选择任务或启动同步后在此查看进度' : '选择任务后在此查看进度'"
+            :image-size="64"
+          />
         </div>
 
         <div class="panel">
@@ -680,6 +706,12 @@ span.health-unknown {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.system-managed {
+  align-self: center;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .custom-form {

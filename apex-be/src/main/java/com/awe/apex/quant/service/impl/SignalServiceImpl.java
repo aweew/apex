@@ -32,6 +32,8 @@ import com.awe.apex.quant.strategy.StrategySignalResult;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -53,11 +55,13 @@ import java.util.Set;
  * 策略信号服务实现
  */
 @Service
+@Slf4j
 public class SignalServiceImpl implements ISignalService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int LOOKBACK_DAYS = 400;
     private static final int BAR_QUERY_BATCH_SIZE = 40;
+    private static final int SIGNAL_PERSIST_MAX_ATTEMPTS = 3;
 
     @Resource
     private List<Strategy> strategies;
@@ -106,6 +110,18 @@ public class SignalServiceImpl implements ISignalService {
      */
     @Override
     public List<StrategySignalEntity> run(SignalRunReq req, TaskProgressListener progressListener) {
+        return saveForCurrentUser(scan(req, progressListener));
+    }
+
+    /**
+     * 扫描策略信号但不写入用户信号表。
+     *
+     * @param req 请求
+     * @param progressListener 进度监听器
+     * @return 扫描信号
+     */
+    @Override
+    public List<StrategySignalEntity> scan(SignalRunReq req, TaskProgressListener progressListener) {
         List<String> buyCodes = resolveCodes(req);
         List<String> configuredSellCodes = Objects.nonNull(req) && Objects.nonNull(req.getSellCodes())
                 ? req.getSellCodes() : portfolioService.listActiveHoldingCodes();
@@ -131,7 +147,6 @@ public class SignalServiceImpl implements ISignalService {
             throw new BusinessException("无可用股票代码");
         }
         List<Strategy> selected = selectStrategies(Objects.nonNull(req) ? req.getStrategyIds() : null);
-        List<StrategySignalEntity> saved = new ArrayList<>();
         // 按 code|side 各留最高分，避免卖出分更高时把买入机会挤掉
         Map<String, StrategySignalEntity> bestByCodeSide = new HashMap<>();
 
@@ -174,20 +189,62 @@ public class SignalServiceImpl implements ISignalService {
             }
         }
 
-        transactionTemplate.executeWithoutResult(status -> {
-            for (StrategySignalEntity entity : bestByCodeSide.values()) {
-                // 同代码+策略+信号日去重，避免重复堆积
-                strategySignalMapper.delete(Wrappers.<StrategySignalEntity>lambdaQuery()
-                        .eq(StrategySignalEntity::getUserId, userContext.currentUserId())
-                        .eq(StrategySignalEntity::getCode, entity.getCode())
-                        .eq(StrategySignalEntity::getStrategyId, entity.getStrategyId())
-                        .eq(StrategySignalEntity::getSignalDate, entity.getSignalDate()));
-                strategySignalMapper.insert(entity);
-                saved.add(entity);
+        List<StrategySignalEntity> signalsToPersist = new ArrayList<>(bestByCodeSide.values());
+        signalsToPersist.sort(Comparator.comparing(StrategySignalEntity::getCode)
+                .thenComparing(StrategySignalEntity::getStrategyId)
+                .thenComparing(StrategySignalEntity::getSignalDate)
+                .thenComparing(StrategySignalEntity::getSide));
+        return signalsToPersist;
+    }
+
+    /**
+     * 将指定信号写入当前用户信号表。
+     *
+     * @param signals 待保存信号
+     * @return 已保存信号
+     */
+    @Override
+    public List<StrategySignalEntity> saveForCurrentUser(List<StrategySignalEntity> signals) {
+        if (CollUtil.isEmpty(signals)) {
+            return new ArrayList<>();
+        }
+        Long userId = userContext.currentUserId();
+        LocalDateTime now = LocalDateTime.now();
+        List<StrategySignalEntity> signalsToPersist = new ArrayList<>();
+        for (StrategySignalEntity signal : signals) {
+            if (Objects.isNull(signal)) {
+                continue;
             }
-        });
-        saved.sort(Comparator.comparing(StrategySignalEntity::getScore).reversed());
-        return saved;
+            signal.setUserId(userId);
+            signal.setCreateTime(now);
+            signal.setUpdateTime(now);
+            signal.setDeleted(0);
+            signalsToPersist.add(signal);
+        }
+        for (int attempt = 1; attempt <= SIGNAL_PERSIST_MAX_ATTEMPTS; attempt++) {
+            try {
+                transactionTemplate.executeWithoutResult(status -> {
+                    for (StrategySignalEntity entity : signalsToPersist) {
+                        // 同代码+策略+信号日去重，避免重复堆积
+                        strategySignalMapper.delete(Wrappers.<StrategySignalEntity>lambdaQuery()
+                                .eq(StrategySignalEntity::getUserId, userId)
+                                .eq(StrategySignalEntity::getCode, entity.getCode())
+                                .eq(StrategySignalEntity::getStrategyId, entity.getStrategyId())
+                                .eq(StrategySignalEntity::getSignalDate, entity.getSignalDate()));
+                        strategySignalMapper.insert(entity);
+                    }
+                });
+                break;
+            } catch (DeadlockLoserDataAccessException ex) {
+                if (attempt == SIGNAL_PERSIST_MAX_ATTEMPTS) {
+                    throw ex;
+                }
+                log.warn("策略信号写入发生死锁，将重试，用户编号={}，信号数量={}，第{}次重试",
+                        userId, signalsToPersist.size(), attempt);
+            }
+        }
+        signalsToPersist.sort(Comparator.comparing(StrategySignalEntity::getScore).reversed());
+        return signalsToPersist;
     }
 
     /**
@@ -672,18 +729,13 @@ public class SignalServiceImpl implements ISignalService {
         } catch (Exception ex) {
             reasonJson = StringUtils.EMPTY;
         }
-        LocalDateTime now = LocalDateTime.now();
         return StrategySignalEntity.builder()
-                .userId(userContext.currentUserId())
                 .code(result.getCode())
                 .strategyId(result.getStrategyId())
                 .signalDate(result.getSignalDate())
                 .side(result.getSide().getCode())
                 .score(result.getScore())
                 .reasonJson(reasonJson)
-                .createTime(now)
-                .updateTime(now)
-                .deleted(0)
                 .build();
     }
 }

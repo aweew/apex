@@ -103,6 +103,28 @@ class SignalServiceImplTest {
     }
 
     @Test
+    void scanReturnsSignalsWithoutWritingUserSignalTable() {
+        SignalServiceImpl signalService = new SignalServiceImpl();
+        BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);
+        StrategySignalMapper strategySignalMapper = mock(StrategySignalMapper.class);
+        Strategy strategy = mock(Strategy.class);
+        when(barDailyMapper.selectList(any())).thenReturn(buildBars(List.of("600519")));
+        when(strategy.evaluate(any(), any())).thenReturn(signal("600519", "S1", SignalSide.BUY));
+        ReflectionTestUtils.setField(signalService, "barDailyMapper", barDailyMapper);
+        ReflectionTestUtils.setField(signalService, "strategySignalMapper", strategySignalMapper);
+        ReflectionTestUtils.setField(signalService, "strategies", List.of(strategy));
+        SignalRunReq request = new SignalRunReq();
+        request.setCodes(List.of("600519"));
+        request.setSellCodes(List.of());
+
+        List<StrategySignalEntity> signals = signalService.scan(request, null);
+
+        assertEquals(1, signals.size());
+        assertEquals("BUY", signals.get(0).getSide());
+        verifyNoInteractions(strategySignalMapper);
+    }
+
+    @Test
     void runKeepsBuyPoolAndRestrictsSellSignalsToActivePortfolioHoldings() {
         SignalServiceImpl signalService = new SignalServiceImpl();
         BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);

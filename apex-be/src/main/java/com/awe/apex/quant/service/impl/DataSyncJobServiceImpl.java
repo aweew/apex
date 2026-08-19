@@ -78,6 +78,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             "成功(?:数|数据源数)=(\\d+).*失败(?:数|数据源数)=(\\d+)");
     private static final int LOG_MAX = 12000;
     private static final long ORPHAN_RECONCILE_GRACE_SECONDS = 300;
+    private static final long SHARED_DECISION_KEY = 0L;
 
     @Resource
     private SyncJobMapper syncJobMapper;
@@ -257,11 +258,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
      */
     @Override
     public SyncJobResp start(SyncStartReq req) {
-        if (!isDecisionRequest(req)) {
-            userAuthService.requireAdmin();
-        }
-        Long userId = isDecisionRequest(req) ? userContext.currentUserId() : null;
-        return startInternal(req, userId);
+        userAuthService.requireAdmin();
+        return startInternal(req);
     }
 
     /**
@@ -272,28 +270,19 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
      */
     @Override
     public SyncJobResp startSystemTask(SyncStartReq req) {
-        if (isDecisionRequest(req)) {
-            throw new BusinessException("智能决策任务必须指定运行用户");
-        }
-        return startInternal(req, null);
+        return startInternal(req);
     }
 
     /**
-     * 为指定用户启动智能决策任务。
+     * 拒绝旧版按用户启动入口，智能决策统一由共享任务生成。
      *
-     * @param req    请求
+     * @param req 请求
      * @param userId 所属用户ID
-     * @return 任务
+     * @return 不返回，始终抛出业务异常
      */
     @Override
     public SyncJobResp startForUser(SyncStartReq req, Long userId) {
-        if (!isDecisionRequest(req)) {
-            throw new BusinessException("仅智能决策支持指定用户启动");
-        }
-        if (Objects.isNull(userId)) {
-            throw new BusinessException("智能决策缺少所属用户");
-        }
-        return startInternal(req, userId);
+        throw new BusinessException("智能决策已改为系统共享任务，不支持按用户启动");
     }
 
     /**
@@ -303,16 +292,15 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
      */
     @Override
     public boolean isCurrentUserDecisionRunning() {
-        return runningDecisionJobs.containsKey(userContext.currentUserId());
+        return runningDecisionJobs.containsKey(SHARED_DECISION_KEY);
     }
 
-    private synchronized SyncJobResp startInternal(SyncStartReq req, Long userId) {
+    private synchronized SyncJobResp startInternal(SyncStartReq req) {
         if (Objects.isNull(req) || StringUtils.isBlank(req.getTaskType())) {
             throw new BusinessException("请指定 taskType");
         }
         SyncTaskSpec spec = syncTaskRegistry.require(req.getTaskType());
-        String leaseKey = "apex:sync:lease:" + spec.getTaskType()
-                + ("DECISION".equals(spec.getTaskType()) ? ":" + userId : "");
+        String leaseKey = "apex:sync:lease:" + spec.getTaskType();
         String leaseOwner = UUID.randomUUID().toString();
         Duration leaseTtl = Duration.ofSeconds(Math.max(spec.getTimeoutSec() + ORPHAN_RECONCILE_GRACE_SECONDS, 600));
         if (!syncJobLeaseService.tryAcquire(leaseKey, leaseOwner, leaseTtl)) {
@@ -323,13 +311,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             var runningQuery = Wrappers.<SyncJob>lambdaQuery()
                     .eq(SyncJob::getTaskType, spec.getTaskType())
                     .in(SyncJob::getStatus, List.of("PENDING", "RUNNING"));
-            if ("DECISION".equals(spec.getTaskType()) && Objects.isNull(userId)) {
-                throw new BusinessException("智能决策缺少运行用户");
-            }
             if ("DECISION".equals(spec.getTaskType())) {
-                if (runningDecisionJobs.containsKey(userId)) {
+                if (runningDecisionJobs.containsKey(SHARED_DECISION_KEY)) {
                     throw new BusinessException(spec.getName() + " 正在运行中（jobId="
-                            + runningDecisionJobs.get(userId) + "），请等待完成");
+                            + runningDecisionJobs.get(SHARED_DECISION_KEY) + "），请等待完成");
                 }
             } else {
                 SyncJob running = syncJobMapper.selectOne(runningQuery
@@ -372,7 +357,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             runningLeaseOwners.put(job.getId(), leaseOwner);
             leaseRegistered = true;
             if ("DECISION".equals(spec.getTaskType())) {
-                runningDecisionJobs.put(userId, job.getId());
+                runningDecisionJobs.put(SHARED_DECISION_KEY, job.getId());
             }
 
             AtomicBoolean cancelled = new AtomicBoolean(false);
@@ -380,7 +365,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             try {
                 Runnable jobTask;
                 if ("DECISION".equals(spec.getTaskType())) {
-                    jobTask = () -> runDecisionJob(job.getId(), req, userId, cancelled);
+                    jobTask = () -> runDecisionJob(job.getId(), req, cancelled);
                 } else {
                     Path jobScript = script;
                     jobTask = () -> runJob(job.getId(), spec, jobScript, scriptArgs, cancelled);
@@ -390,9 +375,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 executor.execute(future);
                 return toResp(job);
             } catch (RuntimeException ex) {
-                if (Objects.nonNull(userId)) {
-                    runningDecisionJobs.remove(userId, job.getId());
-                }
+                runningDecisionJobs.remove(SHARED_DECISION_KEY, job.getId());
                 cleanup(job.getId());
                 throw ex;
             }
@@ -403,48 +386,87 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
     }
 
-    private void runDecisionJob(Long jobId, SyncStartReq syncRequest, Long userId, AtomicBoolean cancelled) {
+    private void runDecisionJob(Long jobId, SyncStartReq syncRequest, AtomicBoolean cancelled) {
         SyncJob job = syncJobMapper.selectById(jobId);
         if (Objects.isNull(job)) {
             return;
         }
         try {
-            userContext.runAsUser(userId, () -> {
-                job.setStatus("RUNNING");
-                job.setMessage("正在生成智能决策");
-                job.setStartedAt(LocalDateTime.now());
-                appendLog(job, "[智能决策] 已开始\n");
-                syncJobMapper.updateById(job);
+            job.setStatus("RUNNING");
+            job.setMessage("正在扫描共享市场信号");
+            job.setStartedAt(LocalDateTime.now());
+            appendLog(job, "[共享市场决策] 已开始\n");
+            syncJobMapper.updateById(job);
 
-                DecisionRunReq request = new DecisionRunReq();
-                request.setGroupName(configService.getString("auto_sync_group", "我的自选"));
-                request.setIncludeBj(Boolean.TRUE.equals(syncRequest.getIncludeBj()));
-                DecisionTodayResp response = decisionService.run(request, (completed, total, message) -> {
-                    if (cancelled.get()) {
-                        return;
-                    }
-                    int progressPct = total > 0 ? completed * 100 / total : 0;
-                    int currentProgress = Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0;
-                    job.setProgressPct(Math.min(99, Math.max(currentProgress, progressPct)));
-                    job.setDoneItems(completed);
-                    job.setTotalItems(total > 0 ? total : null);
-                    job.setMessage(clip(message, 400));
-                    appendLog(job, "[进度] " + job.getProgressPct() + "% " + message + "\n");
-                    syncJobMapper.updateById(job);
-                });
-
+            DecisionRunReq request = new DecisionRunReq();
+            request.setGroupName(configService.getString("auto_sync_group", "我的自选"));
+            request.setIncludeBj(Boolean.TRUE.equals(syncRequest.getIncludeBj()));
+            decisionService.refreshMarketSignals(request, (completed, total, message) -> {
                 if (cancelled.get()) {
                     return;
                 }
-                job.setStatus("SUCCESS");
-                job.setProgressPct(100);
-                job.setMessage("完成：买入 " + response.getBuyCount() + "，卖出 " + response.getSellCount()
-                        + "，持有 " + response.getHoldCount());
-                appendLog(job, "[智能决策] 运行编号=" + response.getRunNo() + "\n");
-                appendLog(job, "[智能决策] " + response.getMessage() + "\n");
-                job.setFinishedAt(LocalDateTime.now());
+                int progressPct = total > 0 ? completed * 70 / total : 0;
+                int currentProgress = Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0;
+                job.setProgressPct(Math.min(70, Math.max(currentProgress, progressPct)));
+                job.setDoneItems(completed);
+                job.setTotalItems(total > 0 ? total : null);
+                job.setMessage(clip(message, 400));
+                appendLog(job, "[共享扫描] " + job.getProgressPct() + "% " + message + "\n");
                 syncJobMapper.updateById(job);
             });
+            if (cancelled.get()) {
+                return;
+            }
+
+            List<Long> userIds = userAuthService.listEnabledUserIds();
+            if (CollUtil.isEmpty(userIds)) {
+                userIds = new ArrayList<>();
+            }
+            int userTotal = userIds.size();
+            int successCount = 0;
+            int failureCount = 0;
+            int totalBuyCount = 0;
+            int totalSellCount = 0;
+            int totalHoldCount = 0;
+            for (int index = 0; index < userIds.size(); index++) {
+                if (cancelled.get()) {
+                    return;
+                }
+                Long userId = userIds.get(index);
+                try {
+                    DecisionTodayResp response = userContext.runAsUser(userId,
+                            () -> decisionService.run(request, (completed, total, message) -> {
+                                if (!cancelled.get()) {
+                                    job.setMessage(clip("正在生成用户决策，用户编号=" + userId + "，" + message, 400));
+                                }
+                            }));
+                    successCount++;
+                    totalBuyCount += Objects.nonNull(response.getBuyCount()) ? response.getBuyCount() : 0;
+                    totalSellCount += Objects.nonNull(response.getSellCount()) ? response.getSellCount() : 0;
+                    totalHoldCount += Objects.nonNull(response.getHoldCount()) ? response.getHoldCount() : 0;
+                    appendLog(job, "[用户决策] 用户编号=" + userId + "，运行编号=" + response.getRunNo()
+                            + "，状态=成功\n");
+                } catch (Exception ex) {
+                    failureCount++;
+                    appendLog(job, "[用户决策] 用户编号=" + userId + "，状态=失败，原因="
+                            + clip(StringUtils.isNotBlank(ex.getMessage()) ? ex.getMessage() : ex.toString(), 300) + "\n");
+                    log.warn("用户智能决策投影失败，任务编号={}，用户编号={}，异常={}", jobId, userId, ex.toString());
+                }
+                int completedUsers = index + 1;
+                job.setProgressPct(userTotal > 0 ? 70 + completedUsers * 29 / userTotal : 99);
+                job.setDoneItems(completedUsers);
+                job.setTotalItems(userTotal);
+                job.setMessage("正在生成用户决策 " + completedUsers + "/" + userTotal);
+                syncJobMapper.updateById(job);
+            }
+
+            job.setStatus(failureCount > 0 ? "PARTIAL" : "SUCCESS");
+            job.setProgressPct(100);
+            job.setMessage("完成：用户成功 " + successCount + "，失败 " + failureCount
+                    + "，买入 " + totalBuyCount + "，卖出 " + totalSellCount + "，持有 " + totalHoldCount);
+            appendLog(job, "[共享市场决策] 用户成功=" + successCount + "，用户失败=" + failureCount + "\n");
+            job.setFinishedAt(LocalDateTime.now());
+            syncJobMapper.updateById(job);
         } catch (Exception ex) {
             SyncJob failedJob = syncJobMapper.selectById(jobId);
             if (Objects.nonNull(failedJob) && !"CANCELLED".equals(failedJob.getStatus())) {
@@ -455,10 +477,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 failedJob.setFinishedAt(LocalDateTime.now());
                 syncJobMapper.updateById(failedJob);
             }
-            log.warn("智能决策任务失败，任务编号={}，用户编号={}，异常={}", jobId, userId, ex.toString());
+            log.warn("共享智能决策任务失败，任务编号={}，异常={}", jobId, ex.toString());
         } finally {
             cleanup(jobId);
-            runningDecisionJobs.remove(userId, jobId);
+            runningDecisionJobs.remove(SHARED_DECISION_KEY, jobId);
         }
     }
 
@@ -1165,11 +1187,6 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         if (Objects.nonNull(syncJobLeaseService)) {
             syncJobLeaseService.release(leaseKey, leaseOwner);
         }
-    }
-
-    private boolean isDecisionRequest(SyncStartReq req) {
-        return Objects.nonNull(req) && StringUtils.isNotBlank(req.getTaskType())
-                && "DECISION".equalsIgnoreCase(req.getTaskType().trim());
     }
 
     private SyncJobResp toResp(SyncJob job) {

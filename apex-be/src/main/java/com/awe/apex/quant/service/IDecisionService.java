@@ -7,6 +7,7 @@ import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.bo.DecisionMarketSnapshot;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -15,6 +16,15 @@ import java.util.List;
  * 智能决策（一键策略拍板）
  */
 public interface IDecisionService {
+
+    /**
+     * 刷新全用户共享的市场买入信号。
+     *
+     * @param req 请求
+     * @param progressListener 进度监听器
+     * @return 共享市场快照
+     */
+    DecisionMarketSnapshot refreshMarketSignals(DecisionRunReq req, TaskProgressListener progressListener);
 
     /**
      * 一键生成今日决策：刷新股票池 → 跑策略 → 共振/基本面/风控 → 落库
