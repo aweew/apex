@@ -203,13 +203,26 @@ public class PortfolioServiceImpl implements IPortfolioService {
      */
     @Override
     public List<PortfolioSummaryResp> listPortfolios(boolean includeArchived) {
-        ensureDefaultPortfolio();
+        Portfolio defaultPortfolio = ensureDefaultPortfolio();
         var query = Wrappers.<Portfolio>lambdaQuery()
                 .orderByAsc(Portfolio::getSortNo).orderByDesc(Portfolio::getUpdateTime);
         if (!includeArchived) {
             query.eq(Portfolio::getStatus, STATUS_ACTIVE);
         }
-        List<Portfolio> list = portfolioMapper.selectList(query);
+        List<Portfolio> list = new ArrayList<>(portfolioMapper.selectList(query));
+
+        // 当前用户的真实持仓固定置顶，其他共享组合继续沿用管理员排序
+        for (int index = 0; index < list.size(); index++) {
+            Portfolio portfolio = list.get(index);
+            if (Objects.equals(portfolio.getId(), defaultPortfolio.getId())) {
+                if (index > 0) {
+                    list.remove(index);
+                    list.add(0, portfolio);
+                }
+                break;
+            }
+        }
+
         List<PortfolioSummaryResp> result = new ArrayList<>();
         for (Portfolio portfolio : list) {
             result.add(buildSummary(portfolio, false));

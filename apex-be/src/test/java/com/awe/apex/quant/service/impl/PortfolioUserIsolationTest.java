@@ -178,7 +178,7 @@ class PortfolioUserIsolationTest {
                 .isDefault(1)
                 .status("ACTIVE")
                 .build();
-        when(portfolioMapper.selectList(any())).thenReturn(List.of(ownPortfolio, otherPortfolio));
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(otherPortfolio, ownPortfolio));
         when(portfolioHoldingMapper.selectList(any())).thenReturn(List.of());
 
         List<PortfolioSummaryResp> portfolios = service.listPortfolios(false);
