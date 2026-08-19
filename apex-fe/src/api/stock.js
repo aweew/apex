@@ -12,7 +12,7 @@ export function fetchStockIntraday(code) {
 }
 
 export function syncStockBasic(code) {
-  return http.post(`/api/stock/${code}/sync`)
+  return http.post(`/api/stock/${code}/sync`, null, { timeout: 60000 })
 }
 
 export function searchStock(q, limit = 15) {

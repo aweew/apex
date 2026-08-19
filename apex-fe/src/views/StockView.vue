@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
+import { DataAnalysis, Histogram, Refresh, Star, TrendCharts, View, Wallet } from '@element-plus/icons-vue'
 import {
   fetchCompanyProfile,
   fetchStockDetail,
@@ -17,6 +18,7 @@ import { fetchTradeMarkers } from '../api/trade'
 import { aggregateBars, defaultVisibleStart, tdSequential } from '../utils/kline'
 import { buildTradeMarkerSeries } from '../utils/tradeMarkers'
 import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceStructure'
+import { stockSyncSummary, synchronizeStockData } from '../utils/stockSync'
 import { bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
 import ChipDistributionPanel from '../components/ChipDistributionPanel.vue'
@@ -26,6 +28,8 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const syncingBars = ref(false)
+const syncProgress = ref({ bars: 'pending', quote: 'pending', detail: 'pending' })
+const syncResult = ref(null)
 const fundLoading = ref(false)
 const profileLoading = ref(false)
 const profileRefreshing = ref(false)
@@ -64,6 +68,22 @@ const BAR_LIMIT = 500
 const CHART_PREF_KEY = 'apex.stock.chartPrefs'
 const META_EXPAND_KEY = 'apex.stock.metaExpanded'
 const metaExpanded = ref(localStorage.getItem(META_EXPAND_KEY) === '1')
+
+const syncButtonLabel = computed(() => {
+  if (!syncingBars.value) return '同步行情'
+  if (syncProgress.value.detail === 'running') return '刷新页面'
+  const completed = ['bars', 'quote'].filter((key) =>
+    ['success', 'error'].includes(syncProgress.value[key]),
+  ).length
+  return `同步中 ${completed}/2`
+})
+
+function syncStateLabel(state) {
+  if (state === 'running') return '同步中'
+  if (state === 'success') return '已完成'
+  if (state === 'error') return '失败'
+  return '等待中'
+}
 
 function toggleMetaExpanded() {
   metaExpanded.value = !metaExpanded.value
@@ -1643,22 +1663,29 @@ function applyDetail(data) {
 }
 
 async function syncStockData() {
-  if (!code.value) return
+  if (!code.value || syncingBars.value) return
   syncingBars.value = true
+  syncResult.value = null
   try {
     const pure = code.value.trim()
-    const res = await syncBars({ codes: [pure] })
-    const data = res.data || {}
-    try {
-      await syncStockBasic(pure)
-    } catch (quoteErr) {
-      console.warn('同步日后刷新行情失败', quoteErr)
-    }
-    ElMessage.success(`已同步：日线 ${data.barCount ?? 0} 根，现价已更新`)
-    const detail = await fetchStockDetail(pure, BAR_LIMIT, false)
-    applyDetail(detail.data)
-  } catch (e) {
-    ElMessage.error(e.message || '同步失败')
+    const result = await synchronizeStockData({
+      code: pure,
+      syncBars,
+      syncQuote: syncStockBasic,
+      fetchDetail: async (stockCode) => {
+        const detail = await fetchStockDetail(stockCode, BAR_LIMIT, false)
+        if (stockCode === code.value.trim()) {
+          applyDetail(detail.data)
+        }
+        return detail
+      },
+      onProgress: (progress) => {
+        syncProgress.value = progress
+      },
+    })
+    const summary = stockSyncSummary(result)
+    syncResult.value = summary
+    ElMessage[summary.type](summary.text)
   } finally {
     syncingBars.value = false
   }
@@ -1866,16 +1893,42 @@ function dash(v) {
       </div>
       <div class="actions">
         <div class="action-primary">
-          <el-button type="primary" :loading="syncingBars" @click="syncStockData">同步数据</el-button>
-          <el-button type="warning" plain @click="activeTab = 'analysis'">综合研判</el-button>
-          <el-button plain @click="router.push('/decision')">决策</el-button>
-          <el-button plain @click="activeTab = 'valuation'">估值</el-button>
+          <div class="sync-action-wrap">
+            <el-button class="sync-action" type="primary" :loading="syncingBars" :disabled="syncingBars" @click="syncStockData">
+              <el-icon v-if="!syncingBars"><Refresh /></el-icon>
+              <span>{{ syncButtonLabel }}</span>
+            </el-button>
+            <div v-if="syncingBars" class="sync-progress" aria-live="polite">
+              <span :data-state="syncProgress.bars">日线 {{ syncStateLabel(syncProgress.bars) }}</span>
+              <span :data-state="syncProgress.quote">行情 {{ syncStateLabel(syncProgress.quote) }}</span>
+            </div>
+            <p v-else-if="syncResult" class="sync-result" :data-state="syncResult.type" aria-live="polite">{{ syncResult.text }}</p>
+          </div>
+          <div class="research-actions">
+            <el-button plain @click="activeTab = 'analysis'">
+              <el-icon><DataAnalysis /></el-icon><span>综合研判</span>
+            </el-button>
+            <el-button plain @click="router.push('/decision')">
+              <el-icon><TrendCharts /></el-icon><span>决策</span>
+            </el-button>
+            <el-button plain @click="activeTab = 'valuation'">
+              <el-icon><Histogram /></el-icon><span>估值</span>
+            </el-button>
+          </div>
         </div>
         <div class="action-secondary">
-          <el-button text @click="router.push({ path: '/backtest', query: { code: code.trim() } })">回测</el-button>
-          <el-button text @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">模拟买</el-button>
-          <el-button text type="warning" :loading="observeSaving" @click="quickAddObserve">加入观察池</el-button>
-          <el-button text @click="router.push({ path: '/observe', query: { code: code.trim() } })">看观察池</el-button>
+          <el-button text @click="router.push({ path: '/backtest', query: { code: code.trim() } })">
+            <el-icon><TrendCharts /></el-icon><span>历史回测</span>
+          </el-button>
+          <el-button text @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">
+            <el-icon><Wallet /></el-icon><span>模拟买</span>
+          </el-button>
+          <el-button text type="warning" :loading="observeSaving" @click="quickAddObserve">
+            <el-icon v-if="!observeSaving"><Star /></el-icon><span>加入观察池</span>
+          </el-button>
+          <el-button text @click="router.push({ path: '/observe', query: { code: code.trim() } })">
+            <el-icon><View /></el-icon><span>查看观察池</span>
+          </el-button>
         </div>
       </div>
     </header>
@@ -2418,6 +2471,131 @@ function dash(v) {
 </template>
 
 <style scoped>
+.header .actions {
+  display: grid;
+  width: min(100%, 620px);
+  gap: 6px;
+}
+
+.action-primary {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(330px, 1.8fr);
+  gap: 8px;
+}
+
+.sync-action-wrap {
+  min-width: 0;
+  min-height: 64px;
+}
+
+.sync-action-wrap :deep(.sync-action) {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  border-radius: 8px;
+  font-weight: 650;
+}
+
+.research-actions,
+.action-secondary {
+  display: grid;
+  gap: 8px;
+}
+
+.research-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.research-actions :deep(.el-button),
+.action-secondary :deep(.el-button) {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.research-actions :deep(.el-button) {
+  min-height: 44px;
+}
+
+.action-secondary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.action-secondary :deep(.el-button) {
+  min-height: 34px;
+  padding: 0 8px;
+  color: var(--ink-soft);
+}
+
+.action-secondary :deep(.el-button--warning) {
+  color: #a16600;
+}
+
+.sync-progress,
+.sync-result {
+  display: flex;
+  align-items: flex-start;
+  min-height: 15px;
+  margin: 4px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.sync-progress {
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sync-progress span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.sync-progress span::before {
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #8e99a8;
+  content: '';
+}
+
+.sync-progress span[data-state='running']::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.sync-progress span[data-state='success']::before {
+  background: #218052;
+}
+
+.sync-progress span[data-state='error']::before {
+  background: #c2413b;
+}
+
+.sync-result {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-result[data-state='success'] {
+  color: #218052;
+}
+
+.sync-result[data-state='warning'] {
+  color: #a16600;
+}
+
+.sync-result[data-state='error'] {
+  color: #c2413b;
+}
+
 .profile-wrap {
   padding-bottom: 24px;
 }
@@ -2977,53 +3155,54 @@ function dash(v) {
   }
 
   .header .actions {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: 8px;
     width: 100%;
   }
 
   .action-primary {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
 
-  .action-secondary {
-    display: flex;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 0 2px;
-    min-height: 28px;
+  .research-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .action-primary :deep(.el-button) {
+  .action-secondary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .research-actions :deep(.el-button),
+  .action-secondary :deep(.el-button) {
     width: 100%;
     min-width: 0;
     min-height: 44px;
     margin: 0;
-    padding: 0 4px;
+    padding: 0 8px;
     border-radius: 8px;
     font-size: 13px;
+    white-space: nowrap;
   }
 
-  .action-primary :deep(.el-button:not(.el-button--primary)) {
+  .research-actions :deep(.el-button) {
     border-color: var(--line);
     background: rgba(255, 255, 255, 0.62);
     color: var(--ink-soft);
   }
 
-  .action-primary :deep(.el-button:not(.el-button--primary):active) {
+  .research-actions :deep(.el-button:active) {
     background: rgba(0, 113, 227, 0.08);
     color: var(--accent);
   }
 
   .action-secondary :deep(.el-button) {
-    min-height: 30px;
-    margin: 0;
-    padding: 0 8px;
-    font-size: 12px;
-    color: var(--ink-soft);
+    justify-content: flex-start;
+    padding: 0 12px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    background: rgba(255, 255, 255, 0.5);
   }
 
   .action-secondary :deep(.el-button--warning) {
@@ -3146,13 +3325,11 @@ function dash(v) {
 
 @media (max-width: 820px) and (orientation: landscape) {
   .header .actions {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
+    display: grid;
   }
 
   .action-primary {
-    flex: 1;
+    grid-template-columns: minmax(150px, 0.8fr) minmax(330px, 1.8fr);
   }
 
   .action-secondary :deep(.el-button) {

@@ -1,7 +1,7 @@
 import http from './http'
 
 export function syncBars(payload) {
-  return http.post('/api/data/bars/sync', payload)
+  return http.post('/api/data/bars/sync', payload, { timeout: 210000 })
 }
 
 export function syncBarsGroup(groupName, beginDate, endDate) {

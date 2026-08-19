@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { DataAnalysis, MagicStick, Refresh, TrendCharts } from '@element-plus/icons-vue'
 import { fetchStockAnalysis, fetchStockDetail } from '../api/stock'
 import {
   captureElementBlob,
@@ -35,6 +36,8 @@ const sharePreviewUrl = ref('')
 const copying = ref(false)
 const downloading = ref(false)
 let sharePreviewObjectUrl = ''
+let rulesRequestSeq = 0
+let aiRequestSeq = 0
 
 const stanceClass = computed(() => {
   const s = data.value?.stance || ''
@@ -108,6 +111,20 @@ const techHitRate = computed(() => {
   const total = Number(data.value?.tech?.total) || 0
   if (!total) return 0
   return Math.round((hit / total) * 100)
+})
+
+const radarDirectionLabel = computed(() => (side.value === 'SELL' ? '空头风险' : '多头机会'))
+
+const radarResultText = computed(() => {
+  const loadedSide = String(data.value?.tech?.side || '').toUpperCase()
+  if (loading.value && loadedSide !== side.value) {
+    return `切换中 · ${radarDirectionLabel.value}`
+  }
+  const hit = Number(data.value?.tech?.hitCount) || 0
+  const total = Number(data.value?.tech?.total) || 0
+  return total > 0
+    ? `${radarDirectionLabel.value} · 命中 ${hit}/${total}`
+    : `${radarDirectionLabel.value} · 暂无信号`
 })
 
 function strategyMeta(id) {
@@ -239,28 +256,37 @@ async function enrichQuotePeriods(payload) {
 
 async function loadRules() {
   if (!props.code) return
+  const requestSeq = ++rulesRequestSeq
+  const requestedSide = side.value
+  aiRequestSeq += 1
   loading.value = true
+  aiLoading.value = false
   error.value = ''
   try {
-    const res = await fetchStockAnalysis(props.code, side.value, 120, false, false)
-    data.value = await enrichQuotePeriods(res.data)
+    const res = await fetchStockAnalysis(props.code, requestedSide, 120, false, false)
+    const next = await enrichQuotePeriods(res.data)
+    if (requestSeq !== rulesRequestSeq || requestedSide !== side.value) return
+    data.value = next
     // 规则先出，再独立刷新行情、补日线并生成 AI 解读
-    loadAi(false)
+    loadAi(false, requestedSide)
   } catch (e) {
+    if (requestSeq !== rulesRequestSeq || requestedSide !== side.value) return
     data.value = null
     error.value = e.message || '加载失败'
     ElMessage.error(error.value)
   } finally {
-    loading.value = false
+    if (requestSeq === rulesRequestSeq) loading.value = false
   }
 }
 
-async function loadAi(forceAi = false) {
+async function loadAi(forceAi = false, requestedSide = side.value) {
   if (!props.code) return
+  const requestSeq = ++aiRequestSeq
   aiLoading.value = true
   try {
-    const res = await fetchStockAnalysis(props.code, side.value, 120, true, forceAi)
+    const res = await fetchStockAnalysis(props.code, requestedSide, 120, true, forceAi)
     const next = await enrichQuotePeriods(res.data)
+    if (requestSeq !== aiRequestSeq || requestedSide !== side.value) return
     if (!data.value) {
       data.value = next
     } else {
@@ -283,6 +309,7 @@ async function loadAi(forceAi = false) {
       ElMessage.success(res.data?.ai?.fromCache ? '仍为缓存解读' : 'AI 解读已更新')
     }
   } catch (e) {
+    if (requestSeq !== aiRequestSeq || requestedSide !== side.value) return
     if (!data.value) {
       error.value = e.message || '加载失败'
       ElMessage.error(error.value)
@@ -290,7 +317,7 @@ async function loadAi(forceAi = false) {
       ElMessage.error(e.message || 'AI 解读失败')
     }
   } finally {
-    aiLoading.value = false
+    if (requestSeq === aiRequestSeq) aiLoading.value = false
   }
 }
 
@@ -413,18 +440,40 @@ defineExpose({ reload: () => loadRules() })
 <template>
   <div class="analysis" v-loading="loading && !data">
     <div class="analysis-toolbar no-capture">
-      <el-radio-group v-model="side" size="small">
-        <el-radio-button value="BUY">偏多雷达</el-radio-button>
-        <el-radio-button value="SELL">偏空雷达</el-radio-button>
-      </el-radio-group>
-      <el-button size="small" :loading="loading" @click="loadRules">刷新研判</el-button>
-      <el-button size="small" type="warning" plain :loading="aiLoading" @click="refreshAi">AI 实时解读</el-button>
-      <el-button
-        size="small"
-        plain
-        @click="router.push({ path: `/stock/${code}`, query: { tab: 'valuation' } })"
-      >完整估值</el-button>
-      <el-button size="small" plain @click="router.push({ path: '/backtest', query: { code } })">回测</el-button>
+      <div class="analysis-mode">
+        <div class="analysis-mode-head">
+          <span class="analysis-mode-title">技术信号</span>
+          <span class="analysis-mode-result" aria-live="polite">{{ radarResultText }}</span>
+        </div>
+        <el-radio-group v-model="side" class="analysis-direction" aria-label="技术信号方向">
+          <el-radio-button value="BUY">多头机会</el-radio-button>
+          <el-radio-button value="SELL">空头风险</el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <div class="analysis-actions">
+        <el-tooltip content="刷新当前方向研判" placement="bottom">
+          <el-button class="analysis-refresh" :loading="loading" aria-label="刷新当前方向研判" @click="loadRules">
+            <el-icon v-if="!loading"><Refresh /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-button class="analysis-ai" type="primary" plain :loading="aiLoading" :disabled="loading" @click="refreshAi">
+          <el-icon v-if="!aiLoading"><MagicStick /></el-icon>
+          <span>AI 解读</span>
+        </el-button>
+        <el-button
+          class="analysis-link"
+          plain
+          @click="router.push({ path: `/stock/${code}`, query: { tab: 'valuation' } })"
+        >
+          <el-icon><DataAnalysis /></el-icon>
+          <span>完整估值</span>
+        </el-button>
+        <el-button class="analysis-link" plain @click="router.push({ path: '/backtest', query: { code } })">
+          <el-icon><TrendCharts /></el-icon>
+          <span>历史回测</span>
+        </el-button>
+      </div>
     </div>
 
     <FloatingShareButton
@@ -696,11 +745,114 @@ defineExpose({ reload: () => loadRules() })
 }
 
 .analysis-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr);
+  gap: 12px;
+  align-items: stretch;
   margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid rgba(20, 38, 64, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.analysis-mode {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.analysis-mode-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.analysis-mode-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.analysis-mode-result {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-direction {
+  display: flex;
+  width: 100%;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f3f6fa;
+  box-sizing: border-box;
+}
+
+.analysis-direction :deep(.el-radio-button) {
+  flex: 1 1 0;
+}
+
+.analysis-direction :deep(.el-radio-button__inner) {
+  display: inline-grid;
+  width: 100%;
+  min-height: 34px;
+  place-items: center;
+  padding: 0 12px;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent;
+  box-shadow: none !important;
+  color: var(--slate);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.analysis-direction :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 38, 64, 0.12) !important;
+  color: var(--accent);
+}
+
+.analysis-actions {
+  display: grid;
+  grid-template-columns: 40px minmax(104px, 1.1fr) minmax(96px, 1fr) minmax(84px, 0.8fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.analysis-actions :deep(.el-button) {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  margin: 0;
+  padding: 0 11px;
+  border-radius: 6px;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.analysis-actions :deep(.analysis-refresh) {
+  padding: 0;
+  font-size: 16px;
+}
+
+.analysis-actions :deep(.analysis-ai) {
+  border-color: rgba(0, 113, 227, 0.28);
+  background: rgba(0, 113, 227, 0.06);
+}
+
+.analysis-actions :deep(.analysis-link) {
+  color: var(--ink-soft);
 }
 
 .share-card {
@@ -1574,6 +1726,10 @@ defineExpose({ reload: () => loadRules() })
 }
 
 @media (max-width: 900px) {
+  .analysis-toolbar {
+    grid-template-columns: 1fr;
+  }
+
   .grid-2 {
     grid-template-columns: 1fr;
   }
@@ -1584,6 +1740,52 @@ defineExpose({ reload: () => loadRules() })
 
   .kpi-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .analysis-toolbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 0 0 12px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .analysis-mode {
+    gap: 7px;
+  }
+
+  .analysis-mode-head {
+    padding: 0 2px;
+  }
+
+  .analysis-direction :deep(.el-radio-button__inner) {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .analysis-actions {
+    grid-template-columns: 44px minmax(78px, 1.1fr) minmax(76px, 1fr) minmax(58px, 0.72fr);
+    gap: 6px;
+  }
+
+  .analysis-actions :deep(.el-button) {
+    min-height: 44px;
+    padding: 0 8px;
+    font-size: 13px;
+  }
+
+  .analysis-actions :deep(.analysis-refresh) {
+    padding: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .analysis-actions :deep(.analysis-link .el-icon) {
+    display: none;
   }
 }
 </style>
