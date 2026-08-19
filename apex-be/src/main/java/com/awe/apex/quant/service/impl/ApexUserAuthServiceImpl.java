@@ -84,6 +84,7 @@ public class ApexUserAuthServiceImpl implements ApexUserAuthService {
         userMapper.updateById(user);
         StpUtil.login(user.getId());
         StpUtil.getSession().set(Constants.PHONE, user.getPhone());
+        StpUtil.getSession().set(Constants.NICK_NAME, user.getNickName());
         return ApexLoginResp.builder()
                 .accessToken(StpUtil.getTokenValue())
                 .expireIn(StpUtil.getTokenTimeout())

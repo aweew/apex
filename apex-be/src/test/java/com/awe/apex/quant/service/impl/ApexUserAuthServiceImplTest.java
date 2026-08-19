@@ -79,12 +79,14 @@ class ApexUserAuthServiceImplTest {
     }
 
     @Test
-    void shouldCachePhoneInSessionAfterLogin() {
+    void shouldCacheUserIdentityInSessionAfterLogin() {
         String phone = "13812345678";
+        String nickName = "Awe";
         String password = "test-password";
         User user = User.builder()
                 .id(USER_ID)
                 .phone(phone)
+                .nickName(nickName)
                 .password(BCrypt.hashpw(password))
                 .status(StatusEnum.ENABLE)
                 .build();
@@ -105,5 +107,6 @@ class ApexUserAuthServiceImplTest {
         }
 
         verify(session).set(Constants.PHONE, phone);
+        verify(session).set(Constants.NICK_NAME, nickName);
     }
 }

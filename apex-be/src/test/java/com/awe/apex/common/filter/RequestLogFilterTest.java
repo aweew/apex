@@ -8,6 +8,7 @@ import cn.dev33.satoken.session.SaSession;
 import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.common.constant.Constants;
 import com.awe.apex.common.util.SpringUtils;
+import com.awe.apex.manager.domain.user.entity.User;
 import com.awe.apex.manager.service.IUserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
@@ -88,7 +89,7 @@ class RequestLogFilterTest {
         List<ILoggingEvent> events = appender.list;
         assertEquals(4, events.size());
         assertTrue(events.stream().allMatch(event -> "trace_20260817".equals(event.getMDCPropertyMap().get(Constants.TRACE_ID))));
-        assertTrue(events.stream().allMatch(event -> "138****5678".equals(event.getMDCPropertyMap().get(Constants.PHONE))));
+        assertTrue(events.stream().allMatch(event -> "138****5678".equals(event.getMDCPropertyMap().get(Constants.LOG_USER))));
         assertEquals("trace_20260817", response.getHeader(Constants.TRACE_ID));
         String messages = messages(events);
         assertTrue(messages.contains("参数类型[json]"));
@@ -98,17 +99,18 @@ class RequestLogFilterTest {
         assertFalse(messages.contains("secret-123"));
         assertFalse(messages.contains("500236198909270662"));
         assertNull(MDC.get(Constants.TRACE_ID));
-        assertNull(MDC.get(Constants.PHONE));
+        assertNull(MDC.get(Constants.LOG_USER));
     }
 
     @Test
-    void usesSessionPhoneAndWarnsForClientError() throws Exception {
+    void usesSessionUserAndWarnsForClientError() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/stocks/search");
         request.setParameter("keyword", "光伏");
         request.addHeader(Constants.TRACE_ID, "invalid trace id");
         MockHttpServletResponse response = new MockHttpServletResponse();
         SaSession session = mock(SaSession.class);
         when(session.get(Constants.PHONE)).thenReturn("13987654321");
+        when(session.get(Constants.NICK_NAME)).thenReturn("量化用户");
 
         try (MockedStatic<StpUtil> stpUtil = org.mockito.Mockito.mockStatic(StpUtil.class)) {
             stpUtil.when(StpUtil::getLoginIdDefaultNull).thenReturn(7L);
@@ -120,13 +122,33 @@ class RequestLogFilterTest {
         String traceId = response.getHeader(Constants.TRACE_ID);
         assertTrue(traceId.matches("[a-f0-9]{16}"));
         assertTrue(events.stream().allMatch(event -> traceId.equals(event.getMDCPropertyMap().get(Constants.TRACE_ID))));
-        assertTrue(events.stream().allMatch(event -> "139****4321".equals(event.getMDCPropertyMap().get(Constants.PHONE))));
+        assertTrue(events.stream().allMatch(event -> "量化用户(139****4321)".equals(
+                event.getMDCPropertyMap().get(Constants.LOG_USER))));
         assertEquals(Level.INFO, events.get(0).getLevel());
         assertEquals(Level.INFO, events.get(1).getLevel());
         assertEquals(Level.WARN, events.get(2).getLevel());
         assertEquals(Level.WARN, events.get(3).getLevel());
         assertTrue(messages(events).contains("状态[404]"));
         verifyNoInteractions(userService);
+    }
+
+    @Test
+    void resolvesUserFromBearerTokenBeforeAuthenticationInterceptor() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/decision/advice");
+        request.addHeader("Authorization", "Bearer bearer-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        User user = User.builder().id(7L).nickName("Awe").phone("13812345678").build();
+        when(userService.getById(7L)).thenReturn(user);
+
+        try (MockedStatic<StpUtil> stpUtil = org.mockito.Mockito.mockStatic(StpUtil.class)) {
+            stpUtil.when(StpUtil::getLoginIdDefaultNull).thenThrow(new IllegalStateException("认证上下文尚未建立"));
+            stpUtil.when(() -> StpUtil.getLoginIdByToken("bearer-token")).thenReturn(7L);
+            filter.doFilterInternal(request, response, (wrappedRequest, wrappedResponse) -> {
+            });
+        }
+
+        assertTrue(appender.list.stream().allMatch(event -> "Awe(138****5678)".equals(
+                event.getMDCPropertyMap().get(Constants.LOG_USER))));
     }
 
     @Test
@@ -147,7 +169,7 @@ class RequestLogFilterTest {
         assertEquals(Level.ERROR, events.get(3).getLevel());
         assertTrue(messages(events).contains("异常[ServletException]"));
         assertNull(MDC.get(Constants.TRACE_ID));
-        assertNull(MDC.get(Constants.PHONE));
+        assertNull(MDC.get(Constants.LOG_USER));
     }
 
     @Test

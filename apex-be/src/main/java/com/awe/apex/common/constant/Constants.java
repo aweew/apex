@@ -19,6 +19,16 @@ public interface Constants {
     String PHONE = "phone";
 
     /**
+     * 登录会话中的用户昵称
+     */
+    String NICK_NAME = "nickName";
+
+    /**
+     * 日志中的用户标识
+     */
+    String LOG_USER = "user";
+
+    /**
      * 请求日志级别标记
      */
     String REQUEST_LOG_LEVEL = Constants.class.getName() + ".requestLogLevel";

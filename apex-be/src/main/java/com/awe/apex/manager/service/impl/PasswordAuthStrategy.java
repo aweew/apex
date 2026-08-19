@@ -44,6 +44,7 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         // }
         StpUtil.login(user.getId());
         StpUtil.getSession().set(Constants.PHONE, user.getPhone());
+        StpUtil.getSession().set(Constants.NICK_NAME, user.getNickName());
 
         return LoginResp.builder().accessToken(StpUtil.getTokenValue()).expireIn(StpUtil.getTokenTimeout()).build();
     }

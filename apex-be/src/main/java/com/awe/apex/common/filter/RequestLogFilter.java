@@ -85,9 +85,9 @@ public class RequestLogFilter extends OncePerRequestFilter {
         long startedAt = System.nanoTime();
         HttpServletRequest requestForChain = wrapJsonRequest(request);
         String traceId = resolveTraceId(request);
-        String requestPhone = resolveRequestPhone(requestForChain);
+        String requestUser = resolveRequestUser(requestForChain);
         MDC.put(Constants.TRACE_ID, traceId);
-        MDC.put(Constants.PHONE, StringUtils.isBlank(requestPhone) ? "-" : maskPhone(requestPhone));
+        MDC.put(Constants.LOG_USER, StringUtils.isBlank(requestUser) ? "-" : requestUser);
         response.setHeader(Constants.TRACE_ID, traceId);
 
         Throwable requestFailure = null;
@@ -103,7 +103,7 @@ public class RequestLogFilter extends OncePerRequestFilter {
         } finally {
             logRequestEnd(requestForChain, response, startedAt, requestFailure);
             MDC.remove(Constants.TRACE_ID);
-            MDC.remove(Constants.PHONE);
+            MDC.remove(Constants.LOG_USER);
         }
     }
 
@@ -129,14 +129,14 @@ public class RequestLogFilter extends OncePerRequestFilter {
         return traceId;
     }
 
-    private String resolveRequestPhone(HttpServletRequest request) {
-        String phone = resolveAuthenticatedPhone();
-        if (StringUtils.isNotBlank(phone)) {
-            return phone;
+    private String resolveRequestUser(HttpServletRequest request) {
+        String authenticatedUser = resolveAuthenticatedUser(request);
+        if (StringUtils.isNotBlank(authenticatedUser)) {
+            return authenticatedUser;
         }
-        phone = findPhoneParameter(request);
+        String phone = findPhoneParameter(request);
         if (StringUtils.isNotBlank(phone)) {
-            return phone;
+            return maskPhone(phone);
         }
         if (!(request instanceof RepeatedlyRequestWrapper requestWrapper)) {
             return null;
@@ -144,23 +144,28 @@ public class RequestLogFilter extends OncePerRequestFilter {
         try {
             String body = new String(requestWrapper.getBody(), requestCharset(request));
             JsonNode root = JsonUtils.getObjectMapper().readTree(body);
-            return findPhone(root);
+            return maskPhone(findPhone(root));
         } catch (Exception exception) {
             return null;
         }
     }
 
-    private String resolveAuthenticatedPhone() {
+    private String resolveAuthenticatedUser(HttpServletRequest request) {
         try {
-            Object loginId = StpUtil.getLoginIdDefaultNull();
+            Object loginId = resolveCurrentLoginId();
+            if (Objects.isNull(loginId)) {
+                loginId = resolveBearerLoginId(request);
+            }
             if (Objects.isNull(loginId)) {
                 return null;
             }
             SaSession session = StpUtil.getSessionByLoginId(loginId, false);
             if (Objects.nonNull(session)) {
                 Object sessionPhone = session.get(Constants.PHONE);
-                if (Objects.nonNull(sessionPhone) && StringUtils.isNotBlank(sessionPhone.toString())) {
-                    return sessionPhone.toString();
+                Object sessionNickName = session.get(Constants.NICK_NAME);
+                if (Objects.nonNull(sessionPhone) && StringUtils.isNotBlank(sessionPhone.toString())
+                        && Objects.nonNull(sessionNickName) && StringUtils.isNotBlank(sessionNickName.toString())) {
+                    return buildLogUser(sessionNickName.toString(), sessionPhone.toString());
                 }
             }
 
@@ -174,12 +179,35 @@ public class RequestLogFilter extends OncePerRequestFilter {
             }
             if (Objects.nonNull(session)) {
                 session.set(Constants.PHONE, user.getPhone());
+                session.set(Constants.NICK_NAME, user.getNickName());
             }
-            return user.getPhone();
+            return buildLogUser(user.getNickName(), user.getPhone());
         } catch (Exception exception) {
-            log.debug("请求日志未能解析登录手机号，按匿名请求记录", exception);
+            log.debug("请求日志未能解析登录用户，按匿名请求记录", exception);
             return null;
         }
+    }
+
+    private Object resolveCurrentLoginId() {
+        try {
+            return StpUtil.getLoginIdDefaultNull();
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private Object resolveBearerLoginId(HttpServletRequest request) {
+        String authorization = request.getHeader("Authorization");
+        if (StringUtils.isBlank(authorization) || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            return null;
+        }
+        String token = authorization.substring(7).trim();
+        return StringUtils.isBlank(token) ? null : StpUtil.getLoginIdByToken(token);
+    }
+
+    private String buildLogUser(String nickName, String phone) {
+        String maskedPhone = maskPhone(phone);
+        return StringUtils.isBlank(nickName) ? maskedPhone : nickName.trim() + "(" + maskedPhone + ")";
     }
 
     private String findPhoneParameter(HttpServletRequest request) {
