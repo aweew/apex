@@ -123,7 +123,7 @@ test('dashboard separates overnight indexes, market themes and star quotes with 
   assert.match(dashboardSource, /legacyIndexSymbols\.has\(quote\.symbol\)/)
   assert.match(dashboardSource, /!legacyIndexSymbols\.has\(quote\.symbol\)/)
   assert.match(dashboardSource, /v-for="quote in overnightIndexes"/)
-  assert.match(dashboardSource, /v-for="theme in overnightThemes"/)
+  assert.match(dashboardSource, /v-for="\(theme, index\) in overnightThemes"/)
   assert.match(dashboardSource, /v-for="quote in overnightStars"/)
   assert.doesNotMatch(dashboardSource, /绝对涨跌幅前八/)
 })
@@ -144,5 +144,33 @@ test('dashboard keeps overnight layers stable across desktop and phone layouts',
   assert.match(
     dashboardSource,
     /@media \(max-width: 560px\)[\s\S]*?\.overnight-theme-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+  )
+})
+
+test('dashboard pre-market summary has a compact hierarchy and accessible action', () => {
+  assert.match(dashboardSource, /class="morning-context-title"/)
+  assert.match(dashboardSource, /class="morning-context-status"/)
+  assert.match(
+    dashboardSource,
+    /\.morning-context-head\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/s,
+  )
+  assert.match(dashboardSource, /\.morning-context-title\s*\{[^}]*text-align:\s*left;/s)
+  assert.match(dashboardSource, /\.morning-context-link[^}]*min-height:\s*44px;/s)
+  assert.match(
+    dashboardSource,
+    /@media \(max-width: 560px\)[\s\S]*?\.morning-context-head\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+  )
+})
+
+test('dashboard theme ranking exposes breadth without relying on color alone', () => {
+  assert.match(dashboardSource, /v-for="\(theme, index\) in overnightThemes"/)
+  assert.match(dashboardSource, /class="overnight-theme-rank"/)
+  assert.match(dashboardSource, /class="overnight-theme-breadth"/)
+  assert.match(dashboardSource, /class="overnight-theme-breadth-track"/)
+  assert.match(dashboardSource, /themeUpPct\(theme\)/)
+  assert.match(dashboardSource, /\{\{ theme\.upCount \?\? 0 \}\}\/\{\{ theme\.quoteCount \?\? 0 \}\} 上涨/)
+  assert.match(
+    dashboardSource,
+    /\.overnight-theme\s*\{[^}]*grid-template-columns:\s*24px minmax\(0,\s*1fr\) minmax\(82px,\s*auto\);/s,
   )
 })

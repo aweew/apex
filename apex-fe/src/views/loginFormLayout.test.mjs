@@ -17,6 +17,11 @@ test('login fields keep the expected keyboard focus order', () => {
   assert.ok(passwordInputIndex < passwordHelpIndex)
 })
 
+test('login phone input removes pasted whitespace before validation', () => {
+  assert.match(loginSource, /function normalizePhone\(\)\s*\{\s*form\.phone = form\.phone\.replace\(\/\\s\/g, ''\)/)
+  assert.match(loginSource, /<el-input v-model="form\.phone"[^>]*@input="normalizePhone"/)
+})
+
 test('login submission uses one keyboard path and blocks concurrent requests', () => {
   assert.match(loginSource, /<el-form[^>]*@submit\.prevent="submit"/)
   assert.doesNotMatch(loginSource, /@keyup\.enter="submit"/)

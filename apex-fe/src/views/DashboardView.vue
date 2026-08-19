@@ -133,6 +133,13 @@ function pctDir(v) {
   return n > 0 ? 'up' : 'down'
 }
 
+function themeUpPct(theme) {
+  const upCount = Number(theme?.upCount)
+  const quoteCount = Number(theme?.quoteCount)
+  if (Number.isNaN(upCount) || Number.isNaN(quoteCount) || quoteCount <= 0) return 0
+  return Math.min(100, Math.max(0, (upCount / quoteCount) * 100))
+}
+
 /** 量能涨跌幅比例红绿：正比为红，负比为绿 */
 function volumeDir(trend, vsMa5Pct) {
   if (trend === '放量') return 'up'
@@ -648,23 +655,25 @@ onMounted(() => {
 
     <section id="pre-market-context" class="morning-context enter delay-1" aria-label="盘前依据">
       <div class="morning-context-head">
-        <div>
+        <div class="morning-context-title">
           <h3>盘前依据</h3>
           <p>美股收盘表现与今日重要资讯</p>
         </div>
         <div class="morning-context-meta">
-          <el-tag
-            v-if="morningBriefing"
-            size="small"
-            effect="plain"
-            :type="dataLevelType(morningBriefing.dataLevel)"
-          >
-            {{ dataLevelLabel(morningBriefing.dataLevel) }}
-          </el-tag>
-          <span class="morning-context-time">
-            <span class="morning-context-time-label">更新</span>
-            <time>{{ fmtBriefingTime(morningBriefing?.generatedAt) }}</time>
-          </span>
+          <div class="morning-context-status">
+            <el-tag
+              v-if="morningBriefing"
+              size="small"
+              effect="plain"
+              :type="dataLevelType(morningBriefing.dataLevel)"
+            >
+              {{ dataLevelLabel(morningBriefing.dataLevel) }}
+            </el-tag>
+            <span class="morning-context-time">
+              <span class="morning-context-time-label">更新</span>
+              <time>{{ fmtBriefingTime(morningBriefing?.generatedAt) }}</time>
+            </span>
+          </div>
           <el-button class="morning-context-link" link type="primary" @click="router.push('/news')">
             消息面
             <span aria-hidden="true">→</span>
@@ -675,14 +684,14 @@ onMounted(() => {
       <div class="morning-context-grid">
         <div class="morning-context-block overnight-block">
           <div class="morning-block-head">
-            <h4>隔夜美股</h4>
-            <span>指数温度 · 主题强弱 · 明星异动</span>
+            <h4>隔夜市场</h4>
+            <span>美股收盘快照</span>
           </div>
 
           <div class="overnight-layer">
             <div class="overnight-layer-head">
-              <h5>市场温度</h5>
-              <span>三大指数</span>
+              <h5>三大指数</h5>
+              <span>收盘表现</span>
             </div>
             <div v-if="overnightIndexes.length" class="overnight-index-grid">
               <div v-for="quote in overnightIndexes" :key="quote.symbol" class="overnight-quote">
@@ -704,7 +713,12 @@ onMounted(() => {
               <span>按涨跌幅中位数排序</span>
             </div>
             <div v-if="overnightThemes.length" class="overnight-theme-grid">
-              <div v-for="theme in overnightThemes" :key="theme.code || theme.name" class="overnight-theme">
+              <div
+                v-for="(theme, index) in overnightThemes"
+                :key="theme.code || theme.name"
+                class="overnight-theme"
+              >
+                <span class="overnight-theme-rank">{{ index + 1 }}</span>
                 <div class="overnight-theme-copy">
                   <strong>{{ theme.name }}</strong>
                   <small v-if="theme.leaderQuote">
@@ -714,7 +728,12 @@ onMounted(() => {
                 </div>
                 <div class="overnight-theme-stats">
                   <b :class="pctDir(theme.medianPctChg)">{{ fmtIndexPct(theme.medianPctChg) }}</b>
-                  <span>{{ theme.upCount ?? 0 }}/{{ theme.quoteCount ?? 0 }} 上涨</span>
+                  <span class="overnight-theme-breadth">
+                    <span class="overnight-theme-breadth-track" aria-hidden="true">
+                      <i :style="{ width: `${themeUpPct(theme)}%` }" />
+                    </span>
+                    <span>{{ theme.upCount ?? 0 }}/{{ theme.quoteCount ?? 0 }} 上涨</span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -2121,27 +2140,34 @@ onMounted(() => {
 
 .morning-context {
   margin: 0 0 14px;
-  padding: 18px 2px 20px;
+  padding: 0 2px 20px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   letter-spacing: 0;
 }
 
 .morning-context-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 14px;
+  gap: 24px;
+  padding: 15px 0 14px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.morning-context-title {
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+  text-align: left;
 }
 
 .morning-context-head h3 {
   margin: 0;
   color: var(--ink);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.3;
   letter-spacing: 0;
 }
 
@@ -2149,19 +2175,30 @@ onMounted(() => {
   margin: 3px 0 0;
   color: var(--muted);
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.35;
   letter-spacing: 0;
 }
 
 .morning-context-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 28px;
+  gap: 8px;
+  min-width: 0;
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.morning-context-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.morning-context-status :deep(.el-tag) {
+  flex: 0 0 auto;
 }
 
 .morning-context-time {
@@ -2177,6 +2214,12 @@ onMounted(() => {
 
 .morning-context-time time {
   color: var(--slate);
+}
+
+.morning-context-link {
+  min-height: 44px;
+  padding: 0 8px;
+  touch-action: manipulation;
 }
 
 .morning-context-link :deep(span) {
@@ -2341,17 +2384,24 @@ onMounted(() => {
 
 .overnight-theme {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(82px, auto);
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  min-height: 46px;
+  min-height: 52px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
   font-variant-numeric: tabular-nums;
 }
 
 .overnight-theme:nth-last-child(-n + 2) {
   border-bottom-color: transparent;
+}
+
+.overnight-theme-rank {
+  color: #94a0b1;
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
 }
 
 .overnight-theme-copy,
@@ -2405,6 +2455,29 @@ onMounted(() => {
   color: var(--muted);
   font-size: 10px;
   letter-spacing: 0;
+}
+
+.overnight-theme-stats .overnight-theme-breadth {
+  display: grid;
+  grid-template-columns: 28px auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.overnight-theme-breadth-track {
+  display: block;
+  width: 28px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(100, 116, 139, 0.16);
+}
+
+.overnight-theme-breadth-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #527493;
 }
 
 .news-counts {
@@ -2539,14 +2612,28 @@ onMounted(() => {
   }
 
   .morning-context .morning-context-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 6px;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 9px;
+    padding: 14px 0 10px;
+  }
+
+  .morning-context-title {
+    padding-left: 10px;
   }
 
   .morning-context-meta {
-    justify-content: space-between;
+    justify-content: flex-start;
     width: 100%;
+  }
+
+  .morning-context-status {
+    flex: 1 1 auto;
+  }
+
+  .morning-context-link {
+    flex: 0 0 auto;
+    margin-left: auto;
   }
 
   .morning-context-time-label,
@@ -2568,6 +2655,10 @@ onMounted(() => {
 
   .overnight-theme-grid {
     grid-template-columns: 1fr;
+  }
+
+  .overnight-theme {
+    grid-template-columns: 24px minmax(0, 1fr) minmax(82px, auto);
   }
 
   .overnight-theme:nth-last-child(-n + 2) {

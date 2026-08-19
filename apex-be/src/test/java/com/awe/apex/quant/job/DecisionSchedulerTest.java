@@ -3,7 +3,6 @@ package com.awe.apex.quant.job;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IDecisionOutcomeService;
-import com.awe.apex.quant.service.ApexUserAuthService;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -14,16 +13,13 @@ import java.time.LocalDate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 class DecisionSchedulerTest {
 
     private final IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
     private final IDecisionOutcomeService decisionOutcomeService = mock(IDecisionOutcomeService.class);
-    private final ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
     private final DecisionScheduler scheduler = new DecisionScheduler();
 
     @Test
@@ -48,39 +44,34 @@ class DecisionSchedulerTest {
     }
 
     @Test
-    void submitsDecisionOnTradingDay() {
+    void submitsOneSharedDecisionOnTradingDay() {
         ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
-        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
-        when(userAuthService.listEnabledUserIds()).thenReturn(java.util.List.of(7L, 8L));
 
         scheduler.runScheduledDecision(LocalDate.of(2026, 8, 12));
 
-        verify(dataSyncJobService).startForUser(argThat(this::isDecisionTask), org.mockito.ArgumentMatchers.eq(7L));
-        verify(dataSyncJobService).startForUser(argThat(this::isDecisionTask), org.mockito.ArgumentMatchers.eq(8L));
-    }
-
-    @Test
-    void skipsDecisionOnNonTradingDay() {
-        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
-        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
-
-        scheduler.runScheduledDecision(LocalDate.of(2026, 8, 15));
-
+        verify(dataSyncJobService).startSystemTask(argThat(this::isDecisionTask));
         verify(dataSyncJobService, never()).startForUser(argThat(this::isDecisionTask),
                 org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
-    void oneUsersFailureDoesNotSkipRemainingUsers() {
+    void skipsDecisionOnNonTradingDay() {
         ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
-        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
-        when(userAuthService.listEnabledUserIds()).thenReturn(java.util.List.of(7L, 8L));
-        doThrow(new IllegalStateException("busy")).when(dataSyncJobService)
-                .startForUser(argThat(this::isDecisionTask), org.mockito.ArgumentMatchers.eq(7L));
+
+        scheduler.runScheduledDecision(LocalDate.of(2026, 8, 15));
+
+        verify(dataSyncJobService, never()).startSystemTask(argThat(this::isDecisionTask));
+    }
+
+    @Test
+    void sharedDecisionSubmissionFailureDoesNotEscapeScheduler() {
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        org.mockito.Mockito.doThrow(new IllegalStateException("busy")).when(dataSyncJobService)
+                .startSystemTask(argThat(this::isDecisionTask));
 
         scheduler.runScheduledDecision(LocalDate.of(2026, 8, 12));
 
-        verify(dataSyncJobService).startForUser(argThat(this::isDecisionTask), org.mockito.ArgumentMatchers.eq(8L));
+        verify(dataSyncJobService).startSystemTask(argThat(this::isDecisionTask));
     }
 
     @Test

@@ -35,11 +35,11 @@ public interface IDataSyncJobService {
     SyncJobResp startSystemTask(SyncStartReq req);
 
     /**
-     * 为指定用户启动智能决策任务。
+     * 拒绝旧版按用户启动入口，智能决策统一由共享任务生成。
      *
-     * @param req    请求
+     * @param req 请求
      * @param userId 所属用户ID
-     * @return 任务状态
+     * @return 不返回，始终抛出业务异常
      */
     SyncJobResp startForUser(SyncStartReq req, Long userId);
 

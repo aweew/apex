@@ -530,17 +530,17 @@ onBeforeUnmount(() => {
               </RouterLink>
             </div>
           </div>
-          <div class="mobile-menu-actions">
-            <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
-              <i class="dot" />
-              {{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '检测中…' }}
-            </span>
-            <button type="button" class="mobile-action-btn" :class="{ on: denseMode }" @click="toggleDense">
-              <span>{{ denseMode ? '紧凑密度' : '舒适密度' }}</span>
-            </button>
-            <button type="button" class="mobile-action-btn" @click="openGlossary(); setMobileMenu(false)">名词百科</button>
-            <button v-if="currentUser" type="button" class="mobile-action-btn mobile-logout-btn" @click="logoutCurrentUser">退出登录</button>
-          </div>
+        </div>
+        <div class="mobile-menu-actions">
+          <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
+            <i class="dot" />
+            {{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '检测中…' }}
+          </span>
+          <button type="button" class="mobile-action-btn" :class="{ on: denseMode }" @click="toggleDense">
+            <span>{{ denseMode ? '紧凑密度' : '舒适密度' }}</span>
+          </button>
+          <button type="button" class="mobile-action-btn" @click="openGlossary(); setMobileMenu(false)">名词百科</button>
+          <button v-if="currentUser" type="button" class="mobile-action-btn mobile-logout-btn" @click="logoutCurrentUser">退出登录</button>
         </div>
       </div>
       <div class="nav-actions desktop-nav-actions">
@@ -1371,7 +1371,7 @@ onBeforeUnmount(() => {
     flex-direction: column;
     gap: 10px;
     min-height: 0;
-    padding: 10px 12px calc(16px + env(safe-area-inset-bottom));
+    padding: 10px 12px 16px;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
@@ -1499,10 +1499,13 @@ onBeforeUnmount(() => {
   }
 
   .mobile-menu-actions {
+    flex: 0 0 auto;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    padding: 14px 4px 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(15, 23, 42, 0.1);
+    background: #fff;
   }
 
   .mobile-menu-actions .health {
@@ -1525,6 +1528,13 @@ onBeforeUnmount(() => {
     color: var(--accent);
     border-color: rgba(0, 113, 227, 0.28);
     background: var(--accent-soft);
+  }
+
+  .mobile-logout-btn {
+    grid-column: 1 / -1;
+    border-color: rgba(192, 57, 43, 0.28);
+    background: rgba(192, 57, 43, 0.06);
+    color: #a3342a;
   }
 
   .main {
