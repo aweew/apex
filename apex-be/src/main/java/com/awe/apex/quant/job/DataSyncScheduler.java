@@ -204,28 +204,52 @@ public class DataSyncScheduler {
         if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
             return;
         }
+        if (dataSyncJobService.isTaskRunning("CLOSE_BUNDLE")) {
+            log.info("收盘行情刷新跳过：一键收盘同步正在运行");
+            return;
+        }
         String group = configService.getString("auto_sync_group", "我的自选");
-        for (Long userId : queryEnabledUserIds("定时刷新用户行情")) {
+        List<Long> userIds = queryEnabledUserIds("定时刷新用户行情");
+        Set<String> quoteCodes = new LinkedHashSet<>();
+        long startedAtNanos = System.nanoTime();
+
+        // 1. 收集全部用户关注代码，统一刷新共享行情。
+        for (Long userId : userIds) {
             try {
-                Map<String, Object> resp = userContext.runAsUser(userId,
-                        () -> watchlistService.refreshQuotes(group, 80, false));
-                log.info("定时刷新自选行情完成，用户编号={}，分组={}，成功数量={}",
-                        userId, group, resp.get("successCount"));
-            } catch (Exception ex) {
-                log.warn("定时刷新自选行情失败，用户编号={}，分组={}，原因={}", userId, group, ex.getMessage());
-            }
-            try {
-                Map<String, Object> resp = userContext.runAsUser(userId, () -> {
-                    Map<String, Object> refreshResult = portfolioService.refreshQuotesAll(false);
-                    portfolioService.snapshotAll();
-                    return refreshResult;
+                List<String> userCodes = userContext.runAsUser(userId, () -> {
+                    Set<String> codes = new LinkedHashSet<>(watchlistService.listWatchlistCodes(group));
+                    codes.addAll(myHoldingService.listHoldingCodes());
+                    codes.addAll(portfolioService.listActiveHoldingCodes());
+                    return new ArrayList<>(codes);
                 });
-                log.info("定时刷新全部组合行情完成，用户编号={}，组合数量={}，成功数量={}，失败数量={}",
-                        userId, resp.get("portfolioCount"), resp.get("success"), resp.get("fail"));
+                quoteCodes.addAll(userCodes);
             } catch (Exception ex) {
-                log.warn("定时刷新全部组合行情失败，用户编号={}，原因={}", userId, ex.getMessage());
+                log.warn("定时收集用户行情代码失败，用户编号={}，分组={}，原因={}", userId, group, ex.getMessage());
             }
         }
+        Map<String, Object> quoteResult;
+        try {
+            quoteResult = quoteCodes.isEmpty()
+                    ? Map.of("success", 0, "fail", 0)
+                    : myHoldingService.refreshQuotesForCodes(new ArrayList<>(quoteCodes), false);
+        } catch (Exception ex) {
+            quoteResult = Map.of("success", 0, "fail", quoteCodes.size());
+            log.warn("收盘行情刷新失败，证券数量={}，原因={}", quoteCodes.size(), ex.getMessage());
+        }
+
+        // 2. 使用同一批共享行情为各用户生成组合快照。
+        int snapshotCount = 0;
+        for (Long userId : userIds) {
+            try {
+                snapshotCount += userContext.runAsUser(userId, portfolioService::snapshotAll);
+            } catch (Exception ex) {
+                log.warn("定时生成组合快照失败，用户编号={}，原因={}", userId, ex.getMessage());
+            }
+        }
+        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
+        log.info("收盘行情刷新完成，用户数量={}，证券数量={}，行情成功={}，行情失败={}，快照数量={}，耗时毫秒={}",
+                userIds.size(), quoteCodes.size(), quoteResult.get("success"), quoteResult.get("fail"),
+                snapshotCount, durationMs);
     }
 
     /**

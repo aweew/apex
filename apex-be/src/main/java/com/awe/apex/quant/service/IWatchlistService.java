@@ -28,6 +28,14 @@ public interface IWatchlistService extends IService<Watchlist> {
     List<WatchlistResp> listWatchlist(String groupName);
 
     /**
+     * 查询当前用户自选证券代码，不加载行情和指标。
+     *
+     * @param groupName 分组，可空
+     * @return 去重后的证券代码
+     */
+    List<String> listWatchlistCodes(String groupName);
+
+    /**
      * 从妙想导出文件导入自选
      *
      * @param req 导入请求

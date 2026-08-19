@@ -212,6 +212,29 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
         return result;
     }
 
+    /**
+     * 查询当前用户自选证券代码，不加载行情和指标。
+     *
+     * @param groupName 分组，可空
+     * @return 去重后的证券代码
+     */
+    @Override
+    public List<String> listWatchlistCodes(String groupName) {
+        List<Watchlist> watchlists = list(Wrappers.<Watchlist>lambdaQuery()
+                .select(Watchlist::getCode)
+                .eq(Watchlist::getUserId, currentUserId())
+                .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName)
+                .orderByAsc(Watchlist::getCode));
+        Set<String> uniqueCodes = new TreeSet<>();
+        for (Watchlist watchlist : watchlists) {
+            String code = MarketCodeUtils.normalizeCode(watchlist.getCode());
+            if (StringUtils.isNotBlank(code)) {
+                uniqueCodes.add(code);
+            }
+        }
+        return new ArrayList<>(uniqueCodes);
+    }
+
     private BigDecimal periodReturnPct(List<BigDecimal> closes, int lookback) {
         if (closes == null || closes.size() <= lookback) {
             return null;
@@ -388,6 +411,7 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
         int max = Objects.isNull(limit) ? 40 : Math.max(1, Math.min(limit, 80));
         boolean prefer = !Boolean.FALSE.equals(preferMissing);
         List<Watchlist> list = list(Wrappers.<Watchlist>lambdaQuery()
+                .eq(Watchlist::getUserId, currentUserId())
                 .eq(StringUtils.isNotBlank(groupName), Watchlist::getGroupName, groupName)
                 .orderByAsc(Watchlist::getCode));
         if (CollUtil.isEmpty(list)) {

@@ -1,5 +1,6 @@
 package com.awe.apex.quant.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.quant.market.TradingCalendar;
 
 import com.awe.apex.common.exception.BusinessException;
@@ -145,52 +146,117 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         }
         Set<String> allCodes = new LinkedHashSet<>();
         for (Watchlist item : list) {
-            allCodes.add(item.getCode());
+            String code = MarketCodeUtils.normalizeCode(item.getCode());
+            if (StringUtils.isNotBlank(code)) {
+                allCodes.add(code);
+            }
         }
-        Map<String, LocalDate> lastBarMap = new HashMap<>();
-        Map<String, Integer> barCountMap = new HashMap<>();
-        if (!allCodes.isEmpty()) {
-            List<Map<String, Object>> stats = baseMapper.selectMaps(Wrappers.<BarDaily>query()
-                    .select("code", "MAX(trade_date) AS tradeDate", "COUNT(1) AS cnt")
-                    .in("code", allCodes)
-                    .groupBy("code"));
-            for (Map<String, Object> row : stats) {
-                String code = String.valueOf(row.get("code"));
-                Object tradeDate = row.get("tradeDate");
-                Object cnt = row.get("cnt");
-                if (Objects.nonNull(tradeDate)) {
-                    lastBarMap.put(code, LocalDate.parse(String.valueOf(tradeDate).substring(0, 10)));
-                }
-                if (Objects.nonNull(cnt)) {
-                    barCountMap.put(code, Integer.parseInt(String.valueOf(cnt)));
+        List<String> staleCodes = findStaleCodes(new ArrayList<>(allCodes), max);
+        if (staleCodes.isEmpty()) {
+            return emptySyncResponse();
+        }
+        return doSync(staleCodes, null, null, "stale group=" + groupName + ", n=" + staleCodes.size());
+    }
+
+    /**
+     * 同步指定代码中缺失或过期的日线，代码会全局去重并分批处理。
+     *
+     * @param codes 证券代码
+     * @return 同步结果
+     */
+    @Override
+    public BarSyncResp syncStaleCodes(List<String> codes) {
+        Set<String> uniqueCodes = new LinkedHashSet<>();
+        if (CollUtil.isNotEmpty(codes)) {
+            for (String rawCode : codes) {
+                String code = MarketCodeUtils.normalizeCode(rawCode);
+                if (StringUtils.isNotBlank(code)) {
+                    uniqueCodes.add(code);
                 }
             }
         }
-        // 缺「最近交易日」K 即过期（勿用 today-7，周一会漏掉上周五之后的当日）
+        List<String> staleCodes = findStaleCodes(new ArrayList<>(uniqueCodes), Integer.MAX_VALUE);
+        if (staleCodes.isEmpty()) {
+            return emptySyncResponse();
+        }
+
+        int successCount = 0;
+        int failCount = 0;
+        int barCount = 0;
+        String source = "none";
+        List<String> details = new ArrayList<>();
+        LocalDateTime fetchedAt = LocalDateTime.now();
+        for (int start = 0; start < staleCodes.size(); start += MAX_SYNC_CODES) {
+            int end = Math.min(start + MAX_SYNC_CODES, staleCodes.size());
+            List<String> batchCodes = new ArrayList<>(staleCodes.subList(start, end));
+            BarSyncResp batch = doSync(batchCodes, null, null,
+                    "shared stale codes batch=" + (start / MAX_SYNC_CODES + 1) + ", n=" + batchCodes.size());
+            successCount += Objects.nonNull(batch.getSuccessCount()) ? batch.getSuccessCount() : 0;
+            failCount += Objects.nonNull(batch.getFailCount()) ? batch.getFailCount() : 0;
+            barCount += Objects.nonNull(batch.getBarCount()) ? batch.getBarCount() : 0;
+            if (StringUtils.isNotBlank(batch.getSource()) && !"none".equals(batch.getSource())) {
+                source = batch.getSource();
+            }
+            if (CollUtil.isNotEmpty(batch.getDetails())) {
+                details.addAll(batch.getDetails());
+            }
+        }
+        return BarSyncResp.builder()
+                .source(source)
+                .fetchedAt(fetchedAt)
+                .successCount(successCount)
+                .failCount(failCount)
+                .barCount(barCount)
+                .details(details)
+                .build();
+    }
+
+    private List<String> findStaleCodes(List<String> codes, int limit) {
+        if (CollUtil.isEmpty(codes)) {
+            return new ArrayList<>();
+        }
+        Map<String, LocalDate> lastBarMap = new HashMap<>();
+        Map<String, Integer> barCountMap = new HashMap<>();
+        List<Map<String, Object>> stats = baseMapper.selectMaps(Wrappers.<BarDaily>query()
+                .select("code", "MAX(trade_date) AS tradeDate", "COUNT(1) AS cnt")
+                .in("code", codes)
+                .groupBy("code"));
+        for (Map<String, Object> row : stats) {
+            String code = String.valueOf(row.get("code"));
+            Object tradeDate = row.get("tradeDate");
+            Object count = row.get("cnt");
+            if (Objects.nonNull(tradeDate)) {
+                lastBarMap.put(code, LocalDate.parse(String.valueOf(tradeDate).substring(0, 10)));
+            }
+            if (Objects.nonNull(count)) {
+                barCountMap.put(code, Integer.parseInt(String.valueOf(count)));
+            }
+        }
         LocalDate sessionDay = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
         List<String> staleCodes = new ArrayList<>();
-        for (String code : allCodes) {
+        for (String code : codes) {
             int count = barCountMap.getOrDefault(code, 0);
             LocalDate last = lastBarMap.get(code);
             boolean stale = count < 60 || Objects.isNull(last) || last.isBefore(sessionDay);
             if (stale) {
                 staleCodes.add(code);
             }
-            if (staleCodes.size() >= max) {
+            if (staleCodes.size() >= limit) {
                 break;
             }
         }
-        if (staleCodes.isEmpty()) {
-            return BarSyncResp.builder()
-                    .source("none")
-                    .fetchedAt(LocalDateTime.now())
-                    .successCount(0)
-                    .failCount(0)
-                    .barCount(0)
-                    .details(List.of("无过期/缺失日线需要同步"))
-                    .build();
-        }
-        return doSync(staleCodes, null, null, "stale group=" + groupName + ", n=" + staleCodes.size());
+        return staleCodes;
+    }
+
+    private BarSyncResp emptySyncResponse() {
+        return BarSyncResp.builder()
+                .source("none")
+                .fetchedAt(LocalDateTime.now())
+                .successCount(0)
+                .failCount(0)
+                .barCount(0)
+                .details(List.of("无过期/缺失日线需要同步"))
+                .build();
     }
 
     /**

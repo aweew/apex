@@ -64,6 +64,7 @@ class DataSyncJobServiceExecutionTest {
     private final IConfigService configService = mock(IConfigService.class);
     private final ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
     private final SyncJobLeaseService syncJobLeaseService = mock(SyncJobLeaseService.class);
+    private final ApexUserContext userContext = new ApexUserContext();
     private final DataSyncJobServiceImpl service = new DataSyncJobServiceImpl();
     private final AtomicReference<SyncJob> savedJob = new AtomicReference<>();
     private final CopyOnWriteArrayList<SyncJob> updates = new CopyOnWriteArrayList<>();
@@ -86,7 +87,7 @@ class DataSyncJobServiceExecutionTest {
         ReflectionTestUtils.setField(service, "portfolioService", portfolioService);
         ReflectionTestUtils.setField(service, "configService", configService);
         ReflectionTestUtils.setField(service, "userAuthService", userAuthService);
-        ReflectionTestUtils.setField(service, "userContext", new ApexUserContext());
+        ReflectionTestUtils.setField(service, "userContext", userContext);
         ReflectionTestUtils.setField(service, "objectMapper", new ObjectMapper());
         ReflectionTestUtils.setField(service, "scriptDatabaseEnvironment", mock(ScriptDatabaseEnvironment.class));
         ReflectionTestUtils.setField(service, "syncJobLeaseService", syncJobLeaseService);
@@ -120,12 +121,12 @@ class DataSyncJobServiceExecutionTest {
         when(configService.getString("auto_sync_group", "我的自选")).thenReturn("我的自选");
         when(userAuthService.listEnabledUserIds()).thenReturn(List.of());
         when(syncJobLeaseService.tryAcquire(any(), any(), any())).thenReturn(true);
-        when(watchlistService.refreshQuotes(any(), any(), any())).thenReturn(Map.of("successCount", 1));
-        when(myHoldingService.refreshQuotes(false)).thenReturn(Map.of("successCount", 1));
-        when(portfolioService.refreshQuotesAll(false)).thenReturn(
-                Map.of("portfolioCount", 1, "success", 1, "fail", 0));
+        when(watchlistService.listWatchlistCodes(any())).thenReturn(List.of());
+        when(myHoldingService.listHoldingCodes()).thenReturn(List.of());
+        when(portfolioService.listActiveHoldingCodes()).thenReturn(List.of());
+        when(myHoldingService.refreshQuotesForCodes(any(), eq(false))).thenReturn(Map.of("success", 1, "fail", 0));
         when(portfolioService.snapshotAll()).thenReturn(1);
-        when(barDailyService.syncStaleWatchlist(any(), any())).thenReturn(
+        when(barDailyService.syncStaleCodes(any())).thenReturn(
                 BarSyncResp.builder().successCount(1).failCount(0).build());
     }
 
@@ -145,7 +146,7 @@ class DataSyncJobServiceExecutionTest {
         verify(marketBriefingService).invalidateCache();
         verify(morningBriefingService).invalidateCache();
         verify(userAuthService, never()).listEnabledUserIds();
-        verify(watchlistService, never()).refreshQuotes(any(), any(), any());
+        verify(watchlistService, never()).listWatchlistCodes(any());
     }
 
     @Test
@@ -191,23 +192,54 @@ class DataSyncJobServiceExecutionTest {
     }
 
     @Test
-    void reportedPostProcessingFailureContinuesRemainingStagesAndMarksJobPartial() throws Exception {
+    void sharedPostProcessingFailureContinuesSnapshotsAndMarksJobPartial() throws Exception {
         when(userAuthService.listEnabledUserIds()).thenReturn(List.of(7L));
-        when(myHoldingService.refreshQuotes(false)).thenReturn(Map.of("fail", 11, "barFail", 0));
+        when(watchlistService.listWatchlistCodes("我的自选")).thenReturn(List.of("600000"));
+        when(myHoldingService.listHoldingCodes()).thenReturn(List.of("600001"));
+        when(portfolioService.listActiveHoldingCodes()).thenReturn(List.of("600001"));
+        when(myHoldingService.refreshQuotesForCodes(any(), eq(false))).thenReturn(Map.of("success", 1, "fail", 1));
 
         SyncJob result = runCloseBundle("exit 0\n");
 
         assertEquals("PARTIAL", result.getStatus());
         assertEquals(100, result.getProgressPct());
-        assertEquals(4, result.getDoneItems());
-        assertEquals(4, result.getTotalItems());
-        assertTrue(result.getMessage().contains("持仓行情刷新失败 11 项"), result::toString);
-        assertTrue(result.getLogTail().contains("[错误] 收盘后处理失败：用户 7 · 持仓行情：持仓行情刷新失败 11 项"),
+        assertEquals(3, result.getDoneItems());
+        assertEquals(3, result.getTotalItems());
+        assertTrue(result.getMessage().contains("共享行情刷新失败 1 项"), result::toString);
+        assertTrue(result.getLogTail().contains("[错误] 收盘后处理失败：共享行情：共享行情刷新失败 1 项"),
                 result::toString);
-        assertTrue(result.getLogTail().contains("阶段=自选日线完成"), result::toString);
-        verify(portfolioService).refreshQuotesAll(false);
+        assertTrue(result.getLogTail().contains("阶段=用户 7 · 组合快照完成"), result::toString);
+        verify(myHoldingService).refreshQuotesForCodes(List.of("600000", "600001"), false);
         verify(portfolioService).snapshotAll();
-        verify(barDailyService).syncStaleWatchlist("我的自选", 80);
+        verify(barDailyService).syncStaleCodes(List.of("600000", "600001"));
+        verify(myHoldingService, never()).refreshQuotes(false);
+        verify(portfolioService, never()).refreshQuotesAll(false);
+    }
+
+    @Test
+    void closeBundleDeduplicatesSharedMarketWorkAcrossUsers() throws Exception {
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(1L, 2L));
+        when(watchlistService.listWatchlistCodes("我的自选")).thenAnswer(invocation ->
+                Objects.equals(userContext.currentUserId(), 1L)
+                        ? List.of("600000", "600001") : List.of("600001", "600002"));
+        when(myHoldingService.listHoldingCodes()).thenAnswer(invocation ->
+                Objects.equals(userContext.currentUserId(), 1L)
+                        ? List.of("600003") : List.of("600003", "600004"));
+        when(portfolioService.listActiveHoldingCodes()).thenAnswer(invocation ->
+                Objects.equals(userContext.currentUserId(), 1L)
+                        ? List.of("600003", "600005") : List.of("600004", "600006"));
+
+        SyncJob result = runCloseBundle("exit 0\n");
+
+        assertEquals("SUCCESS", result.getStatus());
+        verify(myHoldingService).refreshQuotesForCodes(
+                List.of("600000", "600001", "600003", "600005", "600002", "600004", "600006"), false);
+        verify(barDailyService).syncStaleCodes(
+                List.of("600000", "600001", "600003", "600002", "600004"));
+        verify(portfolioService, org.mockito.Mockito.times(2)).snapshotAll();
+        verify(myHoldingService, never()).refreshQuotes(false);
+        verify(portfolioService, never()).refreshQuotesAll(false);
+        verify(barDailyService, never()).syncStaleWatchlist(any(), any());
     }
 
     @Test
@@ -260,33 +292,33 @@ class DataSyncJobServiceExecutionTest {
 
     @Test
     void cancellingPostProcessingStopsRemainingUserStages() throws Exception {
-        CountDownLatch watchlistStarted = new CountDownLatch(1);
-        CountDownLatch releaseWatchlist = new CountDownLatch(1);
+        CountDownLatch sharedQuoteStarted = new CountDownLatch(1);
+        CountDownLatch releaseSharedQuote = new CountDownLatch(1);
         when(userAuthService.listEnabledUserIds()).thenReturn(List.of(7L));
-        when(watchlistService.refreshQuotes(eq("我的自选"), eq(80), eq(false))).thenAnswer(invocation -> {
-            watchlistStarted.countDown();
+        when(watchlistService.listWatchlistCodes("我的自选")).thenReturn(List.of("600000"));
+        when(myHoldingService.refreshQuotesForCodes(any(), eq(false))).thenAnswer(invocation -> {
+            sharedQuoteStarted.countDown();
             try {
-                releaseWatchlist.await(2, TimeUnit.SECONDS);
+                releaseSharedQuote.await(2, TimeUnit.SECONDS);
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 throw new BusinessException("后处理被中断");
             }
-            return Map.of("successCount", 1);
+            return Map.of("success", 1, "fail", 0);
         });
         Files.writeString(scriptDir.resolve("sync_close_bundle.py"), "exit 0\n");
         SyncStartReq request = new SyncStartReq();
         request.setTaskType("CLOSE_BUNDLE");
 
         SyncJobResp started = service.startSystemTask(request);
-        assertTrue(watchlistStarted.await(2, TimeUnit.SECONDS), () -> String.valueOf(savedJob.get()));
+        assertTrue(sharedQuoteStarted.await(2, TimeUnit.SECONDS), () -> String.valueOf(savedJob.get()));
         service.stop(started.getId());
-        releaseWatchlist.countDown();
+        releaseSharedQuote.countDown();
         SyncJob result = waitForTerminal();
 
         assertEquals("CANCELLED", result.getStatus());
-        verify(myHoldingService, never()).refreshQuotes(false);
-        verify(portfolioService, never()).refreshQuotesAll(false);
-        verify(barDailyService, never()).syncStaleWatchlist(any(), any());
+        verify(portfolioService, never()).snapshotAll();
+        verify(barDailyService, never()).syncStaleCodes(any());
     }
 
     @Test

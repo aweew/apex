@@ -4,11 +4,14 @@ import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BarSyncReq;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
+import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.mapper.DataSyncLogMapper;
+import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.DailyBarClient;
+import com.awe.apex.quant.market.TradingCalendar;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -19,16 +22,20 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,6 +45,7 @@ class BarDailyServiceImplTest {
     @BeforeAll
     static void initTableInfo() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), Watchlist.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), BarDaily.class);
     }
 
     @Test
@@ -118,6 +126,33 @@ class BarDailyServiceImplTest {
         assertEquals(0, response.getSuccessCount());
         assertEquals(4, response.getFailCount());
         assertTrue(response.getDetails().stream().allMatch(detail -> detail.endsWith("TIMEOUT")));
+    }
+
+    @Test
+    void syncStaleCodesShouldDeduplicateAndSkipFreshCodes() {
+        BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
+        DailyBarClient dailyBarClient = mock(DailyBarClient.class);
+        BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
+        LocalDate latestTradingDay = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
+        when(barDailyMapper.selectMaps(any())).thenReturn(List.of(Map.of(
+                "code", "600000",
+                "tradeDate", latestTradingDay.toString(),
+                "cnt", 100)));
+        when(dailyBarClient.fetchDailyBars(eq("600001"), anyString(), anyString())).thenReturn(List.of());
+        when(stockBasicMapper.selectOne(any())).thenReturn(null);
+        ReflectionTestUtils.setField(barDailyService, "baseMapper", barDailyMapper);
+        ReflectionTestUtils.setField(barDailyService, "dailyBarClient", dailyBarClient);
+        ReflectionTestUtils.setField(barDailyService, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(barDailyService, "dataSyncLogMapper", dataSyncLogMapper);
+        ReflectionTestUtils.setField(barDailyService, "syncTimeoutSeconds", 5);
+
+        BarSyncResp response = barDailyService.syncStaleCodes(List.of("600000", "600001", "600001"));
+
+        assertEquals(1, response.getSuccessCount());
+        verify(dailyBarClient).fetchDailyBars(eq("600001"), anyString(), anyString());
+        verify(dailyBarClient, never()).fetchDailyBars(eq("600000"), anyString(), anyString());
     }
 
     @Test

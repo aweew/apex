@@ -28,6 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -149,6 +150,17 @@ class DataSyncJobServiceOwnershipTest {
 
         verify(syncJobMapper, never()).updateById(any(SyncJob.class));
         verify(syncJobMapper, never()).update(any(SyncJob.class), any());
+    }
+
+    @Test
+    void reportsRunningTaskByType() {
+        when(syncJobMapper.selectOne(any())).thenReturn(SyncJob.builder()
+                .id(301L)
+                .taskType("CLOSE_BUNDLE")
+                .status("RUNNING")
+                .build());
+
+        assertTrue(service.isTaskRunning("CLOSE_BUNDLE"));
     }
 
     @Test
@@ -335,6 +347,44 @@ class DataSyncJobServiceOwnershipTest {
 
         assertTrue(allUsersFinished.await(2, TimeUnit.SECONDS));
         assertEquals(2, executionCount.get());
+    }
+
+    @Test
+    void userDecisionsUseBoundedParallelism() throws Exception {
+        ApexUserContext realUserContext = new ApexUserContext();
+        ReflectionTestUtils.setField(service, "userContext", realUserContext);
+        when(userAuthService.listEnabledUserIds()).thenReturn(java.util.List.of(1L, 2L, 3L, 4L));
+        AtomicInteger activeCount = new AtomicInteger();
+        AtomicInteger maxActiveCount = new AtomicInteger();
+        CountDownLatch firstTwoStarted = new CountDownLatch(2);
+        CountDownLatch releaseDecisions = new CountDownLatch(1);
+        CountDownLatch allUsersFinished = new CountDownLatch(4);
+        CopyOnWriteArrayList<Long> observedUserIds = new CopyOnWriteArrayList<>();
+        when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class))).thenAnswer(invocation -> {
+            int currentActive = activeCount.incrementAndGet();
+            maxActiveCount.accumulateAndGet(currentActive, Math::max);
+            observedUserIds.add(realUserContext.currentUserId());
+            firstTwoStarted.countDown();
+            try {
+                assertTrue(releaseDecisions.await(2, TimeUnit.SECONDS));
+                return DecisionTodayResp.builder()
+                        .runNo("RUN-" + realUserContext.currentUserId())
+                        .buyCount(0).sellCount(0).holdCount(0).message("完成").build();
+            } finally {
+                activeCount.decrementAndGet();
+                allUsersFinished.countDown();
+            }
+        });
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("DECISION");
+
+        service.startSystemTask(request);
+
+        assertTrue(firstTwoStarted.await(2, TimeUnit.SECONDS));
+        assertEquals(2, maxActiveCount.get());
+        releaseDecisions.countDown();
+        assertTrue(allUsersFinished.await(2, TimeUnit.SECONDS));
+        assertEquals(java.util.Set.of(1L, 2L, 3L, 4L), new java.util.HashSet<>(observedUserIds));
     }
 
     @Test

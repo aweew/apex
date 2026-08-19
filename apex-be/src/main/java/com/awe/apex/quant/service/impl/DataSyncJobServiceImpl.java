@@ -5,6 +5,7 @@ import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.context.ApexUserContext;
+import com.awe.apex.quant.domain.bo.UserDecisionResultBO;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
@@ -48,13 +49,17 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
@@ -79,6 +84,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private static final int LOG_MAX = 12000;
     private static final long ORPHAN_RECONCILE_GRACE_SECONDS = 300;
     private static final long SHARED_DECISION_KEY = 0L;
+    private static final int USER_DECISION_PARALLELISM = 2;
 
     @Resource
     private SyncJobMapper syncJobMapper;
@@ -295,6 +301,25 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         return runningDecisionJobs.containsKey(SHARED_DECISION_KEY);
     }
 
+    /**
+     * 判断指定类型的共享任务是否正在等待或运行。
+     *
+     * @param taskType 任务类型
+     * @return true=正在等待或运行
+     */
+    @Override
+    public boolean isTaskRunning(String taskType) {
+        if (StringUtils.isBlank(taskType)) {
+            return false;
+        }
+        SyncJob runningJob = syncJobMapper.selectOne(Wrappers.<SyncJob>lambdaQuery()
+                .eq(SyncJob::getTaskType, taskType.trim().toUpperCase(Locale.ROOT))
+                .in(SyncJob::getStatus, List.of("PENDING", "RUNNING"))
+                .orderByDesc(SyncJob::getId)
+                .last("LIMIT 1"));
+        return Objects.nonNull(runningJob);
+    }
+
     private synchronized SyncJobResp startInternal(SyncStartReq req) {
         if (Objects.isNull(req) || StringUtils.isBlank(req.getTaskType())) {
             throw new BusinessException("请指定 taskType");
@@ -428,36 +453,66 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             int totalBuyCount = 0;
             int totalSellCount = 0;
             int totalHoldCount = 0;
-            for (int index = 0; index < userIds.size(); index++) {
-                if (cancelled.get()) {
-                    return;
-                }
-                Long userId = userIds.get(index);
+            if (userTotal > 0) {
+                ExecutorService decisionExecutor = Executors.newFixedThreadPool(
+                        Math.min(USER_DECISION_PARALLELISM, userTotal), runnable -> {
+                    Thread thread = new Thread(runnable, "apex-user-decision");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+                CompletionService<UserDecisionResultBO> completionService =
+                        new ExecutorCompletionService<>(decisionExecutor);
                 try {
-                    DecisionTodayResp response = userContext.runAsUser(userId,
-                            () -> decisionService.run(request, (completed, total, message) -> {
-                                if (!cancelled.get()) {
-                                    job.setMessage(clip("正在生成用户决策，用户编号=" + userId + "，" + message, 400));
-                                }
-                            }));
-                    successCount++;
-                    totalBuyCount += Objects.nonNull(response.getBuyCount()) ? response.getBuyCount() : 0;
-                    totalSellCount += Objects.nonNull(response.getSellCount()) ? response.getSellCount() : 0;
-                    totalHoldCount += Objects.nonNull(response.getHoldCount()) ? response.getHoldCount() : 0;
-                    appendLog(job, "[用户决策] 用户编号=" + userId + "，运行编号=" + response.getRunNo()
-                            + "，状态=成功\n");
-                } catch (Exception ex) {
-                    failureCount++;
-                    appendLog(job, "[用户决策] 用户编号=" + userId + "，状态=失败，原因="
-                            + clip(StringUtils.isNotBlank(ex.getMessage()) ? ex.getMessage() : ex.toString(), 300) + "\n");
-                    log.warn("用户智能决策投影失败，任务编号={}，用户编号={}，异常={}", jobId, userId, ex.toString());
+                    for (Long userId : userIds) {
+                        completionService.submit(() -> {
+                            try {
+                                DecisionTodayResp response = userContext.runAsUser(userId,
+                                        () -> decisionService.run(request, (completed, total, message) -> { }));
+                                return UserDecisionResultBO.builder()
+                                        .userId(userId)
+                                        .success(true)
+                                        .response(response)
+                                        .build();
+                            } catch (Exception ex) {
+                                return UserDecisionResultBO.builder()
+                                        .userId(userId)
+                                        .success(false)
+                                        .errorMessage(StringUtils.isNotBlank(ex.getMessage())
+                                                ? ex.getMessage() : ex.toString())
+                                        .build();
+                            }
+                        });
+                    }
+
+                    for (int completedUsers = 1; completedUsers <= userTotal; completedUsers++) {
+                        if (cancelled.get()) {
+                            return;
+                        }
+                        UserDecisionResultBO userResult = completionService.take().get();
+                        if (Boolean.TRUE.equals(userResult.getSuccess())) {
+                            DecisionTodayResp response = userResult.getResponse();
+                            successCount++;
+                            totalBuyCount += Objects.nonNull(response.getBuyCount()) ? response.getBuyCount() : 0;
+                            totalSellCount += Objects.nonNull(response.getSellCount()) ? response.getSellCount() : 0;
+                            totalHoldCount += Objects.nonNull(response.getHoldCount()) ? response.getHoldCount() : 0;
+                            appendLog(job, "[用户决策] 用户编号=" + userResult.getUserId()
+                                    + "，运行编号=" + response.getRunNo() + "，状态=成功\n");
+                        } else {
+                            failureCount++;
+                            appendLog(job, "[用户决策] 用户编号=" + userResult.getUserId() + "，状态=失败，原因="
+                                    + clip(userResult.getErrorMessage(), 300) + "\n");
+                            log.warn("用户智能决策投影失败，任务编号={}，用户编号={}，异常={}",
+                                    jobId, userResult.getUserId(), userResult.getErrorMessage());
+                        }
+                        job.setProgressPct(70 + completedUsers * 29 / userTotal);
+                        job.setDoneItems(completedUsers);
+                        job.setTotalItems(userTotal);
+                        job.setMessage("正在生成用户决策 " + completedUsers + "/" + userTotal);
+                        syncJobMapper.updateById(job);
+                    }
+                } finally {
+                    decisionExecutor.shutdownNow();
                 }
-                int completedUsers = index + 1;
-                job.setProgressPct(userTotal > 0 ? 70 + completedUsers * 29 / userTotal : 99);
-                job.setDoneItems(completedUsers);
-                job.setTotalItems(userTotal);
-                job.setMessage("正在生成用户决策 " + completedUsers + "/" + userTotal);
-                syncJobMapper.updateById(job);
             }
 
             job.setStatus(failureCount > 0 ? "PARTIAL" : "SUCCESS");
@@ -855,14 +910,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
 
         String syncGroup = group;
-        int totalStages = userIds.size() * 4;
-        AtomicInteger completedStages = new AtomicInteger();
         List<String> failureMessages = new ArrayList<>();
-        for (Long userId : userIds) {
-            ensurePostProcessingActive(cancelled);
-            userContext.runAsUser(userId, () -> runCloseBundlePostProcessing(
-                    job, syncGroup, userId, cancelled, completedStages, totalStages, failureMessages));
-        }
+        runCloseBundlePostProcessing(job, syncGroup, userIds, cancelled, failureMessages);
         if (CollUtil.isNotEmpty(failureMessages)) {
             String failureSummary = "收盘后处理失败 " + failureMessages.size() + " 项："
                     + String.join("；", failureMessages);
@@ -897,99 +946,114 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
     }
 
-    private void runCloseBundlePostProcessing(SyncJob job, String group, Long userId, AtomicBoolean cancelled,
-                                              AtomicInteger completedStages, int totalStages,
-                                              List<String> failureMessages) {
-        persistPostProcessingStage(job, userId, "自选行情", completedStages.get(), totalStages, cancelled);
-        boolean watchlistSuccess = true;
-        try {
-            Map<String, Object> quoteResp = watchlistService.refreshQuotes(group, 80, false);
-            int failCount = resultCount(quoteResp, "failCount");
-            if (failCount > 0) {
-                throw new BusinessException("自选行情刷新失败 " + failCount + " 项");
+    private void runCloseBundlePostProcessing(SyncJob job, String group, List<Long> userIds,
+                                              AtomicBoolean cancelled, List<String> failureMessages) {
+        Set<String> quoteCodes = new LinkedHashSet<>();
+        Set<String> barCodes = new LinkedHashSet<>();
+
+        // 1. 只在用户上下文中收集代码，所有共享行情在用户循环外统一处理。
+        for (Long userId : userIds) {
+            ensurePostProcessingActive(cancelled);
+            try {
+                userContext.runAsUser(userId, () -> {
+                    List<String> watchlistCodes = watchlistService.listWatchlistCodes(group);
+                    List<String> holdingCodes = myHoldingService.listHoldingCodes();
+                    List<String> portfolioCodes = portfolioService.listActiveHoldingCodes();
+                    quoteCodes.addAll(watchlistCodes);
+                    quoteCodes.addAll(holdingCodes);
+                    quoteCodes.addAll(portfolioCodes);
+                    barCodes.addAll(watchlistCodes);
+                    barCodes.addAll(holdingCodes);
+                });
+            } catch (Exception ex) {
+                String failureMessage = "用户 " + userId + " · 代码收集：" + errorMessage(ex);
+                failureMessages.add(failureMessage);
+                appendLog(job, "[错误] 收盘后处理失败：" + failureMessage + "\n");
+                log.warn("收盘任务代码收集失败，用户编号={}，原因={}", userId, errorMessage(ex));
             }
-            log.info("收盘任务刷新自选行情完成，用户编号={}，成功数={}", userId, quoteResp.get("successCount"));
+        }
+        appendLog(job, "[收盘后处理] 代码汇总完成，行情去重数=" + quoteCodes.size()
+                + "，日线去重数=" + barCodes.size() + "\n");
+
+        int totalStages = userIds.size() + 2;
+        AtomicInteger completedStages = new AtomicInteger();
+
+        // 2. 共享行情只刷新一次，避免自选、持仓和组合重复请求相同证券。
+        persistPostProcessingStage(job, "共享行情", completedStages.get(), totalStages, cancelled);
+        boolean quoteSuccess = true;
+        long quoteStartedAt = System.currentTimeMillis();
+        try {
+            if (CollUtil.isNotEmpty(quoteCodes)) {
+                Map<String, Object> quoteResult = myHoldingService.refreshQuotesForCodes(
+                        new ArrayList<>(quoteCodes), false);
+                int failCount = resultCount(quoteResult, "fail");
+                if (failCount > 0) {
+                    throw new BusinessException("共享行情刷新失败 " + failCount + " 项");
+                }
+            }
+            log.info("收盘任务共享行情完成，证券数={}，耗时毫秒={}",
+                    quoteCodes.size(), System.currentTimeMillis() - quoteStartedAt);
         } catch (Exception ex) {
-            watchlistSuccess = false;
-            recordPostProcessingFailure(job, userId, "自选行情", ex, failureMessages,
+            quoteSuccess = false;
+            recordPostProcessingFailure(job, "共享行情", ex, failureMessages,
                     completedStages, totalStages, cancelled);
         }
-        if (watchlistSuccess) {
-            persistPostProcessingStage(job, userId, "自选行情完成",
-                    completedStages.incrementAndGet(), totalStages, cancelled);
+        if (quoteSuccess) {
+            persistPostProcessingStage(job, "共享行情完成", completedStages.incrementAndGet(), totalStages, cancelled);
         }
 
-        persistPostProcessingStage(job, userId, "持仓行情", completedStages.get(), totalStages, cancelled);
-        boolean holdingSuccess = true;
+        // 3. 日线按全体用户代码去重，只同步缺失或过期数据。
+        persistPostProcessingStage(job, "共享日线", completedStages.get(), totalStages, cancelled);
+        boolean barSuccess = true;
+        long barStartedAt = System.currentTimeMillis();
         try {
-            Map<String, Object> holdingResp = myHoldingService.refreshQuotes(false);
-            int failCount = resultCount(holdingResp, "fail") + resultCount(holdingResp, "barFail");
+            BarSyncResp barResponse = barDailyService.syncStaleCodes(new ArrayList<>(barCodes));
+            int failCount = Objects.nonNull(barResponse.getFailCount()) ? barResponse.getFailCount() : 0;
             if (failCount > 0) {
-                throw new BusinessException("持仓行情刷新失败 " + failCount + " 项");
+                throw new BusinessException("共享日线刷新失败 " + failCount + " 项");
             }
-            log.info("收盘任务刷新持仓行情完成，用户编号={}", userId);
+            log.info("收盘任务共享日线完成，证券数={}，成功数={}，耗时毫秒={}",
+                    barCodes.size(), barResponse.getSuccessCount(), System.currentTimeMillis() - barStartedAt);
         } catch (Exception ex) {
-            holdingSuccess = false;
-            recordPostProcessingFailure(job, userId, "持仓行情", ex, failureMessages,
+            barSuccess = false;
+            recordPostProcessingFailure(job, "共享日线", ex, failureMessages,
                     completedStages, totalStages, cancelled);
         }
-        if (holdingSuccess) {
-            persistPostProcessingStage(job, userId, "持仓行情完成",
-                    completedStages.incrementAndGet(), totalStages, cancelled);
+        if (barSuccess) {
+            persistPostProcessingStage(job, "共享日线完成", completedStages.incrementAndGet(), totalStages, cancelled);
         }
 
-        persistPostProcessingStage(job, userId, "组合行情与快照", completedStages.get(), totalStages, cancelled);
-        boolean portfolioSuccess = true;
-        try {
-            Map<String, Object> portfolioResp = portfolioService.refreshQuotesAll(false);
-            int failCount = resultCount(portfolioResp, "fail") + resultCount(portfolioResp, "barFail");
-            if (failCount > 0) {
-                throw new BusinessException("组合行情刷新失败 " + failCount + " 项");
+        // 4. 用户循环只生成组合快照，不再触发外部行情和日线请求。
+        for (Long userId : userIds) {
+            String stage = "用户 " + userId + " · 组合快照";
+            persistPostProcessingStage(job, stage, completedStages.get(), totalStages, cancelled);
+            boolean snapshotSuccess = true;
+            long snapshotStartedAt = System.currentTimeMillis();
+            try {
+                int snapshotCount = userContext.runAsUser(userId, portfolioService::snapshotAll);
+                log.info("收盘任务组合快照完成，用户编号={}，快照数={}，耗时毫秒={}",
+                        userId, snapshotCount, System.currentTimeMillis() - snapshotStartedAt);
+            } catch (Exception ex) {
+                snapshotSuccess = false;
+                recordPostProcessingFailure(job, stage, ex, failureMessages,
+                        completedStages, totalStages, cancelled);
             }
-            int snapshotCount = portfolioService.snapshotAll();
-            log.info("收盘任务刷新全部组合完成，用户编号={}，组合数={}，成功数={}，失败数={}，快照数={}",
-                    userId, portfolioResp.get("portfolioCount"), portfolioResp.get("success"),
-                    portfolioResp.get("fail"), snapshotCount);
-        } catch (Exception ex) {
-            portfolioSuccess = false;
-            recordPostProcessingFailure(job, userId, "组合行情与快照", ex, failureMessages,
-                    completedStages, totalStages, cancelled);
-        }
-        if (portfolioSuccess) {
-            persistPostProcessingStage(job, userId, "组合行情与快照完成",
-                    completedStages.incrementAndGet(), totalStages, cancelled);
-        }
-
-        persistPostProcessingStage(job, userId, "自选日线", completedStages.get(), totalStages, cancelled);
-        boolean watchlistBarSuccess = true;
-        try {
-            BarSyncResp barResp = barDailyService.syncStaleWatchlist(group, 80);
-            int failCount = Objects.nonNull(barResp.getFailCount()) ? barResp.getFailCount() : 0;
-            if (failCount > 0) {
-                throw new BusinessException("自选日线刷新失败 " + failCount + " 项");
+            if (snapshotSuccess) {
+                persistPostProcessingStage(job, stage + "完成",
+                        completedStages.incrementAndGet(), totalStages, cancelled);
             }
-            log.info("收盘任务刷新自选日线完成，用户编号={}，成功数={}，失败数={}",
-                    userId, barResp.getSuccessCount(), barResp.getFailCount());
-        } catch (Exception ex) {
-            watchlistBarSuccess = false;
-            recordPostProcessingFailure(job, userId, "自选日线", ex, failureMessages,
-                    completedStages, totalStages, cancelled);
-        }
-        if (watchlistBarSuccess) {
-            persistPostProcessingStage(job, userId, "自选日线完成",
-                    completedStages.incrementAndGet(), totalStages, cancelled);
         }
     }
 
-    private void persistPostProcessingStage(SyncJob job, Long userId, String stage, int completedStages,
+    private void persistPostProcessingStage(SyncJob job, String stage, int completedStages,
                                             int totalStages, AtomicBoolean cancelled) {
         ensurePostProcessingActive(cancelled);
         int progress = 90 + Math.min(9, completedStages * 9 / Math.max(totalStages, 1));
         job.setProgressPct(progress);
         job.setDoneItems(completedStages);
         job.setTotalItems(totalStages);
-        job.setMessage("收盘后处理：用户 " + userId + " · " + stage);
-        appendLog(job, "[收盘后处理] 用户编号=" + userId + "，阶段=" + stage + "，进度=" + progress + "%\n");
+        job.setMessage("收盘后处理：" + stage);
+        appendLog(job, "[收盘后处理] 阶段=" + stage + "，进度=" + progress + "%\n");
         syncJobMapper.updateById(job);
     }
 
@@ -999,14 +1063,14 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
     }
 
-    private void recordPostProcessingFailure(SyncJob job, Long userId, String stage, Exception ex,
+    private void recordPostProcessingFailure(SyncJob job, String stage, Exception ex,
                                              List<String> failureMessages, AtomicInteger completedStages,
                                              int totalStages, AtomicBoolean cancelled) {
-        String failureMessage = "用户 " + userId + " · " + stage + "：" + errorMessage(ex);
+        String failureMessage = stage + "：" + errorMessage(ex);
         failureMessages.add(failureMessage);
         appendLog(job, "[错误] 收盘后处理失败：" + failureMessage + "\n");
-        log.warn("收盘任务后处理失败，用户编号={}，阶段={}，原因={}", userId, stage, errorMessage(ex));
-        persistPostProcessingStage(job, userId, stage + "失败，继续后续任务",
+        log.warn("收盘任务后处理失败，阶段={}，原因={}", stage, errorMessage(ex));
+        persistPostProcessingStage(job, stage + "失败，继续后续任务",
                 completedStages.incrementAndGet(), totalStages, cancelled);
     }
 

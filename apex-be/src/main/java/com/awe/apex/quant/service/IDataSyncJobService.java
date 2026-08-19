@@ -51,6 +51,14 @@ public interface IDataSyncJobService {
     boolean isCurrentUserDecisionRunning();
 
     /**
+     * 判断指定类型的共享任务是否正在等待或运行。
+     *
+     * @param taskType 任务类型
+     * @return true=正在等待或运行
+     */
+    boolean isTaskRunning(String taskType);
+
+    /**
      * 查询任务
      *
      * @param jobId 任务 ID

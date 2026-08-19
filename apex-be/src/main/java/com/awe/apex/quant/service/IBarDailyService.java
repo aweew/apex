@@ -6,6 +6,8 @@ import com.awe.apex.quant.domain.dto.FillBarsResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.baomidou.mybatisplus.extension.service.IService;
 
+import java.util.List;
+
 /**
  * 日线服务
  */
@@ -37,6 +39,14 @@ public interface IBarDailyService extends IService<BarDaily> {
      * @return 同步结果
      */
     BarSyncResp syncStaleWatchlist(String groupName, Integer limit);
+
+    /**
+     * 同步指定代码中缺失或过期的日线，代码会全局去重并分批处理。
+     *
+     * @param codes 证券代码
+     * @return 同步结果
+     */
+    BarSyncResp syncStaleCodes(List<String> codes);
 
     /**
      * 多轮补齐自选缺失/过期日线

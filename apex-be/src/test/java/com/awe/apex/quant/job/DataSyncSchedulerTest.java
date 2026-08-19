@@ -9,6 +9,8 @@ import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
+import com.awe.apex.quant.service.IPortfolioService;
+import com.awe.apex.quant.service.IWatchlistService;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -98,6 +100,99 @@ class DataSyncSchedulerTest {
             assertEquals(List.of(11L, 22L), evaluatedUserIds);
             assertEquals(99L, userContext.currentUserId());
         }
+    }
+
+    @Test
+    void afternoonRefreshDeduplicatesQuotesAcrossUsersAndOnlySnapshotsPerUser() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        IWatchlistService watchlistService = mock(IWatchlistService.class);
+        IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
+        IPortfolioService portfolioService = mock(IPortfolioService.class);
+        ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+        ApexUserContext userContext = new ApexUserContext();
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(configService.getString("auto_sync_group", "我的自选")).thenReturn("我的自选");
+        when(dataSyncJobService.isTaskRunning("CLOSE_BUNDLE")).thenReturn(false);
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(11L, 22L));
+        when(watchlistService.listWatchlistCodes("我的自选")).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L
+                        ? List.of("600000", "000001") : List.of("000001", "300750"));
+        when(myHoldingService.listHoldingCodes()).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L ? List.of("600519") : List.of("600519", "000858"));
+        when(portfolioService.listActiveHoldingCodes()).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L ? List.of("600519") : List.of("000858", "002594"));
+        when(myHoldingService.refreshQuotesForCodes(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq(false))).thenReturn(Map.of("success", 7, "fail", 0));
+        when(portfolioService.snapshotAll()).thenReturn(1);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        ReflectionTestUtils.setField(scheduler, "watchlistService", watchlistService);
+        ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
+        ReflectionTestUtils.setField(scheduler, "portfolioService", portfolioService);
+        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
+        ReflectionTestUtils.setField(scheduler, "userContext", userContext);
+
+        scheduler.refreshQuotesAfternoon();
+
+        verify(myHoldingService).refreshQuotesForCodes(
+                List.of("600000", "000001", "600519", "300750", "000858", "002594"), false);
+        verify(portfolioService, org.mockito.Mockito.times(2)).snapshotAll();
+        verify(watchlistService, never()).refreshQuotes(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        verify(portfolioService, never()).refreshQuotesAll(false);
+    }
+
+    @Test
+    void afternoonRefreshSkipsWhenCloseBundleIsRunning() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.isTaskRunning("CLOSE_BUNDLE")).thenReturn(true);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
+
+        scheduler.refreshQuotesAfternoon();
+
+        verifyNoInteractions(userAuthService);
+    }
+
+    @Test
+    void afternoonRefreshStillSnapshotsWhenSharedQuoteRefreshFails() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        IWatchlistService watchlistService = mock(IWatchlistService.class);
+        IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
+        IPortfolioService portfolioService = mock(IPortfolioService.class);
+        ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+        ApexUserContext userContext = new ApexUserContext();
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(configService.getString("auto_sync_group", "我的自选")).thenReturn("我的自选");
+        when(dataSyncJobService.isTaskRunning("CLOSE_BUNDLE")).thenReturn(false);
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(11L));
+        when(watchlistService.listWatchlistCodes("我的自选")).thenReturn(List.of("600000"));
+        when(myHoldingService.listHoldingCodes()).thenReturn(List.of());
+        when(portfolioService.listActiveHoldingCodes()).thenReturn(List.of());
+        when(myHoldingService.refreshQuotesForCodes(List.of("600000"), false))
+                .thenThrow(new IllegalStateException("行情源不可用"));
+        when(portfolioService.snapshotAll()).thenReturn(1);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        ReflectionTestUtils.setField(scheduler, "watchlistService", watchlistService);
+        ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
+        ReflectionTestUtils.setField(scheduler, "portfolioService", portfolioService);
+        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
+        ReflectionTestUtils.setField(scheduler, "userContext", userContext);
+
+        scheduler.refreshQuotesAfternoon();
+
+        verify(portfolioService).snapshotAll();
     }
 
     @Test
