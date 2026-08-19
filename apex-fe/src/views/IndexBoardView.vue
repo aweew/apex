@@ -213,6 +213,14 @@ function sparkPath(closes) {
     .join(' ')
 }
 
+function openSectorConstituents(row, type) {
+  if (!row?.code) return
+  router.push({
+    path: '/sector',
+    query: { type, code: row.code },
+  })
+}
+
 async function load(forceBriefing = false, showLoading = true) {
   if (showLoading) loading.value = true
   try {
@@ -698,10 +706,12 @@ onBeforeUnmount(() => {
               <button type="button" class="link" @click="router.push('/sector')">更多</button>
             </div>
             <ul v-if="industryRows.length" class="rank-list">
-              <li v-for="(row, idx) in industryRows.slice(0, 8)" :key="row.code || row.name || idx">
-                <span class="rank" :class="{ top: idx < 3 }">{{ idx + 1 }}</span>
-                <span class="n">{{ row.name || row.industry || '--' }}</span>
-                <b :class="pctClass(row.pctChg ?? row.avgPctChg)">{{ fmtPct(row.pctChg ?? row.avgPctChg) }}</b>
+              <li v-for="(row, idx) in industryRows.slice(0, 8)" :key="row.code || row.name || idx" class="detail-row">
+                <button type="button" class="rank-row" @click="openSectorConstituents(row, 'INDUSTRY')">
+                  <span class="rank" :class="{ top: idx < 3 }">{{ idx + 1 }}</span>
+                  <span class="n">{{ row.name || row.industry || '--' }}</span>
+                  <b :class="pctClass(row.pctChg ?? row.avgPctChg)">{{ fmtPct(row.pctChg ?? row.avgPctChg) }}</b>
+                </button>
               </li>
             </ul>
             <p v-else class="side-empty">暂无行业数据</p>
@@ -713,10 +723,12 @@ onBeforeUnmount(() => {
               <button type="button" class="link" @click="router.push({ path: '/sector', query: { type: 'CONCEPT' } })">更多</button>
             </div>
             <ul v-if="conceptRows.length" class="rank-list">
-              <li v-for="(row, idx) in conceptRows.slice(0, 8)" :key="row.code || row.name || idx">
-                <span class="rank" :class="{ top: idx < 3 }">{{ idx + 1 }}</span>
-                <span class="n">{{ row.name || '--' }}</span>
-                <b :class="pctClass(row.pctChg)">{{ fmtPct(row.pctChg) }}</b>
+              <li v-for="(row, idx) in conceptRows.slice(0, 8)" :key="row.code || row.name || idx" class="detail-row">
+                <button type="button" class="rank-row" @click="openSectorConstituents(row, 'CONCEPT')">
+                  <span class="rank" :class="{ top: idx < 3 }">{{ idx + 1 }}</span>
+                  <span class="n">{{ row.name || '--' }}</span>
+                  <b :class="pctClass(row.pctChg)">{{ fmtPct(row.pctChg) }}</b>
+                </button>
               </li>
             </ul>
             <p v-else class="side-empty">暂无概念数据</p>
@@ -1308,6 +1320,38 @@ onBeforeUnmount(() => {
 
 .rank-list li:last-child {
   border-bottom: 0;
+}
+
+.rank-list li.detail-row {
+  display: block;
+  padding: 0;
+}
+
+.rank-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  gap: 8px;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rank-row:hover .n {
+  color: #2563eb;
+}
+
+.rank-row:focus-visible {
+  border-radius: 4px;
+  outline: 3px solid rgba(37, 99, 235, 0.18);
+  outline-offset: 1px;
 }
 
 .rank-list li.clickable {

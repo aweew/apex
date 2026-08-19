@@ -58,11 +58,31 @@ test('market mainlines keep the signed percentage in one aligned value', () => {
   assert.match(indexSource, /\.theme-item\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto;/)
 })
 
+test('industry and concept rankings open the matching sector constituents', () => {
+  assert.match(
+    indexSource,
+    /class="rank-row"[\s\S]*?openSectorConstituents\(row, 'INDUSTRY'\)/,
+  )
+  assert.match(
+    indexSource,
+    /class="rank-row"[\s\S]*?openSectorConstituents\(row, 'CONCEPT'\)/,
+  )
+  assert.match(
+    indexSource,
+    /function openSectorConstituents\(row, type\)[\s\S]*?query:\s*\{ type, code: row\.code \}/,
+  )
+  assert.match(indexSource, /\.rank-row\s*\{[^}]*grid-template-columns:\s*22px minmax\(0, 1fr\) auto;[^}]*min-height:\s*44px;/)
+})
+
 test('embedded heatmap controls use balanced mobile rows', async () => {
   const heatmapSource = await readFile(new URL('./HeatmapView.vue', import.meta.url), 'utf8')
   assert.match(heatmapSource, /class="heatmap-type"/)
   assert.match(heatmapSource, /\.embed-head \.actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
   assert.match(heatmapSource, /\.embed-head \.heatmap-refresh\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/)
+  assert.match(
+    heatmapSource,
+    /\.embed-head \.heatmap-type :deep\(\.el-radio-button__inner\)\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*height:\s*40px;[^}]*line-height:\s*1;/,
+  )
 })
 
 test('embedded heatmap favors readable mobile blocks over clipped labels', async () => {

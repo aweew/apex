@@ -797,9 +797,14 @@ onBeforeUnmount(() => {
   }
 
   .embed-head .heatmap-type :deep(.el-radio-button__inner) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
+    height: 40px;
     min-height: 40px;
     padding: 0 6px;
+    line-height: 1;
   }
 
   .embed-head .heatmap-select {

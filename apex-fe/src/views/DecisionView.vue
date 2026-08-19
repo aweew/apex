@@ -1941,7 +1941,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 560px) {
   .more-collapse :deep(.el-collapse-item__header) {
-    align-items: flex-start;
+    align-items: center;
   }
 
   .collapse-heading {

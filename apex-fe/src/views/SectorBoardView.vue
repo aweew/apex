@@ -44,6 +44,7 @@ const drawerSortBy = ref('pctChg')
 const drawerOrder = ref('desc')
 const currentSector = ref(null)
 const constituents = ref(null)
+const pendingSectorCode = ref('')
 const viewportWidth = ref(window.innerWidth)
 const drawerActionColumnFixed = computed(() => resolveActionColumnFixed(viewportWidth.value))
 let constituentLoadSequence = 0
@@ -105,6 +106,7 @@ const items = computed(() => {
 function applyRouteQuery() {
   const q = String(route.query.q || '').trim()
   const type = String(route.query.type || '').toUpperCase()
+  pendingSectorCode.value = String(route.query.code || '').trim()
   if (TAB_META[type]) {
     activeTab.value = type
   }
@@ -205,6 +207,7 @@ async function load() {
     }
     await loadMainline(actualDate || undefined)
     await loadRotation()
+    await openRouteSector()
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
   } finally {
@@ -341,6 +344,23 @@ async function openConstituents(row) {
   }
 }
 
+async function openRouteSector() {
+  const sectorCode = pendingSectorCode.value
+  if (!sectorCode) return
+  const sector = board.value?.items?.find((row) => row.code === sectorCode)
+  pendingSectorCode.value = ''
+  if (sector) {
+    await openConstituents(sector)
+  }
+}
+
+function clearRouteSector() {
+  if (!route.query.code) return
+  const query = { ...route.query }
+  delete query.code
+  router.replace({ path: route.path, query })
+}
+
 async function onRefreshConstituents(showToast = true) {
   if (!currentSector.value?.code) return
   const sectorCode = currentSector.value.code
@@ -420,6 +440,19 @@ watch(
   () => {
     applyRouteQuery()
     load()
+  },
+)
+
+watch(
+  () => [route.query.type, route.query.code],
+  ([routeType, code]) => {
+    const type = String(routeType || '').toUpperCase()
+    pendingSectorCode.value = String(code || '').trim()
+    if (TAB_META[type] && activeTab.value !== type) {
+      activeTab.value = type
+      return
+    }
+    openRouteSector()
   },
 )
 
@@ -734,6 +767,7 @@ onBeforeUnmount(() => {
       size="520px"
       append-to-body
       destroy-on-close
+      @closed="clearRouteSector"
     >
       <div class="drawer-actions">
         <span class="muted">

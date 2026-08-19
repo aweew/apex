@@ -76,3 +76,21 @@ test('stale constituent requests cannot overwrite a newly opened sector', () => 
     /async function openConstituents\(row\)[\s\S]*?constituentLoadSequence \+= 1[\s\S]*?currentSector\.value = row/,
   )
 })
+
+test('sector route opens requested constituents once after the board loads', () => {
+  assert.match(sectorSource, /const pendingSectorCode = ref\(''\)/)
+  assert.match(
+    sectorSource,
+    /function applyRouteQuery\(\)[\s\S]*?pendingSectorCode\.value = String\(route\.query\.code \|\| ''\)\.trim\(\)/,
+  )
+  assert.match(
+    sectorSource,
+    /async function openRouteSector\(\)[\s\S]*?const sector = board\.value\?\.items\?\.find\(\(row\) => row\.code === sectorCode\)[\s\S]*?pendingSectorCode\.value = ''[\s\S]*?await openConstituents\(sector\)/,
+  )
+  assert.match(sectorSource, /await openRouteSector\(\)/)
+  assert.match(
+    sectorSource,
+    /route\.query\.type, route\.query\.code[\s\S]*?pendingSectorCode\.value = String\(code \|\| ''\)\.trim\(\)[\s\S]*?activeTab\.value = type[\s\S]*?return[\s\S]*?openRouteSector\(\)/,
+  )
+  assert.match(sectorSource, /@closed="clearRouteSector"/)
+})
