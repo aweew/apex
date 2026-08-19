@@ -69,6 +69,13 @@ test('mobile holding tables use one outer horizontal scroll layer', () => {
   }
 })
 
+test('desktop portfolio list and detail panels scroll independently', () => {
+  assert.match(portfolioSource, /@media \(min-width: 961px\) \{[\s\S]*?\.portfolio-page\s*\{[\s\S]*?height:\s*calc\(100dvh - var\(--portfolio-nav-height\)\);[\s\S]*?overflow:\s*hidden;/)
+  assert.match(portfolioSource, /@media \(min-width: 961px\) \{[\s\S]*?\.layout\s*\{[\s\S]*?flex:\s*1;[\s\S]*?min-height:\s*0;/)
+  assert.match(portfolioSource, /@media \(min-width: 961px\) \{[\s\S]*?\.side\s*\{[\s\S]*?overflow-y:\s*auto;/)
+  assert.match(portfolioSource, /@media \(min-width: 961px\) \{[\s\S]*?\.main\s*\{[\s\S]*?overflow-y:\s*auto;/)
+})
+
 test('mobile portfolio stock cells use a compact table-specific identity layout', () => {
   assert.match(portfolioSource, /security: isMobileViewport\.value \? 116 : 128/)
   assert.match(portfolioSource, /class="portfolio-stock-identity"/)

@@ -31,6 +31,13 @@ test('mobile sector controls keep touch targets at least 44 pixels tall', () => 
   assert.match(sectorSource, /\.mobile-order-toggle\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/)
 })
 
+test('mobile sector tabs keep three equal segments and a contained active surface', () => {
+  const mobileStyles = sectorSource.slice(sectorSource.indexOf('@media (max-width: 560px)'))
+  assert.match(mobileStyles, /\.tabs :deep\(\.el-tabs__nav\)\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);[\s\S]*?float:\s*none;/)
+  assert.match(mobileStyles, /\.tabs :deep\(\.el-tabs__item\)\s*\{[\s\S]*?width:\s*100%;/)
+  assert.match(mobileStyles, /\.tabs :deep\(\.el-tabs__item\.is-active\)\s*\{[\s\S]*?border-radius:\s*5px;[\s\S]*?background:\s*var\(--accent\);[\s\S]*?color:\s*#fff;/)
+})
+
 test('mobile mainline cards keep headings compact and summaries inside each card', () => {
   const compactStyles = sectorSource.slice(
     sectorSource.indexOf('@media (max-width: 900px)'),

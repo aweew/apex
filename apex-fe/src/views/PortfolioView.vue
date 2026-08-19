@@ -2510,6 +2510,39 @@ onBeforeUnmount(() => {
   margin-left: 5px;
   font-size: 12px;
 }
+
+@media (min-width: 961px) {
+  .portfolio-page {
+    --portfolio-nav-height: 56px;
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - var(--portfolio-nav-height));
+    overflow: hidden;
+  }
+
+  :global(.shell.dense) .portfolio-page {
+    --portfolio-nav-height: 48px;
+  }
+
+  .layout {
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .side {
+    position: static;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .main {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+}
+
 .layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);

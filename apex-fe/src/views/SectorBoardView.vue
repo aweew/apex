@@ -1571,23 +1571,26 @@ onBeforeUnmount(() => {
   }
 
   .tabs :deep(.el-tabs__nav) {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
+    float: none;
   }
 
   .tabs :deep(.el-tabs__item) {
-    flex: 1;
     min-width: 0;
+    width: 100%;
     height: 38px;
     padding: 0;
-    border-radius: 6px;
     color: var(--slate);
     transition: color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
   }
 
   .tabs :deep(.el-tabs__item.is-active) {
-    background: #fff;
-    color: var(--accent);
-    box-shadow: 0 1px 4px rgba(20, 32, 51, 0.1);
+    border-radius: 5px;
+    background: var(--accent);
+    color: #fff;
+    box-shadow: none;
   }
 
   .board-table {
