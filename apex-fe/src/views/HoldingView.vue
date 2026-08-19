@@ -868,13 +868,14 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-if="rows.length" class="holding-layout">
-      <el-table
-        class="holding-table"
-        :data="rows"
-        :default-sort="{ prop: 'positionWeight', order: 'descending' }"
-        size="small"
-        stripe
-      >
+      <div class="holding-table-scroll">
+        <el-table
+          class="holding-table"
+          :data="rows"
+          :default-sort="{ prop: 'positionWeight', order: 'descending' }"
+          size="small"
+          stripe
+        >
         <el-table-column
           prop="name"
           label="个股"
@@ -1055,7 +1056,8 @@ onBeforeUnmount(() => {
             </el-dropdown>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </div>
     </section>
 
     <el-dialog v-model="dialogVisible" :title="'编辑持仓'" width="480px">
@@ -1586,6 +1588,24 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
+  .holding-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .holding-table {
+    min-width: 2100px;
+  }
+
+  .holding-table :deep(.el-scrollbar__wrap) {
+    overflow-x: hidden;
+  }
+
   .theme-panel-body,
   .theme-panel-body.with-industry {
     grid-template-columns: 1fr;

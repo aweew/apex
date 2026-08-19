@@ -548,7 +548,7 @@ async function loadList(silent = false) {
   loading.value = true
   try {
     const res = await listPortfolios(includeArchived.value)
-    list.value = res?.data || []
+    list.value = [...(res?.data || [])].sort((left, right) => Number(right.isDefault) - Number(left.isDefault))
     selectedIds.value = selectedIds.value.filter((id) =>
       list.value.some((x) => Number(x.id) === Number(id)),
     )
@@ -1911,14 +1911,15 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-if="rows.length" class="holding-layout">
-          <el-table
-            ref="holdingTableRef"
-            class="holding-table"
-            :data="rows"
-            :default-sort="{ prop: 'positionWeight', order: 'descending' }"
-            size="small"
-            stripe
-          >
+          <div class="holding-table-scroll">
+            <el-table
+              ref="holdingTableRef"
+              class="holding-table"
+              :data="rows"
+              :default-sort="{ prop: 'positionWeight', order: 'descending' }"
+              size="small"
+              stripe
+            >
             <el-table-column
               prop="name"
               label="个股"
@@ -2173,7 +2174,8 @@ onBeforeUnmount(() => {
                 </el-dropdown>
               </template>
             </el-table-column>
-          </el-table>
+            </el-table>
+          </div>
         </section>
 
         <section v-show="dailyRows.length" class="daily-panel">
@@ -3485,6 +3487,7 @@ onBeforeUnmount(() => {
   border-right: 1px solid var(--line);
 }
 .holding-table :deep(.ops-column .cell) {
+  padding: 0 6px;
   white-space: nowrap;
 }
 .portfolio-row-actions-trigger {
@@ -3630,6 +3633,24 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 820px) {
+  .holding-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .holding-table {
+    min-width: 2140px;
+  }
+
+  .holding-table :deep(.el-scrollbar__wrap) {
+    overflow-x: hidden;
+  }
+
   .holding-table :deep(.el-table__body td.el-table__cell) {
     padding-top: 4px;
     padding-bottom: 4px;

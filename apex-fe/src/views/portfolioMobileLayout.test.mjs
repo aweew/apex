@@ -61,6 +61,14 @@ test('holding tables keep stock links blue and avoid fixed columns on mobile', (
   assert.match(holdingSource, /<StockIdentity :security="row" interactive compact/)
 })
 
+test('mobile holding tables use one outer horizontal scroll layer', () => {
+  for (const source of [portfolioSource, holdingSource]) {
+    assert.match(source, /class="holding-table-scroll"[\s\S]*?<el-table/)
+    assert.match(source, /\.holding-table-scroll\s*\{[\s\S]*?overflow-x:\s*auto;[\s\S]*?touch-action:\s*pan-x pan-y;/)
+    assert.match(source, /\.holding-table :deep\(\.el-scrollbar__wrap\)\s*\{[\s\S]*?overflow-x:\s*hidden;/)
+  }
+})
+
 test('mobile portfolio stock cells use a compact table-specific identity layout', () => {
   assert.match(portfolioSource, /security: isMobileViewport\.value \? 116 : 128/)
   assert.match(portfolioSource, /class="portfolio-stock-identity"/)
@@ -95,6 +103,7 @@ test('holding tables keep all actions inside one compact overflow menu', () => {
 test('portfolio holding actions use a compact arrowless menu with transaction priority', () => {
   assert.match(portfolioSource, /:show-arrow="false"/)
   assert.match(portfolioSource, /<el-icon><Operation \/><\/el-icon>/)
+  assert.match(portfolioSource, /\.holding-table :deep\(\.ops-column \.cell\)[\s\S]*?padding:\s*0 6px;/)
   assert.match(portfolioSource, /command="edit" :icon="EditPen" divided/)
   assert.match(portfolioSource, /min-width:\s*120px;/)
   assert.match(portfolioSource, /border-radius:\s*6px;/)
@@ -113,6 +122,13 @@ test('holding quantity headers reserve room for their sort indicator', () => {
 test('portfolio list holding summaries omit market badges', () => {
   const portfolioListTemplate = portfolioSource.slice(portfolioSource.indexOf('class="pf-card"'), portfolioSource.indexOf('class="side-rail"'))
   assert.doesNotMatch(portfolioListTemplate, /<SecurityMarketBadge :security="h"/)
+})
+
+test('current users default portfolio remains first in the list', () => {
+  assert.match(
+    portfolioSource,
+    /list\.value = \[\.\.\.\(res\?\.data \|\| \[\]\)\]\.sort\(\(left, right\) => Number\(right\.isDefault\) - Number\(left\.isDefault\)\)/,
+  )
 })
 
 test('mobile portfolio ordering uses direct up and down controls while desktop keeps drag sorting', () => {
