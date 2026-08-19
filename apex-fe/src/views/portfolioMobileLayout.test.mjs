@@ -34,6 +34,24 @@ test('opening mobile detail redraws charts after their containers mount', () => 
   assert.match(portfolioSource, /chart\.getDom\(\) !== chartRef\.value/)
 })
 
+test('portfolio theme pie keeps theme names beside the chart instead of a separate row', () => {
+  assert.match(portfolioSource, /const pieOpt = \(dist, colors, options = \{\}\) =>/)
+  assert.match(
+    portfolioSource,
+    /legend:\s*\{[\s\S]*?show:\s*showLegend[\s\S]*?orient:\s*'vertical'[\s\S]*?left:\s*'55%'/,
+  )
+  assert.match(portfolioSource, /center:\s*showLegend \? \['27%', '50%'\] : \['50%', '50%'\]/)
+  assert.match(portfolioSource, /data:\s*dist\.map\(\(x, i\) => \(\{[\s\S]*?name:\s*x\.name/)
+  assert.match(portfolioSource, /pieOpt\(pieData, colors, \{ showLegend: true \}\)/)
+
+  const themePanelTemplate = portfolioSource.slice(
+    portfolioSource.indexOf('<section v-if="rows.length" class="theme-panel">'),
+    portfolioSource.indexOf('<section v-if="rows.length" class="holding-layout">'),
+  )
+  assert.match(themePanelTemplate, /class="pie-wrap pie-wrap--theme"/)
+  assert.doesNotMatch(themePanelTemplate, /class="theme-bars"/)
+})
+
 test('mobile portfolio detail starts at the document top after selection', () => {
   assert.match(
     portfolioSource,

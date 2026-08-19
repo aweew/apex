@@ -2,8 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { ElMessage } from 'element-plus'
-import { EditPen, Minus, MoreFilled, Plus, View } from '@element-plus/icons-vue'
+import { ElMessage, ElNotification } from 'element-plus'
+import { EditPen, Minus, MoreFilled, Plus, View, WarningFilled } from '@element-plus/icons-vue'
 import { listHoldings, refreshHoldingQuotes, saveHolding, tradeHolding } from '../api/holding'
 import { saveObserve } from '../api/observe'
 import {
@@ -18,6 +18,11 @@ import {
   shareFilename,
 } from '../utils/shareCapture.js'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
+import {
+  HOLDING_ALERT_TYPE,
+  detectHoldingRiskAlert,
+  summarizeHoldingRiskAlerts,
+} from '../utils/holdingRiskAlert.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import HoldingTradeDialog from '../components/HoldingTradeDialog.vue'
 
@@ -140,6 +145,8 @@ const hasTodayPnl = computed(() =>
 const totalMv = computed(() =>
   rows.value.reduce((sum, r) => sum + (Number(r.marketValue) || 0), 0),
 )
+const riskAlertSummary = computed(() => summarizeHoldingRiskAlerts(rows.value))
+const announcedRiskAlerts = new Set()
 /** 组合今日涨跌幅% = 今日盈亏 / 昨收市值 */
 const totalTodayPct = computed(() => {
   if (!hasTodayPnl.value) return null
@@ -181,6 +188,45 @@ function fmtPrice(v) {
   return Number(v).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 3,
+  })
+}
+
+function holdingRiskAlert(row) {
+  return detectHoldingRiskAlert(row)
+}
+
+function holdingRowClass({ row }) {
+  const alert = holdingRiskAlert(row)
+  if (alert?.type === HOLDING_ALERT_TYPE.STOP_LOSS) return 'holding-risk-row holding-risk-row--stop'
+  if (alert?.type === HOLDING_ALERT_TYPE.TAKE_PROFIT) return 'holding-risk-row holding-risk-row--take'
+  return ''
+}
+
+function riskAlertKey(alert) {
+  return `${alert.code}:${alert.type}:${alert.triggerPrice}`
+}
+
+function notifyNewRiskAlerts() {
+  const newAlerts = riskAlertSummary.value.items.filter((alert) => !announcedRiskAlerts.has(riskAlertKey(alert)))
+  if (!newAlerts.length) return
+  for (const alert of newAlerts) announcedRiskAlerts.add(riskAlertKey(alert))
+
+  const hasStopLoss = newAlerts.some((alert) => alert.type === HOLDING_ALERT_TYPE.STOP_LOSS)
+  const message = newAlerts
+    .slice(0, 4)
+    .map((alert) => {
+      const securityName = alert.name || alert.code
+      const action = alert.type === HOLDING_ALERT_TYPE.STOP_LOSS ? '已触发止损' : '已触发止盈'
+      return `${securityName} ${action}`
+    })
+    .join('；')
+  const remaining = newAlerts.length > 4 ? `；另有 ${newAlerts.length - 4} 只` : ''
+  ElNotification({
+    title: '止盈止损提醒',
+    message: `${message}${remaining}。请核对行情后及时处理。`,
+    type: hasStopLoss ? 'error' : 'warning',
+    duration: 8000,
+    position: 'top-right',
   })
 }
 
@@ -358,6 +404,7 @@ async function load(opts = {}) {
   try {
     const res = await listHoldings()
     rows.value = res.data || []
+    notifyNewRiskAlerts()
     if (!silent) {
       ElMessage.success(`已加载 ${rows.value.length} 只持仓`)
     }
@@ -383,6 +430,7 @@ async function onRefreshQuotes(forceAll = true) {
   try {
     const res = await refreshHoldingQuotes(!forceAll)
     rows.value = res.data?.holdings || []
+    notifyNewRiskAlerts()
     const ok = Number(res.data?.success || 0)
     const fail = Number(res.data?.fail || 0)
     if (ok === 0 && fail === 0) {
@@ -806,6 +854,40 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <section
+      v-if="riskAlertSummary.total"
+      class="risk-alert-banner"
+      :class="{ 'has-stop-loss': riskAlertSummary.stopLossCount > 0 }"
+      role="alert"
+      aria-live="assertive"
+    >
+      <div class="risk-alert-icon" aria-hidden="true">
+        <el-icon><WarningFilled /></el-icon>
+      </div>
+      <div class="risk-alert-content">
+        <div class="risk-alert-heading">
+          <strong>{{ riskAlertSummary.total }} 只持仓已到达设定价位</strong>
+          <span v-if="riskAlertSummary.stopLossCount">止损 {{ riskAlertSummary.stopLossCount }} 只</span>
+          <span v-if="riskAlertSummary.takeProfitCount">止盈 {{ riskAlertSummary.takeProfitCount }} 只</span>
+        </div>
+        <p>按页面当前行情判断，请核对行情时间并及时处理；本提醒不会自动卖出。</p>
+        <div class="risk-alert-items">
+          <button
+            v-for="item in riskAlertSummary.items"
+            :key="riskAlertKey(item)"
+            type="button"
+            class="risk-alert-item"
+            :class="item.type === HOLDING_ALERT_TYPE.STOP_LOSS ? 'is-stop-loss' : 'is-take-profit'"
+            @click="router.push(`/stock/${item.code}`)"
+          >
+            <b>{{ item.name || item.code }}</b>
+            <span>{{ item.type === HOLDING_ALERT_TYPE.STOP_LOSS ? '触发止损' : '触发止盈' }}</span>
+            <small>现价 {{ fmtPrice(item.marketPrice) }} / 设定 {{ fmtPrice(item.triggerPrice) }}</small>
+          </button>
+        </div>
+      </div>
+    </section>
+
     <div v-if="!loading && !refreshing && !rows.length" class="page-empty">
       <h3>还没有持仓</h3>
       <p>录入后，智能决策会据此给出卖出 / 继续持有建议</p>
@@ -873,6 +955,7 @@ onBeforeUnmount(() => {
           class="holding-table"
           :data="rows"
           :default-sort="{ prop: 'positionWeight', order: 'descending' }"
+          :row-class-name="holdingRowClass"
           size="small"
           stripe
         >
@@ -1023,8 +1106,28 @@ onBeforeUnmount(() => {
             <span class="advice">{{ row.advice || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="stopLoss" label="止损" width="84" align="center" sortable />
-        <el-table-column prop="takeProfit" label="止盈" width="84" align="center" sortable />
+        <el-table-column prop="stopLoss" label="止损" width="104" align="center" sortable>
+          <template #default="{ row }">
+            <div
+              class="risk-price"
+              :class="{ 'is-triggered is-stop-loss': holdingRiskAlert(row)?.type === HOLDING_ALERT_TYPE.STOP_LOSS }"
+            >
+              <b>{{ fmtPrice(row.stopLoss) }}</b>
+              <small v-if="holdingRiskAlert(row)?.type === HOLDING_ALERT_TYPE.STOP_LOSS">已触发</small>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="takeProfit" label="止盈" width="104" align="center" sortable>
+          <template #default="{ row }">
+            <div
+              class="risk-price"
+              :class="{ 'is-triggered is-take-profit': holdingRiskAlert(row)?.type === HOLDING_ALERT_TYPE.TAKE_PROFIT }"
+            >
+              <b>{{ fmtPrice(row.takeProfit) }}</b>
+              <small v-if="holdingRiskAlert(row)?.type === HOLDING_ALERT_TYPE.TAKE_PROFIT">已触发</small>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="marketValue" label="市值" width="96" sortable>
           <template #default="{ row }">
             {{ row.marketValue != null ? fmtMoney(row.marketValue) : '-' }}
@@ -1140,6 +1243,152 @@ onBeforeUnmount(() => {
   margin-top: 14px;
   min-width: 0;
   max-width: 100%;
+}
+
+.risk-alert-banner {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  margin: 2px 0 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 149, 0, 0.34);
+  border-left: 4px solid #d97b00;
+  border-radius: 8px;
+  background: #fff8eb;
+  color: #724000;
+}
+
+.risk-alert-banner.has-stop-loss {
+  border-color: rgba(196, 61, 74, 0.34);
+  border-left-color: #c43d4a;
+  background: #fff1f2;
+  color: #812d37;
+}
+
+.risk-alert-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  font-size: 22px;
+}
+
+.risk-alert-content {
+  min-width: 0;
+}
+
+.risk-alert-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  line-height: 1.35;
+}
+
+.risk-alert-heading strong {
+  color: #5f2028;
+  font-size: 15px;
+}
+
+.risk-alert-heading span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.risk-alert-content > p {
+  margin: 3px 0 10px;
+  color: #6b4d51;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.risk-alert-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.risk-alert-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.78);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.risk-alert-item:hover,
+.risk-alert-item:focus-visible {
+  border-color: currentColor;
+  outline: none;
+}
+
+.risk-alert-item b,
+.risk-alert-item span {
+  white-space: nowrap;
+}
+
+.risk-alert-item span {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.risk-alert-item small {
+  color: #6b6465;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.risk-alert-item.is-stop-loss span {
+  color: #b42336;
+}
+
+.risk-alert-item.is-take-profit span {
+  color: #a15c00;
+}
+
+.risk-price {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  min-height: 34px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-price b {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.risk-price small {
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.1;
+}
+
+.risk-price.is-stop-loss {
+  border-color: rgba(196, 61, 74, 0.3);
+  background: #fff0f1;
+  color: #b42336;
+}
+
+.risk-price.is-take-profit {
+  border-color: rgba(217, 123, 0, 0.32);
+  background: #fff7e8;
+  color: #9a5700;
 }
 
 .today-pnl,
@@ -1534,6 +1783,22 @@ onBeforeUnmount(() => {
   border-right: 1px solid var(--line);
 }
 
+.holding-table :deep(.holding-risk-row--stop > td.el-table__cell) {
+  background: rgba(196, 61, 74, 0.055) !important;
+}
+
+.holding-table :deep(.holding-risk-row--take > td.el-table__cell) {
+  background: rgba(255, 149, 0, 0.06) !important;
+}
+
+.holding-table :deep(.holding-risk-row--stop > td.el-table__cell:first-child) {
+  box-shadow: inset 4px 0 0 #c43d4a;
+}
+
+.holding-table :deep(.holding-risk-row--take > td.el-table__cell:first-child) {
+  box-shadow: inset 4px 0 0 #d97b00;
+}
+
 .holding-table :deep(.ops-column .cell) {
   white-space: nowrap;
 }
@@ -1599,7 +1864,7 @@ onBeforeUnmount(() => {
   }
 
   .holding-table {
-    min-width: 2100px;
+    min-width: 2140px;
   }
 
   .holding-table :deep(.el-scrollbar__wrap) {
@@ -1615,6 +1880,28 @@ onBeforeUnmount(() => {
   }
   .theme-bar-mv {
     display: none;
+  }
+
+  .risk-alert-banner {
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .risk-alert-icon {
+    width: 28px;
+    height: 28px;
+    font-size: 19px;
+  }
+
+  .risk-alert-items {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .risk-alert-item {
+    width: 100%;
+    flex-wrap: wrap;
   }
 }
 

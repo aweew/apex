@@ -741,7 +741,13 @@ onBeforeUnmount(() => {
             <div v-if="buyAi?.stockNotes?.length" class="buy-ai-notes">
               <div v-for="n in buyAi.stockNotes" :key="n.code" class="note-row">
                 <StockIdentity :security="n" interactive compact @select="router.push(`/stock/${n.code}`)" />
-                <el-tag v-if="n.priority" size="small" effect="plain" :type="priorityType(n.priority)">
+                <el-tag
+                  v-if="n.priority"
+                  class="note-priority"
+                  size="small"
+                  effect="plain"
+                  :type="priorityType(n.priority)"
+                >
                   {{ n.priority }}
                 </el-tag>
                 <span class="note-text">{{ n.note || '-' }}</span>
@@ -785,6 +791,7 @@ onBeforeUnmount(() => {
           </div>
           <el-table
             v-else
+            class="decision-desktop-table"
             :data="filteredBuys"
             size="small"
             stripe
@@ -886,10 +893,83 @@ onBeforeUnmount(() => {
               </template>
             </el-table-column>
           </el-table>
+          <div
+            v-if="buys.length && filteredBuys.length"
+            class="decision-mobile-list decision-mobile-buy-list"
+            role="list"
+          >
+            <article
+              v-for="row in filteredBuys"
+              :key="`mobile-buy-${row.code}-${row.strategyId}`"
+              class="decision-mobile-item"
+              role="listitem"
+            >
+              <div class="decision-mobile-head">
+                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                <div class="decision-mobile-score">
+                  <span>评分</span>
+                  <ScoreBar :score="row.score" />
+                </div>
+              </div>
+              <div class="decision-mobile-meta">
+                <span>{{ strategyName(row.strategyId) }}</span>
+                <span>仓位 {{ fmtPct(row.suggestedWeight) }}</span>
+                <span v-if="row.strategies?.length">共振 {{ row.strategies.join('+') }}</span>
+                <el-tag
+                  v-if="row.entryGatePassed !== null && row.entryGatePassed !== undefined"
+                  size="small"
+                  :type="row.entryGatePassed ? 'success' : 'warning'"
+                  effect="plain"
+                >{{ row.entryGatePassed ? '通过' : '观察' }}</el-tag>
+              </div>
+              <div
+                v-if="row.mainlineMatch || row.valuationLabel || row.linkHint || row.riskFlags?.length"
+                class="decision-mobile-flags"
+              >
+                <el-tag v-if="row.mainlineMatch" size="small" type="warning" effect="plain">
+                  {{ row.mainlineName || '主线匹配' }}
+                </el-tag>
+                <el-button
+                  v-if="row.valuationLabel"
+                  link
+                  type="primary"
+                  @click="router.push({ path: `/stock/${row.code}`, query: { tab: 'valuation' } })"
+                >估值{{ row.valuationLabel }}</el-button>
+                <el-tag
+                  v-if="row.linkHint"
+                  size="small"
+                  effect="plain"
+                  :type="row.linkHint.includes('降权') ? 'danger' : 'success'"
+                >{{ row.linkHint }}</el-tag>
+                <el-tag
+                  v-for="(riskFlag, riskIndex) in (row.riskFlags || []).slice(0, 2)"
+                  :key="riskIndex"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                >{{ riskFlag }}</el-tag>
+              </div>
+              <p class="decision-mobile-reason">{{ row.reason || '暂无决策理由' }}</p>
+              <details v-if="row.reason || row.scoreExplain" class="decision-mobile-details">
+                <summary>完整依据</summary>
+                <p v-if="row.reason"><strong>理由</strong>{{ row.reason }}</p>
+                <p v-if="row.scoreExplain"><strong>评分</strong>{{ row.scoreExplain }}</p>
+              </details>
+              <div class="decision-mobile-actions">
+                <el-button type="primary" plain :loading="ordering" @click="onPaperOrder(row)">模拟买</el-button>
+                <el-button
+                  type="warning"
+                  plain
+                  @click="router.push({ path: '/observe', query: { code: row.code, name: row.name || '' } })"
+                >观察</el-button>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="buys.length" class="decision-mobile-empty">当前筛选下无买入标的</div>
         </el-tab-pane>
 
         <el-tab-pane :label="`建议卖出 (${sells.length})`" name="sells">
-          <el-table :data="sells" size="small" stripe empty-text="持仓暂无卖出建议">
+          <el-table class="decision-desktop-table" :data="sells" size="small" stripe empty-text="持仓暂无卖出建议">
             <el-table-column prop="name" label="股票" width="136" fixed>
               <template #default="{ row }">
                 <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
@@ -925,10 +1005,40 @@ onBeforeUnmount(() => {
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="sells.length" class="decision-mobile-list decision-mobile-sell-list" role="list">
+            <article
+              v-for="row in sells"
+              :key="`mobile-sell-${row.code}-${row.strategyId}`"
+              class="decision-mobile-item"
+              role="listitem"
+            >
+              <div class="decision-mobile-head">
+                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                <div class="decision-mobile-score">
+                  <span>评分</span>
+                  <ScoreBar :score="row.score" />
+                </div>
+              </div>
+              <div class="decision-mobile-meta">
+                <span>{{ strategyName(row.strategyId) }}</span>
+                <span v-if="row.exitRule">触发 {{ row.exitRule }}</span>
+              </div>
+              <p class="decision-mobile-reason">{{ row.reason || '暂无卖出理由' }}</p>
+              <details v-if="row.reason || row.scoreExplain" class="decision-mobile-details">
+                <summary>完整依据</summary>
+                <p v-if="row.reason"><strong>理由</strong>{{ row.reason }}</p>
+                <p v-if="row.scoreExplain"><strong>评分</strong>{{ row.scoreExplain }}</p>
+              </details>
+              <div class="decision-mobile-actions decision-mobile-actions-single">
+                <el-button type="danger" plain :loading="ordering" @click="onPaperOrder(row)">模拟卖</el-button>
+              </div>
+            </article>
+          </div>
+          <div v-else class="decision-mobile-empty">持仓暂无卖出建议</div>
         </el-tab-pane>
 
         <el-tab-pane :label="`继续持有 (${holds.length})`" name="holds">
-          <el-table :data="holds" size="small" stripe empty-text="持仓为空，或均已有买卖建议">
+          <el-table class="decision-desktop-table" :data="holds" size="small" stripe empty-text="持仓为空，或均已有买卖建议">
             <el-table-column prop="name" label="股票" width="142">
               <template #default="{ row }">
                 <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
@@ -953,6 +1063,31 @@ onBeforeUnmount(() => {
               :show-overflow-tooltip="longTextTooltip"
             />
           </el-table>
+          <div v-if="holds.length" class="decision-mobile-list decision-mobile-hold-list" role="list">
+            <article
+              v-for="row in holds"
+              :key="`mobile-hold-${row.code}`"
+              class="decision-mobile-item"
+              role="listitem"
+            >
+              <div class="decision-mobile-head decision-mobile-hold-head">
+                <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                <el-tag size="small" type="info" effect="plain">持有</el-tag>
+              </div>
+              <p class="decision-mobile-reason decision-mobile-reason-full">{{ row.reason || '暂无持有理由' }}</p>
+              <dl class="decision-mobile-facts">
+                <div v-if="row.exitRule">
+                  <dt>止损/止盈</dt>
+                  <dd>{{ row.exitRule }}</dd>
+                </div>
+                <div v-if="row.fundNote">
+                  <dt>基本面</dt>
+                  <dd>{{ row.fundNote }}</dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+          <div v-else class="decision-mobile-empty">持仓为空，或均已有买卖建议</div>
         </el-tab-pane>
       </el-tabs>
     </section>
@@ -1477,6 +1612,11 @@ onBeforeUnmount(() => {
   background: rgba(0, 0, 0, 0.03);
 }
 
+.note-priority {
+  justify-self: start;
+  width: fit-content;
+}
+
 .note-name {
   color: var(--ink-soft);
   font-weight: 600;
@@ -1708,6 +1848,11 @@ onBeforeUnmount(() => {
 
 .tabs :deep(.el-tabs__header) {
   margin-bottom: 10px;
+}
+
+.decision-mobile-list,
+.decision-mobile-empty {
+  display: none;
 }
 
 .risk-tag {
@@ -2107,6 +2252,166 @@ onBeforeUnmount(() => {
     line-height: 1.35;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .decision-desktop-table {
+    display: none;
+  }
+
+  .decision-mobile-list {
+    display: block;
+    border-top: 1px solid var(--line);
+  }
+
+  .decision-mobile-empty {
+    display: block;
+    padding: 28px 12px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .decision-mobile-item {
+    padding: 12px 2px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .decision-mobile-item:last-child {
+    border-bottom: 0;
+  }
+
+  .decision-mobile-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 94px;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .decision-mobile-head :deep(.stock-identity) {
+    --stock-identity-width: 100%;
+  }
+
+  .decision-mobile-hold-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .decision-mobile-score {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+  }
+
+  .decision-mobile-score > span {
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .decision-mobile-score :deep(.score-bar) {
+    width: 94px;
+  }
+
+  .decision-mobile-meta,
+  .decision-mobile-flags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 10px;
+    margin-top: 8px;
+  }
+
+  .decision-mobile-meta {
+    color: var(--muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .decision-mobile-flags {
+    gap: 5px;
+  }
+
+  .decision-mobile-flags :deep(.el-button) {
+    min-height: 24px;
+    padding: 0 3px;
+  }
+
+  .decision-mobile-reason {
+    display: -webkit-box;
+    margin: 8px 0 0;
+    overflow: hidden;
+    color: var(--ink-soft);
+    font-size: 12px;
+    line-height: 1.5;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .decision-mobile-details {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .decision-mobile-details summary {
+    width: fit-content;
+    color: var(--accent);
+    cursor: pointer;
+  }
+
+  .decision-mobile-details p {
+    margin: 6px 0 0;
+    line-height: 1.5;
+  }
+
+  .decision-mobile-details strong {
+    margin-right: 6px;
+    color: var(--ink-soft);
+  }
+
+  .decision-mobile-reason-full {
+    display: block;
+    overflow: visible;
+  }
+
+  .decision-mobile-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .decision-mobile-actions-single {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-mobile-actions :deep(.el-button) {
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+  }
+
+  .decision-mobile-facts {
+    display: grid;
+    gap: 7px;
+    margin: 8px 0 0;
+  }
+
+  .decision-mobile-facts div {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .decision-mobile-facts dt {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .decision-mobile-facts dd {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 12px;
+    line-height: 1.45;
   }
 
   .metric-row {

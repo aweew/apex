@@ -485,7 +485,6 @@ const themeDist = computed(() => {
   return toDist(map)
 })
 
-const themeTagBar = computed(() => [...themeDist.value].slice(0, 12))
 const themeHitCount = computed(() => rows.value.filter((r) => !!displayTheme(r)).length)
 
 const DIST_PALETTE = [
@@ -825,28 +824,49 @@ watch([industryDist, themeDist], async () => {
 })
 
 function renderPies() {
-  const pieOpt = (dist, colors) => ({
-    tooltip: {
-      trigger: 'item',
-      formatter: (p) => `${p.name}<br/>${fmtMoney(p.value)} · ${(p.percent || 0).toFixed(1)}%`,
-    },
-    series: [
-      {
-        type: 'pie',
-        radius: ['46%', '72%'],
-        center: ['50%', '50%'],
-        itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
-        // 右侧已有题材条，饼图只作色块占比，去掉外标避免左上角叠字
-        label: { show: false },
-        labelLine: { show: false },
-        data: dist.map((x, i) => ({
-          name: isCoreTheme(x.name) ? themeMeta(x.name).short : x.name,
-          value: x.value,
-          itemStyle: { color: colors[i % colors.length] },
-        })),
+  const pieOpt = (dist, colors, options = {}) => {
+    const showLegend = options.showLegend === true
+    return {
+      tooltip: {
+        trigger: 'item',
+        formatter: (p) => `${p.name}<br/>${fmtMoney(p.value)} · ${(p.percent || 0).toFixed(1)}%`,
       },
-    ],
-  })
+      legend: {
+        show: showLegend,
+        orient: 'vertical',
+        left: '55%',
+        right: 8,
+        top: 'middle',
+        icon: 'circle',
+        itemWidth: 9,
+        itemHeight: 9,
+        itemGap: 12,
+        selectedMode: false,
+        textStyle: {
+          color: '#515154',
+          fontSize: 12,
+          width: 150,
+          overflow: 'truncate',
+        },
+        tooltip: { show: true },
+      },
+      series: [
+        {
+          type: 'pie',
+          radius: showLegend ? ['40%', '64%'] : ['46%', '72%'],
+          center: showLegend ? ['27%', '50%'] : ['50%', '50%'],
+          itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
+          label: { show: false },
+          labelLine: { show: false },
+          data: dist.map((x, i) => ({
+            name: x.name,
+            value: x.value,
+            itemStyle: { color: colors[i % colors.length] },
+          })),
+        },
+      ],
+    }
+  }
 
   if (showIndustry.value && industryPieRef.value && industryDist.value.length) {
     if (industryChart && industryChart.getDom() !== industryPieRef.value) {
@@ -873,7 +893,7 @@ function renderPies() {
     if (!themeChart) themeChart = echarts.init(themePieRef.value)
     const pieData = compactDist(themeDist.value)
     const colors = pieData.map((x, i) => distColor(x.name, i))
-    themeChart.setOption(pieOpt(pieData, colors), true)
+    themeChart.setOption(pieOpt(pieData, colors, { showLegend: true }), true)
   } else {
     themeChart?.clear()
   }
@@ -1857,36 +1877,10 @@ onBeforeUnmount(() => {
               <div v-if="industryDist.length" ref="industryPieRef" class="pie-chart" />
               <div v-else class="pie-empty">暂无市值</div>
             </div>
-            <div class="pie-wrap">
+            <div class="pie-wrap pie-wrap--theme">
               <div class="pie-caption">题材分布</div>
               <div v-if="themeDist.length" ref="themePieRef" class="pie-chart" />
               <div v-else class="pie-empty">暂无题材数据</div>
-            </div>
-            <div v-if="themeTagBar.length" class="theme-bars">
-              <div v-for="(item, idx) in themeTagBar" :key="item.name" class="theme-bar-row">
-                <span
-                  class="theme-chip"
-                  :title="item.name"
-                  :style="{
-                    color: isCoreTheme(item.name) ? themeMeta(item.name).color : '#515154',
-                    background: isCoreTheme(item.name) ? themeMeta(item.name).bg : 'rgba(0,0,0,.04)',
-                    borderColor: isCoreTheme(item.name) ? themeMeta(item.name).border : 'rgba(0,0,0,.08)',
-                  }"
-                >
-                  <span class="theme-chip-label">{{ themeMeta(item.name).short }}</span>
-                </span>
-                <div class="theme-bar-track">
-                  <i
-                    class="theme-bar-fill"
-                    :style="{
-                      width: `${Math.max(item.pct * 100, 2)}%`,
-                      background: distColor(item.name, idx),
-                    }"
-                  />
-                </div>
-                <span class="theme-bar-pct">{{ (item.pct * 100).toFixed(1) }}%</span>
-                <span v-if="!sharingCapture" class="theme-bar-mv muted">{{ fmtMoney(item.value) }}</span>
-              </div>
             </div>
           </div>
         </section>
@@ -3221,12 +3215,12 @@ onBeforeUnmount(() => {
 }
 .theme-panel-body {
   display: grid;
-  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px 20px;
   align-items: center;
 }
 .theme-panel-body.with-industry {
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(0, 1.1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .pie-wrap {
   min-width: 0;
@@ -3250,19 +3244,6 @@ onBeforeUnmount(() => {
   font-size: 13px;
   background: rgba(0, 0, 0, 0.02);
   border-radius: 10px;
-}
-.theme-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  padding: 4px 0;
-}
-.theme-bar-row {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) 48px 72px;
-  gap: 8px;
-  align-items: center;
 }
 .theme-chip {
   display: inline-flex;
@@ -3414,30 +3395,6 @@ onBeforeUnmount(() => {
   color: var(--ink-soft);
   line-height: 1.35;
 }
-.theme-bar-track {
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.04);
-  overflow: hidden;
-}
-.theme-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  opacity: 0.92;
-}
-.theme-bar-pct {
-  font-size: 12px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  color: var(--ink-soft);
-}
-.theme-bar-mv {
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
 .muted {
   font-size: 11px;
   color: var(--muted);
@@ -3588,12 +3545,6 @@ onBeforeUnmount(() => {
   .theme-panel-body,
   .theme-panel-body.with-industry {
     grid-template-columns: 1fr;
-  }
-  .theme-bar-row {
-    grid-template-columns: minmax(88px, 112px) minmax(0, 1fr) 48px;
-  }
-  .theme-bar-mv {
-    display: none;
   }
 }
 
