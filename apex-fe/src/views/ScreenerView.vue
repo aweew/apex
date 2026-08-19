@@ -1213,7 +1213,9 @@ onBeforeUnmount(() => {
                 <b>{{ strategy.name }}</b>
                 <small>{{ strategy.guide?.category || '系统模板' }}</small>
               </span>
-              <em>{{ strategy.runMode === 'CLOSE' ? '收盘' : '实时' }}</em>
+              <em :class="strategy.runMode === 'CLOSE' ? 'is-close' : 'is-realtime'">
+                {{ strategy.runMode === 'CLOSE' ? '收盘' : '实时' }}
+              </em>
             </button>
           </section>
           <section v-if="userStrategies.length" class="strategy-catalog-group">
@@ -1230,7 +1232,9 @@ onBeforeUnmount(() => {
                 <b>{{ strategy.name }}</b>
                 <small>{{ strategy.enabled ? '已启用' : '已停用' }}</small>
               </span>
-              <em>{{ strategy.runMode === 'CLOSE' ? '收盘' : '实时' }}</em>
+              <em :class="strategy.runMode === 'CLOSE' ? 'is-close' : 'is-realtime'">
+                {{ strategy.runMode === 'CLOSE' ? '收盘' : '实时' }}
+              </em>
             </button>
           </section>
         </nav>
@@ -1887,12 +1891,14 @@ onBeforeUnmount(() => {
 
 .strategy-catalog-group button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 38px;
   align-items: center;
+  gap: 10px;
   width: 100%;
-  min-height: 48px;
-  padding: 7px 9px 7px 11px;
+  min-height: 52px;
+  padding: 8px 9px 8px 11px;
   border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
   border-left: 3px solid transparent;
   border-radius: 0 5px 5px 0;
   background: transparent;
@@ -1901,6 +1907,10 @@ onBeforeUnmount(() => {
   text-align: left;
   cursor: pointer;
   transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.strategy-catalog-group button:last-child {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
 }
 
 .strategy-catalog-group button:hover {
@@ -1917,6 +1927,10 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--accent) 8%, var(--paper));
 }
 
+.strategy-catalog-group button.is-active b {
+  color: var(--ink);
+}
+
 .strategy-catalog-group button > span {
   display: grid;
   min-width: 0;
@@ -1928,6 +1942,7 @@ onBeforeUnmount(() => {
   color: var(--ink-soft);
   font-size: 13px;
   font-weight: 650;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1935,13 +1950,35 @@ onBeforeUnmount(() => {
 .strategy-catalog-group button small {
   color: var(--muted);
   font-size: 10px;
+  line-height: 1.35;
 }
 
 .strategy-catalog-group button em {
-  margin-left: 8px;
-  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
   font-size: 10px;
+  font-weight: 650;
   font-style: normal;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.strategy-catalog-group button em.is-realtime {
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--paper));
+  color: var(--accent);
+}
+
+.strategy-catalog-group button em.is-close {
+  border-color: color-mix(in srgb, #b66a16 22%, transparent);
+  background: color-mix(in srgb, #b66a16 7%, var(--paper));
+  color: #9a5b16;
 }
 
 .strategy-definition {

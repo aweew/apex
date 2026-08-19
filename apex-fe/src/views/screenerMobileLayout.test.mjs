@@ -81,6 +81,13 @@ test('desktop strategy workspace exposes all templates and practical explanation
   assert.match(screenerSource, /\.strategy-definition\s*\{[\s\S]*?max-width:\s*1160px;/)
 })
 
+test('desktop strategy catalog keeps rows scannable and distinguishes run modes', () => {
+  assert.match(screenerSource, /<em :class="strategy\.runMode === 'CLOSE' \? 'is-close' : 'is-realtime'">/)
+  assert.match(screenerSource, /\.strategy-catalog-group button\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 38px;[\s\S]*?min-height:\s*52px;[\s\S]*?border-top:/)
+  assert.match(screenerSource, /\.strategy-catalog-group button em\.is-realtime\s*\{[\s\S]*?color:\s*var\(--accent\);/)
+  assert.match(screenerSource, /\.strategy-catalog-group button em\.is-close\s*\{[\s\S]*?color:\s*#9a5b16;/)
+})
+
 test('strategy workspace collapses to one column on mobile', () => {
   assert.match(screenerSource, /\.strategy-workspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(220px, 280px\) minmax\(0, 1fr\);/)
   assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.strategy-workspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
