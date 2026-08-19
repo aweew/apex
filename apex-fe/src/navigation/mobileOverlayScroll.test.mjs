@@ -12,6 +12,9 @@ test('mobile navigation owns scrolling inside a dedicated drawer body', () => {
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?touch-action:\s*pan-y;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?-webkit-overflow-scrolling:\s*touch;/)
+  assert.match(appSource, /class="mobile-menu-scroll"[\s\S]*?<\/div>\s*<div class="mobile-menu-actions">/)
+  assert.match(appSource, /\.mobile-menu-actions\s*\{[\s\S]*?flex:\s*0 0 auto;/)
+  assert.match(appSource, /\.mobile-logout-btn\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/)
 })
 
 test('mobile search and glossary keep their content regions independently scrollable', () => {
