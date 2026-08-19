@@ -38,13 +38,17 @@ async function submit() {
 function showPasswordResetHelp() {
   ElMessage.info('请联系管理员重置账户密码')
 }
+
+function normalizePhone() {
+  form.phone = form.phone.replace(/\s/g, '')
+}
 </script>
 
 <template>
   <AuthShell title="登录你的研究账户" :description="`进入${BRAND.nameZh}量化研究平台`">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
         <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" inputmode="tel" autocomplete="username" placeholder="请输入手机号">
+          <el-input v-model="form.phone" inputmode="tel" autocomplete="username" placeholder="请输入手机号" @input="normalizePhone">
             <template #prefix><el-icon><Iphone /></el-icon></template>
           </el-input>
         </el-form-item>
