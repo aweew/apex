@@ -38,3 +38,14 @@ test('mobile sticky title keeps only the page name in the narrow navigation slot
   assert.match(appSource, /\? heading\.textContent\.trim\(\)/)
   assert.doesNotMatch(appSource, /\$\{heading\.textContent\.trim\(\)\} · \$\{module\.textContent\.trim\(\)\}/)
 })
+
+test('brand navigation replaces history and the dashboard never shows a back action', () => {
+  assert.match(
+    appSource,
+    /<RouterLink[\s\S]*?class="brand-block"[\s\S]*?to="\/dashboard"[\s\S]*?replace/,
+  )
+  assert.match(
+    appSource,
+    /function syncMobileBackTarget\(\)\s*\{[\s\S]*?route\.path === '\/dashboard'[\s\S]*?mobileBackPath\.value = ''[\s\S]*?mobileBackLabel\.value = ''[\s\S]*?return/,
+  )
+})

@@ -97,7 +97,7 @@ function resolveRouteLabel(pathname) {
 }
 
 function syncMobileBackTarget() {
-  if (window.innerWidth > 900) {
+  if (window.innerWidth > 900 || route.path === '/dashboard') {
     mobileBackPath.value = ''
     mobileBackLabel.value = ''
     return
@@ -424,6 +424,7 @@ onBeforeUnmount(() => {
       <RouterLink
         class="brand-block"
         to="/dashboard"
+        replace
         aria-label="返回首页"
         :title="`${BRAND.slogan} · 返回首页`"
         @click="setMobileMenu(false)"
