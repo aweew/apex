@@ -6,7 +6,7 @@ import { dashboardHome } from '../api/dashboard'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v15'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v16'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
@@ -34,6 +34,9 @@ function writeHomeCache(data) {
 const market = computed(() => home.value?.market || null)
 const command = computed(() => home.value?.command || null)
 const commandOperationItems = computed(() => (command.value?.operationGuide?.items || []).slice(0, 3))
+const hasExecutableNewPosition = computed(() => commandOperationItems.value.some(
+  (item) => item.code === 'BUY_CONDITIONALLY' && item.status === 'READY',
+))
 const morningBriefing = computed(() => home.value?.morningBriefing || null)
 const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
 const legacyIndexSymbols = new Set(['usIXIC', 'usDJI', 'usINX'])
@@ -579,7 +582,7 @@ onMounted(() => {
       <div class="command-grid">
         <div class="command-column command-summary">
           <div class="command-column-head">
-            <h4>盘前总结</h4>
+            <h4>今日重点</h4>
           </div>
           <p class="command-headline">{{ command.preMarketSummary?.headline || '盘前结论待生成' }}</p>
 
@@ -588,13 +591,13 @@ onMounted(() => {
             class="command-directions"
           >
             <div v-if="command.preMarketSummary?.opportunityItems?.length" class="command-direction opportunity">
-              <strong>机会</strong>
+              <strong>可买</strong>
               <span v-for="item in command.preMarketSummary.opportunityItems" :key="`${item.name}-${item.reason}`">
                 <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
               </span>
             </div>
             <div v-if="command.preMarketSummary?.riskItems?.length" class="command-direction risk">
-              <strong>风险</strong>
+              <strong>先处理</strong>
               <span v-for="item in command.preMarketSummary.riskItems" :key="`${item.name}-${item.reason}`">
                 <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
               </span>
@@ -602,7 +605,7 @@ onMounted(() => {
           </div>
 
           <div v-if="command.preMarketSummary?.watchConditions?.length" class="command-watch">
-            <span>观察条件</span>
+            <span>{{ command.status === 'READY' ? '取消条件' : '恢复条件' }}</span>
             <p v-for="item in command.preMarketSummary.watchConditions" :key="`${item.title}-${item.condition}`">
               <b>{{ item.title }}</b>{{ item.condition ? `：${item.condition}` : '' }}
             </p>
@@ -611,19 +614,25 @@ onMounted(() => {
 
         <div class="command-column command-guide">
           <div class="command-column-head">
-            <h4>今日操作指引</h4>
+            <h4>执行清单</h4>
           </div>
-          <p class="command-guide-summary">
+          <p v-if="!commandOperationItems.length" class="command-guide-summary">
             {{ command.operationGuide?.summary || command.operationGuide?.blockedReason || '今日操作指引待生成' }}
           </p>
-          <div v-if="command.operationGuide && command.status === 'READY'" class="command-position">
+          <div
+            v-if="command.operationGuide && command.status === 'READY' && hasExecutableNewPosition"
+            class="command-position"
+          >
             <span>
               目标仓位
               <b>{{ fmtPct(command.operationGuide.targetPositionMin, 0) }} - {{ fmtPct(command.operationGuide.targetPositionMax, 0) }}</b>
             </span>
             <span>新仓系数 <b>{{ fmtFactor(command.operationGuide.newPositionFactor) }}</b></span>
           </div>
-          <p v-if="command.operationGuide?.blockedReason" class="command-blocked-reason">
+          <p
+            v-if="command.operationGuide?.blockedReason && !commandOperationItems.length"
+            class="command-blocked-reason"
+          >
             {{ command.operationGuide.blockedReason }}
           </p>
           <div v-if="commandOperationItems.length" class="command-actions">
@@ -639,7 +648,7 @@ onMounted(() => {
                 <span class="command-action-title">
                   <b>{{ item.title }}</b>
                   <em>{{ operationStatusLabel(item.status) }}</em>
-                  <span v-if="item.targetCount != null" class="command-target-count">
+                  <span v-if="Number(item.targetCount) > 0" class="command-target-count">
                     {{ item.targetCount }} 项
                   </span>
                 </span>

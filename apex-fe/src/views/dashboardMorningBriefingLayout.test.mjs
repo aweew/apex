@@ -15,7 +15,7 @@ test('dashboard places overnight market and news before action panels', () => {
 })
 
 test('dashboard uses command headline with legacy advice fallback and a new cache version', () => {
-  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v15'/)
+  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v16'/)
   assert.match(dashboardSource, /const command\s*=\s*computed\(\(\)\s*=>\s*home\.value\?\.command\s*\|\|\s*null\)/)
   assert.match(
     dashboardSource,
@@ -41,6 +41,10 @@ test('dashboard places the command band after market effect and before pre-marke
 
 test('dashboard renders position controls and at most three command actions in backend order', () => {
   assert.match(dashboardSource, /command\.value\?\.operationGuide\?\.items[\s\S]{0,160}?\.slice\(0,\s*3\)/)
+  assert.match(
+    dashboardSource,
+    /const hasExecutableNewPosition\s*=\s*computed\([\s\S]{0,240}?BUY_CONDITIONALLY[\s\S]{0,120}?READY/,
+  )
   assert.match(dashboardSource, /v-for="item in commandOperationItems"/)
   assert.match(dashboardSource, /command\.operationGuide\.targetPositionMin/)
   assert.match(dashboardSource, /command\.operationGuide\.targetPositionMax/)
@@ -53,8 +57,18 @@ test('dashboard renders position controls and at most three command actions in b
   assert.match(dashboardSource, /REFRESH_DATA:\s*'\/sync'/)
   assert.match(dashboardSource, /code\s*===\s*'VIEW_CONTEXT'/)
   assert.match(dashboardSource, /getElementById\('pre-market-context'\)/)
-  assert.match(dashboardSource, /v-if="item\.targetCount != null"[^>]+class="command-target-count"/)
+  assert.match(dashboardSource, /v-if="Number\(item\.targetCount\) > 0"[^>]+class="command-target-count"/)
   assert.match(dashboardSource, /\{\{ item\.targetCount \}\}/)
+  assert.match(dashboardSource, /v-if="command\.operationGuide && command\.status === 'READY' && hasExecutableNewPosition"/)
+  assert.match(dashboardSource, /v-if="!commandOperationItems\.length" class="command-guide-summary"/)
+})
+
+test('dashboard labels focus and actions without filler wording', () => {
+  assert.match(dashboardSource, /<h4>今日重点<\/h4>/)
+  assert.match(dashboardSource, /<strong>可买<\/strong>/)
+  assert.match(dashboardSource, /<strong>先处理<\/strong>/)
+  assert.match(dashboardSource, /command\.status === 'READY' \? '取消条件' : '恢复条件'/)
+  assert.match(dashboardSource, /<h4>执行清单<\/h4>/)
 })
 
 test('dashboard omits repeated broad-market evidence from the pre-market summary', () => {

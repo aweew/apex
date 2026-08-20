@@ -165,29 +165,9 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 if (StringUtils.isBlank(itemName)) {
                     continue;
                 }
-                StringBuilder reason = new StringBuilder();
-                if (StringUtils.isNotBlank(buyItem.getMainlineName())) {
-                    reason.append("匹配").append(buyItem.getMainlineName().trim()).append("主线");
-                }
-                if (Objects.nonNull(buyItem.getScore())) {
-                    if (!reason.isEmpty()) {
-                        reason.append("，");
-                    }
-                    reason.append("评分 ")
-                            .append(buyItem.getScore().stripTrailingZeros().toPlainString());
-                }
-                if (Boolean.TRUE.equals(buyItem.getEntryGatePassed())) {
-                    if (!reason.isEmpty()) {
-                        reason.append("，");
-                    }
-                    reason.append("已通过开仓门禁");
-                }
-                if (reason.isEmpty()) {
-                    reason.append("当日决策标记为可执行");
-                }
                 opportunityItems.add(CommandDirectionItemResp.builder()
                         .name(itemName)
-                        .reason(reason.toString())
+                        .reason(buildBuyAdvice(buyItem))
                         .build());
                 if (opportunityItems.size() >= 2) {
                     break;
@@ -207,18 +187,9 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 if (StringUtils.isBlank(itemName)) {
                     continue;
                 }
-                String reason = "当日决策要求优先复核卖出";
-                if (StringUtils.isNotBlank(sellItem.getExitRule())) {
-                    reason = sellItem.getExitRule().trim();
-                } else if (CollUtil.isNotEmpty(sellItem.getRiskFlags())
-                        && StringUtils.isNotBlank(sellItem.getRiskFlags().get(0))) {
-                    reason = sellItem.getRiskFlags().get(0).trim();
-                } else if (StringUtils.isNotBlank(sellItem.getReason())) {
-                    reason = sellItem.getReason().trim();
-                }
                 riskItems.add(CommandDirectionItemResp.builder()
                         .name(itemName)
-                        .reason(reason)
+                        .reason(buildSellAdvice(sellItem))
                         .build());
                 if (riskItems.size() >= 2) {
                     break;
@@ -271,6 +242,11 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                     .title("等待生成")
                     .condition("新一轮决策完成并发布前，不执行旧候选")
                     .build());
+        } else if (DashboardCommandStatusEnum.PARTIAL.equals(status)) {
+            watchConditions.add(CommandWatchConditionResp.builder()
+                    .title("恢复执行")
+                    .condition("补齐盘前数据并重新生成 " + tradeDate + " 决策后再下单")
+                    .build());
         } else if (!decisionFresh) {
             watchConditions.add(CommandWatchConditionResp.builder()
                     .title("恢复新仓")
@@ -278,20 +254,23 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                             + expectedMarketDate + " 行情后，再处理可执行候选")
                     .build());
         } else if (executableCount > 0) {
+            String condition = "候选失去可执行标记或开仓门禁失效";
+            if (CollUtil.isNotEmpty(decision.getBuys())) {
+                for (DecisionItemResp buyItem : decision.getBuys()) {
+                    if (Objects.nonNull(buyItem)
+                            && Boolean.TRUE.equals(buyItem.getExecutableHint())
+                            && Objects.nonNull(buyItem.getStopLossPrice())) {
+                        String itemName = StringUtils.isNotBlank(buyItem.getName())
+                                ? buyItem.getName().trim() : buyItem.getCode();
+                        condition = itemName + "跌破止损价"
+                                + formatNumber(buyItem.getStopLossPrice()) + "，或开仓门禁失效";
+                        break;
+                    }
+                }
+            }
             watchConditions.add(CommandWatchConditionResp.builder()
-                    .title("买入门槛")
-                    .condition("仅执行仍标记为可执行且通过开仓门禁的候选")
-                    .build());
-        } else {
-            watchConditions.add(CommandWatchConditionResp.builder()
-                    .title("等待触发")
-                    .condition("当前可执行新仓候选为 0，不从普通买入项中临时挑选")
-                    .build());
-        }
-        if (decisionFresh && executableCount > 0) {
-            watchConditions.add(CommandWatchConditionResp.builder()
-                    .title("计划失效")
-                    .condition("候选失去可执行标记、开仓门禁失败或决策状态不再 READY 时取消对应新仓")
+                    .title("取消买入")
+                    .condition(condition)
                     .build());
         }
 
@@ -354,17 +333,30 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         int executableCount = Objects.nonNull(decision.getExecutableCount())
                 ? Math.max(0, decision.getExecutableCount()) : 0;
         if (sellCount > 0 && executableCount > 0) {
-            return "今日有 " + sellCount + " 个卖出项、" + executableCount
-                    + " 个可执行新仓候选；先处理卖出，再只看通过准入门禁的候选。";
+            DecisionItemResp firstSell = firstDecisionItem(decision.getSells(), false);
+            DecisionItemResp firstBuy = firstDecisionItem(decision.getBuys(), true);
+            if (Objects.nonNull(firstSell) && Objects.nonNull(firstBuy)) {
+                return "先" + buildNamedSellAction(firstSell)
+                        + "；新仓只做" + decisionItemName(firstBuy) + "。";
+            }
+            return "先处理" + sellCount + "项卖出/减仓；再执行"
+                    + executableCount + "个新仓。";
         }
         if (sellCount > 0) {
-            return "今日有 " + sellCount + " 个卖出项且无可执行新仓候选；先完成风险处置，不新增仓。";
+            String sellNames = joinDecisionItemNames(decision.getSells(), false, sellCount);
+            if (StringUtils.isNotBlank(sellNames)) {
+                return "先处理" + sellNames + "；今天不开新仓。";
+            }
+            return "先处理" + sellCount + "项卖出/减仓；今天不开新仓。";
         }
         if (executableCount > 0) {
-            return "当前无卖出项，有 " + executableCount
-                    + " 个可执行新仓候选；仅处理仍通过准入门禁的候选。";
+            String buyNames = joinDecisionItemNames(decision.getBuys(), true, executableCount);
+            if (StringUtils.isNotBlank(buyNames)) {
+                return "新仓只做" + buyNames + "，按建议仓位并严格止损。";
+            }
+            return "执行" + executableCount + "个新仓候选，按建议仓位和止损价下单。";
         }
-        return "当前没有卖出项和可执行新仓候选；今日不新增仓，等待新的触发信号。";
+        return "今天无买卖动作，保持现仓。";
     }
 
     private TodayOperationGuideResp buildOperationGuide(DashboardCommandContextBO context,
@@ -402,14 +394,25 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         OperationGuideItemResp riskItem = buildRiskItem(decision, tradeDate,
                 expectedMarketDate, freshTriggeredCount);
         OperationGuideItemResp buyItem = buildBuyItem(decision, tradeDate,
-                expectedMarketDate, phase, status, newPositionFactor);
+                expectedMarketDate, phase, status);
         List<OperationGuideItemResp> items = new ArrayList<>();
-        items.add(riskItem);
-        items.add(buyItem);
         if (DashboardCommandStatusEnum.BLOCKED.equals(status)
-                || DashboardCommandStatusEnum.STALE.equals(status)
-                || isDecisionGeneratedForTradeDate(decision, tradeDate)) {
-            items.add(buildInvalidationItem(status));
+                || DashboardCommandStatusEnum.STALE.equals(status)) {
+            items.add(buildInvalidationItem());
+        } else if (DashboardCommandStatusEnum.GENERATING.equals(status)
+                || DashboardCommandStatusEnum.PARTIAL.equals(status)
+                || !isDecisionFresh(decision, tradeDate, expectedMarketDate)) {
+            items.add(buyItem);
+        } else {
+            if (OperationGuideStatusEnum.REQUIRED.getCode().equals(riskItem.getStatus())) {
+                items.add(riskItem);
+            }
+            if (OperationGuideStatusEnum.READY.getCode().equals(buyItem.getStatus())) {
+                items.add(buyItem);
+            }
+        }
+        for (int index = 0; index < items.size(); index++) {
+            items.get(index).setPriority(index + 1);
         }
 
         String blockedReason = null;
@@ -425,20 +428,26 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             summary = "市场或晨报日期已过期，新增仓保持禁用；刷新后重新生成目标交易日决策。";
         } else if (DashboardCommandStatusEnum.GENERATING.equals(status)) {
             summary = "新一轮决策正在生成，完成并发布前不执行旧候选。";
+        } else if (DashboardCommandStatusEnum.PARTIAL.equals(status)) {
+            summary = "盘前数据不完整，补齐并重算决策后再下单。";
+        } else if (OperationGuideStatusEnum.REQUIRED.getCode().equals(riskItem.getStatus())
+                && OperationGuideStatusEnum.READY.getCode().equals(buyItem.getStatus())) {
+            summary = "先处理" + buildRiskSummary(decision, freshTriggeredCount) + "，再执行"
+                    + buyItem.getTargetCount() + "个新仓。";
         } else if (OperationGuideStatusEnum.REQUIRED.getCode().equals(riskItem.getStatus())) {
-            summary = "先处理 " + riskItem.getTargetCount() + " 项风险动作，再检查条件新仓。";
+            summary = "先处理" + buildRiskSummary(decision, freshTriggeredCount)
+                    + "；今天不开新仓。";
         } else if (OperationGuideStatusEnum.READY.getCode().equals(buyItem.getStatus())) {
-            summary = "当前无优先风险动作，可按条件处理 "
-                    + buyItem.getTargetCount() + " 个新仓候选。";
+            summary = "执行" + buyItem.getTargetCount() + "个新仓候选，按建议仓位和止损价下单。";
         } else if (!isDecisionGeneratedForTradeDate(decision, tradeDate)) {
-            summary = "目标交易日决策尚未生成；生成后先复核持仓风险，再处理新仓候选。";
+            summary = "生成" + tradeDate + "决策后再下单。";
         } else if (!isDecisionFresh(decision, tradeDate, expectedMarketDate)) {
             summary = Objects.isNull(decision.getDataAsOf())
                     ? "决策数据截止日缺失，重新生成前不执行当前清单。"
                     : "决策基于 " + decision.getDataAsOf() + " 行情，未覆盖 "
                     + expectedMarketDate + "；重新生成前不执行当前清单。";
         } else {
-            summary = "今日可执行新仓候选为 0，不从普通候选中临时挑选。";
+            summary = "今天无买卖动作，保持现仓。";
         }
         return TodayOperationGuideResp.builder()
                 .summary(summary)
@@ -480,7 +489,41 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         }
         String actionText = "等待新决策确认持仓风险";
         if (OperationGuideStatusEnum.REQUIRED.equals(status)) {
-            actionText = "优先处理卖出、止损和已触发观察项";
+            List<String> actions = new ArrayList<>();
+            List<String> conditions = new ArrayList<>();
+            if (decisionFresh && CollUtil.isNotEmpty(decision.getSells())) {
+                for (DecisionItemResp sellItem : decision.getSells()) {
+                    if (Objects.isNull(sellItem)) {
+                        continue;
+                    }
+                    String itemName = decisionItemName(sellItem);
+                    if (StringUtils.isBlank(itemName)) {
+                        continue;
+                    }
+                    if (actions.size() < 2) {
+                        actions.add(buildNamedSellAction(sellItem));
+                    }
+                    if (conditions.size() < 2 && StringUtils.isNotBlank(sellItem.getExitRule())) {
+                        conditions.add(itemName + "：" + sellItem.getExitRule().trim());
+                    }
+                }
+            }
+            if (CollUtil.isNotEmpty(actions)) {
+                actionText = String.join("；", actions);
+                if (sellCount > actions.size()) {
+                    actionText += "；共" + sellCount + "项";
+                }
+            } else if (sellCount > 0) {
+                actionText = "执行" + sellCount + "项卖出/减仓";
+            } else {
+                actionText = "复核" + freshTriggeredCount + "个已触发观察项";
+            }
+            if (CollUtil.isNotEmpty(conditions)) {
+                conditionText = String.join("；", conditions);
+            }
+            if (freshTriggeredCount > 0 && sellCount > 0) {
+                actionText += "；复核" + freshTriggeredCount + "个已触发观察项";
+            }
         } else if (OperationGuideStatusEnum.DONE.equals(status)) {
             actionText = "当前无优先风险动作";
         }
@@ -488,7 +531,7 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 .priority(1)
                 .code(OperationGuideCodeEnum.RISK_FIRST.getCode())
                 .status(status.getCode())
-                .title("风险处置")
+                .title(sellCount > 0 ? "卖出/减仓" : "观察提醒")
                 .actionText(actionText)
                 .conditionText(conditionText)
                 .targetCount(targetCount)
@@ -496,12 +539,23 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 .build();
     }
 
+    private String buildRiskSummary(DecisionTodayResp decision, int freshTriggeredCount) {
+        int sellCount = Objects.nonNull(decision) && Objects.nonNull(decision.getSellCount())
+                ? Math.max(0, decision.getSellCount()) : 0;
+        if (sellCount > 0 && freshTriggeredCount > 0) {
+            return sellCount + "项卖出/减仓和" + freshTriggeredCount + "个观察提醒";
+        }
+        if (sellCount > 0) {
+            return sellCount + "项卖出/减仓";
+        }
+        return freshTriggeredCount + "个观察提醒";
+    }
+
     private OperationGuideItemResp buildBuyItem(DecisionTodayResp decision,
                                                 LocalDate tradeDate,
                                                 LocalDate expectedMarketDate,
                                                 DashboardCommandPhaseEnum phase,
-                                                DashboardCommandStatusEnum commandStatus,
-                                                BigDecimal newPositionFactor) {
+                                                DashboardCommandStatusEnum commandStatus) {
         int executableCount = Objects.nonNull(decision) && Objects.nonNull(decision.getExecutableCount())
                 ? Math.max(0, decision.getExecutableCount()) : 0;
         OperationGuideStatusEnum status;
@@ -513,6 +567,9 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         } else if (DashboardCommandStatusEnum.GENERATING.equals(commandStatus)) {
             status = OperationGuideStatusEnum.WAIT;
             conditionText = "新一轮决策正在生成，完成前不沿用旧候选";
+        } else if (DashboardCommandStatusEnum.PARTIAL.equals(commandStatus)) {
+            status = OperationGuideStatusEnum.WAIT;
+            conditionText = "盘前数据不完整，补齐并重新生成决策后再下单";
         } else if (DashboardCommandPhaseEnum.NON_TRADING_DAY.equals(phase)) {
             status = OperationGuideStatusEnum.WAIT;
             conditionText = "当前为非交易日，仅准备下个交易日计划";
@@ -526,39 +583,180 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                     : "决策仅覆盖 " + decision.getDataAsOf() + " 行情，等待重新生成";
         } else if (executableCount > 0) {
             status = OperationGuideStatusEnum.READY;
-            conditionText = "仅处理通过准入门禁的候选，新仓系数 "
-                    + newPositionFactor.stripTrailingZeros().toPlainString();
+            conditionText = "仅处理仍标记为可执行的候选";
         } else {
             status = OperationGuideStatusEnum.WAIT;
             conditionText = "当前没有可执行候选，不将普通买入候选视为可执行";
+        }
+        String actionText = DashboardCommandStatusEnum.GENERATING.equals(commandStatus)
+                ? "等待本轮决策发布" : "重新生成" + tradeDate + "决策";
+        if (OperationGuideStatusEnum.READY.equals(status)) {
+            DecisionItemResp executableBuy = null;
+            if (CollUtil.isNotEmpty(decision.getBuys())) {
+                for (DecisionItemResp buyItem : decision.getBuys()) {
+                    if (Objects.nonNull(buyItem) && Boolean.TRUE.equals(buyItem.getExecutableHint())) {
+                        executableBuy = buyItem;
+                        break;
+                    }
+                }
+            }
+            if (Objects.nonNull(executableBuy)) {
+                String itemName = decisionItemName(executableBuy);
+                actionText = "买" + itemName;
+                if (Objects.nonNull(executableBuy.getSuggestedWeight())) {
+                    actionText += "至" + formatWeight(executableBuy.getSuggestedWeight()) + "仓位";
+                }
+                String priceAdvice = buildBuyPriceAdvice(executableBuy);
+                if (StringUtils.isNotBlank(priceAdvice)) {
+                    conditionText = priceAdvice;
+                }
+            } else {
+                actionText = "执行" + executableCount + "个可买候选";
+            }
         }
         return OperationGuideItemResp.builder()
                 .priority(2)
                 .code(OperationGuideCodeEnum.BUY_CONDITIONALLY.getCode())
                 .status(status.getCode())
-                .title("新仓计划")
-                .actionText(status.equals(OperationGuideStatusEnum.READY)
-                        ? "按条件处理主线匹配且可执行的候选" : "等待可执行买点")
+                .title(OperationGuideStatusEnum.READY.equals(status) ? "新仓计划" : "重算决策")
+                .actionText(actionText)
                 .conditionText(conditionText)
                 .targetCount(executableCount)
                 .targetType(OperationTargetTypeEnum.DECISION.getCode())
                 .build();
     }
 
-    private OperationGuideItemResp buildInvalidationItem(DashboardCommandStatusEnum commandStatus) {
-        boolean invalid = DashboardCommandStatusEnum.BLOCKED.equals(commandStatus)
-                || DashboardCommandStatusEnum.STALE.equals(commandStatus);
+    private String buildBuyAdvice(DecisionItemResp buyItem) {
+        List<String> adviceParts = new ArrayList<>();
+        if (Objects.nonNull(buyItem.getSuggestedWeight())) {
+            adviceParts.add("买至" + formatWeight(buyItem.getSuggestedWeight()) + "仓位");
+        }
+        String priceAdvice = buildBuyPriceAdvice(buyItem);
+        if (StringUtils.isNotBlank(priceAdvice)) {
+            adviceParts.add(priceAdvice);
+        }
+        if (CollUtil.isEmpty(adviceParts) && StringUtils.isNotBlank(buyItem.getReason())) {
+            adviceParts.add(buyItem.getReason().trim());
+        }
+        return CollUtil.isNotEmpty(adviceParts)
+                ? String.join("；", adviceParts) : "缺少仓位和价格，不下单";
+    }
+
+    private String buildBuyPriceAdvice(DecisionItemResp buyItem) {
+        List<String> priceParts = new ArrayList<>();
+        if (Objects.nonNull(buyItem.getReferencePrice())) {
+            priceParts.add("参考" + formatNumber(buyItem.getReferencePrice()));
+        }
+        if (Objects.nonNull(buyItem.getStopLossPrice())) {
+            priceParts.add("止损" + formatNumber(buyItem.getStopLossPrice()));
+        }
+        if (Objects.nonNull(buyItem.getTakeProfitPrice())) {
+            priceParts.add("止盈" + formatNumber(buyItem.getTakeProfitPrice()));
+        }
+        return String.join("；", priceParts);
+    }
+
+    private String buildSellAdvice(DecisionItemResp sellItem) {
+        List<String> adviceParts = new ArrayList<>();
+        adviceParts.add(buildSellAction(sellItem));
+        if (StringUtils.isNotBlank(sellItem.getExitRule())) {
+            adviceParts.add(sellItem.getExitRule().trim());
+        } else {
+            if (Objects.nonNull(sellItem.getStopLossPrice())) {
+                adviceParts.add("止损" + formatNumber(sellItem.getStopLossPrice()));
+            }
+            if (Objects.nonNull(sellItem.getTakeProfitPrice())) {
+                adviceParts.add("止盈" + formatNumber(sellItem.getTakeProfitPrice()));
+            }
+        }
+        return String.join("；", adviceParts);
+    }
+
+    private String buildSellAction(DecisionItemResp sellItem) {
+        if ("SELL".equalsIgnoreCase(sellItem.getAction())) {
+            return "清仓";
+        }
+        if (Objects.nonNull(sellItem.getSuggestedWeight())) {
+            return "减至" + formatWeight(sellItem.getSuggestedWeight()) + "仓位";
+        }
+        return "减仓";
+    }
+
+    private String buildNamedSellAction(DecisionItemResp sellItem) {
+        String itemName = decisionItemName(sellItem);
+        if ("SELL".equalsIgnoreCase(sellItem.getAction())) {
+            return "清仓" + itemName;
+        }
+        if (Objects.nonNull(sellItem.getSuggestedWeight())) {
+            return itemName + buildSellAction(sellItem);
+        }
+        return "减仓" + itemName;
+    }
+
+    private DecisionItemResp firstDecisionItem(List<DecisionItemResp> items, boolean executableOnly) {
+        if (CollUtil.isEmpty(items)) {
+            return null;
+        }
+        for (DecisionItemResp item : items) {
+            if (Objects.isNull(item)
+                    || (executableOnly && !Boolean.TRUE.equals(item.getExecutableHint()))) {
+                continue;
+            }
+            if (StringUtils.isNotBlank(decisionItemName(item))) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private String joinDecisionItemNames(List<DecisionItemResp> items,
+                                         boolean executableOnly,
+                                         int totalCount) {
+        if (CollUtil.isEmpty(items)) {
+            return null;
+        }
+        List<String> names = new ArrayList<>();
+        for (DecisionItemResp item : items) {
+            if (Objects.isNull(item)
+                    || (executableOnly && !Boolean.TRUE.equals(item.getExecutableHint()))) {
+                continue;
+            }
+            String itemName = decisionItemName(item);
+            if (StringUtils.isBlank(itemName)) {
+                continue;
+            }
+            names.add(itemName);
+            if (names.size() >= 2) {
+                break;
+            }
+        }
+        if (CollUtil.isEmpty(names)) {
+            return null;
+        }
+        String nameText = String.join("、", names);
+        return totalCount > names.size() ? nameText + "等" + totalCount + "项" : nameText;
+    }
+
+    private String decisionItemName(DecisionItemResp item) {
+        return StringUtils.isNotBlank(item.getName()) ? item.getName().trim() : item.getCode();
+    }
+
+    private String formatWeight(BigDecimal weight) {
+        return formatNumber(weight.multiply(new BigDecimal("100"))) + "%";
+    }
+
+    private String formatNumber(BigDecimal number) {
+        return number.stripTrailingZeros().toPlainString();
+    }
+
+    private OperationGuideItemResp buildInvalidationItem() {
         return OperationGuideItemResp.builder()
                 .priority(3)
-                .code(invalid ? OperationGuideCodeEnum.REFRESH_DATA.getCode()
-                        : OperationGuideCodeEnum.VIEW_CONTEXT.getCode())
-                .status(invalid ? OperationGuideStatusEnum.BLOCKED.getCode()
-                        : OperationGuideStatusEnum.WAIT.getCode())
-                .title(invalid ? "刷新数据" : "失效条件")
-                .actionText(invalid ? "停止新增动作并刷新数据" : "持续检查计划是否仍然有效")
-                .conditionText(invalid
-                        ? "行情和晨报日期恢复正常并重新生成目标交易日决策后，才可恢复新仓"
-                        : "候选失去可执行标记、开仓门禁失败或决策状态变化时取消对应新仓")
+                .code(OperationGuideCodeEnum.REFRESH_DATA.getCode())
+                .status(OperationGuideStatusEnum.BLOCKED.getCode())
+                .title("刷新数据")
+                .actionText("停止新增动作并刷新数据")
+                .conditionText("行情和晨报日期恢复正常并重新生成目标交易日决策后，才可恢复新仓")
                 .targetCount(0)
                 .targetType(OperationTargetTypeEnum.DATA.getCode())
                 .build();

@@ -70,20 +70,18 @@ class DashboardCommandServiceImplTest {
         assertEquals(TRADE_DATE, command.getTradeDate());
         assertEquals(PREVIOUS_TRADE_DATE, command.getMarketDataAsOf());
         assertEquals(PREVIOUS_TRADE_DATE, command.getDecisionDataAsOf());
-        assertTrue(command.getPreMarketSummary().getHeadline().contains("2 个卖出项"));
-        assertTrue(command.getPreMarketSummary().getHeadline().contains("3 个可执行新仓候选"));
+        assertEquals("先处理2项卖出/减仓；再执行3个新仓。",
+                command.getPreMarketSummary().getHeadline());
         assertFalse(command.getPreMarketSummary().getHeadline().contains("市场广度"));
         assertTrue(command.getPreMarketSummary().getOpportunityItems().size() <= 2);
         assertTrue(command.getPreMarketSummary().getRiskItems().size() <= 2);
         assertTrue(command.getPreMarketSummary().getEvidenceItems().size() <= 4);
         assertTrue(command.getPreMarketSummary().getWatchConditions().size() <= 2);
-        assertEquals(3, command.getOperationGuide().getItems().size());
+        assertEquals(2, command.getOperationGuide().getItems().size());
         assertGuideItem(command, 0, OperationGuideCodeEnum.RISK_FIRST,
                 OperationGuideStatusEnum.REQUIRED, 2);
         assertGuideItem(command, 1, OperationGuideCodeEnum.BUY_CONDITIONALLY,
                 OperationGuideStatusEnum.READY, 3);
-        assertGuideItem(command, 2, OperationGuideCodeEnum.VIEW_CONTEXT,
-                OperationGuideStatusEnum.WAIT, 0);
     }
 
     @Test
@@ -99,12 +97,11 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.BLOCKED.getCode(), command.getStatus());
-        assertEquals(OperationGuideStatusEnum.BLOCKED.getCode(),
-                command.getOperationGuide().getItems().get(1).getStatus());
+        assertEquals(1, command.getOperationGuide().getItems().size());
         assertTrue(command.getOperationGuide().getBlockedReason().contains("数据"));
-        assertGuideItem(command, 2, OperationGuideCodeEnum.REFRESH_DATA,
+        assertGuideItem(command, 0, OperationGuideCodeEnum.REFRESH_DATA,
                 OperationGuideStatusEnum.BLOCKED, 0);
-        assertEquals("刷新数据", command.getOperationGuide().getItems().get(2).getTitle());
+        assertEquals("刷新数据", command.getOperationGuide().getItems().get(0).getTitle());
     }
 
     @Test
@@ -115,8 +112,8 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.BLOCKED.getCode(), command.getStatus());
-        assertEquals(OperationGuideStatusEnum.BLOCKED.getCode(),
-                command.getOperationGuide().getItems().get(1).getStatus());
+        assertGuideItem(command, 0, OperationGuideCodeEnum.REFRESH_DATA,
+                OperationGuideStatusEnum.BLOCKED, 0);
     }
 
     @Test
@@ -132,8 +129,8 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.STALE.getCode(), command.getStatus());
-        assertEquals(OperationGuideStatusEnum.BLOCKED.getCode(),
-                command.getOperationGuide().getItems().get(1).getStatus());
+        assertGuideItem(command, 0, OperationGuideCodeEnum.REFRESH_DATA,
+                OperationGuideStatusEnum.BLOCKED, 0);
     }
 
     @Test
@@ -168,8 +165,8 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.GENERATING.getCode(), command.getStatus());
-        assertEquals(OperationGuideStatusEnum.WAIT.getCode(),
-                command.getOperationGuide().getItems().get(1).getStatus());
+        assertGuideItem(command, 0, OperationGuideCodeEnum.BUY_CONDITIONALLY,
+                OperationGuideStatusEnum.WAIT, 2);
     }
 
     @Test
@@ -181,9 +178,7 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.PARTIAL.getCode(), command.getStatus());
-        assertGuideItem(command, 0, OperationGuideCodeEnum.RISK_FIRST,
-                OperationGuideStatusEnum.WAIT, 0);
-        assertGuideItem(command, 1, OperationGuideCodeEnum.BUY_CONDITIONALLY,
+        assertGuideItem(command, 0, OperationGuideCodeEnum.BUY_CONDITIONALLY,
                 OperationGuideStatusEnum.WAIT, 0);
         assertTrue(command.getPreMarketSummary().getHeadline().contains("目标交易日决策尚未生成"));
         assertTrue(command.getPreMarketSummary().getHeadline().contains(TRADE_DATE.toString()));
@@ -192,7 +187,7 @@ class DashboardCommandServiceImplTest {
         assertTrue(command.getPreMarketSummary().getEvidenceItems().isEmpty());
         assertTrue(command.getPreMarketSummary().getOpportunityItems().isEmpty());
         assertEquals(1, command.getPreMarketSummary().getWatchConditions().size());
-        assertTrue(command.getOperationGuide().getSummary().contains("先复核持仓风险"));
+        assertTrue(command.getOperationGuide().getSummary().contains("重算决策"));
     }
 
     @Test
@@ -202,6 +197,10 @@ class DashboardCommandServiceImplTest {
                 .name("宁德时代")
                 .action("BUY")
                 .score(new BigDecimal("88"))
+                .suggestedWeight(new BigDecimal("0.08"))
+                .referencePrice(new BigDecimal("180.50"))
+                .stopLossPrice(new BigDecimal("168.00"))
+                .takeProfitPrice(new BigDecimal("210.00"))
                 .mainlineMatch(true)
                 .mainlineName("储能")
                 .executableHint(true)
@@ -238,16 +237,75 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.READY.getCode(), command.getStatus());
-        assertTrue(command.getPreMarketSummary().getHeadline().contains("1 个卖出项"));
-        assertTrue(command.getPreMarketSummary().getHeadline().contains("1 个可执行新仓候选"));
+        assertEquals("先清仓浦发银行；新仓只做宁德时代。",
+                command.getPreMarketSummary().getHeadline());
         assertFalse(command.getPreMarketSummary().getHeadline().contains("市场广度"));
         assertTrue(command.getPreMarketSummary().getEvidenceItems().isEmpty());
         assertEquals("宁德时代", command.getPreMarketSummary().getOpportunityItems().get(0).getName());
-        assertTrue(command.getPreMarketSummary().getOpportunityItems().get(0).getReason().contains("储能"));
-        assertTrue(command.getPreMarketSummary().getOpportunityItems().get(0).getReason().contains("评分 88"));
+        assertEquals("买至8%仓位；参考180.5；止损168；止盈210",
+                command.getPreMarketSummary().getOpportunityItems().get(0).getReason());
         assertEquals("浦发银行", command.getPreMarketSummary().getRiskItems().get(0).getName());
-        assertEquals("跌破止损价 9.80 元", command.getPreMarketSummary().getRiskItems().get(0).getReason());
-        assertTrue(command.getPreMarketSummary().getWatchConditions().get(0).getCondition().contains("开仓门禁"));
+        assertEquals("清仓；跌破止损价 9.80 元",
+                command.getPreMarketSummary().getRiskItems().get(0).getReason());
+        assertTrue(command.getPreMarketSummary().getWatchConditions().get(0).getCondition().contains("跌破止损价"));
+        assertEquals(2, command.getOperationGuide().getItems().size());
+        assertTrue(command.getOperationGuide().getItems().get(0).getActionText().contains("清仓浦发银行"));
+        assertTrue(command.getOperationGuide().getItems().get(1).getActionText().contains("买宁德时代至8%仓位"));
+        assertTrue(command.getOperationGuide().getItems().get(1).getConditionText().contains("参考180.5"));
+    }
+
+    @Test
+    void shouldKeepOnlyConcreteRiskActionWhenNoExecutableBuyExists() {
+        DecisionItemResp firstSell = DecisionItemResp.builder()
+                .code("603986")
+                .name("立昂微")
+                .action("SELL")
+                .exitRule("RSI>70或跌破MA60离场；止损70.38/止盈91.80")
+                .build();
+        DecisionItemResp secondSell = DecisionItemResp.builder()
+                .code("002335")
+                .name("科华数据")
+                .action("REDUCE")
+                .suggestedWeight(new BigDecimal("0.05"))
+                .exitRule("跌破MA20离场；止损27.35/止盈35.67")
+                .build();
+        DecisionItemResp thirdSell = DecisionItemResp.builder()
+                .code("600000")
+                .name("浦发银行")
+                .action("SELL")
+                .build();
+        DecisionTodayResp decision = DecisionTodayResp.builder()
+                .actionDate(TRADE_DATE)
+                .asOfTime(TRADE_DATE.atTime(6, 50))
+                .dataAsOf(PREVIOUS_TRADE_DATE)
+                .generated(true)
+                .buys(List.of())
+                .sells(List.of(firstSell, secondSell, thirdSell))
+                .sellCount(3)
+                .executableCount(0)
+                .build();
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(8, 10))
+                .marketBriefing(readyMarket())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(decision)
+                .observeAlerts(List.of())
+                .build());
+
+        assertEquals("先处理立昂微、科华数据等3项；今天不开新仓。",
+                command.getPreMarketSummary().getHeadline());
+        assertTrue(command.getPreMarketSummary().getWatchConditions().isEmpty());
+        assertEquals("先处理3项卖出/减仓；今天不开新仓。",
+                command.getOperationGuide().getSummary());
+        assertEquals(1, command.getOperationGuide().getItems().size());
+        assertGuideItem(command, 0, OperationGuideCodeEnum.RISK_FIRST,
+                OperationGuideStatusEnum.REQUIRED, 3);
+        assertTrue(command.getOperationGuide().getItems().get(0).getActionText().contains("清仓立昂微"));
+        assertTrue(command.getOperationGuide().getItems().get(0).getActionText().contains("科华数据减至5%"));
     }
 
     @Test
@@ -295,6 +353,9 @@ class DashboardCommandServiceImplTest {
 
         assertEquals(DashboardCommandPhaseEnum.IN_SESSION.getCode(), command.getPhase());
         assertEquals(DashboardCommandStatusEnum.PARTIAL.getCode(), command.getStatus());
+        assertGuideItem(command, 0, OperationGuideCodeEnum.BUY_CONDITIONALLY,
+                OperationGuideStatusEnum.WAIT, 1);
+        assertEquals("重算决策", command.getOperationGuide().getItems().get(0).getTitle());
     }
 
     @Test
@@ -343,9 +404,7 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.PARTIAL.getCode(), oldDecisionCommand.getStatus());
-        assertGuideItem(oldDecisionCommand, 0, OperationGuideCodeEnum.RISK_FIRST,
-                OperationGuideStatusEnum.WAIT, 4);
-        assertGuideItem(oldDecisionCommand, 1, OperationGuideCodeEnum.BUY_CONDITIONALLY,
+        assertGuideItem(oldDecisionCommand, 0, OperationGuideCodeEnum.BUY_CONDITIONALLY,
                 OperationGuideStatusEnum.WAIT, 2);
 
         DashboardCommandResp emptyDataDateCommand = service.build(DashboardCommandContextBO.builder()
@@ -366,9 +425,7 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.PARTIAL.getCode(), emptyDataDateCommand.getStatus());
-        assertGuideItem(emptyDataDateCommand, 0, OperationGuideCodeEnum.RISK_FIRST,
-                OperationGuideStatusEnum.WAIT, 1);
-        assertGuideItem(emptyDataDateCommand, 1, OperationGuideCodeEnum.BUY_CONDITIONALLY,
+        assertGuideItem(emptyDataDateCommand, 0, OperationGuideCodeEnum.BUY_CONDITIONALLY,
                 OperationGuideStatusEnum.WAIT, 1);
     }
 
@@ -392,12 +449,10 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.PARTIAL.getCode(), command.getStatus());
-        assertGuideItem(command, 0, OperationGuideCodeEnum.RISK_FIRST,
-                OperationGuideStatusEnum.WAIT, 1);
-        assertGuideItem(command, 1, OperationGuideCodeEnum.BUY_CONDITIONALLY,
+        assertGuideItem(command, 0, OperationGuideCodeEnum.BUY_CONDITIONALLY,
                 OperationGuideStatusEnum.WAIT, 1);
         assertTrue(command.getPreMarketSummary().getHeadline().contains("目标交易日决策尚未生成"));
-        assertTrue(command.getOperationGuide().getSummary().contains("先复核持仓风险"));
+        assertTrue(command.getOperationGuide().getSummary().contains("重算决策"));
     }
 
     private MarketBriefingResp readyMarket() {
