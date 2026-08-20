@@ -1,6 +1,6 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ElDialog, ElDrawer, ElMessage } from 'element-plus'
 import { searchStock } from '../api/stock'
 
 const props = defineProps({
@@ -25,6 +25,8 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'submit'])
 const searchLoading = ref(false)
 const searchOptions = ref([])
+const isMobileTrade = ref(window.matchMedia('(max-width: 820px)').matches)
+let mobileMediaQuery
 const form = reactive({
   code: '',
   name: '',
@@ -35,6 +37,25 @@ const form = reactive({
 })
 
 const title = computed(() => (form.side === 'SELL' ? '卖出持仓' : '买入持仓'))
+const tradeOverlay = computed(() => (isMobileTrade.value ? ElDrawer : ElDialog))
+const tradeOverlayProps = computed(() => {
+  if (isMobileTrade.value) {
+    return {
+      direction: 'btt',
+      size: 'min(88dvh, 680px)',
+      class: 'holding-trade-drawer',
+      destroyOnClose: true,
+      appendToBody: true,
+    }
+  }
+  return {
+    width: '520px',
+    alignCenter: true,
+    class: 'holding-trade-dialog',
+    destroyOnClose: true,
+    appendToBody: true,
+  }
+})
 const currentQuantity = computed(() => Number(props.holding?.quantity || 0))
 const estimatedAmount = computed(() => {
   const quantity = Number(form.quantity)
@@ -136,16 +157,27 @@ function submitTrade() {
     tradeTime: form.tradeTime || null,
   })
 }
+
+function syncTradeViewport() {
+  isMobileTrade.value = mobileMediaQuery?.matches ?? false
+}
+
+onMounted(() => {
+  mobileMediaQuery = window.matchMedia('(max-width: 820px)')
+  syncTradeViewport()
+  mobileMediaQuery.addEventListener?.('change', syncTradeViewport)
+})
+
+onBeforeUnmount(() => {
+  mobileMediaQuery?.removeEventListener?.('change', syncTradeViewport)
+})
 </script>
 
 <template>
-  <el-dialog
+  <component
+    :is="tradeOverlay"
     :model-value="modelValue"
-    width="520px"
-    destroy-on-close
-    append-to-body
-    align-center
-    class="holding-trade-dialog"
+    v-bind="tradeOverlayProps"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #header>
@@ -240,7 +272,7 @@ function submitTrade() {
         </div>
       </div>
     </template>
-  </el-dialog>
+  </component>
 </template>
 
 <style scoped>
@@ -425,6 +457,71 @@ function submitTrade() {
   min-width: 82px;
   min-height: 38px;
   margin-left: 0;
+}
+
+@media (max-width: 820px) {
+  :global(.holding-trade-drawer) {
+    width: 100% !important;
+    max-width: 100%;
+    overflow: hidden;
+    border: 0;
+    border-radius: 12px 12px 0 0;
+    background: var(--glass);
+    box-shadow: 0 -16px 44px rgba(15, 23, 42, 0.2);
+  }
+
+  :global(.holding-trade-drawer .el-drawer__header) {
+    position: relative;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 24px 48px 14px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  :global(.holding-trade-drawer .el-drawer__header::before) {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line-strong);
+    content: '';
+    transform: translateX(-50%);
+  }
+
+  :global(.holding-trade-drawer .el-drawer__close-btn) {
+    position: absolute;
+    top: 17px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+  }
+
+  :global(.holding-trade-drawer .el-drawer__body) {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    padding: 16px 18px 4px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  :global(.holding-trade-drawer .el-drawer__footer) {
+    flex: 0 0 auto;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--glass-tint);
+  }
+
+  :global(.holding-trade-drawer .trade-side-switch .el-radio-button__inner),
+  :global(.holding-trade-drawer .trade-form .el-input__wrapper),
+  :global(.holding-trade-drawer .trade-footer-actions .el-button) {
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 560px) {

@@ -45,12 +45,32 @@ test('portfolio and holding workspaces use the shared buy and sell dialog', () =
 })
 
 test('trade dialog presents compact order-entry controls and an estimated amount', () => {
-  assert.match(tradeDialogSource, /width="520px"/)
+  assert.match(tradeDialogSource, /width:\s*'520px'/)
   assert.match(tradeDialogSource, /trade-input-grid/)
   assert.match(tradeDialogSource, /可卖 \{\{ currentQuantity\.toLocaleString\('zh-CN'\) \}\} 股/)
   assert.match(tradeDialogSource, /预计成交额/)
   assert.match(tradeDialogSource, /estimatedAmount/)
   assert.match(tradeDialogSource, /@media \(max-width: 560px\)/)
+})
+
+test('mobile trading uses a bottom drawer while desktop keeps the dialog', () => {
+  assert.match(tradeDialogSource, /import \{[^}]*ElDialog[^}]*ElDrawer[^}]*\} from 'element-plus'/)
+  assert.match(tradeDialogSource, /mobileMediaQuery = window\.matchMedia\('\(max-width: 820px\)'\)/)
+  assert.match(tradeDialogSource, /isMobileTrade\.value \? ElDrawer : ElDialog/)
+  assert.match(tradeDialogSource, /direction:\s*'btt'/)
+  assert.match(tradeDialogSource, /size:\s*'min\(88dvh, 680px\)'/)
+  assert.match(tradeDialogSource, /class:\s*'holding-trade-drawer'/)
+  assert.match(tradeDialogSource, /class:\s*'holding-trade-dialog'/)
+  assert.match(tradeDialogSource, /<component[\s\S]*?:is="tradeOverlay"[\s\S]*?v-bind="tradeOverlayProps"/)
+  assert.equal([...tradeDialogSource.matchAll(/<el-form class="trade-form"/g)].length, 1)
+})
+
+test('mobile trade drawer keeps content scrollable and actions above the safe area', () => {
+  assert.match(tradeDialogSource, /\.holding-trade-drawer \.el-drawer__body[\s\S]*?overflow-y:\s*auto/)
+  assert.match(tradeDialogSource, /\.holding-trade-drawer \.el-drawer__footer[\s\S]*?env\(safe-area-inset-bottom\)/)
+  assert.match(tradeDialogSource, /\.holding-trade-drawer[\s\S]*?border-radius:\s*12px 12px 0 0/)
+  assert.match(tradeDialogSource, /\.holding-trade-drawer[\s\S]*?background:\s*var\(--glass\)/)
+  assert.match(tradeDialogSource, /\.holding-trade-drawer[\s\S]*?min-height:\s*44px/)
 })
 
 test('trade APIs are explicit and holding pages no longer expose delete actions', () => {
