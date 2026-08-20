@@ -606,7 +606,8 @@ onBeforeUnmount(() => {
               :d="sparkPath(item.sparkCloses)"
               fill="none"
               :stroke="Number(item.pctChg) >= 0 ? '#e11d48' : '#059669'"
-              stroke-width="1.6"
+              stroke-width="1.5"
+              vector-effect="non-scaling-stroke"
             />
           </svg>
         </button>
@@ -840,7 +841,8 @@ onBeforeUnmount(() => {
                 :d="sparkPath(item.sparkCloses)"
                 fill="none"
                 :stroke="Number(item.pctChg) >= 0 ? '#e11d48' : '#059669'"
-                stroke-width="1.6"
+                stroke-width="1.5"
+                vector-effect="non-scaling-stroke"
               />
             </svg>
           </button>
