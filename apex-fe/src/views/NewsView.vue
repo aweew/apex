@@ -194,10 +194,10 @@ onMounted(async () => {
         </div>
 
         <div class="toolbar">
-          <el-radio-group v-model="activeSource" size="small">
+          <el-radio-group v-model="activeSource" size="small" class="source-filter-group">
             <el-radio-button v-for="tab in sourceTabs" :key="tab.key" :value="tab.key">
-              {{ tab.label }}
-              <template v-if="tab.key !== 'all'">({{ counts[tab.key] ?? 0 }})</template>
+              <span class="source-filter-label">{{ tab.label }}</span>
+              <small v-if="tab.key !== 'all'" class="source-filter-count">({{ counts[tab.key] ?? 0 }})</small>
             </el-radio-button>
           </el-radio-group>
           <el-input
@@ -248,7 +248,7 @@ onMounted(async () => {
             <div class="news-ops">
               <button
                 type="button"
-                class="op-btn"
+                class="op-btn op-btn--link"
                 :disabled="!row.url"
                 aria-label="查看新闻原文"
                 title="看原文"
@@ -382,6 +382,9 @@ onMounted(async () => {
 .op-btn .el-icon {
   font-size: 17px;
 }
+.op-btn--link .el-icon {
+  font-size: 14px;
+}
 .op-btn:hover:not(:disabled) {
   border-color: rgba(0, 113, 227, 0.35);
   color: var(--accent, #0071e3);
@@ -439,6 +442,68 @@ onMounted(async () => {
 @media (max-width: 900px) {
   .summary {
     grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 100px;
+    gap: 8px;
+  }
+  .source-filter-group {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+  .source-filter-group :deep(.el-radio-button) {
+    width: 100%;
+  }
+  .source-filter-group :deep(.el-radio-button__inner) {
+    width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 7px 4px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+    box-shadow: none;
+    color: var(--ink-soft);
+    background: var(--glass);
+    line-height: 1.2;
+  }
+  .source-filter-group :deep(.el-radio-button:first-child .el-radio-button__inner),
+  .source-filter-group :deep(.el-radio-button:last-child .el-radio-button__inner) {
+    border-radius: 6px;
+  }
+  .source-filter-group :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+    border-color: rgba(0, 113, 227, 0.62);
+    background: rgba(0, 113, 227, 0.09);
+    color: var(--accent, #0071e3);
+    box-shadow: none;
+  }
+  .source-filter-label {
+    min-width: 0;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .source-filter-count {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .source-filter-group :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) .source-filter-count {
+    color: inherit;
+  }
+  .toolbar :deep(.el-input) {
+    width: 100% !important;
   }
 }
 </style>
