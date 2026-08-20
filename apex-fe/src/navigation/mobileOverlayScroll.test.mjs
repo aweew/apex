@@ -16,7 +16,30 @@ test('mobile navigation owns scrolling inside a dedicated drawer body', () => {
   assert.match(mobileStyles, /\.nav-group\s*\{[^}]*flex:\s*0 0 auto;/)
   assert.match(appSource, /class="mobile-menu-scroll"[\s\S]*?<\/div>\s*<div class="mobile-menu-actions">/)
   assert.match(appSource, /\.mobile-menu-actions\s*\{[\s\S]*?flex:\s*0 0 auto;/)
-  assert.match(appSource, /\.mobile-logout-btn\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/)
+  assert.match(
+    appSource,
+    /\.mobile-menu-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+  )
+})
+
+test('mobile navigation keeps glossary beside search and removes density configuration', () => {
+  const topActions = appSource.slice(
+    appSource.indexOf('<div class="mobile-top-actions">'),
+    appSource.indexOf('<button\n        v-if="mobileMenuOpen"'),
+  )
+  const menuActions = appSource.slice(
+    appSource.indexOf('<div class="mobile-menu-actions">'),
+    appSource.indexOf('</div>\n      </div>\n      <div class="nav-actions desktop-nav-actions">'),
+  )
+
+  const searchIndex = topActions.indexOf('aria-label="搜索股票"')
+  const glossaryIndex = topActions.indexOf('aria-label="名词百科"')
+  const menuIndex = topActions.indexOf('aria-label="打开菜单"')
+  assert.ok(searchIndex >= 0 && glossaryIndex > searchIndex && menuIndex > glossaryIndex)
+  assert.doesNotMatch(menuActions, /名词百科/)
+  assert.match(menuActions, /class="health"[\s\S]*?class="mobile-action-btn mobile-logout-btn"/)
+  assert.doesNotMatch(appSource, /denseMode|toggleDense|apex\.ui\.dense|紧凑密度|舒适密度|Ctrl\+Shift\+D/)
+  assert.doesNotMatch(sharedStyles, /\.shell\.dense/)
 })
 
 test('mobile document scrolling is restored whenever overlays are initially closed', () => {

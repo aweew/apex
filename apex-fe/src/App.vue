@@ -1,8 +1,10 @@
 <script setup>
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { Reading, Search } from '@element-plus/icons-vue'
 import { searchStock } from './api/stock'
 import http from './api/http'
+import BackToTopButton from './components/BackToTopButton.vue'
 import GlossaryPanel from './components/GlossaryPanel.vue'
 import { BRAND } from './brand/identity.js'
 import { isNavigating, requestCount } from './utils/appActivity'
@@ -27,8 +29,6 @@ const appActivityFinishing = ref(false)
 const mobileModuleTitle = ref('')
 const mobileBackPath = ref('')
 const mobileBackLabel = ref('')
-/** 终端紧凑密度：缩小表格与页边距 */
-const denseMode = ref(localStorage.getItem('apex.ui.dense') === '1')
 const currentUser = ref(getCurrentUser())
 const isPublicRoute = computed(() => Boolean(route.meta.public))
 let healthTimer
@@ -126,11 +126,6 @@ function syncMobileBackTarget() {
 function goMobileBack() {
   if (!mobileBackPath.value) return
   router.back()
-}
-
-function toggleDense() {
-  denseMode.value = !denseMode.value
-  localStorage.setItem('apex.ui.dense', denseMode.value ? '1' : '0')
 }
 
 async function logoutCurrentUser() {
@@ -312,11 +307,6 @@ function onGlobalKeydown(e) {
     e.preventDefault()
     openGlossary()
   }
-  // Ctrl+Shift+D 切换紧凑密度
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
-    e.preventDefault()
-    toggleDense()
-  }
   // Ctrl+1..4 主线快捷跳转（终端习惯）
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
     const path = PRIMARY_SHORTCUTS[e.key]
@@ -420,7 +410,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="shell" :class="{ dense: denseMode }">
+  <div class="shell">
     <nav
       v-if="!isPublicRoute"
       class="nav"
@@ -462,10 +452,10 @@ onBeforeUnmount(() => {
           <span>{{ mobileBackLabel }}</span>
         </button>
         <button type="button" class="nav-icon-btn" aria-label="搜索股票" title="搜索股票" @click="openSearch">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M20 20l-3.2-3.2" stroke-linecap="round" />
-          </svg>
+          <Search aria-hidden="true" />
+        </button>
+        <button type="button" class="nav-icon-btn" aria-label="名词百科" title="名词百科" @click="openGlossary()">
+          <Reading aria-hidden="true" />
         </button>
         <button
           ref="mobileMenuButtonRef"
@@ -545,10 +535,6 @@ onBeforeUnmount(() => {
             <i class="dot" />
             {{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '检测中…' }}
           </span>
-          <button type="button" class="mobile-action-btn" :class="{ on: denseMode }" @click="toggleDense">
-            <span>{{ denseMode ? '紧凑密度' : '舒适密度' }}</span>
-          </button>
-          <button type="button" class="mobile-action-btn" @click="openGlossary(); setMobileMenu(false)">名词百科</button>
           <button v-if="currentUser" type="button" class="mobile-action-btn mobile-logout-btn" @click="logoutCurrentUser">退出登录</button>
         </div>
       </div>
@@ -557,29 +543,13 @@ onBeforeUnmount(() => {
           <i class="dot" />
           {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
         </span>
-        <button
-          type="button"
-          class="search-btn density-btn"
-          :class="{ on: denseMode }"
-          title="紧凑密度 Ctrl+Shift+D"
-          @click="toggleDense"
-        >
-          <span>{{ denseMode ? '紧凑' : '舒适' }}</span>
+        <button type="button" class="search-btn" title="搜索股票 Ctrl+K" @click="openSearch">
+          <Search aria-hidden="true" />
+          <span>搜索</span>
         </button>
         <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="8" />
-            <path d="M12 11v5" stroke-linecap="round" />
-            <circle cx="12" cy="8" r="0.8" fill="currentColor" stroke="none" />
-          </svg>
+          <Reading aria-hidden="true" />
           <span>百科</span>
-        </button>
-        <button type="button" class="search-btn" title="搜索股票 Ctrl+K" @click="openSearch">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M20 20l-3.2-3.2" stroke-linecap="round" />
-          </svg>
-          <span>搜索</span>
         </button>
         <el-dropdown v-if="currentUser" trigger="click">
           <button type="button" class="search-btn user-menu" :title="currentUser.phone">
@@ -654,7 +624,7 @@ onBeforeUnmount(() => {
             <div v-else class="search-tip">
               输入后回车打开第一条结果
               <div class="search-keys">
-                Ctrl+K 搜索 · Ctrl+/ 名词 · Ctrl+Shift+D 紧凑 · Ctrl+1~4 看板/决策/观察/持仓
+                Ctrl+K 搜索 · Ctrl+/ 名词 · Ctrl+1~4 看板/决策/观察/持仓
               </div>
             </div>
           </template>
@@ -680,6 +650,7 @@ onBeforeUnmount(() => {
       :aria-busy="appActivityVisible ? 'true' : 'false'"
     >
       <RouterView />
+      <BackToTopButton />
     </main>
   </div>
 </template>
@@ -687,14 +658,6 @@ onBeforeUnmount(() => {
 <style scoped>
 .shell {
   min-height: 100vh;
-}
-
-.shell.dense .nav {
-  min-height: 48px;
-}
-
-.shell.dense .nav-group .group-label {
-  font-size: 9px;
 }
 
 .nav {
@@ -1098,12 +1061,6 @@ onBeforeUnmount(() => {
   color: var(--ink);
 }
 
-.density-btn.on {
-  color: var(--accent);
-  border-color: rgba(0, 113, 227, 0.28);
-  background: rgba(0, 113, 227, 0.1);
-}
-
 .search-layer {
   position: fixed;
   inset: 0;
@@ -1261,7 +1218,7 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .mobile-module-title {
     position: absolute;
-    right: 144px;
+    right: 188px;
     left: 120px;
     display: block;
     overflow: hidden;
@@ -1275,8 +1232,7 @@ onBeforeUnmount(() => {
     pointer-events: none;
   }
 
-  .nav,
-  .shell.dense .nav {
+  .nav {
     min-height: calc(56px + env(safe-area-inset-top));
     height: calc(56px + env(safe-area-inset-top));
     padding: env(safe-area-inset-top) 10px 0 14px;
@@ -1288,6 +1244,10 @@ onBeforeUnmount(() => {
 
   .brand-block {
     max-width: calc(100% - 148px);
+  }
+
+  .nav--has-back .brand-block {
+    max-width: calc(100% - 192px);
   }
 
   .brand-logo {
@@ -1519,9 +1479,10 @@ onBeforeUnmount(() => {
   }
 
   .mobile-menu-actions .health {
-    grid-column: 1 / -1;
     justify-content: center;
-    min-height: 36px;
+    min-height: 44px;
+    border-radius: 8px;
+    background: #f8fafc;
   }
 
   .mobile-action-btn {
@@ -1534,14 +1495,7 @@ onBeforeUnmount(() => {
     font-size: 13px;
   }
 
-  .mobile-action-btn.on {
-    color: var(--accent);
-    border-color: rgba(0, 113, 227, 0.28);
-    background: var(--accent-soft);
-  }
-
   .mobile-logout-btn {
-    grid-column: 1 / -1;
     border-color: rgba(192, 57, 43, 0.28);
     background: rgba(192, 57, 43, 0.06);
     color: #a3342a;
