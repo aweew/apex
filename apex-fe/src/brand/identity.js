@@ -15,7 +15,7 @@ export const BRAND = {
   slogan: '灵极既定，只问顶峰',
   product: '本地量化台',
   /** 文档 / 浏览器标题 */
-  documentTitle: '灵极 Apex · 本地量化',
+  documentTitle: '灵极 Apex · 量化决策中枢',
   /** 页眉短标语（导航窄位） */
   taglineShort: '只问顶峰',
   assets: {

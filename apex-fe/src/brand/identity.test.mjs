@@ -24,12 +24,14 @@ const brandedFiles = [
   '../../../apex-mini/miniprogram/pages/portfolio/portfolio.json',
 ]
 const loginSource = await readFile(new URL('../views/LoginView.vue', import.meta.url), 'utf8')
+const indexSource = await readFile(new URL('../../index.html', import.meta.url), 'utf8')
 
 test('brand identity uses Lingji as the canonical Chinese name', () => {
   assert.equal(BRAND.nameZh, '灵极')
   assert.equal(BRAND.nameEn, 'Apex')
   assert.equal(BRAND.slogan, '灵极既定，只问顶峰')
-  assert.equal(BRAND.documentTitle, '灵极 Apex · 本地量化')
+  assert.equal(BRAND.documentTitle, '灵极 Apex · 量化决策中枢')
+  assert.match(indexSource, new RegExp(`<title>${BRAND.documentTitle}</title>`))
   assert.equal(brandEyebrow('策略实验室'), '灵极 · 策略实验室')
 })
 
