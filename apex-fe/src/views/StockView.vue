@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, Histogram, Refresh, Star, TrendCharts, View, Wallet } from '@element-plus/icons-vue'
+import { Refresh, Star, TrendCharts, Wallet } from '@element-plus/icons-vue'
 import {
   fetchCompanyProfile,
   fetchStockDetail,
@@ -1652,7 +1652,7 @@ function fmtRatio(v) {
 
 function applyDetail(data) {
   basic.value = data.basic
-  note.value = data.note || ''
+  note.value = data.needSyncBars ? data.note || '' : ''
   bars.value = data.bars || []
   needSyncBars.value = !!data.needSyncBars
   barCount.value = data.barCount ?? bars.value.length
@@ -1892,44 +1892,47 @@ function dash(v) {
         <p class="stock-note">{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
       </div>
       <div class="actions">
-        <div class="action-primary">
-          <div class="sync-action-wrap">
-            <el-button class="sync-action" type="primary" :loading="syncingBars" :disabled="syncingBars" @click="syncStockData">
+        <div class="stock-action-toolbar">
+          <el-tooltip content="同步行情" placement="bottom">
+            <el-button
+              class="stock-icon-action sync-action"
+              type="primary"
+              circle
+              :loading="syncingBars"
+              :disabled="syncingBars"
+              :aria-label="syncButtonLabel"
+              title="同步行情"
+              @click="syncStockData"
+            >
               <el-icon v-if="!syncingBars"><Refresh /></el-icon>
-              <span>{{ syncButtonLabel }}</span>
             </el-button>
-            <div v-if="syncingBars" class="sync-progress" aria-live="polite">
-              <span :data-state="syncProgress.bars">日线 {{ syncStateLabel(syncProgress.bars) }}</span>
-              <span :data-state="syncProgress.quote">行情 {{ syncStateLabel(syncProgress.quote) }}</span>
-            </div>
-            <p v-else-if="syncResult" class="sync-result" :data-state="syncResult.type" aria-live="polite">{{ syncResult.text }}</p>
-          </div>
-          <div class="research-actions">
-            <el-button plain @click="activeTab = 'analysis'">
-              <el-icon><DataAnalysis /></el-icon><span>综合研判</span>
+          </el-tooltip>
+          <el-tooltip content="加入观察池" placement="bottom">
+            <el-button
+              class="stock-icon-action observe-action"
+              type="warning"
+              plain
+              circle
+              :loading="observeSaving"
+              aria-label="加入观察池"
+              title="加入观察池"
+              @click="quickAddObserve"
+            >
+              <el-icon v-if="!observeSaving"><Star /></el-icon>
             </el-button>
-            <el-button plain @click="router.push('/decision')">
-              <el-icon><TrendCharts /></el-icon><span>决策</span>
-            </el-button>
-            <el-button plain @click="activeTab = 'valuation'">
-              <el-icon><Histogram /></el-icon><span>估值</span>
-            </el-button>
-          </div>
-        </div>
-        <div class="action-secondary">
-          <el-button text @click="router.push({ path: '/backtest', query: { code: code.trim() } })">
+          </el-tooltip>
+          <el-button class="stock-text-action" plain @click="router.push({ path: '/backtest', query: { code: code.trim() } })">
             <el-icon><TrendCharts /></el-icon><span>历史回测</span>
           </el-button>
-          <el-button text @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">
+          <el-button class="stock-text-action" plain @click="router.push({ path: '/paper', query: { code: code.trim(), side: 'BUY' } })">
             <el-icon><Wallet /></el-icon><span>模拟买</span>
           </el-button>
-          <el-button text type="warning" :loading="observeSaving" @click="quickAddObserve">
-            <el-icon v-if="!observeSaving"><Star /></el-icon><span>加入观察池</span>
-          </el-button>
-          <el-button text @click="router.push({ path: '/observe', query: { code: code.trim() } })">
-            <el-icon><View /></el-icon><span>查看观察池</span>
-          </el-button>
         </div>
+        <div v-if="syncingBars" class="sync-progress" aria-live="polite">
+          <span :data-state="syncProgress.bars">日线 {{ syncStateLabel(syncProgress.bars) }}</span>
+          <span :data-state="syncProgress.quote">行情 {{ syncStateLabel(syncProgress.quote) }}</span>
+        </div>
+        <p v-else-if="syncResult" class="sync-result" :data-state="syncResult.type" aria-live="polite">{{ syncResult.text }}</p>
       </div>
     </header>
 
@@ -2473,63 +2476,41 @@ function dash(v) {
 <style scoped>
 .header .actions {
   display: grid;
-  width: min(100%, 620px);
+  justify-items: end;
+  width: auto;
+  max-width: 100%;
+  gap: 4px;
+}
+
+.stock-action-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+  min-height: 38px;
 }
 
-.action-primary {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(330px, 1.8fr);
-  gap: 8px;
-}
-
-.sync-action-wrap {
+.stock-action-toolbar :deep(.el-button) {
   min-width: 0;
-  min-height: 64px;
-}
-
-.sync-action-wrap :deep(.sync-action) {
-  width: 100%;
-  min-height: 44px;
+  min-height: 38px;
   margin: 0;
-  border-radius: 8px;
-  font-weight: 650;
-}
-
-.research-actions,
-.action-secondary {
-  display: grid;
-  gap: 8px;
-}
-
-.research-actions {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.research-actions :deep(.el-button),
-.action-secondary :deep(.el-button) {
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   white-space: nowrap;
 }
 
-.research-actions :deep(.el-button) {
-  min-height: 44px;
+.stock-action-toolbar :deep(.stock-icon-action) {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+  border-radius: 50%;
 }
 
-.action-secondary {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.action-secondary :deep(.el-button) {
-  min-height: 34px;
-  padding: 0 8px;
+.stock-action-toolbar :deep(.stock-text-action) {
+  padding: 0 12px;
   color: var(--ink-soft);
 }
 
-.action-secondary :deep(.el-button--warning) {
+.stock-action-toolbar :deep(.observe-action) {
   color: #a16600;
 }
 
@@ -2537,8 +2518,9 @@ function dash(v) {
 .sync-result {
   display: flex;
   align-items: flex-start;
+  width: 100%;
   min-height: 15px;
-  margin: 4px 2px 0;
+  margin: 0;
   color: var(--muted);
   font-size: 11px;
   line-height: 15px;
@@ -3158,27 +3140,19 @@ function dash(v) {
 
   .header .actions {
     display: grid;
-    gap: 8px;
+    justify-items: stretch;
+    gap: 4px;
     width: 100%;
   }
 
-  .action-primary {
+  .stock-action-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-
-  .research-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .action-secondary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 44px 44px repeat(2, minmax(0, 1fr));
     gap: 6px;
+    min-height: 44px;
   }
 
-  .research-actions :deep(.el-button),
-  .action-secondary :deep(.el-button) {
+  .stock-action-toolbar :deep(.el-button) {
     width: 100%;
     min-width: 0;
     min-height: 44px;
@@ -3189,26 +3163,15 @@ function dash(v) {
     white-space: nowrap;
   }
 
-  .research-actions :deep(.el-button) {
-    border-color: var(--line);
-    background: rgba(255, 255, 255, 0.62);
-    color: var(--ink-soft);
+  .stock-action-toolbar :deep(.stock-icon-action) {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
   }
 
-  .research-actions :deep(.el-button:active) {
-    background: rgba(0, 113, 227, 0.08);
-    color: var(--accent);
-  }
-
-  .action-secondary :deep(.el-button) {
-    justify-content: flex-start;
-    padding: 0 12px;
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    background: rgba(255, 255, 255, 0.5);
-  }
-
-  .action-secondary :deep(.el-button--warning) {
-    color: #a16600;
+  .stock-action-toolbar :deep(.stock-text-action) {
+    padding: 0 8px;
+    font-size: 13px;
   }
 
   .chart-toolbar {
@@ -3324,19 +3287,6 @@ function dash(v) {
   }
 }
 
-@media (max-width: 820px) and (orientation: landscape) {
-  .header .actions {
-    display: grid;
-  }
-
-  .action-primary {
-    grid-template-columns: minmax(150px, 0.8fr) minmax(330px, 1.8fr);
-  }
-
-  .action-secondary :deep(.el-button) {
-    font-size: 12px;
-  }
-}
 </style>
 
 <!-- tooltip 挂到 body，需非 scoped -->
