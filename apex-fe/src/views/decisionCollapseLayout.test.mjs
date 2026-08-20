@@ -38,3 +38,17 @@ test('mobile decision results use full-width lists instead of frozen desktop tab
   assert.match(mobileStyles, /\.decision-desktop-table\s*\{[^}]*display:\s*none;/)
   assert.match(mobileStyles, /\.decision-mobile-list\s*\{[^}]*display:\s*block;/)
 })
+
+test('attribution tables cannot grow their grid tracks beyond the mobile viewport', () => {
+  const attributionTemplate = decisionSource.slice(
+    decisionSource.indexOf('<div class="attr-grid">'),
+    decisionSource.indexOf('<el-collapse-item v-if="history.length" name="history">'),
+  )
+
+  assert.equal((attributionTemplate.match(/<el-table(?:\s|>)/g) || []).length, 2)
+  assert.equal((attributionTemplate.match(/\bflexible\b/g) || []).length, 2)
+  assert.match(
+    decisionSource,
+    /\.attr-grid > div\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/,
+  )
+})

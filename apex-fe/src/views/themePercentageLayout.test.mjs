@@ -35,6 +35,18 @@ test('decision mainline themes use compact content-width chips', () => {
   )
 })
 
+test('decision mainline themes open the matching concept constituents', () => {
+  assert.match(
+    decisionSource,
+    /<button[\s\S]*?class="theme-chip"[\s\S]*?:aria-label="`查看\$\{t\.name\}成分股`"[\s\S]*?@click="openTheme\(t\)"/,
+  )
+  assert.match(
+    decisionSource,
+    /function openTheme\(theme\)[\s\S]*?const query = \{ type: theme\.boardType \|\| 'CONCEPT' \}[\s\S]*?if \(theme\.code\) query\.code = theme\.code[\s\S]*?else query\.q = theme\.name[\s\S]*?router\.push\(\{ path: '\/sector', query \}\)/,
+  )
+  assert.match(decisionSource, /\.theme-chip\s*\{[^}]*cursor:\s*pointer;/)
+})
+
 test('decision factors balance seven cards across two complete rows', () => {
   assert.match(
     decisionSource,

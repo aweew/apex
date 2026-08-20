@@ -17,6 +17,11 @@ import java.math.BigDecimal;
 public class MarketHotThemeItem {
 
     /**
+     * 题材/板块代码
+     */
+    private String code;
+
+    /**
      * 题材/板块名称
      */
     private String name;

@@ -2352,6 +2352,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 for (SectorBoardItem item : mainline) {
                     if (MainlineBoardRules.isConceptBoard(item.getBoardType(), item.getName())) {
                         themes.add(MarketHotThemeItem.builder()
+                                .code(item.getCode())
                                 .name(item.getName())
                                 .pctChg(scalePct(item.getPctChg()))
                                 .boardType(item.getBoardType())
@@ -2389,6 +2390,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             }
             seen.put(q.getName(), Boolean.TRUE);
             themes.add(MarketHotThemeItem.builder()
+                    .code(q.getCode())
                     .name(q.getName())
                     .pctChg(scalePct(q.getPctChg()))
                     .boardType(q.getBoardType())

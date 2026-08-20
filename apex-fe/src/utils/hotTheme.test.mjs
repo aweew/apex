@@ -16,11 +16,13 @@ test('concept board filter excludes style and outcome boards', () => {
 test('mainline normalization keeps concept boards only', () => {
   const themes = normalizeHotThemes({
     hotThemeItems: [
-      { name: '机器人执行器', boardType: 'CONCEPT', pctChg: 1.2 },
+      { code: 'BK1156', name: '机器人执行器', boardType: 'CONCEPT', pctChg: 1.2 },
       { name: '基金重仓', boardType: 'CONCEPT', pctChg: 0.8 },
       { name: '医药生物', boardType: 'INDUSTRY', pctChg: 0.6 },
     ],
   })
 
   assert.deepEqual(themes.map((item) => item.name), ['机器人执行器'])
+  assert.equal(themes[0].code, 'BK1156')
+  assert.equal(themes[0].boardType, 'CONCEPT')
 })
