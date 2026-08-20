@@ -704,8 +704,21 @@ span.health-unknown {
 
 .task-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
+}
+
+.task-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.task-actions :deep(.el-button.is-link) {
+  min-width: auto;
+  padding: 0 6px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .system-managed {
@@ -785,6 +798,18 @@ span.health-unknown {
 @media (max-width: 560px) {
   .task-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .task-actions :deep(.el-button) {
+    height: 36px;
+    min-height: 36px;
+    min-width: 64px;
+    margin: 0;
+    padding: 0 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1;
+    letter-spacing: 0;
   }
 
   .custom-form > * {
