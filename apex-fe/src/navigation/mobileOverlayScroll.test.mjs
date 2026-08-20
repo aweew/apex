@@ -12,9 +12,36 @@ test('mobile navigation owns scrolling inside a dedicated drawer body', () => {
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?touch-action:\s*pan-y;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?-webkit-overflow-scrolling:\s*touch;/)
+  const mobileStyles = appSource.slice(appSource.indexOf('@media (max-width: 900px)'))
+  assert.match(mobileStyles, /\.nav-group\s*\{[^}]*flex:\s*0 0 auto;/)
   assert.match(appSource, /class="mobile-menu-scroll"[\s\S]*?<\/div>\s*<div class="mobile-menu-actions">/)
   assert.match(appSource, /\.mobile-menu-actions\s*\{[\s\S]*?flex:\s*0 0 auto;/)
   assert.match(appSource, /\.mobile-logout-btn\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/)
+})
+
+test('mobile document scrolling is restored whenever overlays are initially closed', () => {
+  const mobileMenuWatch = appSource.slice(
+    appSource.indexOf('watch(\n  mobileMenuOpen'),
+    appSource.indexOf('watch(\n  searchOpen'),
+  )
+  const searchWatch = appSource.slice(
+    appSource.indexOf('watch(\n  searchOpen'),
+    appSource.indexOf('\nonMounted('),
+  )
+  const glossaryWatch = glossarySource.slice(
+    glossarySource.indexOf('watch(\n  visible'),
+    glossarySource.indexOf('\nfunction isMobileViewport'),
+  )
+  assert.match(
+    sharedStyles,
+    /@media \(max-width: 900px\) \{[\s\S]*?html,[\s\S]*?body\s*\{[\s\S]*?overflow-y:\s*auto;/,
+  )
+  assert.match(mobileMenuWatch, /document\.documentElement\.classList\.toggle\('mobile-menu-open', open\)/)
+  assert.match(mobileMenuWatch, /\{ immediate: true \}/)
+  assert.match(searchWatch, /document\.documentElement\.classList\.toggle\('search-open', open\)/)
+  assert.match(searchWatch, /\{ immediate: true \}/)
+  assert.match(glossaryWatch, /document\.documentElement\.classList\.toggle\('glossary-open', isVisible\)/)
+  assert.match(glossaryWatch, /\{ immediate: true \}/)
 })
 
 test('mobile search and glossary keep their content regions independently scrollable', () => {

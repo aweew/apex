@@ -81,9 +81,13 @@ watch([query, category], () => {
   }
 })
 
-watch(visible, (isVisible) => {
-  document.documentElement.classList.toggle('glossary-open', isVisible)
-})
+watch(
+  visible,
+  (isVisible) => {
+    document.documentElement.classList.toggle('glossary-open', isVisible)
+  },
+  { immediate: true },
+)
 
 function isMobileViewport() {
   return window.matchMedia('(max-width: 820px)').matches

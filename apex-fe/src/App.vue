@@ -367,22 +367,30 @@ watch(
   { immediate: true, flush: 'sync' },
 )
 
-watch(mobileMenuOpen, async (open) => {
-  document.documentElement.classList.toggle('mobile-menu-open', open)
-  await nextTick()
-  if (open) {
-    const activeLink = mobileMenuRef.value?.querySelector?.('.router-link-active')
-    activeLink?.scrollIntoView?.({ block: 'center' })
-    if (activeLink) activeLink.focus()
-    else mobileMenuCloseRef.value?.focus?.()
-    return
-  }
-  mobileMenuButtonRef.value?.focus?.()
-})
+watch(
+  mobileMenuOpen,
+  async (open) => {
+    document.documentElement.classList.toggle('mobile-menu-open', open)
+    await nextTick()
+    if (open) {
+      const activeLink = mobileMenuRef.value?.querySelector?.('.router-link-active')
+      activeLink?.scrollIntoView?.({ block: 'center' })
+      if (activeLink) activeLink.focus()
+      else mobileMenuCloseRef.value?.focus?.()
+      return
+    }
+    mobileMenuButtonRef.value?.focus?.()
+  },
+  { immediate: true },
+)
 
-watch(searchOpen, (open) => {
-  document.documentElement.classList.toggle('search-open', open)
-})
+watch(
+  searchOpen,
+  (open) => {
+    document.documentElement.classList.toggle('search-open', open)
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   pingHealth()
@@ -1397,6 +1405,7 @@ onBeforeUnmount(() => {
 
   .nav-group {
     display: block;
+    flex: 0 0 auto;
     padding: 0;
     margin: 0;
     overflow: hidden;
