@@ -74,6 +74,34 @@ test('moving before the delay cancels the long press', async () => {
   cleanup()
 })
 
+test('long press movement is captured before the chart can pan', async () => {
+  const listeners = new Map()
+  const element = {
+    addEventListener(type, listener, options) {
+      listeners.set(type, { listener, options })
+    },
+    removeEventListener() {},
+  }
+  let updated = 0
+  bindLongPress({
+    element,
+    delay: 10,
+    onActivate: () => {},
+    onUpdate: () => updated++,
+    onDeactivate: () => {},
+  })
+
+  listeners.get('pointerdown').listener(pointerEvent('pointerdown', 10, 10))
+  await wait(20)
+  const moveEvent = pointerEvent('pointermove', 24, 10)
+  listeners.get('pointermove').listener(moveEvent)
+
+  assert.equal(listeners.get('pointermove').options.capture, true)
+  assert.equal(moveEvent.defaultPrevented, true)
+  assert.equal(moveEvent.cancelBubble, true)
+  assert.equal(updated, 1)
+})
+
 test('mobile tooltip stays inside the visible part of a partially scrolled chart', () => {
   const [left, top] = resolveMobileTooltipPosition({
     point: [176, 450],

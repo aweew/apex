@@ -101,13 +101,18 @@ class BarDailyServiceImplTest {
     }
 
     @Test
-    void syncBarsShouldUseOneTimeoutForTheWholeRequest() {
+    void syncBarsShouldContinueLaterCodesAfterEarlierGroupTimesOut() {
         BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
         DailyBarClient dailyBarClient = mock(DailyBarClient.class);
         StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
         DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
+        AtomicInteger callCount = new AtomicInteger();
         when(dailyBarClient.fetchDailyBars(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
-            Thread.sleep(5000L);
+            callCount.incrementAndGet();
+            String code = invocation.getArgument(0);
+            if ("600000".equals(code) || "600001".equals(code)) {
+                Thread.sleep(5000L);
+            }
             return List.of();
         });
         when(stockBasicMapper.selectOne(any())).thenReturn(null);
@@ -123,9 +128,11 @@ class BarDailyServiceImplTest {
         long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
 
         assertTrue(elapsedMillis < 3000, "整批同步不应逐批累加超时时间");
-        assertEquals(0, response.getSuccessCount());
-        assertEquals(4, response.getFailCount());
-        assertTrue(response.getDetails().stream().allMatch(detail -> detail.endsWith("TIMEOUT")));
+        assertEquals(4, callCount.get());
+        assertEquals(2, response.getSuccessCount());
+        assertEquals(2, response.getFailCount());
+        assertEquals(List.of("600000 TIMEOUT", "600001 TIMEOUT"),
+                response.getDetails().stream().filter(detail -> detail.endsWith("TIMEOUT")).toList());
     }
 
     @Test

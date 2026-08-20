@@ -11,7 +11,8 @@ class NightlyRepairTest(unittest.TestCase):
             expected_date="2026-08-17",
             start="20240101",
             bars_batch=80,
-            bars_rounds=10,
+            bars_rounds=0,
+            bars_max_minutes=150,
             profile_limit=300,
             fundamental_limit=60,
             stale_days=90,
@@ -20,6 +21,9 @@ class NightlyRepairTest(unittest.TestCase):
         self.assertEqual(["daily_bars", "company_profile", "fundamentals"], [step[0] for step in steps])
         self.assertIn("--expected-date", steps[0][2])
         self.assertIn("2026-08-17", steps[0][2])
+        self.assertIn("--max-minutes", steps[0][2])
+        self.assertIn("150", steps[0][2])
+        self.assertIn("0", steps[0][2])
         self.assertIn("--missing", steps[1][2])
         self.assertIn("--missing", steps[2][2])
         self.assertIn("--no-resume", steps[2][2])

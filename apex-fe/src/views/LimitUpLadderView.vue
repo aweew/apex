@@ -1188,7 +1188,7 @@ onBeforeUnmount(() => {
   }
 
   .tier {
-    grid-template-columns: max-content 1fr;
+    grid-template-columns: max-content minmax(0, 1fr);
     column-gap: 8px;
     padding-left: 0;
   }
@@ -1197,8 +1197,24 @@ onBeforeUnmount(() => {
     font-size: 15px;
   }
 
+  .tier-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    min-width: 0;
+  }
+
   .card {
-    width: 96px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .card-sub {
+    gap: 2px;
+  }
+
+  .card-pct {
+    font-size: 9px;
   }
 
   .actions {

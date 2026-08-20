@@ -42,10 +42,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -319,6 +321,31 @@ class DataSyncJobServiceExecutionTest {
         assertEquals("CANCELLED", result.getStatus());
         verify(portfolioService, never()).snapshotAll();
         verify(barDailyService, never()).syncStaleCodes(any());
+    }
+
+    @Test
+    void shutdownDuringPostProcessingCancelsJobAndReleasesLeaseOnce() throws Exception {
+        CountDownLatch sharedQuoteStarted = new CountDownLatch(1);
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(7L));
+        when(watchlistService.listWatchlistCodes("我的自选")).thenReturn(List.of("600000"));
+        when(myHoldingService.refreshQuotesForCodes(any(), eq(false))).thenAnswer(invocation -> {
+            sharedQuoteStarted.countDown();
+            new CountDownLatch(1).await();
+            return Map.of("success", 1, "fail", 0);
+        });
+        Files.writeString(scriptDir.resolve("sync_close_bundle.py"), "exit 0\n");
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("CLOSE_BUNDLE");
+
+        service.startSystemTask(request);
+        assertTrue(sharedQuoteStarted.await(2, TimeUnit.SECONDS), () -> String.valueOf(savedJob.get()));
+        service.shutdown();
+        SyncJob result = waitForTerminal();
+
+        assertEquals("CANCELLED", result.getStatus());
+        assertTrue(result.getMessage().contains("已取消"), result::toString);
+        verify(syncJobLeaseService, times(1))
+                .release(eq("apex:sync:lease:CLOSE_BUNDLE"), anyString());
     }
 
     @Test

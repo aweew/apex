@@ -27,14 +27,15 @@ python sync_a_share.py --mode bars --start 20180101 --sleep 0.4
 # 只补指定代码
 python sync_a_share.py --mode bars --codes 300308,600519 --start 20240101 --sleep 0.3
 
-# 自动分批补缺口（推荐过夜）
-python sync_missing_bars.py --batch 80 --rounds 0 --start 20240101 --sleep 0.18
+# 自动分批补缺口（推荐过夜；持续执行但最多运行 150 分钟）
+python sync_missing_bars.py --batch 80 --rounds 0 --max-minutes 150 --start 20240101 --sleep 0.18
 
 # 忽略进度、强制按 start 重拉
 python sync_a_share.py --mode bars --start 20180101 --no-resume --full-refresh
 ```
 
-进度文件：`.progress/bars_progress.json`
+进度文件：`.progress/bars_progress.json`、`.progress/missing_bars.json`。补缺游标会在每批尝试后推进，代码到尾部后自动从头继续。
+生产容器通过 `APEX_SYNC_PROGRESS_DIR` 将补缺游标保存到持久卷。
 
 日线现含 `turnover_rate`（换手率%）。存量库先执行：
 

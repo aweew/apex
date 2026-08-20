@@ -30,4 +30,17 @@ class NightlyRepairSyncTaskTest {
                 "--bars-batch", "60",
                 "--bars-rounds", "8")));
     }
+
+    @Test
+    void registryBuildsContinuousBoundedNightlyRepairDefaults() {
+        SyncTaskRegistry registry = new SyncTaskRegistry();
+        SyncTaskSpec task = registry.require("NIGHTLY_REPAIR");
+
+        List<String> arguments = registry.buildArgs(task, new SyncStartReq());
+
+        assertTrue(arguments.containsAll(List.of(
+                "--bars-rounds", "0",
+                "--bars-max-minutes", "150")));
+        assertTrue(task.getDefaultParamsHint().contains("150 分钟"));
+    }
 }

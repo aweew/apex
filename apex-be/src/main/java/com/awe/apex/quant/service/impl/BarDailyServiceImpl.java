@@ -308,23 +308,27 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(MAX_PARALLEL, codes.size()));
         List<SyncItem> items = new ArrayList<>();
         try {
-            List<Callable<SyncItem>> tasks = new ArrayList<>();
-            for (String code : codes) {
-                tasks.add(() -> syncOne(code, beginDate, endDate));
-            }
-            List<Future<SyncItem>> futures = pool.invokeAll(
-                    tasks, Math.max(syncTimeoutSeconds, 1), TimeUnit.SECONDS);
-            for (int index = 0; index < futures.size(); index++) {
-                Future<SyncItem> future = futures.get(index);
-                String code = codes.get(index);
-                if (future.isCancelled()) {
-                    items.add(new SyncItem(code, false, 0, code + " TIMEOUT"));
-                    continue;
+            for (int groupStart = 0; groupStart < codes.size(); groupStart += MAX_PARALLEL) {
+                int groupEnd = Math.min(groupStart + MAX_PARALLEL, codes.size());
+                List<String> groupCodes = codes.subList(groupStart, groupEnd);
+                List<Callable<SyncItem>> tasks = new ArrayList<>();
+                for (String code : groupCodes) {
+                    tasks.add(() -> syncOne(code, beginDate, endDate));
                 }
-                try {
-                    items.add(future.get());
-                } catch (Exception ex) {
-                    items.add(new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage()));
+                List<Future<SyncItem>> futures = pool.invokeAll(
+                        tasks, Math.max(syncTimeoutSeconds, 1), TimeUnit.SECONDS);
+                for (int index = 0; index < futures.size(); index++) {
+                    Future<SyncItem> future = futures.get(index);
+                    String code = groupCodes.get(index);
+                    if (future.isCancelled()) {
+                        items.add(new SyncItem(code, false, 0, code + " TIMEOUT"));
+                        continue;
+                    }
+                    try {
+                        items.add(future.get());
+                    } catch (Exception ex) {
+                        items.add(new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage()));
+                    }
                 }
             }
         } catch (InterruptedException ex) {

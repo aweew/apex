@@ -414,6 +414,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private void runDecisionJob(Long jobId, SyncStartReq syncRequest, AtomicBoolean cancelled) {
         SyncJob job = syncJobMapper.selectById(jobId);
         if (Objects.isNull(job)) {
+            cleanup(jobId);
+            runningDecisionJobs.remove(SHARED_DECISION_KEY, jobId);
             return;
         }
         try {
@@ -640,6 +642,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
      */
     @PreDestroy
     public void shutdown() {
+        for (AtomicBoolean cancelFlag : cancelFlags.values()) {
+            cancelFlag.set(true);
+        }
         for (Map.Entry<Long, Process> entry : runningProcesses.entrySet()) {
             Process p = entry.getValue();
             if (Objects.nonNull(p) && p.isAlive()) {
@@ -659,6 +664,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private void runJob(Long jobId, SyncTaskSpec spec, Path script, List<String> scriptArgs, AtomicBoolean cancelled) {
         SyncJob job = syncJobMapper.selectById(jobId);
         if (Objects.isNull(job)) {
+            cleanup(jobId);
             return;
         }
         List<String> command = new ArrayList<>();
@@ -1242,7 +1248,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         throw new BusinessException("未找到 scripts/market_data，请配置 apex.sync.script-dir");
     }
 
-    private void cleanup(Long jobId) {
+    private synchronized void cleanup(Long jobId) {
         runningProcesses.remove(jobId);
         runningFutures.remove(jobId);
         cancelFlags.remove(jobId);

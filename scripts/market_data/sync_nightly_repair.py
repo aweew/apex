@@ -18,6 +18,7 @@ def build_steps(
     start: str,
     bars_batch: int,
     bars_rounds: int,
+    bars_max_minutes: int,
     profile_limit: int,
     fundamental_limit: int,
     stale_days: int,
@@ -28,7 +29,8 @@ def build_steps(
             ROOT / "sync_missing_bars.py",
             [
                 "--batch", str(max(1, bars_batch)),
-                "--rounds", str(max(1, bars_rounds)),
+                "--rounds", str(max(0, bars_rounds)),
+                "--max-minutes", str(max(1, bars_max_minutes)),
                 "--start", start,
                 "--expected-date", expected_date,
                 "--sleep", "0.18",
@@ -90,7 +92,8 @@ def main() -> int:
     parser.add_argument("--expected-date", required=True, help="期望最新交易日 yyyy-MM-dd")
     parser.add_argument("--start", default="20240101", help="日线补齐开始日期 yyyyMMdd")
     parser.add_argument("--bars-batch", type=int, default=80, help="每轮日线代码数")
-    parser.add_argument("--bars-rounds", type=int, default=10, help="每晚日线补齐轮数")
+    parser.add_argument("--bars-rounds", type=int, default=0, help="每晚日线补齐轮数；0=持续补齐")
+    parser.add_argument("--bars-max-minutes", type=int, default=150, help="每晚日线最长运行分钟数")
     parser.add_argument("--profile-limit", type=int, default=300, help="每晚公司资料上限")
     parser.add_argument("--fundamental-limit", type=int, default=60, help="每晚财务股票上限")
     parser.add_argument("--stale-days", type=int, default=90, help="公司资料过期天数")
@@ -101,6 +104,7 @@ def main() -> int:
         start=args.start,
         bars_batch=args.bars_batch,
         bars_rounds=args.bars_rounds,
+        bars_max_minutes=args.bars_max_minutes,
         profile_limit=args.profile_limit,
         fundamental_limit=args.fundamental_limit,
         stale_days=args.stale_days,

@@ -47,7 +47,7 @@ public class SyncTaskRegistry {
                 .groupName("每日收盘")
                 .description("依次补齐全A日线、公司资料和财务基本面")
                 .scriptFile("sync_nightly_repair.py")
-                .defaultParamsHint("每天 02:10；日线 800 只、公司资料 300 只、财务 60 只")
+                .defaultParamsHint("每天 02:10；日线持续补齐最多 150 分钟、公司资料 300 只、财务 60 只")
                 .timeoutSec(21600)
                 .build());
         register(SyncTaskSpec.builder()
@@ -350,8 +350,10 @@ public class SyncTaskRegistry {
                 args.add(String.valueOf(Objects.nonNull(safe.getBatch()) && safe.getBatch() > 0
                         ? safe.getBatch() : 80));
                 args.add("--bars-rounds");
-                args.add(String.valueOf(Objects.nonNull(safe.getRounds()) && safe.getRounds() > 0
-                        ? safe.getRounds() : 10));
+                args.add(String.valueOf(Objects.nonNull(safe.getRounds()) && safe.getRounds() >= 0
+                        ? safe.getRounds() : 0));
+                args.add("--bars-max-minutes");
+                args.add("150");
             }
             case "DECISION" -> {
                 // Java 内部任务，无脚本参数。

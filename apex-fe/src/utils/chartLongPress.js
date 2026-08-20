@@ -43,13 +43,14 @@ export function bindLongPress({
     }
     if (pressActive) {
       event.preventDefault()
+      event.stopImmediatePropagation()
       onUpdate(event)
     }
   }
   const onContextMenu = (event) => event.preventDefault()
 
   element.addEventListener('pointerdown', onPointerDown)
-  element.addEventListener('pointermove', onPointerMove, { passive: false })
+  element.addEventListener('pointermove', onPointerMove, { capture: true, passive: false })
   element.addEventListener('pointerup', deactivate)
   element.addEventListener('pointercancel', deactivate)
   element.addEventListener('pointerleave', deactivate)
@@ -58,7 +59,7 @@ export function bindLongPress({
   return () => {
     deactivate()
     element.removeEventListener('pointerdown', onPointerDown)
-    element.removeEventListener('pointermove', onPointerMove)
+    element.removeEventListener('pointermove', onPointerMove, { capture: true })
     element.removeEventListener('pointerup', deactivate)
     element.removeEventListener('pointercancel', deactivate)
     element.removeEventListener('pointerleave', deactivate)

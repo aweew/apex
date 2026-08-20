@@ -69,6 +69,7 @@ services:
       APEX_BOT_WECLAW_API_TOKEN: ${APEX_BOT_WECLAW_API_TOKEN:-}
       APEX_BOT_WECLAW_TIMEOUT_MS: ${APEX_BOT_WECLAW_TIMEOUT_MS:-5000}
       APEX_MX_OUTPUT_DIR: /app/.mx_output
+      APEX_SYNC_PROGRESS_DIR: /app/.mx_output/sync_progress
       APEX_HOT_PYTHON_CMD: python3
       APEX_HOT_SCRIPT_PATH: /app/scripts/market_data/sync_hot.py
       APEX_NEWS_PYTHON_CMD: python3
