@@ -15,6 +15,8 @@ test('main navigation keeps only the consolidated high-frequency entries', () =>
         items: [
           ['/dashboard', '看板'],
           ['/decision', '决策'],
+          ['/ai-center', '小灵'],
+          ['/watchlist', '我的自选'],
           ['/observe', '观察池'],
           ['/portfolio', '组合'],
           ['/paper', '模拟盘'],
@@ -25,7 +27,9 @@ test('main navigation keeps only the consolidated high-frequency entries', () =>
         items: [
           ['/market', '行情'],
           ['/screener', '股票'],
+          ['/factors', '因子'],
           ['/sector', '板块'],
+          ['/capital-flow', '资金面'],
           ['/limit-up', '连板天梯'],
           ['/news', '资讯'],
         ],
@@ -42,10 +46,10 @@ test('main navigation keeps only the consolidated high-frequency entries', () =>
   )
 })
 
-test('consolidated pages stay out of the main navigation', () => {
+test('low-frequency pages stay out of the main navigation', () => {
   const paths = MAIN_NAV_GROUPS.flatMap((group) => group.items.map((item) => item.to))
 
-  for (const hiddenPath of ['/holding', '/valuation', '/signals', '/watchlist', '/pipeline', '/daily', '/hot']) {
+  for (const hiddenPath of ['/holding', '/valuation', '/signals', '/pipeline', '/daily', '/hot']) {
     assert.equal(paths.includes(hiddenPath), false, hiddenPath)
   }
 })

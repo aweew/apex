@@ -32,6 +32,17 @@ test('opening mobile detail redraws charts after their containers mount', () => 
   )
   assert.match(portfolioSource, /themeChart\.getDom\(\) !== themePieRef\.value/)
   assert.match(portfolioSource, /chart\.getDom\(\) !== chartRef\.value/)
+  assert.match(portfolioSource, /intradayChart\.getDom\(\) !== intradayChartRef\.value/)
+})
+
+test('portfolio detail exposes a responsive intraday return curve with five-minute polling', () => {
+  assert.match(portfolioSource, /class="intraday-panel"/)
+  assert.match(portfolioSource, /盘中收益/)
+  assert.match(portfolioSource, /盘中最高/)
+  assert.match(portfolioSource, /盘中最低/)
+  assert.match(portfolioSource, /日内振幅/)
+  assert.match(portfolioSource, /setInterval\([\s\S]*?5 \* 60 \* 1000/)
+  assert.match(portfolioSource, /@media \(max-width: 820px\) \{[\s\S]*?\.intraday-summary\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
 })
 
 test('portfolio theme pie keeps theme names beside the chart instead of a separate row', () => {

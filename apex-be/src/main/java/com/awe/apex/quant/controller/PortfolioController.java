@@ -12,6 +12,8 @@ import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioDaily;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
+import com.awe.apex.quant.domain.entity.PortfolioIntradaySnapshot;
+import com.awe.apex.quant.service.IPortfolioIntradayService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IPortfolioImageImportService;
 import jakarta.annotation.Resource;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +44,9 @@ public class PortfolioController {
 
     @Resource
     private IPortfolioImageImportService portfolioImageImportService;
+
+    @Resource
+    private IPortfolioIntradayService portfolioIntradayService;
 
     /**
      * 组合列表
@@ -224,5 +230,19 @@ public class PortfolioController {
     public Result<List<PortfolioDaily>> daily(@PathVariable Long id,
                                               @RequestParam(required = false, defaultValue = "60") Integer days) {
         return Result.success(portfolioService.listDaily(id, days));
+    }
+
+    /**
+     * 盘中五分钟收益序列
+     *
+     * @param id        组合ID
+     * @param tradeDate 交易日，为空时取当天
+     * @return 盘中收益序列
+     */
+    @GetMapping("/{id}/intraday")
+    public Result<List<PortfolioIntradaySnapshot>> intraday(
+            @PathVariable Long id,
+            @RequestParam(required = false) LocalDate tradeDate) {
+        return Result.success(portfolioIntradayService.list(id, tradeDate));
     }
 }

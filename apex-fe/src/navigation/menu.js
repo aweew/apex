@@ -4,6 +4,8 @@ export const MAIN_NAV_GROUPS = [
     items: [
       { to: '/dashboard', label: '看板' },
       { to: '/decision', label: '决策', activePaths: ['/decision', '/signals'] },
+      { to: '/ai-center', label: '小灵' },
+      { to: '/watchlist', label: '我的自选' },
       { to: '/observe', label: '观察池' },
       { to: '/portfolio', label: '组合' },
       { to: '/paper', label: '模拟盘' },
@@ -14,7 +16,9 @@ export const MAIN_NAV_GROUPS = [
     items: [
       { to: '/market', label: '行情' },
       { to: '/screener', label: '股票' },
+      { to: '/factors', label: '因子' },
       { to: '/sector', label: '板块' },
+      { to: '/capital-flow', label: '资金面' },
       { to: '/limit-up', label: '连板天梯' },
       { to: '/news', label: '资讯' },
     ],

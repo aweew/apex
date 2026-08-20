@@ -23,6 +23,7 @@ import { saveObserve } from '../api/observe'
 import { getCurrentUser } from '../api/auth'
 import {
   listPortfolioDaily,
+  listPortfolioIntraday,
   listPortfolios,
   portfolioDetail,
   refreshPortfolioQuotes,
@@ -60,6 +61,7 @@ import HoldingTradeDialog from '../components/HoldingTradeDialog.vue'
 import PortfolioImportDialog from '../components/PortfolioImportDialog.vue'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
+import { buildPortfolioIntradaySeries } from '../utils/portfolioIntraday.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -73,7 +75,9 @@ const activeId = ref(null)
 const detail = ref(null)
 const rows = ref([])
 const dailyRows = ref([])
+const intradayRows = ref([])
 const chartRef = ref(null)
+const intradayChartRef = ref(null)
 const industryPieRef = ref(null)
 const themePieRef = ref(null)
 const viewportWidth = ref(window.innerWidth)
@@ -83,8 +87,10 @@ const mobileDetailOpen = computed(() => {
   return isMobileViewport.value && Number.isFinite(portfolioId) && portfolioId > 0
 })
 let chart = null
+let intradayChart = null
 let industryChart = null
 let themeChart = null
+let intradayRefreshTimer = null
 
 const showIndustry = ref(false)
 const pfDialog = ref(false)
@@ -462,6 +468,7 @@ const totalTodayPct = computed(() => {
   if (!Number.isFinite(preMv) || Math.abs(preMv) < 1e-6) return null
   return (totalTodayPnl.value / preMv) * 100
 })
+const intradaySeries = computed(() => buildPortfolioIntradaySeries(intradayRows.value))
 
 const industryDist = computed(() => {
   const map = new Map()
@@ -676,25 +683,30 @@ async function loadDetail(id, silent = false) {
     detail.value = null
     rows.value = []
     dailyRows.value = []
+    intradayRows.value = []
     renderPies()
     renderDailyChart()
+    renderIntradayChart()
     return
   }
   detailLoading.value = true
   try {
-    const [dRes, dayRes] = await Promise.all([
+    const [dRes, dayRes, intradayRes] = await Promise.all([
       portfolioDetail(id),
       listPortfolioDaily(id, 60),
+      listPortfolioIntraday(id),
     ])
     detail.value = dRes?.data || null
     rows.value = detail.value?.holdings || []
     dailyRows.value = (dayRes?.data || []).slice().reverse()
+    intradayRows.value = intradayRes?.data || []
     if (!silent) {
       // keep quiet on switch
     }
     await nextTick()
     renderPies()
     renderDailyChart()
+    renderIntradayChart()
   } catch (e) {
     ElMessage.error(e.message || '加载详情失败')
   } finally {
@@ -810,6 +822,7 @@ watch(mobileDetailOpen, async (open) => {
   await nextTick()
   renderPies()
   renderDailyChart()
+  renderIntradayChart()
 })
 
 watch(includeArchived, () => loadList(true))
@@ -937,6 +950,90 @@ function renderDailyChart() {
     },
     true,
   )
+}
+
+function renderIntradayChart() {
+  if (!intradaySeries.value.times.length) {
+    intradayChart?.clear()
+    return
+  }
+  if (!intradayChartRef.value) return
+  if (intradayChart && intradayChart.getDom() !== intradayChartRef.value) {
+    intradayChart.dispose()
+    intradayChart = null
+  }
+  if (!intradayChart) intradayChart = echarts.init(intradayChartRef.value)
+  const { times, returnRates, pnls } = intradaySeries.value
+  const returnLineColor = intradaySeries.value.latestReturnRate >= 0 ? '#e5484d' : '#23855a'
+  intradayChart.setOption(
+    {
+      animationDuration: 280,
+      tooltip: {
+        trigger: 'axis',
+        formatter(params) {
+          const point = params?.[0]
+          const pointIndex = Number(point?.dataIndex)
+          const returnRate = returnRates[pointIndex]
+          const pnl = pnls[pointIndex]
+          return `${times[pointIndex]}<br/>日内收益 ${fmtSignedPct(returnRate)}<br/>当日盈亏 ${fmtSignedMoney(pnl)}`
+        },
+      },
+      grid: {
+        left: isMobileViewport.value ? 42 : 52,
+        right: isMobileViewport.value ? 12 : 24,
+        top: 18,
+        bottom: 28,
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: times,
+        axisLine: { lineStyle: { color: '#d6d9de' } },
+        axisTick: { show: false },
+        axisLabel: { color: '#86868b', hideOverlap: true },
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { color: '#86868b', formatter: '{value}%' },
+        splitLine: { lineStyle: { color: '#eceef1' } },
+        scale: true,
+      },
+      series: [
+        {
+          name: '日内收益率',
+          type: 'line',
+          data: returnRates,
+          smooth: 0.25,
+          symbol: 'circle',
+          symbolSize: returnRates.length <= 8 ? 5 : 0,
+          lineStyle: { width: 2.5, color: returnLineColor },
+          itemStyle: { color: returnLineColor },
+          areaStyle: { color: 'rgba(91, 104, 125, 0.08)' },
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            label: { show: false },
+            lineStyle: { color: '#aeb3bb', type: 'dashed', width: 1 },
+            data: [{ yAxis: 0 }],
+          },
+        },
+      ],
+    },
+    true,
+  )
+}
+
+async function loadIntraday(id, silent = false) {
+  if (!id) return
+  try {
+    const response = await listPortfolioIntraday(id)
+    if (Number(activeId.value) !== Number(id)) return
+    intradayRows.value = response?.data || []
+    await nextTick()
+    renderIntradayChart()
+  } catch (error) {
+    if (!silent) ElMessage.error(error.message || '加载盘中收益失败')
+  }
 }
 
 function openCreatePf() {
@@ -1455,6 +1552,7 @@ function onResize() {
   viewportWidth.value = window.innerWidth
   if (!isMobileViewport.value) mobileSortMode.value = false
   chart?.resize()
+  intradayChart?.resize()
   industryChart?.resize()
   themeChart?.resize()
 }
@@ -1462,16 +1560,22 @@ function onResize() {
 onMounted(async () => {
   await loadList(true)
   window.addEventListener('resize', onResize)
+  intradayRefreshTimer = window.setInterval(() => {
+    if (!document.hidden && activeId.value) loadIntraday(activeId.value, true)
+  }, 5 * 60 * 1000)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  window.clearInterval(intradayRefreshTimer)
   clearPortfolioSortInteraction()
   revokeSharePreview()
   chart?.dispose()
+  intradayChart?.dispose()
   industryChart?.dispose()
   themeChart?.dispose()
   chart = null
+  intradayChart = null
   industryChart = null
   themeChart = null
 })
@@ -1813,6 +1917,43 @@ onBeforeUnmount(() => {
             <b :class="totalPnl >= 0 ? 'up' : 'down'">{{ fmtSignedMoney(totalPnl) }}</b>
           </div>
         </div>
+
+        <section v-if="rows.length && !sharingCapture" class="intraday-panel">
+          <div class="theme-panel-head intraday-head">
+            <div class="theme-panel-title">
+              <h3>盘中收益</h3>
+              <span class="muted">5 分钟更新</span>
+            </div>
+            <span v-if="intradaySeries.times.length" class="intraday-updated">
+              更新至 {{ intradaySeries.times[intradaySeries.times.length - 1] }}
+            </span>
+          </div>
+          <div v-if="intradaySeries.times.length" class="intraday-summary">
+            <div>
+              <span>最新收益</span>
+              <b :class="intradaySeries.latestReturnRate >= 0 ? 'up' : 'down'">
+                {{ fmtSignedPct(intradaySeries.latestReturnRate) }}
+              </b>
+              <small>{{ fmtSignedMoney(intradaySeries.latestPnl) }}</small>
+            </div>
+            <div>
+              <span>盘中最高</span>
+              <b class="up">{{ fmtSignedPct(intradaySeries.highestReturnRate) }}</b>
+            </div>
+            <div>
+              <span>盘中最低</span>
+              <b class="down">{{ fmtSignedPct(intradaySeries.lowestReturnRate) }}</b>
+            </div>
+            <div>
+              <span>日内振幅</span>
+              <b>{{ intradaySeries.amplitude.toFixed(2) }}%</b>
+            </div>
+          </div>
+          <div v-show="intradaySeries.times.length" ref="intradayChartRef" class="intraday-chart" />
+          <div v-if="!intradaySeries.times.length" class="intraday-empty">
+            暂无盘中快照
+          </div>
+        </section>
 
         <section v-if="rows.length && brief" class="brief-panel">
           <div class="brief-head">
@@ -3215,7 +3356,8 @@ onBeforeUnmount(() => {
   border-color: rgba(0, 0, 0, 0.08);
 }
 .theme-panel,
-.daily-panel {
+.daily-panel,
+.intraday-panel {
   margin: 2px 0 12px;
   padding: 12px 14px 14px;
   background: var(--glass);
@@ -3227,6 +3369,60 @@ onBeforeUnmount(() => {
 }
 .daily-panel {
   margin-top: 14px;
+}
+.intraday-panel {
+  margin-bottom: 16px;
+}
+.intraday-head {
+  margin-bottom: 6px;
+}
+.intraday-updated {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.intraday-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 6px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.intraday-summary > div {
+  min-width: 0;
+  padding: 10px 14px;
+  border-right: 1px solid var(--line);
+}
+.intraday-summary > div:last-child {
+  border-right: 0;
+}
+.intraday-summary span,
+.intraday-summary small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.intraday-summary b {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.intraday-summary small {
+  display: inline-block;
+  margin-left: 7px;
+  font-variant-numeric: tabular-nums;
+}
+.intraday-chart {
+  width: 100%;
+  height: 260px;
+}
+.intraday-empty {
+  display: grid;
+  height: 150px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
 }
 .theme-panel-head {
   display: flex;
@@ -3591,6 +3787,26 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 820px) {
+  .intraday-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .intraday-summary > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .intraday-summary > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .intraday-summary b {
+    font-size: 16px;
+  }
+
+  .intraday-chart {
+    height: 220px;
+  }
+
   .holding-table-scroll {
     width: 100%;
     max-width: 100%;

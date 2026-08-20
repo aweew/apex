@@ -13,6 +13,7 @@ const ConfigView = () => import('../views/ConfigView.vue')
 const StockView = () => import('../views/StockView.vue')
 const PipelineView = () => import('../views/PipelineView.vue')
 const ScreenerView = () => import('../views/ScreenerView.vue')
+const FactorCenterView = () => import('../views/FactorCenterView.vue')
 const ValuationView = () => import('../views/ValuationView.vue')
 const DecisionView = () => import('../views/DecisionView.vue')
 const HoldingView = () => import('../views/HoldingView.vue')
@@ -23,10 +24,12 @@ const HotView = () => import('../views/HotView.vue')
 const NewsView = () => import('../views/NewsView.vue')
 const IndexBoardView = () => import('../views/IndexBoardView.vue')
 const SectorBoardView = () => import('../views/SectorBoardView.vue')
+const CapitalFlowView = () => import('../views/CapitalFlowView.vue')
 const LimitUpLadderView = () => import('../views/LimitUpLadderView.vue')
 const SyncView = () => import('../views/SyncView.vue')
 const LoginView = () => import('../views/LoginView.vue')
 const RegisterView = () => import('../views/RegisterView.vue')
+const ApexAiView = () => import('../views/ApexAiView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -42,10 +45,12 @@ const router = createRouter({
     { path: '/register', name: 'register', component: RegisterView, meta: { public: true } },
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'dashboard', component: DashboardView },
+    { path: '/ai-center', name: 'apexAi', component: ApexAiView },
     { path: '/decision', name: 'decision', component: DecisionView },
     { path: '/market', name: 'market', component: IndexBoardView },
     { path: '/heatmap', redirect: { path: '/market', hash: '#heatmap' } },
     { path: '/sector', name: 'sector', component: SectorBoardView },
+    { path: '/capital-flow', name: 'capitalFlow', component: CapitalFlowView },
     { path: '/limit-up', name: 'limitUp', component: LimitUpLadderView },
     { path: '/sync', name: 'sync', component: SyncView },
     { path: '/hot', name: 'hot', component: HotView },
@@ -56,6 +61,7 @@ const router = createRouter({
     { path: '/observe', name: 'observe', component: ObserveView },
     { path: '/pipeline', name: 'pipeline', component: PipelineView },
     { path: '/screener', name: 'screener', component: ScreenerView },
+    { path: '/factors', name: 'factors', component: FactorCenterView },
     { path: '/valuation', name: 'valuation', component: ValuationView },
     { path: '/watchlist', name: 'watchlist', component: WatchlistView },
     { path: '/stock/:code?', name: 'stock', component: StockView },

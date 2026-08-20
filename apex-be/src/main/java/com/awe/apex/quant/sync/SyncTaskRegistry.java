@@ -143,6 +143,24 @@ public class SyncTaskRegistry {
                 .timeoutSec(900)
                 .build());
         register(SyncTaskSpec.builder()
+                .taskType("CAPITAL_FLOW")
+                .name("北向与个股资金流")
+                .groupName("市场看板")
+                .description("同步北向资金和个股主力资金流，支持收盘后一并补刷龙虎榜")
+                .scriptFile("sync_capital_flow.py")
+                .defaultParamsHint("mode=flow；18:20 补刷使用 mode=all")
+                .timeoutSec(900)
+                .build());
+        register(SyncTaskSpec.builder()
+                .taskType("DRAGON_TIGER")
+                .name("龙虎榜")
+                .groupName("市场看板")
+                .description("同步最近交易日龙虎榜明细")
+                .scriptFile("sync_capital_flow.py")
+                .defaultParamsHint("mode=lhb；交易日 17:30 首刷")
+                .timeoutSec(900)
+                .build());
+        register(SyncTaskSpec.builder()
                 .taskType("SECTOR_CONS")
                 .name("板块成分股")
                 .groupName("板块")
@@ -310,6 +328,20 @@ public class SyncTaskRegistry {
                 }
                 args.add("--sleep");
                 args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.3));
+            }
+            case "CAPITAL_FLOW" -> {
+                args.add("--mode");
+                if ("stock".equalsIgnoreCase(safe.getMode())) {
+                    args.add("stock");
+                } else if ("all".equalsIgnoreCase(safe.getMode())) {
+                    args.add("all");
+                } else {
+                    args.add("flow");
+                }
+            }
+            case "DRAGON_TIGER" -> {
+                args.add("--mode");
+                args.add("lhb");
             }
             case "LIMIT_UP" -> {
                 if (StringUtils.isNotBlank(safe.getStart())) {

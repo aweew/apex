@@ -76,6 +76,14 @@ public interface IPortfolioService {
     PortfolioSummaryResp detail(Long id);
 
     /**
+     * 查询盘中快照所需的轻量组合摘要
+     *
+     * @param id 组合ID
+     * @return 组合权益与当日收益摘要
+     */
+    PortfolioSummaryResp intradaySummary(Long id);
+
+    /**
      * 保存持仓
      *
      * @param portfolioId 组合ID

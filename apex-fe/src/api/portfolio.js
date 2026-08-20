@@ -56,6 +56,10 @@ export function listPortfolioDaily(portfolioId, days = 60) {
   return http.get(`/api/portfolio/${portfolioId}/daily`, { params: { days } })
 }
 
+export function listPortfolioIntraday(portfolioId) {
+  return http.get(`/api/portfolio/${portfolioId}/intraday`)
+}
+
 export function refreshPortfolioQuotes(portfolioId, onlyMissing = false) {
   return http.post(`/api/portfolio/${portfolioId}/refresh-quotes`, null, {
     params: { onlyMissing },

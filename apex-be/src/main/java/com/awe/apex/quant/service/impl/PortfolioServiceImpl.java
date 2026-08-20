@@ -381,6 +381,21 @@ public class PortfolioServiceImpl implements IPortfolioService {
     }
 
     /**
+     * 查询盘中快照所需的轻量组合摘要
+     *
+     * @param id 组合ID
+     * @return 组合权益与当日收益摘要
+     */
+    @Override
+    public PortfolioSummaryResp intradaySummary(Long id) {
+        ensureDefaultPortfolio();
+        Portfolio portfolio = requireVisiblePortfolio(id);
+        Long currentUserId = currentUserId();
+        boolean currentUserAdmin = userAuthService.isAdmin(currentUserId);
+        return buildSummary(portfolio, false, currentUserId, currentUserAdmin);
+    }
+
+    /**
      * 保存持仓
      *
      * @param portfolioId 组合ID

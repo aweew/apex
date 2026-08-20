@@ -9,6 +9,7 @@ import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
+import com.awe.apex.quant.service.IPortfolioIntradayService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IWatchlistService;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 class DataSyncSchedulerTest {
 
@@ -50,11 +52,11 @@ class DataSyncSchedulerTest {
     }
 
     @Test
-    void schedulesFocusQuoteRefreshEveryThreeMinutes() throws Exception {
+    void schedulesFocusQuoteRefreshEveryFiveMinutes() throws Exception {
         Method method = DataSyncScheduler.class.getMethod("refreshFocusQuotesIntraday");
         Scheduled scheduled = method.getAnnotation(Scheduled.class);
 
-        assertEquals("0 */3 9-11,13-15 * * MON-FRI", scheduled.cron());
+        assertEquals("0 */5 9-11,13-15 * * MON-FRI", scheduled.cron());
         assertEquals("Asia/Shanghai", scheduled.zone());
     }
 
@@ -63,6 +65,8 @@ class DataSyncSchedulerTest {
         IConfigService configService = mock(IConfigService.class);
         IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
         IObservePoolService observePoolService = mock(IObservePoolService.class);
+        IPortfolioService portfolioService = mock(IPortfolioService.class);
+        IPortfolioIntradayService portfolioIntradayService = mock(IPortfolioIntradayService.class);
         ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
         ApexUserContext userContext = new ApexUserContext();
         List<Long> evaluatedUserIds = new ArrayList<>();
@@ -76,6 +80,10 @@ class DataSyncSchedulerTest {
                 userContext.currentUserId() == 11L
                         ? List.of("300750", "600519")
                         : List.of("600519", "000858"));
+        when(portfolioService.listActiveHoldingCodes()).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L
+                        ? List.of("688981")
+                        : List.of("002594", "688981"));
         when(observePoolService.refresh()).thenAnswer(invocation -> {
             evaluatedUserIds.add(userContext.currentUserId());
             return Map.of();
@@ -84,6 +92,8 @@ class DataSyncSchedulerTest {
         ReflectionTestUtils.setField(scheduler, "configService", configService);
         ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
         ReflectionTestUtils.setField(scheduler, "observePoolService", observePoolService);
+        ReflectionTestUtils.setField(scheduler, "portfolioService", portfolioService);
+        ReflectionTestUtils.setField(scheduler, "portfolioIntradayService", portfolioIntradayService);
         ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
         ReflectionTestUtils.setField(scheduler, "userContext", userContext);
 
@@ -93,13 +103,47 @@ class DataSyncSchedulerTest {
             scheduler.refreshFocusQuotes(LocalDate.of(2026, 8, 13), LocalTime.of(10, 0));
 
             verify(myHoldingService).refreshRealtimeQuotesForCodes(
-                    List.of("600000", "000001", "300750", "600519", "000858"), false);
+                    List.of("600000", "000001", "300750", "600519", "688981", "000858", "002594"), false);
             verify(myHoldingService, never()).refreshQuotesForCodes(org.mockito.ArgumentMatchers.any(),
                     org.mockito.ArgumentMatchers.any());
             verify(myHoldingService, never()).refreshQuotes(false);
             assertEquals(List.of(11L, 22L), evaluatedUserIds);
+            verify(portfolioIntradayService, org.mockito.Mockito.times(2))
+                    .snapshotAll(LocalDate.of(2026, 8, 13).atTime(10, 0));
             assertEquals(99L, userContext.currentUserId());
         }
+    }
+
+    @Test
+    void intradaySnapshotFailureDoesNotBlockObservePoolRefresh() {
+        IConfigService configService = mock(IConfigService.class);
+        IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
+        IObservePoolService observePoolService = mock(IObservePoolService.class);
+        IPortfolioService portfolioService = mock(IPortfolioService.class);
+        IPortfolioIntradayService portfolioIntradayService = mock(IPortfolioIntradayService.class);
+        ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+        ApexUserContext userContext = new ApexUserContext();
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(11L));
+        when(myHoldingService.listHoldingCodes()).thenReturn(List.of("600000"));
+        when(observePoolService.listActiveCodes()).thenReturn(List.of());
+        when(portfolioService.listActiveHoldingCodes()).thenReturn(List.of());
+        when(myHoldingService.refreshRealtimeQuotesForCodes(List.of("600000"), false))
+                .thenReturn(Map.of("success", 1, "fail", 0));
+        doThrow(new IllegalStateException("database unavailable"))
+                .when(portfolioIntradayService).snapshotAll(LocalDate.of(2026, 8, 13).atTime(10, 0));
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
+        ReflectionTestUtils.setField(scheduler, "observePoolService", observePoolService);
+        ReflectionTestUtils.setField(scheduler, "portfolioService", portfolioService);
+        ReflectionTestUtils.setField(scheduler, "portfolioIntradayService", portfolioIntradayService);
+        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
+        ReflectionTestUtils.setField(scheduler, "userContext", userContext);
+
+        scheduler.refreshFocusQuotes(LocalDate.of(2026, 8, 13), LocalTime.of(10, 0));
+
+        verify(observePoolService).refresh();
     }
 
     @Test
@@ -383,6 +427,111 @@ class DataSyncSchedulerTest {
         when(configService.getString("auto_sync_enabled", "false")).thenReturn("false");
 
         scheduler.repairMarketDataNightly(LocalDate.of(2026, 8, 18));
+
+        verify(dataSyncJobService, never()).startSystemTask(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void schedulesCapitalFlowAtRecommendedTimes() throws Exception {
+        assertEquals("0 5,35 9-14 * * MON-FRI",
+                DataSyncScheduler.class.getMethod("refreshCapitalFlowIntraday")
+                        .getAnnotation(Scheduled.class).cron());
+        assertEquals("0 5 15 * * MON-FRI",
+                DataSyncScheduler.class.getMethod("refreshCapitalFlowIntradayClose")
+                        .getAnnotation(Scheduled.class).cron());
+        assertEquals("0 10 15 * * MON-FRI",
+                DataSyncScheduler.class.getMethod("refreshCapitalFlowClose")
+                        .getAnnotation(Scheduled.class).cron());
+        assertEquals("0 30 17 * * MON-FRI",
+                DataSyncScheduler.class.getMethod("refreshDragonTiger")
+                        .getAnnotation(Scheduled.class).cron());
+        assertEquals("0 20 18 * * MON-FRI",
+                DataSyncScheduler.class.getMethod("refreshCapitalFlowAll")
+                        .getAnnotation(Scheduled.class).cron());
+    }
+
+    @Test
+    void capitalFlowScheduleUsesModesAndSkipsDuplicateTasks() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.isTaskRunning("CAPITAL_FLOW")).thenReturn(false);
+        when(dataSyncJobService.isTaskRunning("DRAGON_TIGER")).thenReturn(true);
+        when(dataSyncJobService.isTaskRunning("SECTOR_QUOTE")).thenReturn(false);
+        when(dataSyncJobService.startSystemTask(org.mockito.ArgumentMatchers.any())).thenReturn(
+                SyncJobResp.builder().id(401L).status("PENDING").build());
+
+        scheduler.refreshCapitalFlow(LocalDate.of(2026, 8, 20), "flow");
+        scheduler.refreshCapitalFlow(LocalDate.of(2026, 8, 20), "lhb");
+
+        verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
+                "CAPITAL_FLOW".equals(request.getTaskType()) && "flow".equals(request.getMode())));
+        verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
+                "SECTOR_QUOTE".equals(request.getTaskType())
+                        && "INDUSTRY,CONCEPT,THEME".equals(request.getTypes())));
+        verify(dataSyncJobService, org.mockito.Mockito.times(2))
+                .startSystemTask(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void intradayCapitalFlowFiltersAuctionAndLunchBreakCronTicks() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        ReflectionTestUtils.setField(scheduler, "clock", java.time.Clock.fixed(
+                java.time.ZonedDateTime.of(2026, 8, 20, 9, 5, 0, 0,
+                        java.time.ZoneId.of("Asia/Shanghai")).toInstant(),
+                java.time.ZoneId.of("Asia/Shanghai")));
+
+        scheduler.refreshCapitalFlowIntraday();
+
+        ReflectionTestUtils.setField(scheduler, "clock", java.time.Clock.fixed(
+                java.time.ZonedDateTime.of(2026, 8, 20, 12, 35, 0, 0,
+                        java.time.ZoneId.of("Asia/Shanghai")).toInstant(),
+                java.time.ZoneId.of("Asia/Shanghai")));
+        scheduler.refreshCapitalFlowIntraday();
+
+        verifyNoInteractions(configService, dataSyncJobService);
+    }
+
+    @Test
+    void intradayCapitalFlowKeepsElevenThirtyFiveClosingSnapshot() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        ReflectionTestUtils.setField(scheduler, "clock", java.time.Clock.fixed(
+                java.time.ZonedDateTime.of(2026, 8, 20, 11, 35, 0, 0,
+                        java.time.ZoneId.of("Asia/Shanghai")).toInstant(),
+                java.time.ZoneId.of("Asia/Shanghai")));
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.isTaskRunning(org.mockito.ArgumentMatchers.any())).thenReturn(false);
+        when(dataSyncJobService.startSystemTask(org.mockito.ArgumentMatchers.any())).thenReturn(
+                SyncJobResp.builder().id(402L).status("PENDING").build());
+
+        scheduler.refreshCapitalFlowIntraday();
+
+        verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
+                "CAPITAL_FLOW".equals(request.getTaskType()) && "stock".equals(request.getMode())));
+    }
+
+    @Test
+    void capitalFlowScheduleSkipsDisabledOrNonTradingDay() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("false", "true");
+
+        scheduler.refreshCapitalFlow(LocalDate.of(2026, 8, 20), "all");
+        scheduler.refreshCapitalFlow(LocalDate.of(2026, 8, 22), "all");
 
         verify(dataSyncJobService, never()).startSystemTask(org.mockito.ArgumentMatchers.any());
     }

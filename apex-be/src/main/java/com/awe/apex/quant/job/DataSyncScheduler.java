@@ -11,11 +11,13 @@ import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IObservePoolService;
+import com.awe.apex.quant.service.IPortfolioIntradayService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.awe.apex.quant.service.IWatchlistService;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -64,6 +66,9 @@ public class DataSyncScheduler {
     private IPortfolioService portfolioService;
 
     @Resource
+    private IPortfolioIntradayService portfolioIntradayService;
+
+    @Resource
     private IObservePoolService observePoolService;
 
     @Resource
@@ -76,9 +81,9 @@ public class DataSyncScheduler {
     private ApexUserContext userContext;
 
     /**
-     * 交易时段每三分钟刷新持仓股和未归档观察股的轻量行情。
+     * 交易时段每五分钟刷新组合持仓股和未归档观察股的轻量行情，并记录组合收益。
      */
-    @Scheduled(cron = "0 */3 9-11,13-15 * * MON-FRI", zone = "Asia/Shanghai")
+    @Scheduled(cron = "0 */5 9-11,13-15 * * MON-FRI", zone = "Asia/Shanghai")
     public void refreshFocusQuotesIntraday() {
         ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(SHANGHAI_ZONE);
         refreshFocusQuotes(now.toLocalDate(), now.toLocalTime());
@@ -116,6 +121,7 @@ public class DataSyncScheduler {
                     List<String> userCodes = userContext.runAsUser(userId, () -> {
                         Set<String> codes = new LinkedHashSet<>(myHoldingService.listHoldingCodes());
                         codes.addAll(observePoolService.listActiveCodes());
+                        codes.addAll(portfolioService.listActiveHoldingCodes());
                         return new ArrayList<>(codes);
                     });
                     focusCodes.addAll(userCodes);
@@ -129,8 +135,15 @@ public class DataSyncScheduler {
                     ? Map.of("success", 0, "fail", 0)
                     : myHoldingService.refreshRealtimeQuotesForCodes(new ArrayList<>(focusCodes), false);
 
-            // 3. 使用同一轮最新快照重估每个用户的观察池状态。
+            // 3. 使用同一轮最新行情写入组合收益快照，再重估每个用户的观察池状态。
+            int portfolioSnapshotCount = 0;
             for (Long userId : userIds) {
+                try {
+                    portfolioSnapshotCount += userContext.runAsUser(userId,
+                            () -> portfolioIntradayService.snapshotAll(LocalDateTime.of(tradeDate, tradeTime)));
+                } catch (Exception ex) {
+                    log.warn("盘中组合快照写入失败，用户编号={}，原因={}", userId, ex.getMessage());
+                }
                 try {
                     userContext.runAsUser(userId, observePoolService::refresh);
                 } catch (Exception ex) {
@@ -138,8 +151,9 @@ public class DataSyncScheduler {
                 }
             }
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
-            log.info("盘中重点行情快刷完成，用户数量={}，证券数量={}，成功数量={}，失败数量={}，耗时毫秒={}",
-                    userIds.size(), focusCodes.size(), quoteResult.get("success"), quoteResult.get("fail"), durationMs);
+            log.info("盘中重点行情快刷完成，用户数量={}，证券数量={}，成功数量={}，失败数量={}，组合快照数量={}，耗时毫秒={}",
+                    userIds.size(), focusCodes.size(), quoteResult.get("success"), quoteResult.get("fail"),
+                    portfolioSnapshotCount, durationMs);
         } catch (Exception ex) {
             log.warn("盘中重点行情快刷失败，证券数量={}，原因={}", focusCodes.size(), ex.getMessage());
         } finally {
@@ -326,9 +340,8 @@ public class DataSyncScheduler {
     }
 
     /**
-     * 交易时段快刷板块榜单（需 auto_sync_enabled=true）
+     * 快刷板块榜单（需 auto_sync_enabled=true）。
      */
-    @Scheduled(cron = "0 25 9,10,11,13,14 * * MON-FRI")
     public void refreshSectorIntraday() {
         if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
             return;
@@ -341,6 +354,108 @@ public class DataSyncScheduler {
             log.info("定时板块刷新已提交统一任务，任务编号={}，状态={}", job.getId(), job.getStatus());
         } catch (Exception ex) {
             log.warn("定时板块刷新提交失败，原因={}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 交易时段每半小时刷新个股资金流和板块资金流。
+     */
+    @Scheduled(cron = "0 5,35 9-14 * * MON-FRI", zone = "Asia/Shanghai")
+    public void refreshCapitalFlowIntraday() {
+        ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(SHANGHAI_ZONE);
+        LocalTime tradeTime = now.toLocalTime();
+        boolean morningSession = !tradeTime.isBefore(LocalTime.of(9, 35))
+                && !tradeTime.isAfter(LocalTime.of(11, 35));
+        boolean afternoonSession = !tradeTime.isBefore(LocalTime.of(13, 5))
+                && !tradeTime.isAfter(LocalTime.of(14, 35));
+        if (!morningSession && !afternoonSession) {
+            return;
+        }
+        refreshCapitalFlow(now.toLocalDate(), "stock");
+    }
+
+    /**
+     * 15:05 刷新最后一轮盘中资金流。
+     */
+    @Scheduled(cron = "0 5 15 * * MON-FRI", zone = "Asia/Shanghai")
+    public void refreshCapitalFlowIntradayClose() {
+        ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(SHANGHAI_ZONE);
+        refreshCapitalFlow(now.toLocalDate(), "stock");
+    }
+
+    /**
+     * 15:10 刷新收盘资金流和北向资金披露状态。
+     */
+    @Scheduled(cron = "0 10 15 * * MON-FRI", zone = "Asia/Shanghai")
+    public void refreshCapitalFlowClose() {
+        ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(SHANGHAI_ZONE);
+        refreshCapitalFlow(now.toLocalDate(), "flow");
+    }
+
+    /**
+     * 17:30 首次刷新龙虎榜。
+     */
+    @Scheduled(cron = "0 30 17 * * MON-FRI", zone = "Asia/Shanghai")
+    public void refreshDragonTiger() {
+        ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(SHANGHAI_ZONE);
+        refreshCapitalFlow(now.toLocalDate(), "lhb");
+    }
+
+    /**
+     * 18:20 补刷全部资金面数据。
+     */
+    @Scheduled(cron = "0 20 18 * * MON-FRI", zone = "Asia/Shanghai")
+    public void refreshCapitalFlowAll() {
+        ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(SHANGHAI_ZONE);
+        refreshCapitalFlow(now.toLocalDate(), "all");
+    }
+
+    /**
+     * 按交易日和模式提交资金面同步任务。
+     *
+     * @param tradeDate 交易日
+     * @param mode 同步模式stock、flow、lhb或all
+     */
+    public void refreshCapitalFlow(LocalDate tradeDate, String mode) {
+        if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+            return;
+        }
+        if (!TradingCalendar.isTradingDay(tradeDate)) {
+            log.info("资金面同步跳过：非交易日，日期={}，模式={}", tradeDate, mode);
+            return;
+        }
+
+        boolean dragonTigerOnly = "lhb".equals(mode);
+        String taskType = dragonTigerOnly ? "DRAGON_TIGER" : "CAPITAL_FLOW";
+        try {
+            boolean taskRunning = dataSyncJobService.isTaskRunning(taskType);
+            boolean dragonTigerRunning = "all".equals(mode)
+                    && dataSyncJobService.isTaskRunning("DRAGON_TIGER");
+            if (taskRunning || dragonTigerRunning) {
+                log.info("资金面同步跳过：同类任务正在运行，任务类型={}，模式={}", taskType, mode);
+            } else {
+                SyncStartReq request = new SyncStartReq();
+                request.setTaskType(taskType);
+                request.setMode(mode);
+                SyncJobResp job = dataSyncJobService.startSystemTask(request);
+                log.info("资金面同步已提交，任务编号={}，任务类型={}，模式={}，状态={}",
+                        job.getId(), taskType, mode, job.getStatus());
+            }
+
+            if (!dragonTigerOnly) {
+                if (dataSyncJobService.isTaskRunning("SECTOR_QUOTE")) {
+                    log.info("板块资金同步跳过：任务正在运行，模式={}", mode);
+                } else {
+                    SyncStartReq sectorRequest = new SyncStartReq();
+                    sectorRequest.setTaskType("SECTOR_QUOTE");
+                    sectorRequest.setTypes("INDUSTRY,CONCEPT,THEME");
+                    SyncJobResp sectorJob = dataSyncJobService.startSystemTask(sectorRequest);
+                    log.info("板块资金同步已提交，任务编号={}，模式={}，状态={}",
+                            sectorJob.getId(), mode, sectorJob.getStatus());
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("资金面同步提交失败，日期={}，模式={}，原因={}", tradeDate, mode, ex.getMessage());
         }
     }
 

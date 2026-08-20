@@ -185,7 +185,29 @@ python sync_sector.py --mode cons --types INDUSTRY --limit 5 --sleep 0.3
 前端导航「板块」；接口：`GET /api/sector/board`、`GET /api/sector/{code}/constituents`、`GET /api/sector/mainline`、`POST /api/sector/refresh`  
 后端配置：`apex.sector.script-path` / `apex.sector.python-cmd`
 
-## 9. Web 统一同步（推荐）
+## 9. 资金面与龙虎榜
+
+写入表：`northbound_flow` / `stock_fund_flow` / `dragon_tiger_item`。板块流入继续由 `sector_quote.net_inflow` 提供。
+
+```bash
+# 盘中只刷个股资金流（系统调度使用）
+python sync_capital_flow.py --mode stock
+
+# 北向资金 + 个股资金流
+python sync_capital_flow.py --mode flow
+
+# 龙虎榜
+python sync_capital_flow.py --mode lhb
+
+# 全部资金面数据
+python sync_capital_flow.py --mode all
+```
+
+北向资金接口金额单位为亿元，脚本统一换算为元；个股资金流和龙虎榜金额源单位为元。公开披露口径调整后，北向净买额等字段为空时仍保存最新交易日，标记 `NOT_DISCLOSED`，不回退旧日期或按买卖额推算。任一数据源返回空榜时保留旧快照，各数据集独立提交，单源失败不会回滚已成功的数据集。
+
+推荐更新时间：交易日盘中资金流从 09:35 起每 30 分钟刷新；北向资金在 15:10 和 18:20 刷新；龙虎榜在 17:30 和 18:20 刷新。
+
+## 10. Web 统一同步（推荐）
 
 前端导航「数据同步」(`/sync`) 可启动/停止全部脚本任务并查看进度与日志。
 
@@ -199,7 +221,7 @@ python sync_sector.py --mode cons --types INDUSTRY --limit 5 --sleep 0.3
 
 说明：一键启动对长任务默认带较小 `limit`（如日线/基本面 20）避免误点跑爆；全量请用高级启动改参数。
 
-## 10. 说明
+## 11. 说明
 
 - 日线数据源：AKShare（优先新浪日线，失败再试东财；前复权）
 - 大盘指数：A股/港股/美股新浪日线（含量）；日韩新浪环球（量常缺）
