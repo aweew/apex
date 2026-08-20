@@ -597,7 +597,12 @@ onBeforeUnmount(() => {
         <div v-if="isMobileViewport && confluence?.items?.length" class="confluence-mobile-list">
           <article v-for="item in confluence.items" :key="`${item.code}-${item.side}`" class="confluence-mobile-item">
             <div>
-              <StockIdentity :security="item" compact />
+              <StockIdentity
+                :security="item"
+                :interactive="Boolean(item.code)"
+                compact
+                @select="router.push(`/stock/${item.code}`)"
+              />
             </div>
             <span class="side-badge" :class="item.side === 'BUY' ? 'is-buy' : 'is-sell'">
               {{ item.side === 'BUY' ? '买入' : '卖出' }}
@@ -607,7 +612,14 @@ onBeforeUnmount(() => {
         </div>
         <el-table v-else-if="confluence?.items?.length" :data="confluence.items" size="small" stripe>
           <el-table-column prop="name" label="股票" width="144">
-            <template #default="{ row }"><StockIdentity :security="row" compact /></template>
+            <template #default="{ row }">
+              <StockIdentity
+                :security="row"
+                :interactive="Boolean(row.code)"
+                compact
+                @select="router.push(`/stock/${row.code}`)"
+              />
+            </template>
           </el-table-column>
           <el-table-column prop="side" label="方向" width="80" />
           <el-table-column prop="strategyCount" label="策略数" width="80" />
