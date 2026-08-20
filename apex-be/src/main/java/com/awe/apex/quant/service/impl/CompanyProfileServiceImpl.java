@@ -16,6 +16,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.core.type.TypeReference;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -42,14 +43,15 @@ public class CompanyProfileServiceImpl implements ICompanyProfileService {
     private CompanyProfileClient companyProfileClient;
 
     /**
-     * 查询公司概况（本地优先；缺失或 forceRefresh 时拉取东财）
+     * 查询公司概况（本地优先；缺失或 forceRefresh 时拉取东财）。
+     * 使用独立事务，避免外部资料源失败时污染持仓交易事务。
      *
      * @param code         证券代码
      * @param forceRefresh 是否强制刷新
      * @return 概况
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public CompanyProfileResp query(String code, boolean forceRefresh) {
         String pureCode = MarketCodeUtils.normalizeCode(code);
         if (StringUtils.isBlank(pureCode)) {
