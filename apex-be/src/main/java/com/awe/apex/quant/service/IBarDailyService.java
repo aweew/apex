@@ -41,7 +41,7 @@ public interface IBarDailyService extends IService<BarDaily> {
     BarSyncResp syncStaleWatchlist(String groupName, Integer limit);
 
     /**
-     * 同步指定代码中缺失或过期的日线，代码会全局去重并分批处理。
+     * 同步指定代码中缺失或过期的日线，代码会全局去重并在总时限内处理。
      *
      * @param codes 证券代码
      * @return 同步结果

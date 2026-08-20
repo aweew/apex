@@ -159,7 +159,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     }
 
     /**
-     * 同步指定代码中缺失或过期的日线，代码会全局去重并分批处理。
+     * 同步指定代码中缺失或过期的日线，代码会全局去重并在总时限内处理。
      *
      * @param codes 证券代码
      * @return 同步结果
@@ -180,35 +180,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
             return emptySyncResponse();
         }
 
-        int successCount = 0;
-        int failCount = 0;
-        int barCount = 0;
-        String source = "none";
-        List<String> details = new ArrayList<>();
-        LocalDateTime fetchedAt = LocalDateTime.now();
-        for (int start = 0; start < staleCodes.size(); start += MAX_SYNC_CODES) {
-            int end = Math.min(start + MAX_SYNC_CODES, staleCodes.size());
-            List<String> batchCodes = new ArrayList<>(staleCodes.subList(start, end));
-            BarSyncResp batch = doSync(batchCodes, null, null,
-                    "shared stale codes batch=" + (start / MAX_SYNC_CODES + 1) + ", n=" + batchCodes.size());
-            successCount += Objects.nonNull(batch.getSuccessCount()) ? batch.getSuccessCount() : 0;
-            failCount += Objects.nonNull(batch.getFailCount()) ? batch.getFailCount() : 0;
-            barCount += Objects.nonNull(batch.getBarCount()) ? batch.getBarCount() : 0;
-            if (StringUtils.isNotBlank(batch.getSource()) && !"none".equals(batch.getSource())) {
-                source = batch.getSource();
-            }
-            if (CollUtil.isNotEmpty(batch.getDetails())) {
-                details.addAll(batch.getDetails());
-            }
-        }
-        return BarSyncResp.builder()
-                .source(source)
-                .fetchedAt(fetchedAt)
-                .successCount(successCount)
-                .failCount(failCount)
-                .barCount(barCount)
-                .details(details)
-                .build();
+        return doSync(staleCodes, null, null, "shared stale codes n=" + staleCodes.size());
     }
 
     private List<String> findStaleCodes(List<String> codes, int limit) {
@@ -307,16 +279,28 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
 
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(MAX_PARALLEL, codes.size()));
         List<SyncItem> items = new ArrayList<>();
+        long timeoutNanos = TimeUnit.SECONDS.toNanos(Math.max(syncTimeoutSeconds, 1));
+        long deadlineNanos = System.nanoTime() + timeoutNanos;
         try {
             for (int groupStart = 0; groupStart < codes.size(); groupStart += MAX_PARALLEL) {
                 int groupEnd = Math.min(groupStart + MAX_PARALLEL, codes.size());
                 List<String> groupCodes = codes.subList(groupStart, groupEnd);
+                int remainingGroupCount = (codes.size() - groupStart + MAX_PARALLEL - 1) / MAX_PARALLEL;
+                long remainingNanos = deadlineNanos - System.nanoTime();
+                if (remainingNanos <= 0) {
+                    for (int index = groupStart; index < codes.size(); index++) {
+                        String code = codes.get(index);
+                        items.add(new SyncItem(code, false, 0, code + " TIMEOUT"));
+                    }
+                    break;
+                }
+                long groupTimeoutNanos = Math.max(1L, remainingNanos / remainingGroupCount);
                 List<Callable<SyncItem>> tasks = new ArrayList<>();
                 for (String code : groupCodes) {
                     tasks.add(() -> syncOne(code, beginDate, endDate));
                 }
                 List<Future<SyncItem>> futures = pool.invokeAll(
-                        tasks, Math.max(syncTimeoutSeconds, 1), TimeUnit.SECONDS);
+                        tasks, groupTimeoutNanos, TimeUnit.NANOSECONDS);
                 for (int index = 0; index < futures.size(); index++) {
                     Future<SyncItem> future = futures.get(index);
                     String code = groupCodes.get(index);

@@ -5,6 +5,7 @@ import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BarSyncReq;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
+import com.awe.apex.quant.domain.entity.DataSyncLog;
 import com.awe.apex.quant.mapper.DataSyncLogMapper;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
@@ -136,6 +137,36 @@ class BarDailyServiceImplTest {
     }
 
     @Test
+    void syncBarsShouldShareOneTimeoutBudgetAcrossAllGroups() {
+        BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
+        DailyBarClient dailyBarClient = mock(DailyBarClient.class);
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
+        AtomicInteger callCount = new AtomicInteger();
+        when(dailyBarClient.fetchDailyBars(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+            callCount.incrementAndGet();
+            Thread.sleep(5000L);
+            return List.of();
+        });
+        when(stockBasicMapper.selectOne(any())).thenReturn(null);
+        ReflectionTestUtils.setField(barDailyService, "dailyBarClient", dailyBarClient);
+        ReflectionTestUtils.setField(barDailyService, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(barDailyService, "dataSyncLogMapper", dataSyncLogMapper);
+        ReflectionTestUtils.setField(barDailyService, "syncTimeoutSeconds", 3);
+        BarSyncReq request = new BarSyncReq();
+        request.setCodes(List.of("600000", "600001", "600002", "600003", "600004", "600005"));
+
+        long startedAt = System.nanoTime();
+        BarSyncResp response = barDailyService.syncBars(request);
+        long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        assertTrue(elapsedMillis < 4500, "整次同步应共享一个总超时预算");
+        assertEquals(6, callCount.get());
+        assertEquals(0, response.getSuccessCount());
+        assertEquals(6, response.getFailCount());
+    }
+
+    @Test
     void syncStaleCodesShouldDeduplicateAndSkipFreshCodes() {
         BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
         DailyBarClient dailyBarClient = mock(DailyBarClient.class);
@@ -160,6 +191,38 @@ class BarDailyServiceImplTest {
         assertEquals(1, response.getSuccessCount());
         verify(dailyBarClient).fetchDailyBars(eq("600001"), anyString(), anyString());
         verify(dailyBarClient, never()).fetchDailyBars(eq("600000"), anyString(), anyString());
+    }
+
+    @Test
+    void syncStaleCodesShouldUseOneTimeoutBudgetBeyondApiBatchLimit() {
+        BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
+        DailyBarClient dailyBarClient = mock(DailyBarClient.class);
+        BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
+        when(barDailyMapper.selectMaps(any())).thenReturn(List.of());
+        when(dailyBarClient.fetchDailyBars(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+            Thread.sleep(5000L);
+            return List.of();
+        });
+        ReflectionTestUtils.setField(barDailyService, "baseMapper", barDailyMapper);
+        ReflectionTestUtils.setField(barDailyService, "dailyBarClient", dailyBarClient);
+        ReflectionTestUtils.setField(barDailyService, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(barDailyService, "dataSyncLogMapper", dataSyncLogMapper);
+        ReflectionTestUtils.setField(barDailyService, "syncTimeoutSeconds", 1);
+        List<String> codes = new ArrayList<>();
+        for (int index = 0; index < 81; index++) {
+            codes.add(String.valueOf(600000 + index));
+        }
+
+        long startedAt = System.nanoTime();
+        BarSyncResp response = barDailyService.syncStaleCodes(codes);
+        long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        assertTrue(elapsedMillis < 2000, "共享代码超过 80 只也不应重复累计总时限");
+        assertEquals(81, response.getFailCount());
+        assertEquals(81, response.getDetails().size());
+        verify(dataSyncLogMapper, times(1)).insert(any(DataSyncLog.class));
     }
 
     @Test
