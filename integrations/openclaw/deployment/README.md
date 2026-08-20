@@ -117,7 +117,7 @@ $DOCKER compose --env-file .env -f compose.yaml run --rm openclaw-cli \
 $DOCKER compose --env-file .env -f compose.yaml run --rm openclaw-cli \
   agent --agent main --message "我今天亏多少"
 $DOCKER compose --env-file .env -f compose.yaml run --rm openclaw-cli \
-  agent --agent main --message "针对疯锅的持仓，你有什么投资建议？"
+  agent --agent main --message "今天怎么操作？"
 ```
 
 官方镜像已包含 Skill 所需的 Node.js、`curl` 和 `openssl`。如果命令执行失败，先看

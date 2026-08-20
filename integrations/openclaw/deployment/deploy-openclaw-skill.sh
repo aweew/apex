@@ -16,8 +16,15 @@ if [[ "${EUID}" -ne 0 ]]; then
     exec sudo "${BASH_SOURCE[0]}" "$@"
 fi
 
-if [[ ! -f "${source_dir}/SKILL.md" || ! -x "${source_dir}/scripts/apex_tool.sh" ]]; then
+if [[ ! -f "${source_dir}/SKILL.md" \
+    || ! -x "${source_dir}/scripts/apex_ask.sh" \
+    || ! -x "${source_dir}/scripts/apex_tool.sh" \
+    || ! -x "${source_dir}/scripts/apex_trade_event.sh" ]]; then
     echo "技能源文件不完整：${source_dir}" >&2
+    exit 1
+fi
+if ! grep -q 'APEX_BOT_EXTERNAL_USER_ID' "${source_dir}/scripts/apex_ask.sh"; then
+    echo "问答脚本未绑定外部用户：${source_dir}/scripts/apex_ask.sh" >&2
     exit 1
 fi
 if [[ ! -x "${docker_bin}" ]]; then

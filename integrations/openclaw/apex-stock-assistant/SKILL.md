@@ -7,13 +7,15 @@ description: Query Apex for A-share analysis, market summaries, portfolio status
 
 Use Apex as the source of market data and investment conclusions. Do not invent prices, positions, today's profit or loss, risks, or decisions. On an Apex tool error, return its error and request ID exactly; never claim that the Skill, network, or Apex data is unavailable unless the tool returned that error.
 
-For questions such as `我今天亏多少`、`今天赚了多少`、`今日盈亏`、`我的持仓今天表现如何`、`针对疯锅的持仓有什么投资建议`, always run the Apex query with the original question. Do not say that the function is unavailable or unsupported, ask the user to list holdings, or replace the Apex result with a generic holding-risk response.
+For questions such as `今天怎么操作`、`我今天亏多少`、`今天赚了多少`、`今日盈亏`、`我的持仓今天表现如何`, always run the Apex query with the original question. Do not say that the function is unavailable or unsupported, ask the user to list holdings, or replace the Apex result with a generic holding-risk response.
 
 ## Ask Apex
 
 1. Run `scripts/apex_ask.sh "<用户原始问题>"`.
 2. Return Apex's answer faithfully and preserve its data time, completeness warning, and investment-risk notice.
 3. If the request fails, report the API error. Do not substitute an unsupported market conclusion.
+
+When the user does not explicitly name a portfolio in the current message, always use this Ask Apex flow. Never choose a portfolio name from an example, memory, another conversation, or an earlier assistant guess, and never replace a general question with a named-portfolio tool call.
 
 ## Add To Observation Pool
 
@@ -23,10 +25,10 @@ The addition is confirmed only when the successful Apex response has `data.inten
 
 ## Structured Tools
 
-For named portfolios and all holding-update workflows, run `scripts/apex_tool.sh` with a JSON request. Always pass the WeClaw sender ID as `userId` and WeClaw conversation ID as `conversationId`; never invent either value.
+For explicitly named portfolios and all holding-update workflows, run `scripts/apex_tool.sh` with a JSON request. Copy `portfolioName` exactly from the user's current message or attachment context. If the current request does not contain an explicit portfolio name, use Ask Apex instead. Always pass the exact WeClaw sender ID as `userId` and WeClaw conversation ID as `conversationId`; never normalize, lowercase, shorten, or invent either value.
 
-- Portfolio advice: `{"operation":"PORTFOLIO_ADVICE","userId":"<sender>","conversationId":"<conversation>","portfolioName":"疯锅"}`
-- Portfolio status: `{"operation":"PORTFOLIO_STATUS","userId":"<sender>","conversationId":"<conversation>","portfolioName":"疯锅"}`
+- Portfolio advice: `{"operation":"PORTFOLIO_ADVICE","userId":"<sender>","conversationId":"<conversation>","portfolioName":"<name-exactly-as-user-supplied>"}`
+- Portfolio status: `{"operation":"PORTFOLIO_STATUS","userId":"<sender>","conversationId":"<conversation>","portfolioName":"<name-exactly-as-user-supplied>"}`
 
 For a WeClaw image attachment or a text table, extract JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. When the message explicitly provides them, also pass `tradePrice` and ISO-8601 `tradeTime`; otherwise leave them absent. Every row needs a positive quantity and a positive cost price. When a code is missing, pass the exact recognized stock name and leave `code` empty: Apex resolves it only by an exact, unique `stock_basic.name` match. Do not infer a code, trade price, or trade time yourself. If Apex cannot resolve the name or finds more than one match, state that the portfolio was not changed and return its error.
 
