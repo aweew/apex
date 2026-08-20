@@ -112,6 +112,18 @@ class PortfolioTradeRecordServiceImplTest {
     }
 
     @Test
+    void adminOperationRecordsTradeForPortfolioOwner() {
+        when(userContext.currentUserId()).thenReturn(1L);
+        Portfolio portfolio = Portfolio.builder().id(11L).userId(9L).name("郑十万").build();
+
+        JournalTrade trade = service.recordChange(portfolio, "000001", "平安银行", 100, 200,
+                new BigDecimal("12.36"), LocalDateTime.of(2026, 8, 20, 10, 30),
+                PortfolioTradeSourceEnum.PORTFOLIO_WEB, null);
+
+        assertEquals(9L, trade.getUserId());
+    }
+
+    @Test
     void unchangedQuantityDoesNotCreateTrade() {
         JournalTrade trade = service.recordChange(Portfolio.builder().id(11L).build(),
                 "000001", "平安银行", 200, 200, null, null,

@@ -12,6 +12,7 @@ import com.awe.apex.quant.mapper.MyHoldingMapper;
 import com.awe.apex.quant.mapper.PortfolioDailyMapper;
 import com.awe.apex.quant.mapper.PortfolioHoldingMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IPortfolioTradeRecordService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
@@ -47,6 +48,7 @@ class PortfolioUserIsolationTest {
     private final PortfolioDailyMapper portfolioDailyMapper = mock(PortfolioDailyMapper.class);
     private final MyHoldingMapper myHoldingMapper = mock(MyHoldingMapper.class);
     private final ApexUserContext userContext = mock(ApexUserContext.class);
+    private final ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
     private final IPortfolioTradeRecordService tradeRecordService = mock(IPortfolioTradeRecordService.class);
     private final PortfolioServiceImpl service = spy(new PortfolioServiceImpl());
 
@@ -66,6 +68,7 @@ class PortfolioUserIsolationTest {
         ReflectionTestUtils.setField(service, "myHoldingMapper", myHoldingMapper);
         ReflectionTestUtils.setField(service, "tradeRecordService", tradeRecordService);
         ReflectionTestUtils.setField(service, "userContext", userContext);
+        ReflectionTestUtils.setField(service, "userAuthService", userAuthService);
         when(userContext.currentUserIdOrNull()).thenReturn(7L);
     }
 
@@ -129,7 +132,7 @@ class PortfolioUserIsolationTest {
                 .costPrice(new BigDecimal("100"))
                 .build();
 
-        ReflectionTestUtils.invokeMethod(service, "mirrorToMyHolding", holding);
+        ReflectionTestUtils.invokeMethod(service, "mirrorToMyHolding", 7L, holding);
 
         ArgumentCaptor<Wrapper<MyHolding>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(myHoldingMapper).selectOne(queryCaptor.capture());
@@ -186,9 +189,11 @@ class PortfolioUserIsolationTest {
         assertEquals(2, portfolios.size());
         assertEquals("我的持仓", portfolios.get(0).getName());
         assertTrue(portfolios.get(0).getIsDefault());
+        assertTrue(portfolios.get(0).getSystemDefault());
         assertTrue(portfolios.get(0).getEditable());
         assertEquals("郑十万", portfolios.get(1).getName());
         assertFalse(portfolios.get(1).getIsDefault());
+        assertTrue(portfolios.get(1).getSystemDefault());
         assertFalse(portfolios.get(1).getEditable());
         ArgumentCaptor<Wrapper<Portfolio>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(portfolioMapper).selectList(queryCaptor.capture());
@@ -239,6 +244,53 @@ class PortfolioUserIsolationTest {
 
         assertEquals("无权修改该组合", saveException.getMessage());
         assertEquals("无权修改该组合", snapshotException.getMessage());
+    }
+
+    @Test
+    void adminCanEditOtherUsersPortfolioWithoutChangingDefaultIdentity() {
+        when(userContext.currentUserIdOrNull()).thenReturn(1L);
+        when(userAuthService.isAdmin(1L)).thenReturn(true);
+        doReturn(Portfolio.builder().id(1L).userId(1L).build()).when(service).ensureDefaultPortfolio();
+        Portfolio otherPortfolio = Portfolio.builder()
+                .id(5L)
+                .userId(9L)
+                .name("郑十万")
+                .isDefault(1)
+                .status("ACTIVE")
+                .build();
+        when(portfolioMapper.selectById(5L)).thenReturn(otherPortfolio);
+        when(portfolioHoldingMapper.selectList(any())).thenReturn(List.of());
+        when(portfolioMapper.selectCount(any())).thenReturn(0L);
+
+        PortfolioSummaryResp detail = service.detail(5L);
+        PortfolioSaveReq request = new PortfolioSaveReq();
+        request.setId(5L);
+        request.setName("郑十万实盘");
+        service.savePortfolio(request);
+
+        assertTrue(detail.getEditable());
+        assertFalse(detail.getIsDefault());
+        assertTrue(detail.getSystemDefault());
+        assertEquals("郑十万", detail.getName());
+        verify(userAuthService, times(2)).isAdmin(1L);
+        verify(portfolioMapper).updateById(otherPortfolio);
+    }
+
+    @Test
+    void adminRoleIsResolvedOnceForSharedPortfolioList() {
+        when(userContext.currentUserIdOrNull()).thenReturn(1L);
+        when(userAuthService.isAdmin(1L)).thenReturn(true);
+        doReturn(Portfolio.builder().id(1L).userId(1L).build()).when(service).ensureDefaultPortfolio();
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(
+                Portfolio.builder().id(1L).userId(1L).name("我的持仓").isDefault(1).status("ACTIVE").build(),
+                Portfolio.builder().id(5L).userId(9L).name("郑十万").isDefault(0).status("ACTIVE").build()));
+        when(portfolioHoldingMapper.selectList(any())).thenReturn(List.of());
+
+        List<PortfolioSummaryResp> portfolios = service.listPortfolios(false);
+
+        assertEquals(2, portfolios.size());
+        assertTrue(portfolios.get(1).getEditable());
+        verify(userAuthService).isAdmin(1L);
     }
 
     @Test

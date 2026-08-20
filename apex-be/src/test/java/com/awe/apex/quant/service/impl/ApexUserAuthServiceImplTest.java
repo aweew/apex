@@ -22,7 +22,9 @@ import org.mockito.MockedStatic;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -108,5 +110,21 @@ class ApexUserAuthServiceImplTest {
 
         verify(session).set(Constants.PHONE, phone);
         verify(session).set(Constants.NICK_NAME, nickName);
+    }
+
+    @Test
+    void identifiesAdminByUserProfile() {
+        when(userProfileMapper.selectOne(any())).thenReturn(
+                new ApexUserProfile(1L, USER_ID, 9L, "ADMIN", null, null));
+
+        assertTrue(service.isAdmin(USER_ID));
+    }
+
+    @Test
+    void identifiesMemberByUserProfile() {
+        when(userProfileMapper.selectOne(any())).thenReturn(
+                new ApexUserProfile(1L, USER_ID, 9L, "MEMBER", null, null));
+
+        assertFalse(service.isAdmin(USER_ID));
     }
 }

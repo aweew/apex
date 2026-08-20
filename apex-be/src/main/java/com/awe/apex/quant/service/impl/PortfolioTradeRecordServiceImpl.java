@@ -93,7 +93,8 @@ public class PortfolioTradeRecordServiceImpl implements IPortfolioTradeRecordSer
         PortfolioTradeSourceEnum recordSource = Objects.nonNull(source)
                 ? source : PortfolioTradeSourceEnum.PORTFOLIO_WEB;
         Long currentUserId = userContext.currentUserId();
-        JournalTrade existing = findBySourceRef(currentUserId, normalizedCode, recordSource, sourceRef);
+        Long ownerUserId = Objects.nonNull(portfolio.getUserId()) ? portfolio.getUserId() : currentUserId;
+        JournalTrade existing = findBySourceRef(ownerUserId, normalizedCode, recordSource, sourceRef);
         if (Objects.nonNull(existing)) {
             if (!Objects.equals(existing.getBeforeQuantity(), before)
                     || !Objects.equals(existing.getAfterQuantity(), after)) {
@@ -149,7 +150,7 @@ public class PortfolioTradeRecordServiceImpl implements IPortfolioTradeRecordSer
                 : null;
         LocalDateTime now = LocalDateTime.now();
         JournalTrade trade = JournalTrade.builder()
-                .userId(currentUserId)
+                .userId(ownerUserId)
                 .portfolioId(portfolio.getId())
                 .portfolioName(portfolio.getName())
                 .ownerLabel(portfolio.getOwnerLabel())
@@ -176,14 +177,14 @@ public class PortfolioTradeRecordServiceImpl implements IPortfolioTradeRecordSer
         try {
             journalTradeMapper.insert(trade);
         } catch (DuplicateKeyException ex) {
-            JournalTrade duplicate = findBySourceRef(currentUserId, normalizedCode, recordSource, sourceRef);
+            JournalTrade duplicate = findBySourceRef(ownerUserId, normalizedCode, recordSource, sourceRef);
             if (Objects.nonNull(duplicate)) {
                 return duplicate;
             }
             throw ex;
         }
         log.info("组合交易流水已记录，用户编号={}，组合编号={}，证券代码={}，方向={}，数量={}，来源={}，是否估算={}",
-                currentUserId, portfolio.getId(), normalizedCode, side.getCode(), changedQuantity,
+                ownerUserId, portfolio.getId(), normalizedCode, side.getCode(), changedQuantity,
                 recordSource.getCode(), estimated);
         return trade;
     }

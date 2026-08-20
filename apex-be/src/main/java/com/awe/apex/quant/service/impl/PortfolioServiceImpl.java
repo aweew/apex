@@ -204,6 +204,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     public List<PortfolioSummaryResp> listPortfolios(boolean includeArchived) {
         Portfolio defaultPortfolio = ensureDefaultPortfolio();
+        Long currentUserId = currentUserId();
+        boolean currentUserAdmin = userAuthService.isAdmin(currentUserId);
         var query = Wrappers.<Portfolio>lambdaQuery()
                 .orderByAsc(Portfolio::getSortNo).orderByDesc(Portfolio::getUpdateTime);
         if (!includeArchived) {
@@ -225,7 +227,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
 
         List<PortfolioSummaryResp> result = new ArrayList<>();
         for (Portfolio portfolio : list) {
-            result.add(buildSummary(portfolio, false));
+            result.add(buildSummary(portfolio, false, currentUserId, currentUserAdmin));
         }
         return result;
     }
@@ -279,11 +281,11 @@ public class PortfolioServiceImpl implements IPortfolioService {
         }
         LocalDateTime now = LocalDateTime.now();
         if (Objects.nonNull(req.getId())) {
-            Portfolio exist = requireOwnedPortfolio(req.getId());
+            Portfolio exist = requireEditablePortfolio(req.getId());
             if (Objects.equals(exist.getIsDefault(), 1) && STATUS_ARCHIVED.equals(status)) {
                 throw new BusinessException("默认组合不能归档");
             }
-            assertNameUnique(name, exist.getId());
+            assertNameUnique(name, exist.getId(), exist.getUserId());
             exist.setName(name);
             exist.setNote(StringUtils.trim(req.getNote()));
             exist.setOwnerLabel(StringUtils.trim(req.getOwnerLabel()));
@@ -301,9 +303,10 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
             return exist;
         }
-        assertNameUnique(name, null);
+        Long currentUserId = currentUserId();
+        assertNameUnique(name, null, currentUserId);
         Portfolio created = Portfolio.builder()
-                .userId(currentUserId())
+                .userId(currentUserId)
                 .name(name)
                 .note(StringUtils.trim(req.getNote()))
                 .ownerLabel(StringUtils.trim(req.getOwnerLabel()))
@@ -351,7 +354,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void removePortfolio(Long id) {
-        Portfolio portfolio = requireOwnedPortfolio(id);
+        Portfolio portfolio = requireEditablePortfolio(id);
         if (Objects.equals(portfolio.getIsDefault(), 1)) {
             throw new BusinessException("默认组合不可删除");
         }
@@ -372,7 +375,9 @@ public class PortfolioServiceImpl implements IPortfolioService {
     public PortfolioSummaryResp detail(Long id) {
         ensureDefaultPortfolio();
         Portfolio portfolio = requireVisiblePortfolio(id);
-        return buildSummary(portfolio, true);
+        Long currentUserId = currentUserId();
+        boolean currentUserAdmin = userAuthService.isAdmin(currentUserId);
+        return buildSummary(portfolio, true, currentUserId, currentUserAdmin);
     }
 
     /**
@@ -401,7 +406,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Transactional(rollbackFor = Exception.class)
     public PortfolioHolding saveHolding(Long portfolioId, PortfolioHoldingSaveReq req,
                                         PortfolioTradeSourceEnum source, String sourceRef) {
-        Portfolio portfolio = requireOwnedPortfolio(portfolioId);
+        Portfolio portfolio = requireEditablePortfolio(portfolioId);
         if (Objects.isNull(req) || StringUtils.isBlank(req.getCode())) {
             throw new BusinessException("证券代码不能为空");
         }
@@ -468,7 +473,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
             fillPnl(exist, basic);
             if (Objects.equals(portfolio.getIsDefault(), 1)) {
-                mirrorToMyHolding(exist);
+                mirrorToMyHolding(portfolio.getUserId(), exist);
             }
             touchPortfolio(portfolioId);
             refreshTodaySnapshotQuietly(portfolioId);
@@ -492,7 +497,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 req.getTradePrice(), req.getTradeTime(), source, sourceRef);
         fillPnl(created, basic);
         if (Objects.equals(portfolio.getIsDefault(), 1)) {
-            mirrorToMyHolding(created);
+            mirrorToMyHolding(portfolio.getUserId(), created);
         }
         touchPortfolio(portfolioId);
         refreshTodaySnapshotQuietly(portfolioId);
@@ -524,7 +529,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Transactional(rollbackFor = Exception.class)
     public PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req,
                                          PortfolioTradeSourceEnum source) {
-        Portfolio portfolio = requireOwnedPortfolio(portfolioId);
+        Portfolio portfolio = requireEditablePortfolio(portfolioId);
         if (Objects.isNull(req)) {
             throw new BusinessException("成交请求不能为空");
         }
@@ -582,7 +587,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                     beforeQuantity, 0, req.getTradePrice(), req.getTradeTime(), source, null);
             if (Objects.equals(portfolio.getIsDefault(), 1)) {
                 MyHolding myHolding = myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
-                        .eq(MyHolding::getUserId, currentUserId())
+                        .eq(MyHolding::getUserId, portfolio.getUserId())
                         .eq(MyHolding::getCode, holding.getCode())
                         .last("LIMIT 1"));
                 if (Objects.nonNull(myHolding)) {
@@ -640,7 +645,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Transactional(rollbackFor = Exception.class)
     public void removeHolding(Long portfolioId, Long holdingId,
                               PortfolioTradeSourceEnum source, String sourceRef) {
-        Portfolio portfolio = requireOwnedPortfolio(portfolioId);
+        Portfolio portfolio = requireEditablePortfolio(portfolioId);
         PortfolioHolding holding = portfolioHoldingMapper.selectById(holdingId);
         if (Objects.isNull(holding) || !Objects.equals(holding.getPortfolioId(), portfolioId)) {
             throw new BusinessException("持仓不存在");
@@ -650,7 +655,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
                 holding.getQuantity(), 0, null, null, source, sourceRef);
         if (Objects.equals(portfolio.getIsDefault(), 1) && StringUtils.isNotBlank(holding.getCode())) {
             MyHolding mine = myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
-                    .eq(MyHolding::getUserId, currentUserId())
+                    .eq(MyHolding::getUserId, portfolio.getUserId())
                     .eq(MyHolding::getCode, holding.getCode())
                     .last("LIMIT 1"));
             if (Objects.nonNull(mine)) {
@@ -671,7 +676,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PortfolioImportResp importHoldings(Long portfolioId, PortfolioImportReq req) {
-        requireOwnedPortfolio(portfolioId);
+        requireEditablePortfolio(portfolioId);
         if (Objects.isNull(req) || StringUtils.isBlank(req.getText())) {
             throw new BusinessException("导入文本不能为空");
         }
@@ -713,7 +718,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PortfolioDaily snapshot(Long portfolioId) {
-        requireOwnedPortfolio(portfolioId);
+        requireEditablePortfolio(portfolioId);
         PortfolioSummaryResp summary = detail(portfolioId);
         LocalDate tradeDate = LocalDate.now();
         LocalDateTime now = LocalDateTime.now();
@@ -840,7 +845,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
      */
     @Override
     public Map<String, Object> refreshQuotes(Long portfolioId, Boolean onlyMissing) {
-        requireOwnedPortfolio(portfolioId);
+        requireEditablePortfolio(portfolioId);
         List<PortfolioHolding> holdings = portfolioHoldingMapper.selectList(Wrappers.<PortfolioHolding>lambdaQuery()
                 .eq(PortfolioHolding::getPortfolioId, portfolioId)
                 .orderByAsc(PortfolioHolding::getCode));
@@ -1046,7 +1051,8 @@ public class PortfolioServiceImpl implements IPortfolioService {
         }
     }
 
-    private PortfolioSummaryResp buildSummary(Portfolio portfolio, boolean withHoldings) {
+    private PortfolioSummaryResp buildSummary(Portfolio portfolio, boolean withHoldings,
+                                              Long currentUserId, boolean currentUserAdmin) {
         List<PortfolioHolding> holdings = portfolioHoldingMapper.selectList(Wrappers.<PortfolioHolding>lambdaQuery()
                 .eq(PortfolioHolding::getPortfolioId, portfolio.getId())
                 .orderByDesc(PortfolioHolding::getUpdateTime)
@@ -1133,14 +1139,17 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
             topHoldings = tops;
         }
-        boolean editable = Objects.equals(currentUserId(), portfolio.getUserId());
-        boolean currentDefault = editable && Objects.equals(portfolio.getIsDefault(), 1);
+        boolean ownedByCurrentUser = Objects.equals(currentUserId, portfolio.getUserId());
+        boolean editable = ownedByCurrentUser || currentUserAdmin;
+        boolean systemDefault = Objects.equals(portfolio.getIsDefault(), 1);
+        boolean currentDefault = ownedByCurrentUser && systemDefault;
         return PortfolioSummaryResp.builder()
                 .id(portfolio.getId())
                 .name(currentDefault ? DEFAULT_NAME : portfolio.getName())
                 .note(portfolio.getNote())
                 .ownerLabel(portfolio.getOwnerLabel())
                 .isDefault(currentDefault)
+                .systemDefault(systemDefault)
                 .editable(editable)
                 .status(portfolio.getStatus())
                 .sortNo(portfolio.getSortNo())
@@ -1449,11 +1458,11 @@ public class PortfolioServiceImpl implements IPortfolioService {
         return req;
     }
 
-    private void mirrorToMyHolding(PortfolioHolding holding) {
+    private void mirrorToMyHolding(Long ownerUserId, PortfolioHolding holding) {
         String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
         LocalDateTime now = LocalDateTime.now();
         MyHolding exist = myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
-                .eq(MyHolding::getUserId, currentUserId())
+                .eq(MyHolding::getUserId, ownerUserId)
                 .eq(MyHolding::getCode, code)
                 .last("LIMIT 1"));
         if (Objects.nonNull(exist)) {
@@ -1468,7 +1477,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
             return;
         }
         myHoldingMapper.insert(MyHolding.builder()
-                .userId(currentUserId())
+                .userId(ownerUserId)
                 .code(code)
                 .name(holding.getName())
                 .quantity(holding.getQuantity())
@@ -1494,19 +1503,18 @@ public class PortfolioServiceImpl implements IPortfolioService {
         return portfolio;
     }
 
-    private Portfolio requireOwnedPortfolio(Long id) {
+    private Portfolio requireEditablePortfolio(Long id) {
         Portfolio portfolio = requireVisiblePortfolio(id);
         Long currentUserId = currentUserId();
-        if (!Objects.equals(currentUserId, portfolio.getUserId())) {
+        if (!Objects.equals(currentUserId, portfolio.getUserId()) && !userAuthService.isAdmin(currentUserId)) {
             throw new BusinessException("无权修改该组合");
         }
         return portfolio;
     }
 
-    private void assertNameUnique(String name, Long excludeId) {
-        Long currentUserId = currentUserId();
+    private void assertNameUnique(String name, Long excludeId, Long ownerUserId) {
         var query = Wrappers.<Portfolio>lambdaQuery().eq(Portfolio::getName, name)
-                .eq(Portfolio::getUserId, currentUserId);
+                .eq(Portfolio::getUserId, ownerUserId);
         if (Objects.nonNull(excludeId)) {
             query.ne(Portfolio::getId, excludeId);
         }

@@ -59,6 +59,15 @@ test('mobile portfolio detail starts at the document top after selection', () =>
   )
 })
 
+test('mobile portfolio detail exposes buy and per-holding actions in the first viewport', () => {
+  assert.match(portfolioSource, /class="mobile-trade-button"[^>]*@click="openCreate"/)
+  assert.match(portfolioSource, /class="portfolio-mobile-row-actions"/)
+  assert.match(portfolioSource, /v-if="isMobileViewport && !sharingCapture"[\s\S]*?@command="handleHoldingAction\(\$event, row\)"/)
+  assert.match(portfolioSource, /v-if="!sharingCapture && !isMobileViewport"[\s\S]*?label="操作"/)
+  assert.match(portfolioSource, /@media \(max-width: 820px\) \{[\s\S]*?\.portfolio-stock-cell\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 44px;/)
+  assert.match(portfolioSource, /@media \(max-width: 820px\) \{[\s\S]*?\.portfolio-row-actions-trigger\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/)
+})
+
 test('portfolio summary keeps only action-oriented metrics', () => {
   const detailTemplate = portfolioSource.slice(
     portfolioSource.indexOf('class="stat-cards stat-cards--portfolio"'),
@@ -74,7 +83,7 @@ test('holding tables keep stock links blue and avoid fixed columns on mobile', (
   assert.match(portfolioSource, /:fixed="sharingCapture \|\| isMobileViewport \? false : 'left'"/)
   assert.match(holdingSource, /:fixed="mobileRowActions \? false : 'left'"/)
   assert.match(holdingSource, /:fixed="mobileRowActions \? false : 'right'"/)
-  assert.match(portfolioSource, /:fixed="isMobileViewport \? false : 'right'"/)
+  assert.match(portfolioSource, /v-if="!sharingCapture && !isMobileViewport"[\s\S]*?fixed="right"/)
   assert.match(portfolioSource, /<StockIdentity[\s\S]*?:security="row"[\s\S]*?interactive[\s\S]*?compact/)
   assert.match(holdingSource, /<StockIdentity :security="row" interactive compact/)
 })
@@ -99,7 +108,7 @@ test('desktop portfolio keeps native document scrolling', () => {
 })
 
 test('mobile portfolio stock cells use a compact table-specific identity layout', () => {
-  assert.match(portfolioSource, /security: isMobileViewport\.value \? 116 : 128/)
+  assert.match(portfolioSource, /security: isMobileViewport\.value \? 152 : 128/)
   assert.match(portfolioSource, /class="portfolio-stock-identity"/)
   assert.match(portfolioSource, /\.holding-table :deep\(\.el-table__body td\.el-table__cell\)[\s\S]*?padding-top:\s*4px;[\s\S]*?padding-bottom:\s*4px;/)
   assert.match(portfolioSource, /\.holding-table :deep\(\.portfolio-stock-identity\.stock-identity\)[\s\S]*?min-height:\s*32px;[\s\S]*?gap:\s*1px;/)
@@ -114,7 +123,7 @@ test('holding P&L percentages use an explicit sign on both holding surfaces', ()
 
 test('holding tables keep all actions inside one compact overflow menu', () => {
   assert.match(holdingSource, /width="52"[\s\S]*?:fixed="mobileRowActions \? false : 'right'"/)
-  assert.match(portfolioSource, /width="44"[\s\S]*?:fixed="isMobileViewport \? false : 'right'"/)
+  assert.match(portfolioSource, /v-if="!sharingCapture && !isMobileViewport"[\s\S]*?width="44"[\s\S]*?fixed="right"/)
   assert.match(holdingSource, /class="row-actions-trigger"/)
   assert.match(portfolioSource, /class="portfolio-row-actions-trigger"/)
   assert.match(holdingSource, /class="row-actions-trigger"[^>]*@click\.stop/)
@@ -180,7 +189,7 @@ test('mobile portfolio ordering uses direct up and down controls while desktop k
   assert.match(portfolioSource, /:data-portfolio-id="row\.id"/)
 })
 
-test('shared portfolios expose write controls only for their owner', () => {
+test('shared portfolios expose write controls when the backend marks them editable', () => {
   assert.match(portfolioSource, /const activeEditable = computed\(\(\) => activeSummary\.value\?\.editable === true\)/)
   assert.match(portfolioSource, /<strong>共享组合<\/strong>/)
   assert.match(portfolioSource, /v-else-if="row\.editable"[\s\S]*?class="pf-card-menu"/)
@@ -190,6 +199,10 @@ test('shared portfolios expose write controls only for their owner', () => {
   assert.match(portfolioSource, /v-if="activeEditable"[\s\S]*?command="sell"/)
   assert.match(portfolioSource, /v-if="activeEditable"[\s\S]*?command="edit"/)
   assert.match(portfolioSource, /command="observe" :icon="View">加入观察池<\/el-dropdown-item>/)
+  assert.match(portfolioSource, /command="remove" :disabled="row\.systemDefault"/)
+  assert.match(portfolioSource, /v-if="detail\.editable && !detail\.systemDefault" command="remove"/)
+  assert.match(portfolioSource, /editingSystemDefault\.value = row\.systemDefault === true/)
+  assert.match(portfolioSource, /v-if="pfForm\.id && !editingSystemDefault" label="状态"/)
 })
 
 test('desktop portfolio actions use one grouped toolbar', () => {

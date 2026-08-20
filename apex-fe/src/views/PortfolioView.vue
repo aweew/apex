@@ -88,6 +88,7 @@ let themeChart = null
 
 const showIndustry = ref(false)
 const pfDialog = ref(false)
+const editingSystemDefault = ref(false)
 const dialogVisible = ref(false)
 const importDialog = ref(false)
 const saving = ref(false)
@@ -169,7 +170,7 @@ const shareCol = computed(() =>
         advice: 280,
       }
     : {
-        security: isMobileViewport.value ? 116 : 128,
+        security: isMobileViewport.value ? 152 : 128,
         today: 132,
         priceCost: 116,
         stop: 84,
@@ -947,6 +948,7 @@ function openCreatePf() {
     status: 'ACTIVE',
     cashBalance: 0,
   })
+  editingSystemDefault.value = false
   pfDialog.value = true
 }
 
@@ -959,6 +961,7 @@ function openEditPf(row) {
     status: row.status || 'ACTIVE',
     cashBalance: row.cashBalance ?? 0,
   })
+  editingSystemDefault.value = row.systemDefault === true
   pfDialog.value = true
 }
 
@@ -982,7 +985,7 @@ async function submitPf() {
 }
 
 async function onRemovePf(row) {
-  if (row.isDefault) {
+  if (row.systemDefault) {
     ElMessage.warning('默认组合不可删除')
     return
   }
@@ -1686,7 +1689,7 @@ onBeforeUnmount(() => {
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="edit">编辑组合</el-dropdown-item>
-                    <el-dropdown-item command="remove" :disabled="row.isDefault" divided>删除组合</el-dropdown-item>
+                    <el-dropdown-item command="remove" :disabled="row.systemDefault" divided>删除组合</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -1729,22 +1732,25 @@ onBeforeUnmount(() => {
             <el-icon><ArrowLeft /></el-icon>
             <span>组合列表</span>
           </button>
-          <el-dropdown trigger="click" placement="bottom-end" @command="handleMobileDetailAction">
-            <button type="button" class="portfolio-more-trigger" aria-label="组合详情更多操作" title="更多操作">
-              <el-icon><MoreFilled /></el-icon>
-            </button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="trades">交易记录</el-dropdown-item>
-                <el-dropdown-item v-if="detail.editable" command="edit">编辑组合</el-dropdown-item>
-                <el-dropdown-item v-if="detail.editable" command="refresh" :disabled="!rows.length">刷新行情和日线</el-dropdown-item>
-                <el-dropdown-item v-if="detail.editable" command="import">导入持仓</el-dropdown-item>
-                <el-dropdown-item v-if="detail.editable" command="snapshot">打今日快照</el-dropdown-item>
-                <el-dropdown-item v-if="detail.isDefault" command="holding" divided>打开持仓页</el-dropdown-item>
-                <el-dropdown-item v-if="detail.editable && !detail.isDefault" command="remove" divided>删除组合</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <div class="mobile-detail-actions">
+            <el-button v-if="activeEditable" class="mobile-trade-button" type="primary" :icon="Plus" @click="openCreate">买入</el-button>
+            <el-dropdown trigger="click" placement="bottom-end" @command="handleMobileDetailAction">
+              <button type="button" class="portfolio-more-trigger" aria-label="组合详情更多操作" title="更多操作">
+                <el-icon><MoreFilled /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="trades">交易记录</el-dropdown-item>
+                  <el-dropdown-item v-if="detail.editable" command="edit">编辑组合</el-dropdown-item>
+                  <el-dropdown-item v-if="detail.editable" command="refresh" :disabled="!rows.length">刷新行情和日线</el-dropdown-item>
+                  <el-dropdown-item v-if="detail.editable" command="import">导入持仓</el-dropdown-item>
+                  <el-dropdown-item v-if="detail.editable" command="snapshot">打今日快照</el-dropdown-item>
+                  <el-dropdown-item v-if="detail.isDefault" command="holding" divided>打开持仓页</el-dropdown-item>
+                  <el-dropdown-item v-if="detail.editable && !detail.systemDefault" command="remove" divided>删除组合</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </div>
         <div v-show="sharingCapture" class="share-brand-strip">
           <BrandShareLockup :subtitle="detail.isDefault ? '真实持仓' : '组合跟踪'" :size="44" />
@@ -1906,13 +1912,36 @@ onBeforeUnmount(() => {
               :sortable="!sharingCapture"
             >
               <template #default="{ row }">
-                <StockIdentity
-                  class="portfolio-stock-identity"
-                  :security="row"
-                  interactive
-                  compact
-                  @select="router.push(`/stock/${row.code}`)"
-                />
+                <div class="portfolio-stock-cell">
+                  <StockIdentity
+                    class="portfolio-stock-identity"
+                    :security="row"
+                    interactive
+                    compact
+                    @select="router.push(`/stock/${row.code}`)"
+                  />
+                  <el-dropdown
+                    v-if="isMobileViewport && !sharingCapture"
+                    class="portfolio-mobile-row-actions"
+                    trigger="click"
+                    placement="bottom-end"
+                    :show-arrow="false"
+                    popper-class="portfolio-row-actions-menu"
+                    @command="handleHoldingAction($event, row)"
+                  >
+                    <button type="button" class="portfolio-row-actions-trigger" :aria-label="`${row.name || row.code}交易操作`" @click.stop>
+                      <el-icon><MoreFilled /></el-icon>
+                    </button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item v-if="activeEditable" command="buy" :icon="Plus" class="row-action-buy">买入</el-dropdown-item>
+                        <el-dropdown-item v-if="activeEditable" command="sell" :icon="Minus" class="row-action-sell">卖出</el-dropdown-item>
+                        <el-dropdown-item v-if="activeEditable" command="edit" :icon="EditPen" divided>编辑持仓</el-dropdown-item>
+                        <el-dropdown-item command="observe" :icon="View">加入观察池</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
               </template>
             </el-table-column>
             <el-table-column
@@ -2119,10 +2148,10 @@ onBeforeUnmount(() => {
               sortable
             />
             <el-table-column
-              v-if="!sharingCapture"
+              v-if="!sharingCapture && !isMobileViewport"
               label="操作"
               width="44"
-              :fixed="isMobileViewport ? false : 'right'"
+              fixed="right"
               align="center"
               class-name="ops-column"
               label-class-name="ops-column"
@@ -2203,7 +2232,7 @@ onBeforeUnmount(() => {
         <el-form-item label="备注">
           <el-input v-model="pfForm.note" type="textarea" :rows="2" maxlength="200" />
         </el-form-item>
-        <el-form-item v-if="pfForm.id && activeSummary && !activeSummary.isDefault" label="状态">
+        <el-form-item v-if="pfForm.id && !editingSystemDefault" label="状态">
           <el-select v-model="pfForm.status" style="width: 100%">
             <el-option label="活跃" value="ACTIVE" />
             <el-option label="归档" value="ARCHIVED" />
@@ -2366,6 +2395,19 @@ onBeforeUnmount(() => {
     margin-bottom: 14px;
     padding-bottom: 10px;
     border-bottom: 1px solid var(--line);
+  }
+
+  .mobile-detail-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mobile-detail-actions :deep(.mobile-trade-button) {
+    min-width: 72px;
+    height: 44px;
+    margin: 0;
+    border-radius: 6px;
   }
 
   .mobile-back-button {
@@ -3577,6 +3619,23 @@ onBeforeUnmount(() => {
     margin: 0;
     padding: 2px 0;
     gap: 1px;
+  }
+
+  .portfolio-stock-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+  }
+
+  .portfolio-mobile-row-actions {
+    display: inline-flex;
+  }
+
+  .portfolio-row-actions-trigger {
+    width: 44px;
+    height: 44px;
   }
 
   .holding-table :deep(.portfolio-stock-identity .stock-identity__name) {

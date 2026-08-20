@@ -362,6 +362,17 @@ public class ApexUserAuthServiceImpl implements ApexUserAuthService {
     }
 
     /**
+     * 判断指定用户是否为管理员
+     *
+     * @param userId 用户ID
+     * @return 是否为管理员
+     */
+    @Override
+    public boolean isAdmin(Long userId) {
+        return Objects.nonNull(userId) && ROLE_ADMIN.equals(requireProfile(userId).getRole());
+    }
+
+    /**
      * 校验当前用户为管理员
      */
     @Override

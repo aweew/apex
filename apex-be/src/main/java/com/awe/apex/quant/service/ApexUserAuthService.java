@@ -90,6 +90,14 @@ public interface ApexUserAuthService {
     void requireEnabledUser(Long userId);
 
     /**
+     * 判断指定用户是否为管理员
+     *
+     * @param userId 用户ID
+     * @return 是否为管理员
+     */
+    boolean isAdmin(Long userId);
+
+    /**
      * 启用或禁用用户
      *
      * @param userId 用户ID

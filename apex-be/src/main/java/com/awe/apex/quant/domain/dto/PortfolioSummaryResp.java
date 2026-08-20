@@ -46,6 +46,11 @@ public class PortfolioSummaryResp {
     private Boolean isDefault;
 
     /**
+     * 是否为归属用户的真实默认组合
+     */
+    private Boolean systemDefault;
+
+    /**
      * 当前用户是否可编辑
      */
     private Boolean editable;
