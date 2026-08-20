@@ -252,7 +252,7 @@ function calcVisiblePriceExtent(highs, lows, startPct, endPct) {
   }
   if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: null, max: null }
   const span = max - min
-  const pad = span > 0 ? span * 0.04 : Math.max(Math.abs(max) * 0.01, 0.01)
+  const pad = span > 0 ? span * 0.08 : Math.max(Math.abs(max) * 0.02, 0.01)
   return { min: +(min - pad).toFixed(4), max: +(max + pad).toFixed(4) }
 }
 
@@ -3070,6 +3070,8 @@ function dash(v) {
 .chart {
   height: 720px;
   width: 100%;
+  touch-action: pan-y;
+  overscroll-behavior-x: contain;
   background: var(--glass-strong);
   backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
   -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
@@ -3317,7 +3319,6 @@ function dash(v) {
   .chart {
     height: 520px;
     border-radius: 8px;
-    touch-action: manipulation;
     user-select: none;
     -webkit-user-select: none;
   }
