@@ -162,4 +162,19 @@ public class DecisionItemResp {
      * 估值×策略联动提示
      */
     private String linkHint;
+
+    /**
+     * 规则和基本面提炼的个股亮点
+     */
+    private List<String> highlights;
+
+    /**
+     * 近七日直接相关消息的事实性摘要
+     */
+    private String newsSummary;
+
+    /**
+     * 近七日直接相关消息
+     */
+    private List<DecisionStockNewsResp> recentNews;
 }

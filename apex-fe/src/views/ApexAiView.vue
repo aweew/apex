@@ -75,10 +75,15 @@ async function scrollToLatest() {
 async function submitQuestion() {
   const prompt = question.value.trim()
   if (!prompt || analyzing.value) return
-  messages.value.push({ id: `${Date.now()}-user`, role: 'user', text: prompt, scope: scopeLabel.value })
+  const pendingMessageId = `${Date.now()}-assistant`
+  const requestedAnalysisType = analysisMode.value
+  messages.value.push(
+    { id: `${Date.now()}-user`, role: 'user', text: prompt, scope: scopeLabel.value },
+    { id: pendingMessageId, role: 'assistant', pending: true, analysisType: requestedAnalysisType },
+  )
   question.value = ''
   analyzing.value = true
-  scrollToLatest()
+  await scrollToLatest()
   try {
     const response = await analyzeWithXiaoling({
       question: prompt,
@@ -87,16 +92,27 @@ async function submitQuestion() {
       strategyId: analysisMode.value === 'STRATEGY' ? selectedStrategyId.value || null : null,
       days: 60,
     })
-    messages.value.push({
-      id: response.data?.requestId || `${Date.now()}-assistant`,
+    if (!response.data) throw new Error('分析结果为空，请稍后重试')
+    const assistantMessage = {
+      id: response.data.requestId || `${Date.now()}-assistant`,
       role: 'assistant',
       analysis: response.data,
-    })
+    }
+    const pendingMessageIndex = messages.value.findIndex((message) => message.id === pendingMessageId)
+    if (pendingMessageIndex >= 0) messages.value.splice(pendingMessageIndex, 1, assistantMessage)
+    else messages.value.push(assistantMessage)
   } catch (error) {
-    messages.value.push({ id: `${Date.now()}-error`, role: 'error', text: error.message || '分析失败，请稍后重试' })
+    const pendingMessageIndex = messages.value.findIndex((message) => message.id === pendingMessageId)
+    const errorMessage = {
+      id: `${Date.now()}-error`,
+      role: 'error',
+      text: error.message || '分析失败，请稍后重试',
+    }
+    if (pendingMessageIndex >= 0) messages.value.splice(pendingMessageIndex, 1, errorMessage)
+    else messages.value.push(errorMessage)
   } finally {
     analyzing.value = false
-    scrollToLatest()
+    await scrollToLatest()
   }
 }
 
@@ -220,6 +236,19 @@ onMounted(loadContext)
               <div class="message-meta">{{ message.scope }}</div><p>{{ message.text }}</p>
             </div>
 
+            <article v-else-if="message.role === 'assistant' && message.pending"
+              class="message assistant-message pending-message" aria-busy="true">
+              <header class="answer-head">
+                <div>
+                  <span class="answer-kicker">{{ message.analysisType }} ANALYST</span>
+                  <h2>正在分析 Apex 数据</h2>
+                </div>
+                <span class="pending-status"><el-icon><Refresh /></el-icon>读取中</span>
+              </header>
+              <p>正在汇总组合、决策与归因数据</p>
+              <div class="pending-lines" aria-hidden="true"><i /><i /><i /></div>
+            </article>
+
             <article v-else-if="message.role === 'assistant' && message.analysis" class="message assistant-message">
               <header class="answer-head">
                 <div>
@@ -278,8 +307,6 @@ onMounted(loadContext)
               <el-icon><Warning /></el-icon><span>{{ message.text }}</span>
             </div>
           </template>
-
-          <div v-if="analyzing" class="thinking-message"><i /><i /><i /><b>小灵正在读取 Apex 数据</b></div>
         </div>
 
         <form class="composer" @submit.prevent="submitQuestion">
@@ -344,11 +371,19 @@ onMounted(loadContext)
 .starter-actions b { color: #20252d; font-size: 13px; }
 .starter-actions small { margin-top: 3px; color: #7b8491; font-size: 10px; }
 .starter-actions button:disabled { cursor: not-allowed; opacity: .45; }
-.message + .message, .message + .thinking-message, .thinking-message + .message { margin-top: 20px; }
+.message + .message { margin-top: 20px; }
 .user-message { max-width: min(72%, 680px); margin-left: auto; padding: 10px 13px; border-radius: 7px 7px 2px 7px; color: #fff; background: #215fa8; }
 .user-message p { margin: 3px 0 0; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .message-meta { color: #dbe9f8; font-size: 9px; }
 .assistant-message { padding-left: 16px; border-left: 3px solid #1f5fae; }
+.pending-message { min-height: 148px; }
+.pending-message > p { margin: 14px 0 0; color: #657185; font-size: 12px; }
+.pending-status { display: inline-flex; align-items: center; gap: 5px; color: #657185; font-size: 10px; font-weight: 700; }
+.pending-status .el-icon { animation: pendingRotate 1.2s linear infinite; }
+.pending-lines { display: grid; gap: 9px; margin-top: 18px; }
+.pending-lines i { display: block; width: min(76%, 620px); height: 9px; border-radius: 3px; background: #e9edf2; animation: pendingPulse 1.4s ease-in-out infinite; }
+.pending-lines i:nth-child(2) { width: min(58%, 470px); animation-delay: .12s; }
+.pending-lines i:nth-child(3) { width: min(68%, 550px); animation-delay: .24s; }
 .answer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .answer-kicker { display: block; margin-bottom: 4px; color: #64748a; font-size: 9px; font-weight: 800; }
 .answer-head h2 { margin: 0; color: #171b22; font-size: 18px; letter-spacing: 0; }
@@ -388,12 +423,8 @@ onMounted(loadContext)
 .follow-ups button { min-height: 30px; padding: 5px 8px; border: 1px solid #d9dfe7; border-radius: 5px; color: #526075; background: #fff; font: inherit; font-size: 10px; cursor: pointer; }
 .follow-ups button:hover:not(:disabled) { color: #1559b7; border-color: #a8bdd8; }
 .error-message { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid #ecc9c5; border-radius: 6px; color: #9f342e; background: #fff7f6; font-size: 12px; }
-.thinking-message { display: flex; align-items: center; gap: 5px; color: #657185; }
-.thinking-message i { width: 6px; height: 6px; border-radius: 50%; background: #7f9fc7; animation: thinking 1.1s infinite ease-in-out; }
-.thinking-message i:nth-child(2) { animation-delay: .12s; }
-.thinking-message i:nth-child(3) { animation-delay: .24s; }
-.thinking-message b { margin-left: 5px; font-size: 11px; }
-@keyframes thinking { 0%, 70%, 100% { opacity: .3; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-3px); } }
+@keyframes pendingRotate { to { transform: rotate(360deg); } }
+@keyframes pendingPulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 .composer { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: end; gap: 10px; padding: 12px 16px; border-top: 1px solid #e1e5eb; background: #fbfcfd; }
 .composer :deep(.el-textarea__inner) { min-height: 52px !important; max-height: 112px; border-radius: 6px; box-shadow: 0 0 0 1px #d7dde6 inset; line-height: 1.5; }
 .send-button { width: 44px; height: 44px; }
@@ -431,5 +462,8 @@ onMounted(loadContext)
   .contributor-list li { grid-template-columns: 22px minmax(0, 1fr); }
   .contributor-value { grid-column: 2; text-align: left; }
   .composer { padding: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pending-status .el-icon, .pending-lines i { animation: none; }
 }
 </style>

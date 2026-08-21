@@ -47,6 +47,7 @@ import com.awe.apex.quant.domain.dto.DecisionHistoryItem;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionPortfolioHolding;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
+import com.awe.apex.quant.domain.dto.DecisionStockNewsResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.DecisionStrategyPerformance;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
@@ -67,6 +68,7 @@ import com.awe.apex.quant.domain.entity.DecisionRun;
 import com.awe.apex.quant.domain.entity.DecisionPortfolioSnapshot;
 import com.awe.apex.quant.domain.entity.MarketBriefingSnapshot;
 import com.awe.apex.quant.domain.entity.MarketHot;
+import com.awe.apex.quant.domain.entity.MarketNews;
 import com.awe.apex.quant.domain.entity.MyHolding;
 import com.awe.apex.quant.domain.entity.RiskRule;
 import com.awe.apex.quant.domain.entity.StockBasic;
@@ -80,6 +82,7 @@ import com.awe.apex.quant.mapper.DecisionRunMapper;
 import com.awe.apex.quant.mapper.DecisionOutcomeMapper;
 import com.awe.apex.quant.mapper.DecisionPortfolioSnapshotMapper;
 import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
+import com.awe.apex.quant.mapper.MarketNewsMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockFinAbstractMapper;
 import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
@@ -180,6 +183,9 @@ public class DecisionServiceImpl implements IDecisionService {
     private MarketBriefingSnapshotMapper marketBriefingSnapshotMapper;
 
     @Resource
+    private MarketNewsMapper marketNewsMapper;
+
+    @Resource
     private StrategyParams strategyParams;
 
     @Resource
@@ -243,6 +249,9 @@ public class DecisionServiceImpl implements IDecisionService {
     private static final BigDecimal FALLBACK_TAKE_PCT = new BigDecimal("0.20");
     private static final String BUY_AI_DISCLAIMER = "AI 总结仅供研究参考，不构成投资建议；请结合本地规则评分与风控自行决策。";
     private static final String BUY_AI_CACHE_PREFIX = "apex:decision:buy-ai:";
+    private static final int DECISION_NEWS_DAYS = 7;
+    private static final int DECISION_NEWS_LIMIT = 2;
+    private static final int DECISION_NEWS_FETCH_LIMIT = 600;
 
     /**
      * 刷新全用户共享的市场买入信号。
@@ -1651,6 +1660,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 holds.add(item);
             }
         }
+        populateStockInsights(all);
         int executableCount = 0;
         int mainlineMatchCount = 0;
         int valuationCheapCount = 0;
@@ -1710,6 +1720,162 @@ public class DecisionServiceImpl implements IDecisionService {
                 .marketBriefing(briefing)
                 .message(message)
                 .build();
+    }
+
+    /**
+     * 为决策清单补充规则亮点和近期直接相关的新闻事实。
+     *
+     * @param items 决策条目
+     */
+    private void populateStockInsights(List<DecisionItemResp> items) {
+        if (CollUtil.isEmpty(items)) {
+            return;
+        }
+        List<MarketNews> recentNewsRows = List.of();
+        if (Objects.nonNull(marketNewsMapper)) {
+            recentNewsRows = marketNewsMapper.selectList(Wrappers.<MarketNews>lambdaQuery()
+                    .ge(MarketNews::getPublishedAt, LocalDateTime.now().minusDays(DECISION_NEWS_DAYS))
+                    .orderByDesc(MarketNews::getPublishedAt)
+                    .orderByDesc(MarketNews::getId)
+                    .last("LIMIT " + DECISION_NEWS_FETCH_LIMIT));
+        }
+        for (DecisionItemResp item : items) {
+            item.setHighlights(buildStockHighlights(item));
+            List<MarketNews> matchedNews = matchRecentNews(item, recentNewsRows);
+            item.setRecentNews(toDecisionNews(matchedNews));
+            item.setNewsSummary(buildNewsSummary(matchedNews));
+        }
+    }
+
+    /**
+     * 根据已落库的决策字段生成可复核亮点，不引入模型推断。
+     *
+     * @param item 决策条目
+     * @return 亮点列表
+     */
+    private List<String> buildStockHighlights(DecisionItemResp item) {
+        List<String> highlights = new ArrayList<>();
+        if (Boolean.TRUE.equals(item.getMainlineMatch()) && StringUtils.isNotBlank(item.getMainlineName())) {
+            highlights.add("主线 · " + item.getMainlineName());
+        }
+        if (CollUtil.isNotEmpty(item.getStrategies()) && item.getStrategies().size() >= 2) {
+            highlights.add("多策略共振 · " + String.join("+", item.getStrategies()));
+        }
+        if (StringUtils.isNotBlank(item.getValuationSummary())) {
+            highlights.add(trimInsight(item.getValuationSummary()));
+        } else if (StringUtils.isNotBlank(item.getValuationLabel())) {
+            highlights.add("估值 · " + item.getValuationLabel());
+        }
+        if (StringUtils.isNotBlank(item.getFundNote()) && highlights.size() < 3) {
+            highlights.add("基本面 · " + trimInsight(item.getFundNote()));
+        }
+        if (highlights.isEmpty() && StringUtils.isNotBlank(item.getScoreExplain())) {
+            highlights.add(trimInsight(item.getScoreExplain()));
+        }
+        return highlights;
+    }
+
+    /**
+     * 匹配关联代码优先、标题或摘要名称命中补充的近期新闻。
+     *
+     * @param item 决策条目
+     * @param recentNewsRows 近期新闻
+     * @return 匹配新闻
+     */
+    private List<MarketNews> matchRecentNews(DecisionItemResp item, List<MarketNews> recentNewsRows) {
+        List<MarketNews> matchedNews = new ArrayList<>();
+        if (CollUtil.isEmpty(recentNewsRows)) {
+            return matchedNews;
+        }
+        String code = MarketCodeUtils.normalizeHoldingCode(item.getCode());
+        for (MarketNews news : recentNewsRows) {
+            if (matchesRelatedCode(news, code)) {
+                matchedNews.add(news);
+                if (matchedNews.size() >= DECISION_NEWS_LIMIT) {
+                    return matchedNews;
+                }
+            }
+        }
+        if (StringUtils.isBlank(item.getName())) {
+            return matchedNews;
+        }
+        for (MarketNews news : recentNewsRows) {
+            if (matchedNews.size() >= DECISION_NEWS_LIMIT) {
+                break;
+            }
+            if (!matchedNews.contains(news) && (StringUtils.contains(news.getTitle(), item.getName())
+                    || StringUtils.contains(news.getSummary(), item.getName()))) {
+                matchedNews.add(news);
+            }
+        }
+        return matchedNews;
+    }
+
+    /**
+     * 判断新闻关联代码是否与决策标的一致。
+     *
+     * @param news 新闻
+     * @param targetCode 决策代码
+     * @return 是否命中
+     */
+    private boolean matchesRelatedCode(MarketNews news, String targetCode) {
+        if (StringUtils.isBlank(targetCode) || StringUtils.isBlank(news.getRelatedCodes())) {
+            return false;
+        }
+        String[] relatedCodes = news.getRelatedCodes().split("[,，\\s]+");
+        for (String relatedCode : relatedCodes) {
+            if (targetCode.equals(MarketCodeUtils.normalizeHoldingCode(relatedCode))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 转换用于决策页面展示的新闻字段。
+     *
+     * @param newsRows 关联新闻
+     * @return 新闻响应列表
+     */
+    private List<DecisionStockNewsResp> toDecisionNews(List<MarketNews> newsRows) {
+        List<DecisionStockNewsResp> newsItems = new ArrayList<>();
+        for (MarketNews news : newsRows) {
+            newsItems.add(DecisionStockNewsResp.builder()
+                    .source(news.getSource())
+                    .publishedAt(news.getPublishedAt())
+                    .title(news.getTitle())
+                    .url(news.getUrl())
+                    .build());
+        }
+        return newsItems;
+    }
+
+    /**
+     * 汇总近期新闻覆盖情况，不对新闻内容做投资方向判断。
+     *
+     * @param newsRows 关联新闻
+     * @return 消息摘要
+     */
+    private String buildNewsSummary(List<MarketNews> newsRows) {
+        if (CollUtil.isEmpty(newsRows)) {
+            return "近7日未收录直接相关消息";
+        }
+        String latestTitle = trimInsight(newsRows.get(0).getTitle());
+        return "近7日收录" + newsRows.size() + "条，最新：" + latestTitle;
+    }
+
+    /**
+     * 限制卡片亮点和新闻标题的展示长度。
+     *
+     * @param text 原始文本
+     * @return 紧凑文本
+     */
+    private String trimInsight(String text) {
+        if (StringUtils.isBlank(text)) {
+            return "";
+        }
+        String normalized = text.trim().replaceAll("\\s+", " ");
+        return normalized.length() <= 48 ? normalized : normalized.substring(0, 48) + "…";
     }
 
     private DecisionRun loadDecisionRun(List<DailyAction> rows, LocalDate actionDate) {

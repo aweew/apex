@@ -297,6 +297,21 @@ function fmtPrice(v) {
   return Number(v).toFixed(2)
 }
 
+function fmtNewsTime(value) {
+  if (!value) return ''
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
+function newsSourceLabel(source) {
+  return {
+    eastmoney: '东财',
+    cls: '财联社',
+    ths: '同花顺',
+    sina: '新浪',
+    cctv: '央视',
+  }[source] || source || '资讯'
+}
+
 function adviceActionLabel(action) {
   return {
     BUY: '买入',
@@ -888,6 +903,32 @@ onBeforeUnmount(() => {
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
+            <el-table-column label="亮点 / 消息面" min-width="310">
+              <template #default="{ row }">
+                <div class="stock-insight">
+                  <div v-if="row.highlights?.length" class="stock-highlight-row">
+                    <span v-for="highlight in row.highlights.slice(0, 3)" :key="highlight" class="stock-highlight-chip">
+                      {{ highlight }}
+                    </span>
+                  </div>
+                  <p v-if="row.newsSummary" class="stock-news-summary">{{ row.newsSummary }}</p>
+                  <div v-if="row.recentNews?.length" class="stock-news-list">
+                    <a
+                      v-for="news in row.recentNews.slice(0, 2)"
+                      :key="`${news.publishedAt}-${news.title}`"
+                      class="stock-news-item"
+                      :class="{ 'is-static': !news.url }"
+                      :href="news.url || undefined"
+                      :target="news.url ? '_blank' : undefined"
+                      :rel="news.url ? 'noopener' : undefined"
+                    >
+                      <span>{{ newsSourceLabel(news.source) }} {{ fmtNewsTime(news.publishedAt) }}</span>
+                      <b>{{ news.title }}</b>
+                    </a>
+                  </div>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column
               prop="reason"
               label="理由"
@@ -959,7 +1000,29 @@ onBeforeUnmount(() => {
                   size="small"
                   type="warning"
                   effect="plain"
-                >{{ riskFlag }}</el-tag>
+                  >{{ riskFlag }}</el-tag>
+              </div>
+              <div v-if="row.highlights?.length || row.newsSummary || row.recentNews?.length" class="decision-mobile-insight">
+                <div v-if="row.highlights?.length" class="stock-highlight-row">
+                  <span v-for="highlight in row.highlights.slice(0, 3)" :key="highlight" class="stock-highlight-chip">
+                    {{ highlight }}
+                  </span>
+                </div>
+                <p v-if="row.newsSummary" class="stock-news-summary">消息面 · {{ row.newsSummary }}</p>
+                <div v-if="row.recentNews?.length" class="stock-news-list">
+                  <a
+                    v-for="news in row.recentNews.slice(0, 2)"
+                    :key="`${news.publishedAt}-${news.title}`"
+                    class="stock-news-item"
+                    :class="{ 'is-static': !news.url }"
+                    :href="news.url || undefined"
+                    :target="news.url ? '_blank' : undefined"
+                    :rel="news.url ? 'noopener' : undefined"
+                  >
+                    <span>{{ newsSourceLabel(news.source) }} {{ fmtNewsTime(news.publishedAt) }}</span>
+                    <b>{{ news.title }}</b>
+                  </a>
+                </div>
               </div>
               <p class="decision-mobile-reason">{{ row.reason || '暂无决策理由' }}</p>
               <details v-if="row.reason || row.scoreExplain" class="decision-mobile-details">
@@ -1903,6 +1966,74 @@ onBeforeUnmount(() => {
   margin-right: 4px;
 }
 
+.stock-insight {
+  display: grid;
+  gap: 6px;
+  min-width: 240px;
+}
+
+.stock-highlight-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.stock-highlight-chip {
+  max-width: 100%;
+  padding: 2px 6px;
+  overflow: hidden;
+  border-left: 2px solid rgba(0, 113, 227, 0.34);
+  background: rgba(0, 113, 227, 0.05);
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock-news-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.stock-news-list {
+  display: grid;
+  gap: 3px;
+}
+
+.stock-news-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px;
+  align-items: baseline;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.stock-news-item:not(.is-static):hover b {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.stock-news-item span {
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.stock-news-item b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .exec-bar {
   position: sticky;
   bottom: 12px;
@@ -2393,6 +2524,24 @@ onBeforeUnmount(() => {
     line-height: 1.5;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+  }
+
+  .decision-mobile-insight {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px 0 0 9px;
+    border-top: 1px solid var(--line);
+    border-left: 2px solid rgba(0, 113, 227, 0.18);
+  }
+
+  .decision-mobile-insight .stock-news-item {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+
+  .decision-mobile-insight .stock-news-item b {
+    white-space: normal;
   }
 
   .decision-mobile-details {

@@ -7,8 +7,11 @@ import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.entity.DailyAction;
 import com.awe.apex.quant.domain.entity.DecisionRun;
+import com.awe.apex.quant.domain.entity.MarketNews;
 import com.awe.apex.quant.mapper.DailyActionMapper;
 import com.awe.apex.quant.mapper.DecisionRunMapper;
+import com.awe.apex.quant.mapper.MarketNewsMapper;
+import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -35,6 +38,8 @@ class DecisionTodayServiceTest {
     private final DailyActionMapper dailyActionMapper = mock(DailyActionMapper.class);
     private final DecisionRunMapper decisionRunMapper = mock(DecisionRunMapper.class);
     private final DecisionRunManager decisionRunManager = mock(DecisionRunManager.class);
+    private final MarketNewsMapper marketNewsMapper = mock(MarketNewsMapper.class);
+    private final StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
     private final ApexUserContext userContext = mock(ApexUserContext.class);
     private final DecisionServiceImpl service = new DecisionServiceImpl();
 
@@ -43,6 +48,7 @@ class DecisionTodayServiceTest {
         MapperBuilderAssistant builderAssistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(builderAssistant, DailyAction.class);
         TableInfoHelper.initTableInfo(builderAssistant, DecisionRun.class);
+        TableInfoHelper.initTableInfo(builderAssistant, MarketNews.class);
     }
 
     @BeforeEach
@@ -50,6 +56,8 @@ class DecisionTodayServiceTest {
         ReflectionTestUtils.setField(service, "dailyActionMapper", dailyActionMapper);
         ReflectionTestUtils.setField(service, "decisionRunMapper", decisionRunMapper);
         ReflectionTestUtils.setField(service, "decisionRunManager", decisionRunManager);
+        ReflectionTestUtils.setField(service, "marketNewsMapper", marketNewsMapper);
+        ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
         ReflectionTestUtils.setField(service, "userContext", userContext);
         when(userContext.currentUserId()).thenReturn(7L);
     }
@@ -92,5 +100,46 @@ class DecisionTodayServiceTest {
         assertTrue(sql.contains("action_date"));
         assertTrue(sql.contains("status"));
         assertTrue(sql.contains("published"));
+    }
+
+    @Test
+    void addsStructuredHighlightsAndDirectRecentNewsToDecisionItems() {
+        LocalDate actionDate = LocalDate.now();
+        DailyAction action = DailyAction.builder()
+                .id(1L)
+                .actionDate(actionDate)
+                .code("600001")
+                .name("示例股份")
+                .action("BUY")
+                .strategyId("S2")
+                .strategiesCsv("S1,S2")
+                .mainlineMatch(1)
+                .mainlineName("半导体")
+                .valuationSummary("估值处于行业低位")
+                .fundNote("ROE 12.50%")
+                .scoreExplain("回调缩量，等待确认")
+                .build();
+        MarketNews news = MarketNews.builder()
+                .source("eastmoney")
+                .relatedCodes("600001,300001")
+                .title("示例股份披露订单进展")
+                .publishedAt(LocalDateTime.now().minusHours(2))
+                .build();
+        when(dailyActionMapper.selectList(any())).thenReturn(List.of(action));
+        when(decisionRunMapper.selectOne(any())).thenReturn(null);
+        when(stockBasicMapper.selectList(any())).thenReturn(List.of());
+        when(marketNewsMapper.selectList(any())).thenReturn(List.of(news));
+        MarketBriefingResp briefing = MarketBriefingResp.builder()
+                .asOf(actionDate)
+                .stance("均衡")
+                .hotThemes(List.of())
+                .build();
+
+        DecisionTodayResp response = service.today(actionDate, "我的自选", briefing);
+
+        assertEquals(List.of("主线 · 半导体", "多策略共振 · S1+S2", "估值处于行业低位"),
+                response.getBuys().get(0).getHighlights());
+        assertEquals("近7日收录1条，最新：示例股份披露订单进展", response.getBuys().get(0).getNewsSummary());
+        assertEquals("示例股份披露订单进展", response.getBuys().get(0).getRecentNews().get(0).getTitle());
     }
 }

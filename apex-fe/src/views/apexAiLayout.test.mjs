@@ -32,3 +32,13 @@ test('Apex AI has stable desktop and mobile workbench geometry', () => {
   assert.match(source, /@media \(max-width: 640px\)[\s\S]*?\.analysis-layout\s*\{[^}]*grid-template-columns:\s*1fr;/s)
   assert.match(source, /min-height:\s*44px/)
 })
+
+test('Apex AI shows an assistant card immediately while analysis is pending', () => {
+  assert.match(source, /const pendingMessageId = `\$\{Date\.now\(\)\}-assistant`/)
+  assert.match(source, /messages\.value\.push\([\s\S]*role: 'user'[\s\S]*role: 'assistant',[\s\S]*pending: true[\s\S]*\)/)
+  assert.match(source, /message\.role === 'assistant' && message\.pending/)
+  assert.match(source, /messages\.value\.splice\(pendingMessageIndex, 1, assistantMessage\)/)
+  assert.match(source, /if \(!response\.data\) throw new Error\('分析结果为空，请稍后重试'\)/)
+  assert.match(source, /if \(pendingMessageIndex >= 0\) messages\.value\.splice/)
+  assert.doesNotMatch(source, /v-if="analyzing" class="thinking-message"/)
+})
