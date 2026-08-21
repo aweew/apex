@@ -30,3 +30,7 @@ test('stock sync exposes independent progress without resizing the primary actio
   assert.match(source, /if \(!code\.value \|\| syncingBars\.value\) return/)
   assert.match(source, /min-height:\s*64px;/)
 })
+
+test('stock detail only shows actionable daily-bar status notes', () => {
+  assert.match(source, /note\.value = data\.needSyncBars \? data\.note \|\| '' : ''/)
+})

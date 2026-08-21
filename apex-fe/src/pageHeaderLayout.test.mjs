@@ -4,10 +4,10 @@ import test from 'node:test'
 
 const globalStyles = await readFile(new URL('./style.css', import.meta.url), 'utf8')
 
-test('shared page title and module label use visual center alignment', () => {
+test('shared page title and module label use a common reading baseline', () => {
   assert.match(
     globalStyles,
-    /\.header > div:first-child\s*\{[^}]*align-items:\s*center;/,
+    /\.header > div:first-child\s*\{[^}]*align-items:\s*baseline;/,
   )
 })
 
@@ -27,13 +27,10 @@ test('shared page headers use balanced title and module label sizes', () => {
   assert.doesNotMatch(globalStyles, /\.header h1\s*\{[^}]*font-size:\s*clamp\(/)
 })
 
-test('dense and mobile page headers keep the same visual hierarchy', () => {
+test('comfortable density keeps one responsive page header hierarchy', () => {
+  assert.doesNotMatch(globalStyles, /\.shell\.dense/)
   assert.match(
     globalStyles,
-    /\.shell\.dense \.page\s*\{[^}]*--page-title-size:\s*26px;[^}]*--page-module-size:\s*15px;/,
-  )
-  assert.match(
-    globalStyles,
-    /@media \(max-width: 560px\)\s*\{[\s\S]*?\.page,\s*\.shell\.dense \.page\s*\{[^}]*--page-title-size:\s*23px;[^}]*--page-module-size:\s*14px;/,
+    /@media \(max-width: 560px\)\s*\{[\s\S]*?\.page\s*\{[^}]*--page-title-size:\s*23px;[^}]*--page-module-size:\s*14px;/,
   )
 })

@@ -138,7 +138,7 @@ a {
 .header > div:first-child {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   column-gap: 6px;
 }
 
@@ -614,56 +614,6 @@ textarea {
   }
 }
 
-/* 终端紧凑密度（App.vue shell.dense） */
-.shell.dense .page {
-  --page-title-size: 26px;
-  --page-module-size: 15px;
-  padding: 14px 16px 28px;
-}
-
-.shell.dense .header {
-  margin-bottom: 12px;
-}
-
-.shell.dense .header h1 {
-  font-size: var(--page-title-size);
-}
-
-.shell.dense .header p {
-  margin-top: 4px;
-  font-size: 12px;
-}
-
-.shell.dense .el-table {
-  font-size: 12px;
-}
-
-.shell.dense .el-table .cell {
-  padding-top: 4px;
-  padding-bottom: 4px;
-}
-
-.shell.dense .stat-cards {
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.shell.dense .stat-card {
-  padding: 8px 10px;
-}
-
-.shell.dense .stat-card b {
-  font-size: 17px;
-}
-
-.shell.dense .nav {
-  height: 48px;
-}
-
-.shell.dense .page {
-  min-height: calc(100vh - 48px);
-}
-
 @keyframes pageIn {
   from {
     opacity: 0;
@@ -680,11 +630,6 @@ textarea {
 }
 
 @media (max-width: 900px) {
-  html,
-  body {
-    overflow-y: auto;
-  }
-
   .page {
     padding: 16px 14px 32px;
   }
@@ -706,8 +651,7 @@ textarea {
 }
 
 @media (max-width: 560px) {
-  .page,
-  .shell.dense .page {
+  .page {
     --page-title-size: 23px;
     --page-module-size: 14px;
     min-height: calc(100vh - 56px);
@@ -723,8 +667,7 @@ textarea {
     margin-bottom: 14px;
   }
 
-  .header h1,
-  .shell.dense .header h1 {
+  .header h1 {
     font-size: 24px;
     letter-spacing: 0;
   }

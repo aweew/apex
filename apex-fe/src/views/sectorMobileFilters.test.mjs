@@ -65,6 +65,31 @@ test('constituent refresh keeps cached rows visible and reuses the refresh respo
   assert.match(sectorSource, /v-model="drawerSortBy"[^>]*:disabled="drawerRefreshing"/)
 })
 
+test('constituent drawer keeps metadata, controls, and table columns compact', () => {
+  const drawerTemplate = sectorSource.slice(
+    sectorSource.indexOf('<el-drawer'),
+    sectorSource.indexOf('</el-drawer>'),
+  )
+
+  assert.match(drawerTemplate, /size="440px"/)
+  assert.match(drawerTemplate, /class="drawer-snapshot"[\s\S]*?交易日[\s\S]*?更新时间/)
+  assert.doesNotMatch(drawerTemplate, /fmtTime\(constituents\?\.syncedAt\)/)
+  assert.match(drawerTemplate, /:icon="Refresh"[\s\S]*?aria-label="刷新成分股"/)
+  assert.match(drawerTemplate, /prop="name" label="股票" width="132"/)
+  assert.match(drawerTemplate, /prop="latestPrice" label="最新价" width="72"/)
+  assert.match(drawerTemplate, /<el-table-column width="80" sortable prop="pctChg">/)
+  assert.match(drawerTemplate, /label="操作" min-width="64"/)
+  assert.match(sectorSource, /:global\(\.sector-drawer\)\s*\{[^}]*width:\s*min\(440px, 100vw\) !important;/)
+  assert.match(
+    sectorSource,
+    /:global\(\.sector-drawer \.drawer-actions\)\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/,
+  )
+  assert.match(
+    sectorSource,
+    /:global\(\.sector-drawer \.drawer-controls\)\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 0\.82fr\) 36px;/,
+  )
+})
+
 test('stale constituent requests cannot overwrite a newly opened sector', () => {
   assert.match(sectorSource, /let constituentLoadSequence = 0/)
   assert.match(
@@ -77,7 +102,7 @@ test('stale constituent requests cannot overwrite a newly opened sector', () => 
   )
 })
 
-test('sector route opens requested constituents once after the board loads', () => {
+test('sector route opens requested code or exact-name constituents once after the board loads', () => {
   assert.match(sectorSource, /const pendingSectorCode = ref\(''\)/)
   assert.match(
     sectorSource,
@@ -85,7 +110,7 @@ test('sector route opens requested constituents once after the board loads', () 
   )
   assert.match(
     sectorSource,
-    /async function openRouteSector\(\)[\s\S]*?const sector = board\.value\?\.items\?\.find\(\(row\) => row\.code === sectorCode\)[\s\S]*?pendingSectorCode\.value = ''[\s\S]*?await openConstituents\(sector\)/,
+    /async function openRouteSector\(\)[\s\S]*?const sectorName = String\(route\.query\.q \|\| ''\)\.trim\(\)[\s\S]*?sectorCode \? row\.code === sectorCode : row\.name === sectorName[\s\S]*?pendingSectorCode\.value = ''[\s\S]*?await openConstituents\(sector\)/,
   )
   assert.match(sectorSource, /await openRouteSector\(\)/)
   assert.match(
@@ -93,4 +118,11 @@ test('sector route opens requested constituents once after the board loads', () 
     /route\.query\.type, route\.query\.code[\s\S]*?pendingSectorCode\.value = String\(code \|\| ''\)\.trim\(\)[\s\S]*?activeTab\.value = type[\s\S]*?return[\s\S]*?openRouteSector\(\)/,
   )
   assert.match(sectorSource, /@closed="clearRouteSector"/)
+})
+
+test('an explicit concept type is preserved when filtering a legacy theme by name', () => {
+  assert.match(
+    sectorSource,
+    /function applyRouteQuery\(\)[\s\S]*?if \(q\) \{[\s\S]*?nameFilter\.value = q[\s\S]*?if \(!TAB_META\[type\]\) \{[\s\S]*?activeTab\.value = 'THEME'/,
+  )
 })

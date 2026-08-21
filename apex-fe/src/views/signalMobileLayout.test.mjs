@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const signalSource = await readFile(new URL('./SignalView.vue', import.meta.url), 'utf8')
+const [signalSource, termTipSource] = await Promise.all([
+  readFile(new URL('./SignalView.vue', import.meta.url), 'utf8'),
+  readFile(new URL('../components/TermTip.vue', import.meta.url), 'utf8'),
+])
 
 test('strategy signal page keeps loading feedback local to the affected content', () => {
   assert.doesNotMatch(signalSource, /class="page signal-page"\s+v-loading=/)
@@ -39,4 +42,27 @@ test('signal list reuses market badges and balances mobile metadata', () => {
   assert.match(signalSource, /\.signal-mobile-meta\s*\{\s*display: grid;\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/)
   assert.match(signalSource, /\.signal-mobile-meta \.strategy-badge,[\s\S]*?justify-self: center;/)
   assert.match(signalSource, /\.signal-mobile-meta \.signal-score\s*\{\s*justify-self: end;/)
+})
+
+test('confluence stock identities open stock details on mobile and desktop', () => {
+  const confluenceTemplate = signalSource.slice(
+    signalSource.indexOf('<el-collapse-item name="cf">'),
+    signalSource.indexOf('</el-collapse-item>', signalSource.indexOf('<el-collapse-item name="cf">')),
+  )
+
+  assert.match(
+    confluenceTemplate,
+    /<StockIdentity\s+:security="item"\s+:interactive="Boolean\(item\.code\)"\s+compact\s+@select="router\.push\(`\/stock\/\$\{item\.code\}`\)"/,
+  )
+  assert.match(
+    confluenceTemplate,
+    /<StockIdentity\s+:security="row"\s+:interactive="Boolean\(row\.code\)"\s+compact\s+@select="router\.push\(`\/stock\/\$\{row\.code\}`\)"/,
+  )
+})
+
+test('touch term underlines stay attached to their labels', () => {
+  assert.match(
+    termTipSource,
+    /@media \(max-width: 820px\), \(hover: none\)\s*\{[\s\S]*?\.term-tip\s*\{[^}]*display:\s*inline-block;[^}]*line-height:\s*1\.2;[^}]*vertical-align:\s*baseline;/,
+  )
 })

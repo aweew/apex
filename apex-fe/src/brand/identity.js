@@ -1,6 +1,6 @@
 /**
  * 灵极 Apex 品牌标识（单一事实源）
- * 中文名：灵极 · 英文名：Apex · Slogan：灵极既定，只问顶峰
+ * 中文名：灵极 · 英文名：Apex · Slogan：灵极 Apex · 量化｜洞见 · 观变
  *
  * 资源：
  * - mark：Arc 标志（透明底，导航）
@@ -12,12 +12,12 @@
 export const BRAND = {
   nameZh: '灵极',
   nameEn: 'Apex',
-  slogan: '灵极既定，只问顶峰',
+  slogan: '灵极 Apex · 量化｜洞见 · 观变',
   product: '本地量化台',
   /** 文档 / 浏览器标题 */
   documentTitle: '灵极 Apex · 量化决策中枢',
   /** 页眉短标语（导航窄位） */
-  taglineShort: '只问顶峰',
+  taglineShort: '洞见 · 观变',
   assets: {
     mark: '/brand/arc-mark.svg',
     markShare: '/brand/arc-app-icon.svg',

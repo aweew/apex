@@ -179,6 +179,14 @@ function dataLevelLabel(level) {
   return level || '-'
 }
 
+function openTheme(theme) {
+  if (!theme?.name) return
+  const query = { type: theme.boardType || 'CONCEPT' }
+  if (theme.code) query.code = theme.code
+  else query.q = theme.name
+  router.push({ path: '/sector', query })
+}
+
 async function loadHistory() {
   try {
     const res = await fetchDecisionHistory(12)
@@ -559,14 +567,18 @@ onBeforeUnmount(() => {
         <div v-if="hotThemes.length" class="theme-row theme-inline">
           <span class="side-title inline"><TermTip term="mainline">主线</TermTip></span>
           <div class="theme-chip-grid">
-            <span
+            <button
               v-for="t in hotThemes.slice(0, 6)"
               :key="t.key"
+              type="button"
               class="theme-chip"
+              :aria-label="`查看${t.name}成分股`"
+              @click="openTheme(t)"
             >
               <span class="theme-name">{{ t.name }}</span>
               <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
-            </span>
+              <el-icon class="theme-link-icon"><ArrowRight /></el-icon>
+            </button>
           </div>
         </div>
       </div>
@@ -1170,7 +1182,7 @@ onBeforeUnmount(() => {
             { title: '按市场立场', rows: attribution.byStance },
           ]" :key="block.title">
             <h4>{{ block.title }}</h4>
-            <el-table :data="block.rows || []" size="small" stripe empty-text="暂无" class="attr-table">
+            <el-table :data="block.rows || []" size="small" stripe flexible empty-text="暂无" class="attr-table">
               <el-table-column prop="label" label="桶" min-width="86" />
               <el-table-column prop="sampleCount" label="样本" min-width="56" />
               <el-table-column label="次日均%" min-width="86">
@@ -1187,7 +1199,14 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <h4>成熟五日超额</h4>
-            <el-table :data="attribution.matureStrategyPerformance || []" size="small" stripe empty-text="样本积累中" class="attr-table">
+            <el-table
+              :data="attribution.matureStrategyPerformance || []"
+              size="small"
+              stripe
+              flexible
+              empty-text="样本积累中"
+              class="attr-table"
+            >
               <el-table-column prop="strategyId" label="策略" min-width="76" />
               <el-table-column prop="sampleCount" label="样本" min-width="56" />
               <el-table-column label="超额均%" min-width="86">
@@ -1511,11 +1530,28 @@ onBeforeUnmount(() => {
   gap: 6px;
   min-width: 0;
   max-width: min(100%, 240px);
+  border: 0;
   font-size: 12px;
+  font-family: inherit;
+  line-height: inherit;
+  text-align: left;
   padding: 3px 9px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.04);
   color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.theme-chip:hover,
+.theme-chip:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.theme-chip:focus-visible {
+  outline: 2px solid rgba(0, 113, 227, 0.28);
+  outline-offset: 2px;
 }
 
 .theme-name {
@@ -1543,6 +1579,14 @@ onBeforeUnmount(() => {
 
 .theme-pct.down {
   color: var(--down);
+}
+
+.theme-link-icon {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  font-size: 12px;
+  opacity: 0.62;
 }
 
 .buy-ai-panel {
@@ -1999,6 +2043,11 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.attr-grid > div {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .attr-explain {

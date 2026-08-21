@@ -112,7 +112,9 @@ function applyRouteQuery() {
   }
   if (q) {
     nameFilter.value = q
-    activeTab.value = 'THEME'
+    if (!TAB_META[type]) {
+      activeTab.value = 'THEME'
+    }
   }
 }
 
@@ -129,9 +131,10 @@ function disableUnavailableDate(date) {
   return !availableDateSet.value.has(`${y}-${m}-${d}`)
 }
 
-function fmtTime(t) {
+function fmtClock(t) {
   if (!t) return '-'
-  return String(t).replace('T', ' ').slice(0, 19)
+  const normalizedTime = String(t).replace('T', ' ')
+  return normalizedTime.length >= 16 ? normalizedTime.slice(11, 16) : normalizedTime
 }
 
 function fmtPct(v) {
@@ -346,8 +349,11 @@ async function openConstituents(row) {
 
 async function openRouteSector() {
   const sectorCode = pendingSectorCode.value
-  if (!sectorCode) return
-  const sector = board.value?.items?.find((row) => row.code === sectorCode)
+  const sectorName = String(route.query.q || '').trim()
+  if (!sectorCode && !sectorName) return
+  const sector = board.value?.items?.find((row) => (
+    sectorCode ? row.code === sectorCode : row.name === sectorName
+  ))
   pendingSectorCode.value = ''
   if (sector) {
     await openConstituents(sector)
@@ -764,32 +770,46 @@ onBeforeUnmount(() => {
       v-model="drawerOpen"
       class="sector-drawer"
       :title="`${currentSector?.name || ''}（${currentSector?.code || ''}）成分股`"
-      size="520px"
+      size="440px"
       append-to-body
       destroy-on-close
       @closed="clearRouteSector"
     >
       <div class="drawer-actions">
-        <span class="muted">
-          {{ constituents?.tradeDate || '-' }} · {{ fmtTime(constituents?.syncedAt) }}
-        </span>
+        <div class="drawer-snapshot">
+          <span>交易日 {{ constituents?.tradeDate || '-' }}</span>
+          <span>更新时间 {{ fmtClock(constituents?.syncedAt) }}</span>
+        </div>
         <div class="drawer-controls">
-          <el-select v-model="drawerSortBy" style="width: 100px" size="small" :disabled="drawerRefreshing">
+          <el-select
+            v-model="drawerSortBy"
+            size="small"
+            :disabled="drawerRefreshing"
+            aria-label="成分股排序指标"
+          >
             <el-option label="涨跌幅" value="pctChg" />
             <el-option label="最新价" value="latestPrice" />
           </el-select>
-          <el-select v-model="drawerOrder" style="width: 88px" size="small" :disabled="drawerRefreshing">
+          <el-select
+            v-model="drawerOrder"
+            size="small"
+            :disabled="drawerRefreshing"
+            aria-label="成分股排序方向"
+          >
             <el-option label="降序" value="desc" />
             <el-option label="升序" value="asc" />
           </el-select>
-          <el-button
-            type="primary"
-            size="small"
-            :loading="drawerRefreshing"
-            @click="onRefreshConstituents()"
-          >
-            刷新成分
-          </el-button>
+          <el-tooltip content="刷新成分股" placement="top">
+            <el-button
+              type="primary"
+              plain
+              size="small"
+              :icon="Refresh"
+              aria-label="刷新成分股"
+              :loading="drawerRefreshing"
+              @click="onRefreshConstituents()"
+            />
+          </el-tooltip>
         </div>
       </div>
       <el-table
@@ -800,7 +820,7 @@ onBeforeUnmount(() => {
         :empty-text="drawerRefreshing ? '正在获取最新成分股，可关闭抽屉继续浏览' : '暂无成分股，请刷新成分'"
         max-height="70vh"
       >
-        <el-table-column prop="name" label="股票" min-width="138" sortable>
+        <el-table-column prop="name" label="股票" width="132" sortable>
           <template #default="{ row }">
             <StockIdentity
               :security="row"
@@ -810,14 +830,14 @@ onBeforeUnmount(() => {
             />
           </template>
         </el-table-column>
-        <el-table-column prop="latestPrice" label="最新价" width="90" sortable />
-        <el-table-column width="90" sortable prop="pctChg">
+        <el-table-column prop="latestPrice" label="最新价" width="72" sortable />
+        <el-table-column width="80" sortable prop="pctChg">
           <template #header><TermTip term="pct_chg">涨跌幅</TermTip></template>
           <template #default="{ row }">
             <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="88" :fixed="drawerActionColumnFixed">
+        <el-table-column label="操作" min-width="64" :fixed="drawerActionColumnFixed">
           <template #default="{ row }">
             <el-button link type="warning" :disabled="!row.code" @click="addObserve(row)">观察</el-button>
           </template>
@@ -1232,19 +1252,53 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.drawer-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  gap: 8px;
+:global(.sector-drawer) {
+  width: min(440px, 100vw) !important;
 }
 
-.drawer-controls {
+:global(.sector-drawer .el-drawer__header) {
+  margin-bottom: 12px;
+  padding: 16px 14px 0;
+}
+
+:global(.sector-drawer .el-drawer__body) {
+  padding: 0 12px 16px;
+}
+
+:global(.sector-drawer .drawer-actions) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+:global(.sector-drawer .drawer-snapshot) {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+:global(.sector-drawer .drawer-controls) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.82fr) 36px;
+  gap: 6px;
+}
+
+:global(.sector-drawer .drawer-controls .el-select),
+:global(.sector-drawer .drawer-controls .el-button) {
+  width: 100% !important;
+  min-width: 0;
+  margin: 0;
+}
+
+:global(.sector-drawer .drawer-controls .el-select__wrapper),
+:global(.sector-drawer .drawer-controls .el-button) {
+  min-height: 36px;
+  border-radius: 7px;
 }
 
 .muted {
@@ -1631,46 +1685,5 @@ onBeforeUnmount(() => {
     border-radius: 8px;
   }
 
-  :global(.sector-drawer) {
-    width: min(520px, 100vw) !important;
-  }
-
-  :global(.sector-drawer .el-drawer__header) {
-    margin-bottom: 12px;
-    padding: 16px 14px 0;
-  }
-
-  :global(.sector-drawer .el-drawer__body) {
-    padding: 0 12px 16px;
-  }
-
-  :global(.sector-drawer .drawer-actions) {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  :global(.sector-drawer .drawer-actions > .muted) {
-    line-height: 1.35;
-  }
-
-  :global(.sector-drawer .drawer-controls) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.88fr) minmax(88px, 1fr);
-    gap: 6px;
-  }
-
-  :global(.sector-drawer .drawer-controls .el-select),
-  :global(.sector-drawer .drawer-controls .el-button) {
-    width: 100% !important;
-    min-width: 0;
-    margin: 0;
-  }
-
-  :global(.sector-drawer .drawer-controls .el-select__wrapper),
-  :global(.sector-drawer .drawer-controls .el-button) {
-    min-height: 36px;
-    border-radius: 7px;
-  }
 }
 </style>

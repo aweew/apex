@@ -71,7 +71,7 @@ export function formatHotThemeLabel(item) {
 
 /**
  * @param {{ hotThemeItems?: Array, hotThemes?: string[] }|null|undefined} source
- * @returns {{ name: string, pctChg: number|null, sign: string, abs: string, pctText: string, pctDir: string, label: string, key: string }[]}
+ * @returns {{ code: string, name: string, boardType: string, pctChg: number|null, sign: string, abs: string, pctText: string, pctDir: string, label: string, key: string }[]}
  */
 export function normalizeHotThemes(source) {
   const items = source?.hotThemeItems
@@ -81,7 +81,9 @@ export function normalizeHotThemes(source) {
       .map((it) => {
         const pct = formatHotThemePct(it.pctChg)
         return {
+          code: String(it.code || ''),
           name: it.name,
+          boardType: it.boardType || 'CONCEPT',
           pctChg: it.pctChg == null || it.pctChg === '' ? null : Number(it.pctChg),
           sign: pct?.sign || '',
           abs: pct?.abs || '',
@@ -96,7 +98,9 @@ export function normalizeHotThemes(source) {
   return names
     .filter((name) => isConceptBoard(name))
     .map((name) => ({
+      code: '',
       name,
+      boardType: 'CONCEPT',
       pctChg: null,
       sign: '',
       abs: '',

@@ -1652,7 +1652,7 @@ function fmtRatio(v) {
 
 function applyDetail(data) {
   basic.value = data.basic
-  note.value = data.note || ''
+  note.value = data.needSyncBars ? data.note || '' : ''
   bars.value = data.bars || []
   needSyncBars.value = !!data.needSyncBars
   barCount.value = data.barCount ?? bars.value.length

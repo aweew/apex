@@ -16,10 +16,33 @@ test('mobile navigation owns scrolling inside a dedicated drawer body', () => {
   assert.match(mobileStyles, /\.nav-group\s*\{[^}]*flex:\s*0 0 auto;/)
   assert.match(appSource, /class="mobile-menu-scroll"[\s\S]*?<\/div>\s*<div class="mobile-menu-actions">/)
   assert.match(appSource, /\.mobile-menu-actions\s*\{[\s\S]*?flex:\s*0 0 auto;/)
-  assert.match(appSource, /\.mobile-logout-btn\s*\{[\s\S]*?grid-column:\s*1 \/ -1;/)
+  assert.match(
+    appSource,
+    /\.mobile-menu-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+  )
 })
 
-test('mobile document scrolling is restored whenever overlays are initially closed', () => {
+test('mobile navigation keeps glossary beside search and removes density configuration', () => {
+  const topActions = appSource.slice(
+    appSource.indexOf('<div class="mobile-top-actions">'),
+    appSource.indexOf('<button\n        v-if="mobileMenuOpen"'),
+  )
+  const menuActions = appSource.slice(
+    appSource.indexOf('<div class="mobile-menu-actions">'),
+    appSource.indexOf('</div>\n      </div>\n      <div class="nav-actions desktop-nav-actions">'),
+  )
+
+  const searchIndex = topActions.indexOf('aria-label="搜索股票"')
+  const glossaryIndex = topActions.indexOf('aria-label="名词百科"')
+  const menuIndex = topActions.indexOf('aria-label="打开菜单"')
+  assert.ok(searchIndex >= 0 && glossaryIndex > searchIndex && menuIndex > glossaryIndex)
+  assert.doesNotMatch(menuActions, /名词百科/)
+  assert.match(menuActions, /class="health"[\s\S]*?class="mobile-action-btn mobile-logout-btn"/)
+  assert.doesNotMatch(appSource, /denseMode|toggleDense|apex\.ui\.dense|紧凑密度|舒适密度|Ctrl\+Shift\+D/)
+  assert.doesNotMatch(sharedStyles, /\.shell\.dense/)
+})
+
+test('mobile document keeps viewport scrolling so navigation and module title stay sticky', () => {
   const mobileMenuWatch = appSource.slice(
     appSource.indexOf('watch(\n  mobileMenuOpen'),
     appSource.indexOf('watch(\n  searchOpen'),
@@ -32,10 +55,10 @@ test('mobile document scrolling is restored whenever overlays are initially clos
     glossarySource.indexOf('watch(\n  visible'),
     glossarySource.indexOf('\nfunction isMobileViewport'),
   )
-  assert.match(
-    sharedStyles,
-    /@media \(max-width: 900px\) \{[\s\S]*?html,[\s\S]*?body\s*\{[\s\S]*?overflow-y:\s*auto;/,
-  )
+  const mobileSharedStyles = sharedStyles.slice(sharedStyles.indexOf('@media (max-width: 900px)'))
+  assert.doesNotMatch(mobileSharedStyles, /html,\s*body\s*\{[^}]*overflow-y:\s*auto;/)
+  assert.match(appSource, /\.nav\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;/)
+  assert.match(appSource, /window\.addEventListener\('scroll', scheduleMobileModuleTitle/)
   assert.match(mobileMenuWatch, /document\.documentElement\.classList\.toggle\('mobile-menu-open', open\)/)
   assert.match(mobileMenuWatch, /\{ immediate: true \}/)
   assert.match(searchWatch, /document\.documentElement\.classList\.toggle\('search-open', open\)/)

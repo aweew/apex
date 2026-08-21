@@ -99,6 +99,14 @@ onBeforeUnmount(() => {
   cursor: inherit;
 }
 
+@media (max-width: 820px), (hover: none) {
+  .term-tip {
+    display: inline-block;
+    line-height: 1.2;
+    vertical-align: baseline;
+  }
+}
+
 .term-tip__body {
   display: grid;
   gap: 8px;
