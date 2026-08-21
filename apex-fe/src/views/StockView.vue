@@ -22,6 +22,7 @@ import { stockSyncSummary, synchronizeStockData } from '../utils/stockSync'
 import { bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
 import ChipDistributionPanel from '../components/ChipDistributionPanel.vue'
+import FactorCenterView from './FactorCenterView.vue'
 import ValuationView from './ValuationView.vue'
 
 const route = useRoute()
@@ -47,7 +48,7 @@ const rs20 = ref(null)
 const rs60 = ref(null)
 const volumeRatio = ref(null)
 const chartRef = ref(null)
-const activeTab = ref(route.query.tab === 'valuation' ? 'valuation' : 'chart')
+const activeTab = ref(['valuation', 'factors'].includes(route.query.tab) ? route.query.tab : 'chart')
 const fund = ref(null)
 const profile = ref(null)
 const macdTip = ref('')
@@ -1752,7 +1753,7 @@ watch(
 watch(
   () => route.query.tab,
   (tab) => {
-    if (tab === 'valuation') activeTab.value = 'valuation'
+    if (['valuation', 'factors'].includes(tab)) activeTab.value = tab
   },
 )
 
@@ -1994,6 +1995,12 @@ function dash(v) {
       </el-tab-pane>
       <el-tab-pane label="估值" name="valuation" lazy>
         <ValuationView
+          embedded
+          :stock-code="String(basic?.code || code).trim()"
+        />
+      </el-tab-pane>
+      <el-tab-pane label="因子" name="factors" lazy>
+        <FactorCenterView
           embedded
           :stock-code="String(basic?.code || code).trim()"
         />

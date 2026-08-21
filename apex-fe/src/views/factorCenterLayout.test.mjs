@@ -4,7 +4,7 @@ import test from 'node:test'
 
 const source = await readFile(new URL('./FactorCenterView.vue', import.meta.url), 'utf8')
 
-test('factor center exposes six factor categories and fixed alpha weights', () => {
+test('factor center exposes seven factor categories and fixed alpha weights', () => {
   assert.match(source, /v-for="category in detail\.categories"/)
   assert.match(source, /Alpha Score/)
   assert.match(source, /Momentum 30%/)
@@ -14,6 +14,15 @@ test('factor center exposes six factor categories and fixed alpha weights', () =
   assert.match(source, /Market Strength 15%/)
 })
 
+test('factor center supports embedded stock detail mode', () => {
+  assert.match(source, /const props = defineProps\(/)
+  assert.match(source, /stockCode:\s*\{ type: String, default: '' \}/)
+  assert.match(source, /embedded:\s*\{ type: Boolean, default: false \}/)
+  assert.match(source, /watch\(\s*\(\) => props\.stockCode/)
+  assert.match(source, /v-if="!embedded" class="header factor-header"/)
+  assert.match(source, /v-if="!embedded" class="security-strip"/)
+})
+
 test('factor center keeps missing data visible instead of rendering a fabricated value', () => {
   assert.match(source, /factor\.status === 'MISSING'/)
   assert.match(source, /暂无数据/)
@@ -21,6 +30,14 @@ test('factor center keeps missing data visible instead of rendering a fabricated
   assert.match(source, /detail\.value\?\.alphaScore == null/)
   assert.match(source, /component\.asOf \? `截至 \$\{component\.asOf\}` : '时点缺失'/)
   assert.match(source, /factor\.asOf \? `截至 \$\{factor\.asOf\}` : '时点缺失'/)
+})
+
+test('factor explanations are visible and low-weight alpha components start collapsed', () => {
+  assert.match(source, /class="factor-description">\{\{ factor\.description \}\}/)
+  assert.match(source, /primaryAlphaComponents/)
+  assert.match(source, /secondaryAlphaComponents/)
+  assert.match(source, /<el-collapse v-if="secondaryAlphaComponents\.length" class="secondary-components">/)
+  assert.doesNotMatch(source, /<el-collapse[^>]+v-model=/)
 })
 
 test('factor center resolves names and ignores stale stock responses', () => {

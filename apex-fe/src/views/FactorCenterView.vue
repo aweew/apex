@@ -7,12 +7,25 @@ import { fetchFactorCenter } from '../api/factor'
 import { searchStock } from '../api/stock'
 import StockIdentity from '../components/StockIdentity.vue'
 
+const props = defineProps({
+  stockCode: { type: String, default: '' },
+  embedded: { type: Boolean, default: false },
+})
+
 const route = useRoute()
 const router = useRouter()
-const code = ref(String(route.query.code || '600519'))
+const embedded = computed(() => props.embedded)
+const code = ref(String(props.stockCode || route.query.code || '600519'))
 const loading = ref(false)
 const detail = ref(null)
 let requestSeq = 0
+
+const primaryAlphaComponents = computed(() =>
+  (detail.value?.alphaComponents || []).filter((component) => Number(component.weight) > 15),
+)
+const secondaryAlphaComponents = computed(() =>
+  (detail.value?.alphaComponents || []).filter((component) => Number(component.weight) <= 15),
+)
 
 const scoreTone = computed(() => {
   if (detail.value?.alphaScore == null || detail.value?.alphaScore === '') return 'is-missing'
@@ -38,7 +51,9 @@ async function loadDetail(nextCode = code.value) {
     if (currentRequest !== requestSeq) return
     detail.value = response.data || null
     code.value = response.data?.code || securityCode
-    await router.replace({ query: { ...route.query, code: code.value } })
+    if (!props.embedded) {
+      await router.replace({ query: { ...route.query, code: code.value } })
+    }
   } catch (error) {
     if (currentRequest !== requestSeq) return
     detail.value = null
@@ -106,7 +121,17 @@ function goStockDetail() {
 watch(
   () => route.query.code,
   (value) => {
-    if (value && String(value) !== detail.value?.code) {
+    if (!props.embedded && value && String(value) !== detail.value?.code) {
+      code.value = String(value)
+      loadDetail(value)
+    }
+  },
+)
+
+watch(
+  () => props.stockCode,
+  (value) => {
+    if (props.embedded && value && String(value) !== detail.value?.code) {
       code.value = String(value)
       loadDetail(value)
     }
@@ -117,8 +142,12 @@ onMounted(() => loadDetail())
 </script>
 
 <template>
-  <main class="page factor-center-page" v-loading="loading">
-    <header class="header factor-header">
+  <main
+    class="page factor-center-page"
+    :class="{ 'is-embedded': embedded }"
+    v-loading="loading"
+  >
+    <header v-if="!embedded" class="header factor-header">
       <div>
         <p class="eyebrow">Factor</p>
         <h1>因子中心</h1>
@@ -145,7 +174,7 @@ onMounted(() => loadDetail())
     </header>
 
     <template v-if="detail">
-      <section class="security-strip">
+      <section v-if="!embedded" class="security-strip">
         <div>
           <StockIdentity :security="detail" prominent include-main />
           <span v-if="detail.industry" class="industry">{{ detail.industry }}</span>
@@ -177,9 +206,9 @@ onMounted(() => loadDetail())
             :stroke-width="6"
           />
 
-          <div class="component-list">
+          <div class="component-list primary-components">
             <div
-              v-for="component in detail.alphaComponents"
+              v-for="component in primaryAlphaComponents"
               :key="component.key"
               class="component-row"
               :class="{ 'is-missing': !component.available }"
@@ -198,8 +227,41 @@ onMounted(() => loadDetail())
               <small class="component-date">
                 {{ component.asOf ? `截至 ${component.asOf}` : '时点缺失' }}
               </small>
+              <small class="component-description">{{ component.description }}</small>
             </div>
           </div>
+
+          <el-collapse v-if="secondaryAlphaComponents.length" class="secondary-components">
+            <el-collapse-item name="secondary">
+              <template #title>
+                <span class="secondary-title">低权重因子 {{ secondaryAlphaComponents.length }} 项</span>
+              </template>
+              <div class="component-list secondary-component-list">
+                <div
+                  v-for="component in secondaryAlphaComponents"
+                  :key="component.key"
+                  class="component-row"
+                  :class="{ 'is-missing': !component.available }"
+                >
+                  <div class="component-name">
+                    <strong>{{ component.label }}</strong>
+                    <span>{{ formatRawValue(component) }}</span>
+                  </div>
+                  <div class="component-score">
+                    <b>{{ component.available ? formatNumber(component.score, 0) : '-' }}</b>
+                    <span>{{ formatNumber(component.weight, 0) }}%</span>
+                  </div>
+                  <div class="component-track">
+                    <i :style="{ width: `${component.available ? component.score : 0}%` }"></i>
+                  </div>
+                  <small class="component-date">
+                    {{ component.asOf ? `截至 ${component.asOf}` : '时点缺失' }}
+                  </small>
+                  <small class="component-description">{{ component.description }}</small>
+                </div>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
 
           <div class="formula" title="规则综合分权重">
             <span>Momentum 30%</span>
@@ -231,6 +293,7 @@ onMounted(() => loadDetail())
               >
                 <span>{{ factor.label }}</span>
                 <strong>{{ formatFactor(factor) }}</strong>
+                <p class="factor-description">{{ factor.description }}</p>
                 <small>{{ factor.asOf ? `截至 ${factor.asOf}` : '时点缺失' }}</small>
               </div>
             </div>
@@ -247,6 +310,12 @@ onMounted(() => loadDetail())
 .factor-center-page {
   max-width: 1500px;
   margin: 0 auto;
+}
+
+.factor-center-page.is-embedded {
+  max-width: none;
+  min-height: 0;
+  padding: 4px 0 24px;
 }
 
 .factor-header {
@@ -433,6 +502,13 @@ onMounted(() => loadDetail())
   font-size: 10px;
 }
 
+.component-description {
+  grid-column: 1 / -1;
+  color: var(--slate);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .component-track i {
   display: block;
   height: 100%;
@@ -441,6 +517,37 @@ onMounted(() => loadDetail())
 
 .component-row.is-missing {
   opacity: 0.55;
+}
+
+.secondary-components {
+  margin: -6px 0 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.secondary-components :deep(.el-collapse-item__header) {
+  height: 42px;
+  border-bottom: 0;
+  background: transparent;
+  color: var(--slate);
+}
+
+.secondary-components :deep(.el-collapse-item__wrap) {
+  border-bottom: 0;
+  background: transparent;
+}
+
+.secondary-components :deep(.el-collapse-item__content) {
+  padding-bottom: 0;
+}
+
+.secondary-title {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.secondary-component-list {
+  margin: 8px 0 4px;
 }
 
 .formula {
@@ -485,7 +592,7 @@ onMounted(() => loadDetail())
   font-weight: 650;
 }
 
-.factor-category p {
+.factor-category > header p {
   margin: 0;
   overflow: hidden;
   color: var(--muted);
@@ -504,7 +611,7 @@ onMounted(() => loadDetail())
 
 .factor-item {
   display: grid;
-  min-height: 84px;
+  min-height: 132px;
   align-content: center;
   gap: 7px;
   min-width: 0;
@@ -525,6 +632,14 @@ onMounted(() => loadDetail())
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.factor-item .factor-description {
+  margin: 0;
+  color: var(--slate);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
 }
 
 .factor-item small {
@@ -597,7 +712,7 @@ onMounted(() => loadDetail())
     display: block;
   }
 
-  .factor-category p {
+  .factor-category > header p {
     margin-top: 4px;
     text-align: left;
   }

@@ -814,6 +814,7 @@ onBeforeUnmount(() => {
       </div>
       <el-table
         v-loading="drawerLoading"
+        class="constituent-table"
         :data="constituents?.items || []"
         size="small"
         stripe
@@ -830,8 +831,8 @@ onBeforeUnmount(() => {
             />
           </template>
         </el-table-column>
-        <el-table-column prop="latestPrice" label="最新价" width="72" sortable />
-        <el-table-column width="80" sortable prop="pctChg">
+        <el-table-column prop="latestPrice" label="最新价" width="96" sortable />
+        <el-table-column width="96" sortable prop="pctChg">
           <template #header><TermTip term="pct_chg">涨跌幅</TermTip></template>
           <template #default="{ row }">
             <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ fmtPct(row.pctChg) }}</span>
@@ -1299,6 +1300,16 @@ onBeforeUnmount(() => {
 :global(.sector-drawer .drawer-controls .el-button) {
   min-height: 36px;
   border-radius: 7px;
+}
+
+:global(.sector-drawer .constituent-table th.is-sortable > .cell) {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+:global(.sector-drawer .constituent-table .caret-wrapper) {
+  flex: 0 0 24px;
 }
 
 .muted {

@@ -630,11 +630,6 @@ textarea {
 }
 
 @media (max-width: 900px) {
-  html,
-  body {
-    overflow-y: auto;
-  }
-
   .page {
     padding: 16px 14px 32px;
   }

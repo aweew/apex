@@ -1053,20 +1053,18 @@ onMounted(() => {
                 @click="router.push(`/stock/${row.code}`)"
               >
                 <span class="mobile-action-primary">
-                  <span class="mobile-stock">
+                  <span class="mobile-stock-with-strategy">
                     <StockIdentity :security="row" compact />
+                    <span
+                      class="mobile-strategy-badge"
+                      :class="{ 'is-risk': row.strategyId === 'RISK' }"
+                    >
+                      {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
+                    </span>
                   </span>
                   <span class="mobile-score">
                     <em>评分</em>
                     <ScoreBar :score="row.score" />
-                  </span>
-                </span>
-                <span class="mobile-action-details sell-details">
-                  <span>
-                    <em>策略</em>
-                    <b :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
-                      {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
-                    </b>
                   </span>
                 </span>
                 <span class="mobile-exit-rule">
@@ -3244,6 +3242,34 @@ onMounted(() => {
     min-width: 0;
   }
 
+  .mobile-stock-with-strategy {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .mobile-strategy-badge {
+    display: inline-flex;
+    height: 18px;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 5px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: var(--paper-deep);
+    color: var(--slate);
+    font-size: 10px;
+    font-weight: 650;
+    line-height: 16px;
+  }
+
+  .mobile-strategy-badge.is-risk {
+    border-color: rgba(255, 159, 10, 0.35);
+    background: rgba(255, 159, 10, 0.08);
+    color: var(--warn);
+  }
+
   .mobile-stock strong {
     color: var(--accent);
     font-size: 14px;
@@ -3313,10 +3339,6 @@ onMounted(() => {
     color: var(--warn);
   }
 
-  .mobile-action-details.sell-details {
-    grid-template-columns: 1fr;
-  }
-
   .mobile-action-tags {
     display: flex;
     flex-wrap: wrap;
@@ -3355,7 +3377,8 @@ onMounted(() => {
 
   .mobile-exit-rule {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: 24px minmax(0, 1fr);
+    align-items: baseline;
     gap: 8px;
     min-width: 0;
     margin-top: 9px;

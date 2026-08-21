@@ -13,7 +13,6 @@ const ConfigView = () => import('../views/ConfigView.vue')
 const StockView = () => import('../views/StockView.vue')
 const PipelineView = () => import('../views/PipelineView.vue')
 const ScreenerView = () => import('../views/ScreenerView.vue')
-const FactorCenterView = () => import('../views/FactorCenterView.vue')
 const ValuationView = () => import('../views/ValuationView.vue')
 const DecisionView = () => import('../views/DecisionView.vue')
 const HoldingView = () => import('../views/HoldingView.vue')
@@ -61,7 +60,13 @@ const router = createRouter({
     { path: '/observe', name: 'observe', component: ObserveView },
     { path: '/pipeline', name: 'pipeline', component: PipelineView },
     { path: '/screener', name: 'screener', component: ScreenerView },
-    { path: '/factors', name: 'factors', component: FactorCenterView },
+    {
+      path: '/factors',
+      redirect: (to) => ({
+        path: `/stock/${String(to.query.code || '600519').replace(/\D/g, '').slice(0, 6) || '600519'}`,
+        query: { tab: 'factors' },
+      }),
+    },
     { path: '/valuation', name: 'valuation', component: ValuationView },
     { path: '/watchlist', name: 'watchlist', component: WatchlistView },
     { path: '/stock/:code?', name: 'stock', component: StockView },

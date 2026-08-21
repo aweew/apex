@@ -49,3 +49,20 @@ test('desktop action panels stay inside the dashboard container', () => {
     /\.action-panel\s*\{[^}]*min-width:\s*0;/,
   )
 })
+
+test('mobile sell cards keep strategy beside the stock identity instead of a separate row', () => {
+  const sellListStart = dashboardSource.indexOf('aria-label="持仓卖出行动"')
+  const sellListEnd = dashboardSource.indexOf('</div>', sellListStart)
+  const sellList = dashboardSource.slice(sellListStart, sellListEnd)
+
+  assert.match(sellList, /class="mobile-stock-with-strategy"/)
+  assert.match(sellList, /class="mobile-strategy-badge"/)
+  assert.doesNotMatch(sellList, /class="mobile-action-details sell-details"/)
+})
+
+test('mobile sell trigger label uses a stable column and aligns with the first content line', () => {
+  assert.match(
+    dashboardSource,
+    /\.mobile-exit-rule\s*\{[^}]*grid-template-columns:\s*24px minmax\(0, 1fr\);[^}]*align-items:\s*baseline;/,
+  )
+})

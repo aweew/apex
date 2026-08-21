@@ -75,9 +75,10 @@ test('constituent drawer keeps metadata, controls, and table columns compact', (
   assert.match(drawerTemplate, /class="drawer-snapshot"[\s\S]*?交易日[\s\S]*?更新时间/)
   assert.doesNotMatch(drawerTemplate, /fmtTime\(constituents\?\.syncedAt\)/)
   assert.match(drawerTemplate, /:icon="Refresh"[\s\S]*?aria-label="刷新成分股"/)
+  assert.match(drawerTemplate, /class="constituent-table"/)
   assert.match(drawerTemplate, /prop="name" label="股票" width="132"/)
-  assert.match(drawerTemplate, /prop="latestPrice" label="最新价" width="72"/)
-  assert.match(drawerTemplate, /<el-table-column width="80" sortable prop="pctChg">/)
+  assert.match(drawerTemplate, /prop="latestPrice" label="最新价" width="96"/)
+  assert.match(drawerTemplate, /<el-table-column width="96" sortable prop="pctChg">/)
   assert.match(drawerTemplate, /label="操作" min-width="64"/)
   assert.match(sectorSource, /:global\(\.sector-drawer\)\s*\{[^}]*width:\s*min\(440px, 100vw\) !important;/)
   assert.match(
@@ -87,6 +88,14 @@ test('constituent drawer keeps metadata, controls, and table columns compact', (
   assert.match(
     sectorSource,
     /:global\(\.sector-drawer \.drawer-controls\)\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 0\.82fr\) 36px;/,
+  )
+  assert.match(
+    sectorSource,
+    /:global\(\.sector-drawer \.constituent-table th\.is-sortable > \.cell\)\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*white-space:\s*nowrap;/,
+  )
+  assert.match(
+    sectorSource,
+    /:global\(\.sector-drawer \.constituent-table \.caret-wrapper\)\s*\{[^}]*flex:\s*0 0 24px;/,
   )
 })
 

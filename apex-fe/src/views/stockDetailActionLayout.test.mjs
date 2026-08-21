@@ -4,6 +4,12 @@ import test from 'node:test'
 
 const source = await readFile(new URL('./StockView.vue', import.meta.url), 'utf8')
 
+test('stock detail embeds the factor center as a lazy tab', () => {
+  assert.match(source, /import FactorCenterView from '\.\/FactorCenterView\.vue'/)
+  assert.match(source, /<el-tab-pane label="因子" name="factors" lazy>/)
+  assert.match(source, /<FactorCenterView\s+embedded\s+:stock-code="String\(basic\?\.code \|\| code\)\.trim\(\)"/)
+})
+
 test('stock detail keeps only the compact high-value action toolbar', () => {
   const actions = source.slice(source.indexOf('<div class="actions">'), source.indexOf('</header>'))
 

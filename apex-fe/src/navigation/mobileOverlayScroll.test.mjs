@@ -42,7 +42,7 @@ test('mobile navigation keeps glossary beside search and removes density configu
   assert.doesNotMatch(sharedStyles, /\.shell\.dense/)
 })
 
-test('mobile document scrolling is restored whenever overlays are initially closed', () => {
+test('mobile document keeps viewport scrolling so navigation and module title stay sticky', () => {
   const mobileMenuWatch = appSource.slice(
     appSource.indexOf('watch(\n  mobileMenuOpen'),
     appSource.indexOf('watch(\n  searchOpen'),
@@ -55,10 +55,10 @@ test('mobile document scrolling is restored whenever overlays are initially clos
     glossarySource.indexOf('watch(\n  visible'),
     glossarySource.indexOf('\nfunction isMobileViewport'),
   )
-  assert.match(
-    sharedStyles,
-    /@media \(max-width: 900px\) \{[\s\S]*?html,[\s\S]*?body\s*\{[\s\S]*?overflow-y:\s*auto;/,
-  )
+  const mobileSharedStyles = sharedStyles.slice(sharedStyles.indexOf('@media (max-width: 900px)'))
+  assert.doesNotMatch(mobileSharedStyles, /html,\s*body\s*\{[^}]*overflow-y:\s*auto;/)
+  assert.match(appSource, /\.nav\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;/)
+  assert.match(appSource, /window\.addEventListener\('scroll', scheduleMobileModuleTitle/)
   assert.match(mobileMenuWatch, /document\.documentElement\.classList\.toggle\('mobile-menu-open', open\)/)
   assert.match(mobileMenuWatch, /\{ immediate: true \}/)
   assert.match(searchWatch, /document\.documentElement\.classList\.toggle\('search-open', open\)/)

@@ -80,7 +80,7 @@ public class FactorCenterServiceImpl implements IFactorCenterService {
     private FactorCalculator factorCalculator;
 
     /**
-     * 查询个股六类因子与 Alpha 评分。
+     * 查询个股七类因子与 Alpha 评分。
      *
      * @param code 证券代码
      * @return 因子中心详情
@@ -141,10 +141,11 @@ public class FactorCenterServiceImpl implements IFactorCenterService {
         LocalDate dailyAsOf = CollUtil.isNotEmpty(dailyBars)
                 ? dailyBars.get(dailyBars.size() - 1).getTradeDate() : null;
 
-        // 3. 构建六类因子
+        // 3. 构建七类因子
         List<FactorCategoryResp> categories = new ArrayList<>();
         categories.add(buildValuationCategory(stockBasic));
         categories.add(buildGrowthCategory(latestAbstract, latestIndicator, financialIndicators));
+        categories.add(buildQualityCategory(latestAbstract, latestIndicator));
         categories.add(buildMomentumCategory(dailyBars, dailyAsOf));
         categories.add(buildTechnicalCategory(dailyBars, dailyAsOf));
         categories.add(buildCapitalCategory(dailyBars, stockFundFlow, northboundFlow, dailyAsOf));
@@ -200,6 +201,41 @@ public class FactorCenterServiceImpl implements IFactorCenterService {
                 null, "百分点", "最新 ROE 相对上年同期变化",
                 Objects.nonNull(latestIndicator) ? latestIndicator.getReportDate() : null));
         return category("GROWTH", "成长", "收入、盈利和资本回报的增长质量", factors);
+    }
+
+    private FactorCategoryResp buildQualityCategory(StockFinAbstract latestAbstract,
+                                                    StockFinIndicator latestIndicator) {
+        LocalDate indicatorAsOf = Objects.nonNull(latestIndicator) ? latestIndicator.getReportDate() : null;
+        LocalDate abstractAsOf = Objects.nonNull(latestAbstract) ? latestAbstract.getReportDate() : null;
+        BigDecimal netMargin = Objects.nonNull(latestIndicator) && Objects.nonNull(latestIndicator.getNetMargin())
+                ? latestIndicator.getNetMargin()
+                : Objects.nonNull(latestAbstract) ? latestAbstract.getNetMargin() : null;
+        BigDecimal debtRatio = Objects.nonNull(latestIndicator) && Objects.nonNull(latestIndicator.getDebtRatio())
+                ? latestIndicator.getDebtRatio()
+                : Objects.nonNull(latestAbstract) ? latestAbstract.getDebtRatio() : null;
+        BigDecimal operatingCashFlowPerShare = Objects.nonNull(latestIndicator)
+                && Objects.nonNull(latestIndicator.getOcfps())
+                ? latestIndicator.getOcfps()
+                : Objects.nonNull(latestAbstract) ? latestAbstract.getOcfps() : null;
+        List<FactorItemResp> factors = new ArrayList<>();
+        factors.add(item("ROA", "ROA", Objects.nonNull(latestIndicator) ? latestIndicator.getRoa() : null,
+                null, "%", "总资产净利率，衡量全部资产创造净利润的效率", indicatorAsOf));
+        factors.add(item("GROSS_MARGIN", "毛利率",
+                Objects.nonNull(latestIndicator) ? latestIndicator.getGrossMargin() : null,
+                null, "%", "销售毛利率，反映产品溢价和直接成本控制能力", indicatorAsOf));
+        factors.add(item("NET_MARGIN", "净利率", netMargin,
+                null, "%", "销售净利率，反映每单位收入最终转化为净利润的比例",
+                Objects.nonNull(latestIndicator) && Objects.nonNull(latestIndicator.getNetMargin())
+                        ? indicatorAsOf : abstractAsOf));
+        factors.add(item("DEBT_RATIO", "资产负债率", debtRatio,
+                null, "%", "负债总额占资产总额比例，需结合行业特征判断",
+                Objects.nonNull(latestIndicator) && Objects.nonNull(latestIndicator.getDebtRatio())
+                        ? indicatorAsOf : abstractAsOf));
+        factors.add(item("OCFPS", "每股经营现金流", operatingCashFlowPerShare,
+                null, "元", "经营活动现金流净额折算到每股，用于观察利润含金量",
+                Objects.nonNull(latestIndicator) && Objects.nonNull(latestIndicator.getOcfps())
+                        ? indicatorAsOf : abstractAsOf));
+        return category("QUALITY", "质量", "盈利能力、财务稳健性与现金流质量", factors);
     }
 
     private FactorCategoryResp buildMomentumCategory(List<BarDaily> dailyBars, LocalDate asOf) {

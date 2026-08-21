@@ -37,7 +37,7 @@ import static org.mockito.Mockito.when;
 class FactorCenterServiceImplTest {
 
     @Test
-    void shouldBuildSixCategoriesAndFixedWeightAlphaScore() {
+    void shouldBuildSevenCategoriesAndFixedWeightAlphaScore() {
         LocalDate tradeDate = LocalDate.of(2026, 8, 20);
         StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
         BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);
@@ -68,6 +68,11 @@ class FactorCenterServiceImplTest {
                 StockFinIndicator.builder()
                         .reportDate(LocalDate.of(2026, 6, 30))
                         .roe(new BigDecimal("22"))
+                        .roa(new BigDecimal("13.5"))
+                        .grossMargin(new BigDecimal("91.2"))
+                        .netMargin(new BigDecimal("48.6"))
+                        .debtRatio(new BigDecimal("20.4"))
+                        .ocfps(new BigDecimal("18.3"))
                         .build(),
                 StockFinIndicator.builder()
                         .reportDate(LocalDate.of(2025, 6, 30))
@@ -108,13 +113,21 @@ class FactorCenterServiceImplTest {
 
         FactorCenterResp result = service.query("600519");
 
-        assertEquals(6, result.getCategories().size());
+        assertEquals(7, result.getCategories().size());
         assertEquals(new BigDecimal("100.00"), result.getCoverage());
         assertNotNull(result.getAlphaScore());
         assertEquals(List.of(new BigDecimal("30"), new BigDecimal("20"), new BigDecimal("20"),
                         new BigDecimal("15"), new BigDecimal("15")),
                 result.getAlphaComponents().stream().map(component -> component.getWeight()).toList());
-        FactorCategoryResp capitalCategory = result.getCategories().get(4);
+        FactorCategoryResp qualityCategory = result.getCategories().get(2);
+        assertEquals("QUALITY", qualityCategory.getKey());
+        assertEquals(new BigDecimal("13.5"), qualityCategory.getFactors().get(0).getValue());
+        assertEquals(new BigDecimal("91.2"), qualityCategory.getFactors().get(1).getValue());
+        assertEquals(new BigDecimal("48.6"), qualityCategory.getFactors().get(2).getValue());
+        assertEquals(new BigDecimal("20.4"), qualityCategory.getFactors().get(3).getValue());
+        assertEquals(new BigDecimal("18.3"), qualityCategory.getFactors().get(4).getValue());
+        assertEquals(LocalDate.of(2026, 6, 30), qualityCategory.getFactors().get(0).getAsOf());
+        FactorCategoryResp capitalCategory = result.getCategories().get(5);
         assertEquals("CAPITAL", capitalCategory.getKey());
         assertEquals(new BigDecimal("0.80"), capitalCategory.getFactors().get(0).getValue());
         assertEquals(new BigDecimal("1.23"), capitalCategory.getFactors().get(1).getValue());

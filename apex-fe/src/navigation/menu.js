@@ -16,7 +16,6 @@ export const MAIN_NAV_GROUPS = [
     items: [
       { to: '/market', label: '行情' },
       { to: '/screener', label: '股票' },
-      { to: '/factors', label: '因子' },
       { to: '/sector', label: '板块' },
       { to: '/capital-flow', label: '资金面' },
       { to: '/limit-up', label: '连板天梯' },
