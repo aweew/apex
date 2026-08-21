@@ -60,28 +60,58 @@ def build_steps(
     ]
 
 
-def run_one(script: Path, script_args: List[str]) -> int:
+def run_one(script: Path, script_args: List[str]) -> tuple[int, str]:
     if not script.is_file():
         print(f"[NIGHTLY_REPAIR] 缺少脚本={script.name}", flush=True)
-        return 2
+        return 2, f"缺少脚本={script.name}"
     command = [sys.executable, "-u", str(script), *script_args]
     print(f"[NIGHTLY_REPAIR] 执行命令：{' '.join(command)}", flush=True)
-    process = subprocess.run(command, cwd=str(ROOT))
-    print(f"[NIGHTLY_REPAIR] 退出码={process.returncode}，脚本={script.name}", flush=True)
-    return process.returncode
+    summary_lines = []
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=str(ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        if process.stdout is not None:
+            for line in process.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                text = line.strip()
+                if "失败" in text or text.startswith("完成"):
+                    summary_lines.append(text)
+        exit_code = process.wait()
+    except OSError as ex:
+        exit_code = 2
+        summary_lines.append(f"启动脚本失败，异常={ex}")
+    summary = "；".join(summary_lines[-3:])[:600]
+    print(f"[NIGHTLY_REPAIR] 退出码={exit_code}，脚本={script.name}", flush=True)
+    return exit_code, summary
 
 
 def run_steps(steps: List[RepairStep]) -> int:
     failed_steps = []
+    succeeded_steps = []
+    failure_details = []
     total = len(steps)
     for index, (step_name, script, script_args) in enumerate(steps, 1):
         print(f"[NIGHTLY_REPAIR] 步骤 {index}/{total}：{step_name}", flush=True)
-        exit_code = run_one(script, script_args)
+        exit_code, summary = run_one(script, script_args)
         if exit_code != 0:
             failed_steps.append(step_name)
+            failure_details.append(f"{step_name}（{summary or f'退出码={exit_code}'}）")
             print(f"[NIGHTLY_REPAIR] 失败步骤={step_name}，退出码={exit_code}", flush=True)
+        else:
+            succeeded_steps.append(step_name)
     if failed_steps:
-        print(f"[NIGHTLY_REPAIR] 执行完成，但存在失败步骤：{','.join(failed_steps)}", flush=True)
+        print(
+            f"[NIGHTLY_REPAIR] 执行完成，成功步骤={','.join(succeeded_steps) or '-'}，"
+            f"失败步骤={','.join(failed_steps)}，失败详情={'；'.join(failure_details)}",
+            flush=True,
+        )
         return 1
     print("[NIGHTLY_REPAIR] 全部完成", flush=True)
     return 0

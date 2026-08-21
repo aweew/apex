@@ -38,6 +38,47 @@ def run_with_retries(script: Path, args: list[str], retries: int, pause: float) 
     return code
 
 
+def build_steps(base: Path, args: argparse.Namespace, start: str) -> list[tuple[str, Path, list[str]]]:
+    return [
+        (
+            "index",
+            base / "sync_index.py",
+            ["--start", start, "--regions", "CN", "--sleep", "0.25"],
+        ),
+        (
+            "sector",
+            base / "sync_sector.py",
+            ["--mode", "quote", "--types", args.types, "--sleep", "0.35"],
+        ),
+        (
+            "limit_up",
+            base / "sync_limit_up.py",
+            (["--date", args.date] if args.date else [])
+            + ["--with-prev", "--timeout", "45", "--retries", "4"],
+        ),
+        (
+            "hot",
+            base / "sync_hot.py",
+            [
+                "--sources",
+                args.hot_sources,
+                "--limit",
+                str(max(args.hot_limit, 1)),
+            ],
+        ),
+        (
+            "news",
+            base / "sync_news.py",
+            [
+                "--sources",
+                args.news_sources,
+                "--limit",
+                str(max(args.news_limit, 1)),
+            ],
+        ),
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Close market one-click sync bundle")
     parser.add_argument(
@@ -82,48 +123,12 @@ def main() -> int:
 
     skip = {x.strip().lower() for x in (args.skip or "").split(",") if x.strip()}
     base = Path(__file__).resolve().parent
-    steps: list[tuple[str, Path, list[str]]] = [
-        (
-            "index",
-            base / "sync_index.py",
-            ["--start", start, "--sleep", "0.25"],
-        ),
-        (
-            "sector",
-            base / "sync_sector.py",
-            ["--mode", "quote", "--types", args.types, "--sleep", "0.35"],
-        ),
-        (
-            "limit_up",
-            base / "sync_limit_up.py",
-            (["--date", args.date] if args.date else [])
-            + ["--with-prev", "--timeout", "45", "--retries", "4"],
-        ),
-        (
-            "hot",
-            base / "sync_hot.py",
-            [
-                "--sources",
-                args.hot_sources,
-                "--limit",
-                str(max(args.hot_limit, 1)),
-            ],
-        ),
-        (
-            "news",
-            base / "sync_news.py",
-            [
-                "--sources",
-                args.news_sources,
-                "--limit",
-                str(max(args.news_limit, 1)),
-            ],
-        ),
-    ]
+    steps = build_steps(base, args, start)
 
     total = len([s for s in steps if s[0] not in skip])
     done = 0
     failed: list[str] = []
+    succeeded: list[str] = []
     for key, script, script_args in steps:
         if key in skip:
             print(f"[CLOSE_BUNDLE] 跳过步骤：{key}", flush=True)
@@ -141,8 +146,14 @@ def main() -> int:
             failed.append(key)
             if not continue_on_error:
                 return code
+        else:
+            succeeded.append(key)
     if failed:
-        print(f"[CLOSE_BUNDLE] 执行完成，但存在失败步骤：{','.join(failed)}", flush=True)
+        print(
+            f"[CLOSE_BUNDLE] 执行完成，成功步骤={','.join(succeeded) or '-'}，"
+            f"失败步骤={','.join(failed)}",
+            flush=True,
+        )
         return 1
     print("[CLOSE_BUNDLE] 全部完成", flush=True)
     return 0

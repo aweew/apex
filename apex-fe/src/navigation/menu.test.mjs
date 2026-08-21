@@ -19,7 +19,7 @@ test('main navigation keeps only the consolidated high-frequency entries', () =>
           ['/dashboard', '看板'],
           ['/decision', '决策'],
           ['/ai-center', '小灵'],
-          ['/watchlist', '我的自选'],
+          ['/watchlist', '自选'],
           ['/observe', '观察池'],
           ['/portfolio', '组合'],
           ['/paper', '模拟盘'],

@@ -90,9 +90,9 @@ function healthClass(level) {
 }
 
 function healthLabel(level) {
-  if (level === 'GREEN') return '正常'
-  if (level === 'YELLOW') return '预警'
-  if (level === 'RED') return '异常'
+  if (level === 'GREEN') return '数据正常'
+  if (level === 'YELLOW') return '数据待更新'
+  if (level === 'RED') return '数据异常'
   if (level === 'RUNNING') return '运行中'
   return level || '未知'
 }
@@ -420,7 +420,7 @@ onUnmounted(stopPoll)
                   size="small"
                   :type="statusType(task.latestJob.status)"
                 >
-                  {{ statusLabel(task.latestJob.status) }}
+                  上次{{ statusLabel(task.latestJob.status) }}
                 </el-tag>
               </div>
               <p class="desc">{{ task.description }}</p>
@@ -428,7 +428,7 @@ onUnmounted(stopPoll)
               <div class="task-health">
                 <span class="health-dot" :class="healthClass(task.healthLevel)" />
                 <span :class="healthClass(task.healthLevel)">{{ healthLabel(task.healthLevel) }}</span>
-                <span class="health-time">最近成功 {{ fmtTime(task.lastSuccessAt) }}</span>
+                <span class="health-time">最近完整成功 {{ fmtTime(task.lastSuccessAt) }}</span>
               </div>
               <div class="task-actions">
                 <el-button
@@ -455,7 +455,8 @@ onUnmounted(stopPoll)
                 <el-button
                   v-if="task.latestJob"
                   size="small"
-                  link
+                  type="primary"
+                  plain
                   :loading="detailLoadingJobId === task.latestJob.id"
                   @click="selectJob(task.latestJob)"
                 >
@@ -543,7 +544,13 @@ onUnmounted(stopPoll)
             </el-table-column>
             <el-table-column prop="progressPct" label="%" width="50" />
             <el-table-column label="开始" width="140">
-              <template #default="{ row }">{{ fmtTime(row.startedAt) }}</template>
+              <template #default="{ row }">
+                <time v-if="row.startedAt" class="job-start-time">
+                  <span>{{ fmtTime(row.startedAt).slice(0, 10) }}</span>
+                  <span>{{ fmtTime(row.startedAt).slice(11) }}</span>
+                </time>
+                <span v-else>-</span>
+              </template>
             </el-table-column>
           </el-table>
         </div>
@@ -621,6 +628,12 @@ onUnmounted(stopPoll)
   box-shadow: var(--shadow-soft);
 }
 
+.task-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 198px;
+}
+
 .task-card.running {
   border-color: rgba(255, 159, 10, 0.45);
   box-shadow: 0 0 0 1px rgba(255, 159, 10, 0.18), var(--shadow-soft);
@@ -651,6 +664,8 @@ onUnmounted(stopPoll)
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 20px;
+  margin-top: auto;
   margin-bottom: 8px;
   font-size: 11px;
 }
@@ -700,6 +715,8 @@ span.health-unknown {
 .health-time {
   color: var(--muted);
   margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .task-actions {
@@ -707,18 +724,11 @@ span.health-unknown {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  min-height: 32px;
 }
 
 .task-actions :deep(.el-button + .el-button) {
   margin-left: 0;
-}
-
-.task-actions :deep(.el-button.is-link) {
-  min-width: auto;
-  padding: 0 6px;
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
 }
 
 .system-managed {
@@ -764,6 +774,14 @@ span.health-unknown {
   width: 48px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.job-start-time {
+  display: grid;
+  gap: 2px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
 }
 
 .log {

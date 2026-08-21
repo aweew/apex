@@ -297,19 +297,24 @@ def main() -> int:
     conn = db_conn()
     try:
         total = sync_one(conn, trade_date, timeout=args.timeout, retries=args.retries)
+        failed_count = 0
         if args.with_prev:
             # 向前最多回看 10 个自然日找有数据的前一日；先落库昨天方便晋级率
             prev = trade_date - timedelta(days=1)
+            previous_synced = False
             for _ in range(10):
                 try:
                     total += sync_one(conn, prev, timeout=args.timeout, retries=args.retries)
+                    previous_synced = True
                     break
                 except Exception as ex:  # noqa: BLE001
                     print(f"前一日 {prev} 失败: {ex}", file=sys.stderr, flush=True)
                     prev -= timedelta(days=1)
                     time.sleep(1.5)
-        print(f"完成，总数={total}", flush=True)
-        return 0
+            if not previous_synced:
+                failed_count = 1
+        print(f"完成，成功数={1 + int(args.with_prev and failed_count == 0)}，失败数={failed_count}，总数={total}", flush=True)
+        return 0 if failed_count == 0 else 1
     except Exception as ex:  # noqa: BLE001
         conn.rollback()
         print(f"同步失败，异常={ex}", file=sys.stderr, flush=True)

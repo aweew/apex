@@ -33,6 +33,8 @@ except ImportError:  # pragma: no cover
 ROOT = Path(__file__).resolve().parent
 PROGRESS_PATH = ROOT / ".progress" / "bars_progress.json"
 SOURCE = "akshare"
+BJ_DAILY_REQUEST_INTERVAL_SECONDS = 1.0
+BJ_DAILY_RETRY_COUNT = 3
 
 
 def load_env() -> None:
@@ -55,10 +57,10 @@ def db_conn():
 
 
 def resolve_market(code: str) -> str:
+    if code.startswith(("4", "8", "92")):
+        return "BJ"
     if code.startswith(("5", "6", "9")):
         return "SH"
-    if code.startswith(("4", "8")):
-        return "BJ"
     return "SZ"
 
 
@@ -217,10 +219,31 @@ def upsert_bars(conn, code: str, bars: List[Tuple]) -> int:
 
 
 def fetch_hist_bars(code: str, start: str, end: str):
-    """东财优先（含换手率）；失败再试新浪。"""
+    """北交所仅走东财；沪深股票东财失败后再试新浪。"""
     import akshare as ak
 
     market = resolve_market(code)
+    if market == "BJ":
+        last_error = None
+        for attempt in range(1, BJ_DAILY_RETRY_COUNT + 1):
+            time.sleep(BJ_DAILY_REQUEST_INTERVAL_SECONDS)
+            try:
+                df = ak.stock_zh_a_hist(
+                    symbol=code,
+                    period="daily",
+                    start_date=start,
+                    end_date=end,
+                    adjust="qfq",
+                )
+                if df is not None and not df.empty:
+                    return df, "akshare-em"
+                last_error = "东方财富返回空数据"
+            except Exception as ex:
+                last_error = str(ex)
+            if attempt < BJ_DAILY_RETRY_COUNT:
+                time.sleep(attempt * 2)
+        raise RuntimeError(f"em:{last_error or '东方财富未返回日线'}")
+
     prefix = {"SH": "sh", "SZ": "sz", "BJ": "bj"}.get(market, "sz")
     sina_symbol = f"{prefix}{code}"
     errors: List[str] = []
@@ -347,6 +370,7 @@ def sync_bars(
     progress = load_progress() if resume else {}
     total = len(codes)
     ok = fail = skip = 0
+    failure_details: List[str] = []
     print(f"开始同步日线：{total} 只，区间 {start} ~ {end}，等待秒数={sleep_sec}")
 
     for idx, code in enumerate(codes, 1):
@@ -404,6 +428,8 @@ def sync_bars(
             print(f"[{idx}/{total}] {code} 成功，日线条数={n}，数据源={src}")
         except Exception as ex:
             fail += 1
+            error_message = str(ex).replace("\n", " ").strip()
+            failure_details.append(f"{code}（{error_message[:240] or type(ex).__name__}）")
             progress[code] = {
                 "status": "fail",
                 "end": end,
@@ -422,6 +448,8 @@ def sync_bars(
 
     save_progress(progress)
     print(f"完成：成功数={ok}，失败数={fail}，跳过数={skip}，总数={total}")
+    if failure_details:
+        print(f"失败详情：{'；'.join(failure_details[:10])}")
     print(f"进度文件：{PROGRESS_PATH}")
     return fail
 

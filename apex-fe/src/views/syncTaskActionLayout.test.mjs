@@ -17,9 +17,35 @@ test('sync task actions use compact buttons instead of global mobile button heig
   )
 })
 
-test('sync task log action remains a lightweight text action', () => {
+test('sync task log action uses a same-size secondary button', () => {
   assert.match(
     syncSource,
-    /\.task-actions :deep\(\.el-button\.is-link\)\s*\{[\s\S]*?min-width:\s*auto;[\s\S]*?background:\s*transparent;[\s\S]*?border-color:\s*transparent;/,
+    /v-if="task\.latestJob"\s+size="small"\s+type="primary"\s+plain\s+:loading="detailLoadingJobId === task\.latestJob\.id"/,
+  )
+})
+
+test('sync task cards separate last execution from data health and keep controls aligned', () => {
+  assert.match(syncSource, /上次\{\{ statusLabel\(task\.latestJob\.status\) \}\}/)
+  assert.match(syncSource, /最近完整成功 \{\{ fmtTime\(task\.lastSuccessAt\) \}\}/)
+  assert.match(syncSource, /if \(level === 'GREEN'\) return '数据正常'/)
+  assert.match(syncSource, /if \(level === 'YELLOW'\) return '数据待更新'/)
+  assert.match(
+    syncSource,
+    /\.task-card\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*198px;/,
+  )
+  assert.match(
+    syncSource,
+    /\.task-health\s*\{[\s\S]*?min-height:\s*20px;[\s\S]*?margin-top:\s*auto;/,
+  )
+})
+
+test('recent sync start times keep date and time on stable separate lines', () => {
+  assert.match(
+    syncSource,
+    /<time v-if="row\.startedAt" class="job-start-time">\s*<span>\{\{ fmtTime\(row\.startedAt\)\.slice\(0, 10\) \}\}<\/span>\s*<span>\{\{ fmtTime\(row\.startedAt\)\.slice\(11\) \}\}<\/span>\s*<\/time>/,
+  )
+  assert.match(
+    syncSource,
+    /\.job-start-time\s*\{[\s\S]*?display:\s*grid;[\s\S]*?white-space:\s*nowrap;[\s\S]*?font-variant-numeric:\s*tabular-nums;/,
   )
 })

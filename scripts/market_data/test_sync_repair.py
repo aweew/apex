@@ -61,6 +61,11 @@ class FakeConnection:
 
 class MissingBarSelectionTest(unittest.TestCase):
 
+    def test_resolves_beijing_exchange_codes_before_shanghai_codes(self):
+        self.assertEqual("BJ", sync_a_share.resolve_market("920176"))
+        self.assertEqual("BJ", sync_a_share.resolve_market("830001"))
+        self.assertEqual("SH", sync_a_share.resolve_market("900901"))
+
     def test_selects_stocks_with_too_few_or_stale_daily_bars(self):
         connection = FakeConnection([{"code": "000001"}, {"code": "600519"}])
         expected_date = date(2026, 8, 17)
@@ -125,6 +130,39 @@ class MissingBarSelectionTest(unittest.TestCase):
 
         self.assertEqual(1, exit_code)
 
+    def test_daily_bar_sync_reports_failed_stock_details_at_end(self):
+        connection = FakeConnection([])
+
+        with patch.object(sync_a_share, "list_codes", return_value=["000001"]), \
+                patch.object(sync_a_share, "load_progress", return_value={}), \
+                patch.object(sync_a_share, "max_bar_date", return_value=None), \
+                patch.object(sync_a_share, "fetch_hist_bars", side_effect=RuntimeError("数据源超时")), \
+                patch.object(sync_a_share, "save_progress"), \
+                patch.object(sync_a_share.time, "sleep"), \
+                patch("builtins.print") as print_mock:
+            exit_code = sync_a_share.sync_bars(
+                connection, "20240101", "20260821", 0, None, False, False
+            )
+
+        self.assertEqual(1, exit_code)
+        self.assertTrue(any(
+            "失败详情：000001（数据源超时）" in str(call)
+            for call in print_mock.call_args_list
+        ))
+
+    def test_beijing_exchange_does_not_fallback_to_sina_daily_bars(self):
+        akshare_stub = types.SimpleNamespace(
+            stock_zh_a_hist=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("连接中断")),
+            stock_zh_a_daily=lambda **kwargs: self.fail("北交所不应调用新浪日线"),
+        )
+
+        with patch.dict(sys.modules, {"akshare": akshare_stub}), \
+                patch.object(sync_a_share.time, "sleep") as sleep_mock:
+            with self.assertRaisesRegex(RuntimeError, "em:连接中断"):
+                sync_a_share.fetch_hist_bars("920176", "20240101", "20260814")
+
+        self.assertEqual(5, sleep_mock.call_count)
+
     def test_missing_bar_round_failure_does_not_block_later_rounds(self):
         args = types.SimpleNamespace(
             batch=80,
@@ -152,7 +190,7 @@ class MissingBarSelectionTest(unittest.TestCase):
         self.assertEqual(2, subprocess_call.call_count)
         self.assertEqual([call("000001"), call("600519")], save_cursor.call_args_list)
 
-    def test_missing_bar_cursor_wraps_and_reports_remaining_gap(self):
+    def test_missing_bar_cursor_wraps_and_marks_remaining_gap_incomplete(self):
         args = types.SimpleNamespace(
             batch=80,
             rounds=1,
@@ -176,7 +214,7 @@ class MissingBarSelectionTest(unittest.TestCase):
                 patch("builtins.print") as print_mock:
             exit_code = sync_missing_bars.main()
 
-        self.assertEqual(0, exit_code)
+        self.assertEqual(1, exit_code)
         self.assertEqual("600519", fetch_missing.call_args_list[0].kwargs["after_code"])
         self.assertIsNone(fetch_missing.call_args_list[1].kwargs["after_code"])
         save_cursor.assert_called_once_with("000001")
@@ -207,7 +245,7 @@ class MissingBarSelectionTest(unittest.TestCase):
                 patch("builtins.print") as print_mock:
             exit_code = sync_missing_bars.main()
 
-        self.assertEqual(0, exit_code)
+        self.assertEqual(1, exit_code)
         subprocess_call.assert_called_once()
         save_cursor.assert_called_once_with("300750")
         self.assertTrue(any("时间预算" in str(call) for call in print_mock.call_args_list))

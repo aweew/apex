@@ -35,11 +35,37 @@ class NightlyRepairTest(unittest.TestCase):
             ("fundamentals", "fundamentals.py", []),
         ]
 
-        with patch.object(sync_nightly_repair, "run_one", side_effect=[1, 0, 2]) as run_one:
+        with patch.object(
+                sync_nightly_repair,
+                "run_one",
+                side_effect=[(1, "轮次 1 最终失败，退出码=1"), (0, ""), (2, "脚本不存在")],
+        ) as run_one:
             exit_code = sync_nightly_repair.run_steps(steps)
 
         self.assertEqual(1, exit_code)
         self.assertEqual(3, run_one.call_count)
+
+    def test_summarizes_successful_and_failed_steps(self):
+        steps = [
+            ("daily_bars", "bars.py", []),
+            ("company_profile", "profile.py", []),
+            ("fundamentals", "fundamentals.py", []),
+        ]
+
+        with patch.object(
+                sync_nightly_repair,
+                "run_one",
+                side_effect=[(1, "完成，原因=已达时间预算，失败轮次=[1]，剩余缺口=80"), (0, ""), (0, "")],
+        ), \
+                patch("builtins.print") as print_mock:
+            exit_code = sync_nightly_repair.run_steps(steps)
+
+        self.assertEqual(1, exit_code)
+        self.assertTrue(any(
+            "成功步骤=company_profile,fundamentals，失败步骤=daily_bars，"
+            "失败详情=daily_bars（完成，原因=已达时间预算，失败轮次=[1]，剩余缺口=80）" in str(call)
+            for call in print_mock.call_args_list
+        ))
 
 
 if __name__ == "__main__":

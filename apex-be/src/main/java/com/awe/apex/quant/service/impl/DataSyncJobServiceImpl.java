@@ -81,6 +81,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private static final Pattern SCRIPT_STEP_PATTERN = Pattern.compile("(?:步骤|step)\\s+(\\d+)\\s*/\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern PARTIAL_COUNT_PATTERN = Pattern.compile(
             "成功(?:数|数据源数)=(\\d+).*失败(?:数|数据源数)=(\\d+)");
+    private static final Pattern PARTIAL_STEP_PATTERN = Pattern.compile(
+            "成功步骤=([^，\\n]+).*失败步骤=([^，\\n]+)");
+    private static final Pattern INCOMPLETE_PATTERN = Pattern.compile("未完成.*剩余缺口=([1-9]\\d*)");
     private static final int LOG_MAX = 12000;
     private static final long ORPHAN_RECONCILE_GRACE_SECONDS = 300;
     private static final long SHARED_DECISION_KEY = 0L;
@@ -1101,6 +1104,14 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             Matcher matcher = PARTIAL_COUNT_PATTERN.matcher(line);
             if (matcher.find() && Integer.parseInt(matcher.group(1)) > 0
                     && Integer.parseInt(matcher.group(2)) > 0) {
+                return true;
+            }
+            Matcher stepMatcher = PARTIAL_STEP_PATTERN.matcher(line);
+            if (stepMatcher.find() && !"-".equals(stepMatcher.group(1).trim())
+                    && !"-".equals(stepMatcher.group(2).trim())) {
+                return true;
+            }
+            if (INCOMPLETE_PATTERN.matcher(line).find()) {
                 return true;
             }
         }

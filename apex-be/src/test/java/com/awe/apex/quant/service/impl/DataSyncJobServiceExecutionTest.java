@@ -152,6 +152,34 @@ class DataSyncJobServiceExecutionTest {
     }
 
     @Test
+    void nightlyRepairWithCompletedAndFailedStepsMarksJobPartial() throws Exception {
+        Files.writeString(scriptDir.resolve("sync_nightly_repair.py"),
+                "echo '[NIGHTLY_REPAIR] 执行完成，成功步骤=company_profile,fundamentals，失败步骤=daily_bars'\nexit 1\n");
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("NIGHTLY_REPAIR");
+
+        service.startSystemTask(request);
+        SyncJob result = waitForTerminal();
+
+        assertEquals("PARTIAL", result.getStatus());
+        assertEquals("完成，但部分条目失败（详见日志）", result.getMessage());
+    }
+
+    @Test
+    void missingBarTaskWithRemainingGapMarksJobPartial() throws Exception {
+        Files.writeString(scriptDir.resolve("sync_missing_bars.py"),
+                "echo '未完成，成功数=3，失败数=0，剩余缺口=17'\nexit 1\n");
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("A_SHARE_MISSING");
+
+        service.startSystemTask(request);
+        SyncJob result = waitForTerminal();
+
+        assertEquals("PARTIAL", result.getStatus());
+        assertEquals("完成，但部分条目失败（详见日志）", result.getMessage());
+    }
+
+    @Test
     void nightlyRepairProgressIgnoresNestedScriptCounters() {
         SyncJob job = SyncJob.builder()
                 .taskType("NIGHTLY_REPAIR")

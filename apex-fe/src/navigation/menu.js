@@ -5,7 +5,7 @@ export const MAIN_NAV_GROUPS = [
       { to: '/dashboard', label: '看板' },
       { to: '/decision', label: '决策', activePaths: ['/decision', '/signals'] },
       { to: '/ai-center', label: '小灵' },
-      { to: '/watchlist', label: '我的自选' },
+      { to: '/watchlist', label: '自选' },
       { to: '/observe', label: '观察池' },
       { to: '/portfolio', label: '组合' },
       { to: '/paper', label: '模拟盘' },

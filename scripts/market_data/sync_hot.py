@@ -378,6 +378,7 @@ def main() -> int:
             conn.rollback()
             print(f"清理软删除记录失败，已跳过，异常={ex}", file=sys.stderr)
 
+        print(f"成功数据源数={ok_count}，失败数据源数={fail_count}")
         # 全部失败才非 0，便于后端提示；部分成功仍算成功
         if ok_count == 0:
             print(f"全部数据源失败或返回空数据，失败数={fail_count}", file=sys.stderr)

@@ -260,6 +260,13 @@ def main() -> int:
         f"完成，原因={stop_reason}，执行轮数={done_rounds}，"
         f"失败轮次={failed_rounds}，剩余缺口={remaining_count}"
     )
+    success_rounds = done_rounds - len(failed_rounds)
+    if remaining_count > 0:
+        print(
+            f"未完成，成功数={success_rounds}，失败数={len(failed_rounds)}，"
+            f"剩余缺口={remaining_count}"
+        )
+        return 1
     return 1 if failed_rounds else 0
 
 
