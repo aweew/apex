@@ -4,23 +4,26 @@ import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.ai.KimiChatClient;
-import com.awe.apex.quant.bot.service.IBotQuestionService;
+import com.awe.apex.quant.ai.KimiChatMessage;
+import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.bo.ApexAiIndustryAttributionBO;
 import com.awe.apex.quant.domain.dto.ApexAiAnalysisResp;
 import com.awe.apex.quant.domain.dto.ApexAiAnalyzeReq;
 import com.awe.apex.quant.domain.dto.ApexAiContextResp;
 import com.awe.apex.quant.domain.dto.ApexAiContributor;
+import com.awe.apex.quant.domain.dto.ApexAiEnhanceReq;
 import com.awe.apex.quant.domain.dto.ApexAiMetric;
 import com.awe.apex.quant.domain.dto.ApexAiPortfolioOption;
 import com.awe.apex.quant.domain.dto.ApexAiStrategyOption;
-import com.awe.apex.quant.domain.dto.BotAskReq;
-import com.awe.apex.quant.domain.dto.BotAskResp;
 import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
 import com.awe.apex.quant.domain.dto.DecisionStrategyPerformance;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.domain.enums.ApexAiAnalysisTypeEnum;
+import com.awe.apex.quant.mapper.ApexAiQueryMapper;
+import com.awe.apex.quant.service.ApexAiConversationService;
+import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IApexAiAnalystService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IPortfolioService;
@@ -33,9 +36,13 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Apex AI 分析服务实现
@@ -45,6 +52,7 @@ import java.util.UUID;
 public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
 
     private static final String DISCLAIMER = "以上基于 Apex 当前数据生成，仅供研究，不构成投资建议。";
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("[+-]?\\d+(?:\\.\\d+)?");
 
     @Resource
     private IPortfolioService portfolioService;
@@ -53,10 +61,19 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
     private IDecisionService decisionService;
 
     @Resource
-    private IBotQuestionService botQuestionService;
+    private KimiChatClient kimiChatClient;
 
     @Resource
-    private KimiChatClient kimiChatClient;
+    private ApexAiQueryMapper apexAiQueryMapper;
+
+    @Resource
+    private ApexUserContext userContext;
+
+    @Resource
+    private ApexUserAuthService userAuthService;
+
+    @Resource
+    private ApexAiConversationService conversationService;
 
     /**
      * 查询工作台可用分析上下文
@@ -65,37 +82,15 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
      */
     @Override
     public ApexAiContextResp context() {
-        List<ApexAiPortfolioOption> portfolioOptions = new ArrayList<>();
-        List<PortfolioSummaryResp> portfolios = portfolioService.listPortfolios(false);
-        if (CollUtil.isNotEmpty(portfolios)) {
-            for (PortfolioSummaryResp portfolio : portfolios) {
-                if (!Boolean.TRUE.equals(portfolio.getEditable())) {
-                    continue;
-                }
-                portfolioOptions.add(ApexAiPortfolioOption.builder()
-                        .id(portfolio.getId())
-                        .name(portfolio.getName())
-                        .defaultPortfolio(portfolio.getIsDefault())
-                        .positionCount(portfolio.getPositionCount())
-                        .build());
-            }
+        Long currentUserId = userContext.currentUserId();
+        boolean currentUserAdmin = userAuthService.isAdmin(currentUserId);
+        List<ApexAiPortfolioOption> portfolioOptions = apexAiQueryMapper.selectPortfolioOptions(
+                currentUserId, currentUserAdmin);
+        if (CollUtil.isEmpty(portfolioOptions)) {
+            portfolioService.listPortfolios(false);
+            portfolioOptions = apexAiQueryMapper.selectPortfolioOptions(currentUserId, currentUserAdmin);
         }
-
-        DecisionAttributionResp attribution = decisionService.attribution(60);
-        List<ApexAiStrategyOption> strategyOptions = new ArrayList<>();
-        if (Objects.nonNull(attribution) && CollUtil.isNotEmpty(attribution.getByStrategy())) {
-            for (DecisionAttrBucket bucket : attribution.getByStrategy()) {
-                strategyOptions.add(ApexAiStrategyOption.builder()
-                        .strategyId(bucket.getKey())
-                        .strategyName(StringUtils.isNotBlank(bucket.getLabel()) ? bucket.getLabel() : bucket.getKey())
-                        .measuredCount(bucket.getMeasuredCount())
-                        .avgNextPct(bucket.getAvgNextPct())
-                        .winRate(bucket.getWinRate())
-                        .build());
-            }
-            strategyOptions.sort(Comparator.comparing(ApexAiStrategyOption::getAvgNextPct,
-                    Comparator.nullsLast(Comparator.naturalOrder())));
-        }
+        List<ApexAiStrategyOption> strategyOptions = apexAiQueryMapper.selectStrategyOptions(currentUserId, 60);
         return ApexAiContextResp.builder()
                 .aiConfigured(kimiChatClient.available())
                 .portfolios(portfolioOptions)
@@ -116,10 +111,12 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
      */
     @Override
     public ApexAiAnalysisResp analyze(ApexAiAnalyzeReq request) {
+        long startedAt = System.nanoTime();
         if (Objects.isNull(request) || StringUtils.isBlank(request.getQuestion())) {
             throw new BusinessException("问题不能为空");
         }
         String question = request.getQuestion().trim();
+        Long conversationId = conversationService.openConversation(request.getConversationId(), question);
         ApexAiAnalysisTypeEnum analysisType = ApexAiAnalysisTypeEnum.of(request.getAnalysisType());
         if (analysisType == ApexAiAnalysisTypeEnum.AUTO) {
             if (containsAny(question, "策略", "失效", "胜率", "样本", "共振", "超额")) {
@@ -130,11 +127,106 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 analysisType = ApexAiAnalysisTypeEnum.GENERAL;
             }
         }
-        return switch (analysisType) {
+        ApexAiAnalysisResp analysis = switch (analysisType) {
             case PORTFOLIO -> analyzePortfolio(request, question);
             case STRATEGY -> analyzeStrategy(request, question);
             case GENERAL, AUTO -> answerGeneral(question);
         };
+        analysis.setConversationId(conversationId);
+        request.setConversationId(conversationId);
+        request.setAnalysisType(analysis.getAnalysisType());
+        long latencyMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        conversationService.saveAnalysis(conversationId, request, analysis, latencyMs);
+        return analysis;
+    }
+
+    /**
+     * 使用 Kimi 增强已持久化的规则分析。
+     *
+     * @param request 增强请求
+     * @return 增强结果；AI 不可用或调用失败时返回原规则结果
+     */
+    @Override
+    public ApexAiAnalysisResp enhance(ApexAiEnhanceReq request) {
+        if (Objects.isNull(request) || Objects.isNull(request.getConversationId())
+                || StringUtils.isBlank(request.getRequestId())) {
+            throw new BusinessException("会话ID和请求编号不能为空");
+        }
+        ApexAiAnalysisResp analysis = conversationService.loadAnalysis(
+                request.getConversationId(), request.getRequestId());
+        if (!kimiChatClient.available()) {
+            return analysis;
+        }
+
+        // 保留真实对话角色，并把当前结构化结果作为本轮增强约束。
+        List<KimiChatMessage> messages = new ArrayList<>();
+        messages.add(KimiChatMessage.builder()
+                .role("system")
+                .content("你是 Apex AI Analyst 小灵。只根据给定的 Apex 结构化分析解释，"
+                        + "不得修改或补造数字、因子IC、市场状态、交易记录、证据、指标和因果关系。"
+                        + "使用简洁中文，先给结论，再解释主要证据，180字以内，不重复免责声明。")
+                .build());
+        messages.addAll(conversationService.history(request.getConversationId(), 10));
+        StringBuilder evidence = new StringBuilder()
+                .append("标题=").append(analysis.getTitle())
+                .append("；规则摘要=").append(analysis.getSummary())
+                .append("；数据完整度=").append(analysis.getDataLevel())
+                .append("；总值=").append(analysis.getTotalValue())
+                .append("；残差=").append(analysis.getResidualValue())
+                .append("；数据说明=").append(analysis.getDataNote());
+        if (CollUtil.isNotEmpty(analysis.getMetrics())) {
+            evidence.append("；指标=");
+            for (ApexAiMetric metric : analysis.getMetrics()) {
+                evidence.append(metric.getLabel()).append(':').append(metric.getValue()).append('；');
+            }
+        }
+        if (CollUtil.isNotEmpty(analysis.getContributors())) {
+            evidence.append("证据=");
+            for (ApexAiContributor contributor : analysis.getContributors()) {
+                evidence.append(contributor.getName()).append(':')
+                        .append(contributor.getValue()).append('(')
+                        .append(contributor.getDetail()).append(")；");
+            }
+        }
+        messages.add(KimiChatMessage.builder()
+                .role("user")
+                .content("请增强上一条规则分析的文字结论，只返回改写后的摘要。结构化分析："
+                        + evidence)
+                .build());
+
+        long startedAt = System.nanoTime();
+        String enhancedSummary = kimiChatClient.chatMessages(messages, 500);
+        if (StringUtils.isBlank(enhancedSummary)) {
+            return analysis;
+        }
+        if (containsUnsupportedNumber(enhancedSummary, evidence.toString())) {
+            log.warn("Kimi 增强包含规则证据外数字，保留规则结果，请求编号={}", analysis.getRequestId());
+            return analysis;
+        }
+        analysis.setSummary(enhancedSummary.trim());
+        analysis.setAiEnhanced(true);
+        long latencyMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        conversationService.saveEnhancement(analysis, latencyMs);
+        return analysis;
+    }
+
+    private boolean containsUnsupportedNumber(String enhancedSummary, String evidence) {
+        Set<String> evidenceNumbers = new HashSet<>();
+        Matcher evidenceMatcher = NUMBER_PATTERN.matcher(evidence);
+        while (evidenceMatcher.find()) {
+            BigDecimal number = new BigDecimal(evidenceMatcher.group()).stripTrailingZeros();
+            evidenceNumbers.add(number.toPlainString());
+            evidenceNumbers.add(number.abs().toPlainString());
+        }
+        Matcher summaryMatcher = NUMBER_PATTERN.matcher(enhancedSummary);
+        while (summaryMatcher.find()) {
+            BigDecimal number = new BigDecimal(summaryMatcher.group()).stripTrailingZeros();
+            if (!evidenceNumbers.contains(number.toPlainString())
+                    && !evidenceNumbers.contains(number.abs().toPlainString())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ApexAiAnalysisResp analyzePortfolio(ApexAiAnalyzeReq request, String question) {
@@ -244,21 +336,18 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 ? "影响最大的方向是" + leadingName + "，贡献 "
                 + signed(contributors.get(0).getContributionPct(), 2) + " 个百分点。"
                 : "当前持仓缺少可用的当日盈亏明细。");
-        String enhancedSummary = enhanceSummary(deterministicSummary,
-                "组合当日盈亏=" + totalTodayPnl + "；归因残差=" + residualValue
-                        + "；行情覆盖=" + coveredCount + "/" + positionCount + "；问题=" + question);
         return ApexAiAnalysisResp.builder()
                 .requestId(UUID.randomUUID().toString())
                 .analysisType(ApexAiAnalysisTypeEnum.PORTFOLIO.getCode())
                 .title(detail.getName() + " · 今日收益归因")
-                .summary(StringUtils.isNotBlank(enhancedSummary) ? enhancedSummary : deterministicSummary)
+                .summary(deterministicSummary)
                 .portfolioId(detail.getId())
                 .totalValue(totalTodayPnl)
                 .residualValue(residualValue)
                 .dataLevel(dataLevel)
                 .dataAsOf(detail.getQuoteTime())
                 .dataNote("按持仓行业聚合当日浮盈，以昨日持仓市值计算收益贡献；不含现金收益和已卖出证券的盘后影响。")
-                .aiEnhanced(StringUtils.isNotBlank(enhancedSummary))
+                .aiEnhanced(false)
                 .generatedAt(LocalDateTime.now())
                 .metrics(List.of(
                         metric("今日收益率", signed(detail.getTodayPct(), 2) + "%", detail.getTodayPct(), "%",
@@ -402,19 +491,16 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 + (Objects.nonNull(maturePerformance)
                 ? "成熟五日样本的平均超额为 " + signed(multiplyHundred(maturePerformance.getAvgExcess5d()), 2) + "% 。"
                 : "成熟五日超额样本尚不足，暂不能判断中期有效性。");
-        String enhancedSummary = enhanceSummary(deterministicSummary,
-                "策略=" + selectedStrategy.getKey() + "；问题=" + question + "；证据项=" + evidence.size()
-                        + "；仅能引用已有次日和五日归因，不得补造因子IC或行情状态切换");
         String dataLevel = measuredCount >= 20 ? "GREEN" : measuredCount >= 5 ? "YELLOW" : "RED";
         return ApexAiAnalysisResp.builder()
                 .requestId(UUID.randomUUID().toString())
                 .analysisType(ApexAiAnalysisTypeEnum.STRATEGY.getCode())
                 .title(selectedStrategy.getKey() + " · 策略有效性诊断")
-                .summary(StringUtils.isNotBlank(enhancedSummary) ? enhancedSummary : deterministicSummary)
+                .summary(deterministicSummary)
                 .strategyId(selectedStrategy.getKey())
                 .dataLevel(dataLevel)
                 .dataNote(attribution.getMessage())
-                .aiEnhanced(StringUtils.isNotBlank(enhancedSummary))
+                .aiEnhanced(false)
                 .generatedAt(LocalDateTime.now())
                 .metrics(buildStrategyMetrics(selectedStrategy, maturePerformance))
                 .contributors(evidence)
@@ -428,21 +514,15 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
     }
 
     private ApexAiAnalysisResp answerGeneral(String question) {
-        BotAskResp botResponse = botQuestionService.ask(BotAskReq.builder()
-                .requestId(UUID.randomUUID().toString())
-                .userId("apex-web")
-                .conversationId("apex-ai")
-                .question(question)
-                .build());
         return ApexAiAnalysisResp.builder()
-                .requestId(botResponse.getRequestId())
+                .requestId(UUID.randomUUID().toString())
                 .analysisType(ApexAiAnalysisTypeEnum.GENERAL.getCode())
                 .title("小灵 · Apex 数据问答")
-                .summary(botResponse.getAnswer())
-                .dataLevel(botResponse.getDataLevel())
-                .dataNote(StringUtils.isNotBlank(botResponse.getDataAsOf())
-                        ? "数据截至 " + botResponse.getDataAsOf() : "基于 Apex 当前可用数据")
-                .aiEnhanced(Boolean.TRUE.equals(botResponse.getAiEnhanced()))
+                .summary("已收到问题：“" + question + "”。当前规则分析没有匹配到组合收益或策略归因场景，"
+                        + "可继续使用 AI 增强回答，或切换到组合、策略分析范围获取结构化证据。")
+                .dataLevel("YELLOW")
+                .dataNote("当前问题未匹配结构化组合或策略分析")
+                .aiEnhanced(false)
                 .generatedAt(LocalDateTime.now())
                 .followUpQuestions(List.of("今天大盘怎么样？", "我的持仓风险怎么样？", "今天应该买什么？"))
                 .disclaimer(DISCLAIMER)
@@ -528,21 +608,6 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
             suggestions.add("保持参数不变继续积累样本，并用五日超额确认短期波动是否持续");
         }
         return suggestions;
-    }
-
-    private String enhanceSummary(String deterministicSummary, String evidence) {
-        if (!kimiChatClient.available()) {
-            return null;
-        }
-        String systemPrompt = "你是 Apex AI Analyst 小灵。只根据给定的 Apex 聚合指标解释，"
-                + "不得补造数字、因子IC、市场状态、交易记录或因果关系。使用简洁中文，先给结论，再给证据。";
-        String userPrompt = "规则分析：" + deterministicSummary + "\n证据约束：" + evidence
-                + "\n请在 180 字内给出分析，不要重复免责声明。";
-        String enhanced = kimiChatClient.chat(systemPrompt, userPrompt, 500);
-        if (StringUtils.isBlank(enhanced)) {
-            return null;
-        }
-        return enhanced.trim();
     }
 
     private ApexAiMetric metric(String label, String value, BigDecimal numericValue,

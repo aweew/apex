@@ -17,6 +17,11 @@ import lombok.NoArgsConstructor;
 public class ApexAiAnalyzeReq {
 
     /**
+     * 会话ID，为空时创建新会话。
+     */
+    private Long conversationId;
+
+    /**
      * 用户问题
      */
     @NotBlank(message = "问题不能为空")

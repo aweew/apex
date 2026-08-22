@@ -12,7 +12,10 @@ import org.springframework.stereotype.Component;
 
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Kimi / Moonshot OpenAI 兼容 Chat Completions
@@ -20,6 +23,10 @@ import java.util.Objects;
 @Slf4j
 @Component
 public class KimiChatClient {
+
+    private static final int RATE_LIMIT_RETRY_COUNT = 2;
+    private static final long[] RATE_LIMIT_BACKOFF_MS = {250L, 750L};
+    private final Semaphore requestSemaphore = new Semaphore(1, true);
 
     @Resource
     private AiChatProperties properties;
@@ -107,38 +114,56 @@ public class KimiChatClient {
     }
 
     private String execute(String url, String requestBody, boolean sensitive) {
-
-        try (HttpResponse response = HttpRequest.post(url)
-                .header("Authorization", "Bearer " + properties.getApiKey().trim())
-                .header("Content-Type", "application/json")
-                .timeout(Math.max(5000, properties.getTimeoutMs()))
-                .body(requestBody)
-                .execute()) {
-            String raw = response.body();
-            if (!response.isOk()) {
-                if (sensitive) {
-                    log.warn("Kimi 图片识别调用失败，状态={}", response.getStatus());
-                } else {
-                    log.warn("Kimi 调用失败，状态={}，响应内容={}", response.getStatus(), trim(raw));
+        boolean acquired = false;
+        try {
+            acquired = requestSemaphore.tryAcquire(Math.max(1000, properties.getTimeoutMs()), TimeUnit.MILLISECONDS);
+            if (!acquired) {
+                log.warn("Kimi 调用排队超时");
+                return null;
+            }
+            for (int attempt = 0; attempt <= RATE_LIMIT_RETRY_COUNT; attempt++) {
+                try (HttpResponse response = HttpRequest.post(url)
+                        .header("Authorization", "Bearer " + properties.getApiKey().trim())
+                        .header("Content-Type", "application/json")
+                        .timeout(Math.max(5000, properties.getTimeoutMs()))
+                        .body(requestBody)
+                        .execute()) {
+                    String raw = response.body();
+                    if (response.getStatus() == 429 && attempt < RATE_LIMIT_RETRY_COUNT) {
+                        Thread.sleep(RATE_LIMIT_BACKOFF_MS[attempt]);
+                        continue;
+                    }
+                    if (!response.isOk()) {
+                        if (sensitive) {
+                            log.warn("Kimi 图片识别调用失败，状态={}", response.getStatus());
+                        } else {
+                            log.warn("Kimi 调用失败，状态={}，响应内容={}", response.getStatus(), trim(raw));
+                        }
+                        return null;
+                    }
+                    JSONObject root = JSONUtil.parseObj(raw);
+                    JSONArray choices = root.getJSONArray("choices");
+                    if (Objects.isNull(choices) || choices.isEmpty()) {
+                        if (sensitive) {
+                            log.warn("Kimi 图片识别无 choices");
+                        } else {
+                            log.warn("Kimi 无 choices: {}", trim(raw));
+                        }
+                        return null;
+                    }
+                    JSONObject message = choices.getJSONObject(0).getJSONObject("message");
+                    if (Objects.isNull(message)) {
+                        return null;
+                    }
+                    String content = message.getStr("content");
+                    return StringUtils.isBlank(content) ? null : content.trim();
                 }
-                return null;
             }
-            JSONObject root = JSONUtil.parseObj(raw);
-            JSONArray choices = root.getJSONArray("choices");
-            if (Objects.isNull(choices) || choices.isEmpty()) {
-                if (sensitive) {
-                    log.warn("Kimi 图片识别无 choices");
-                } else {
-                    log.warn("Kimi 无 choices: {}", trim(raw));
-                }
-                return null;
-            }
-            JSONObject message = choices.getJSONObject(0).getJSONObject("message");
-            if (Objects.isNull(message)) {
-                return null;
-            }
-            String content = message.getStr("content");
-            return StringUtils.isBlank(content) ? null : content.trim();
+            return null;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.warn("Kimi 调用被中断");
+            return null;
         } catch (Exception ex) {
             if (sensitive) {
                 log.warn("Kimi 图片识别调用异常，类型={}", ex.getClass().getSimpleName());
@@ -146,33 +171,50 @@ public class KimiChatClient {
                 log.warn("Kimi 调用异常: {}", ex.getMessage());
             }
             return null;
+        } finally {
+            if (acquired) {
+                requestSemaphore.release();
+            }
         }
     }
 
     /**
      * 多轮（预留）
      *
-     * @param messages role/content 对
+     * @param messages 带真实角色的历史消息
      * @param maxTokens 最大输出
      * @return 文本或 null
      */
-    public String chatMessages(List<String[]> messages, int maxTokens) {
+    public String chatMessages(List<KimiChatMessage> messages, int maxTokens) {
         if (!available() || Objects.isNull(messages) || messages.isEmpty()) {
             return null;
         }
-        StringBuilder user = new StringBuilder();
-        String system = null;
-        for (String[] pair : messages) {
-            if (pair == null || pair.length < 2) {
+        String base = StringUtils.isBlank(properties.getBaseUrl())
+                ? "https://api.moonshot.cn/v1"
+                : properties.getBaseUrl().trim().replaceAll("/+$", "");
+        JSONArray requestMessages = new JSONArray();
+        for (KimiChatMessage message : messages) {
+            if (Objects.isNull(message) || StringUtils.isBlank(message.getRole())
+                    || StringUtils.isBlank(message.getContent())) {
                 continue;
             }
-            if ("system".equalsIgnoreCase(pair[0])) {
-                system = pair[1];
-            } else {
-                user.append(pair[1]).append('\n');
+            String role = message.getRole().trim().toLowerCase(Locale.ROOT);
+            if (!"system".equals(role) && !"user".equals(role) && !"assistant".equals(role)) {
+                continue;
             }
+            requestMessages.add(new JSONObject()
+                    .set("role", role)
+                    .set("content", message.getContent().trim()));
         }
-        return chat(system, user.toString(), maxTokens);
+        if (requestMessages.isEmpty()) {
+            return null;
+        }
+        JSONObject body = new JSONObject();
+        body.set("model", properties.getModel());
+        body.set("messages", requestMessages);
+        body.set("max_tokens", Math.max(256, maxTokens));
+        body.set("thinking", new JSONObject().set("type", "disabled"));
+        return execute(base + "/chat/completions", body.toString(), false);
     }
 
     private String trim(String raw) {

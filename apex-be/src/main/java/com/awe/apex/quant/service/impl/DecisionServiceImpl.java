@@ -251,7 +251,6 @@ public class DecisionServiceImpl implements IDecisionService {
     private static final String BUY_AI_CACHE_PREFIX = "apex:decision:buy-ai:";
     private static final int DECISION_NEWS_DAYS = 7;
     private static final int DECISION_NEWS_LIMIT = 2;
-    private static final int DECISION_NEWS_FETCH_LIMIT = 600;
 
     /**
      * 刷新全用户共享的市场买入信号。
@@ -1736,8 +1735,7 @@ public class DecisionServiceImpl implements IDecisionService {
             recentNewsRows = marketNewsMapper.selectList(Wrappers.<MarketNews>lambdaQuery()
                     .ge(MarketNews::getPublishedAt, LocalDateTime.now().minusDays(DECISION_NEWS_DAYS))
                     .orderByDesc(MarketNews::getPublishedAt)
-                    .orderByDesc(MarketNews::getId)
-                    .last("LIMIT " + DECISION_NEWS_FETCH_LIMIT));
+                    .orderByDesc(MarketNews::getId));
         }
         for (DecisionItemResp item : items) {
             item.setHighlights(buildStockHighlights(item));

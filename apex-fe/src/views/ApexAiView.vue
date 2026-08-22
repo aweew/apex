@@ -4,13 +4,19 @@ import {
   ChatDotRound,
   CircleCheck,
   DataAnalysis,
+  EditPen,
   MagicStick,
   Promotion,
   Refresh,
   TrendCharts,
   Warning,
 } from '@element-plus/icons-vue'
-import { analyzeWithXiaoling, getApexAiContext } from '../api/apexAi'
+import {
+  analyzeWithXiaoling,
+  enhanceXiaolingAnalysis,
+  getApexAiContext,
+  getLatestApexAiConversation,
+} from '../api/apexAi'
 
 const analysisModes = [
   { label: '自动', value: 'AUTO' },
@@ -27,6 +33,7 @@ const question = ref('')
 const analyzing = ref(false)
 const messages = ref([])
 const threadRef = ref(null)
+const conversationId = ref(null)
 
 const hasContext = computed(() => context.value.portfolios.length || context.value.strategies.length)
 const selectedPortfolio = computed(() => context.value.portfolios
@@ -55,6 +62,43 @@ async function loadContext() {
   }
 }
 
+async function loadLatestConversation() {
+  try {
+    const response = await getLatestApexAiConversation()
+    const conversation = response.data
+    if (!conversation?.conversationId || !conversation.messages?.length) return
+    conversationId.value = conversation.conversationId
+    if (analysisModes.some((mode) => mode.value === conversation.lastAnalysisType)) {
+      analysisMode.value = conversation.lastAnalysisType
+    }
+    messages.value = conversation.messages.map((message) => {
+      if (message.role === 'USER') {
+        return {
+          id: message.id || `${message.requestId}-user`,
+          role: 'user',
+          text: message.content,
+          scope: message.analysisType || '历史分析',
+        }
+      }
+      return {
+        id: message.id || message.requestId,
+        role: 'assistant',
+        analysis: message.analysis,
+      }
+    }).filter((message) => message.role === 'user' || message.analysis)
+    await scrollToLatest()
+  } catch {
+    // 会话恢复失败不影响新的规则分析。
+  }
+}
+
+function startNewConversation() {
+  if (analyzing.value) return
+  conversationId.value = null
+  messages.value = []
+  question.value = ''
+}
+
 function inferMode(prompt) {
   if (/策略|失效|胜率|共振|超额/.test(prompt)) return 'STRATEGY'
   if (/组合|收益|盈亏|亏|赚|板块|持仓/.test(prompt)) return 'PORTFOLIO'
@@ -72,6 +116,23 @@ async function scrollToLatest() {
   threadRef.value?.lastElementChild?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
 }
 
+async function enhanceMessage(messageId) {
+  const message = messages.value.find((item) => item.id === messageId)
+  if (!message?.analysis) return
+  try {
+    const response = await enhanceXiaolingAnalysis({
+      conversationId: message.analysis.conversationId,
+      requestId: message.analysis.requestId,
+    })
+    if (response.data?.aiEnhanced) message.analysis = response.data
+    else message.enhanceFailed = true
+  } catch {
+    message.enhanceFailed = true
+  } finally {
+    message.enhancing = false
+  }
+}
+
 async function submitQuestion() {
   const prompt = question.value.trim()
   if (!prompt || analyzing.value) return
@@ -86,6 +147,7 @@ async function submitQuestion() {
   await scrollToLatest()
   try {
     const response = await analyzeWithXiaoling({
+      conversationId: conversationId.value,
       question: prompt,
       analysisType: analysisMode.value,
       portfolioId: analysisMode.value === 'PORTFOLIO' ? selectedPortfolioId.value : null,
@@ -93,14 +155,20 @@ async function submitQuestion() {
       days: 60,
     })
     if (!response.data) throw new Error('分析结果为空，请稍后重试')
+    conversationId.value = response.data.conversationId
     const assistantMessage = {
       id: response.data.requestId || `${Date.now()}-assistant`,
       role: 'assistant',
       analysis: response.data,
+      enhancing: context.value.aiConfigured,
+      enhanceFailed: false,
     }
     const pendingMessageIndex = messages.value.findIndex((message) => message.id === pendingMessageId)
     if (pendingMessageIndex >= 0) messages.value.splice(pendingMessageIndex, 1, assistantMessage)
     else messages.value.push(assistantMessage)
+    analyzing.value = false
+    await scrollToLatest()
+    if (assistantMessage.enhancing) enhanceMessage(assistantMessage.id)
   } catch (error) {
     const pendingMessageIndex = messages.value.findIndex((message) => message.id === pendingMessageId)
     const errorMessage = {
@@ -148,7 +216,7 @@ function onComposerKeydown(event) {
   submitQuestion()
 }
 
-onMounted(loadContext)
+onMounted(() => Promise.allSettled([loadContext(), loadLatestConversation()]))
 </script>
 
 <template>
@@ -212,8 +280,14 @@ onMounted(loadContext)
 
       <main class="conversation-panel">
         <div class="conversation-head">
-          <div><el-icon><MagicStick /></el-icon><div><b>小灵</b><span>Apex AI Analyst</span></div></div>
-          <span class="privacy-note">聚合数据分析</span>
+          <div class="assistant-identity"><el-icon><MagicStick /></el-icon><div><b>小灵</b><span>Apex AI Analyst</span></div></div>
+          <div class="conversation-tools">
+            <span class="privacy-note">聚合数据分析</span>
+            <el-tooltip content="新对话" placement="top">
+              <el-button :icon="EditPen" circle text :disabled="analyzing"
+                aria-label="新对话" @click="startNewConversation" />
+            </el-tooltip>
+          </div>
         </div>
 
         <div ref="threadRef" class="conversation-thread" aria-live="polite">
@@ -294,7 +368,11 @@ onMounted(loadContext)
               <footer class="answer-footer">
                 <span>{{ message.analysis.dataNote }}</span>
                 <span>{{ formatTime(message.analysis.dataAsOf || message.analysis.generatedAt) }}</span>
-                <span>{{ message.analysis.aiEnhanced ? 'AI 增强' : '规则分析' }}</span>
+                <span v-if="message.enhancing" class="enhancement-state">
+                  <el-icon><Refresh /></el-icon>AI 解读中
+                </span>
+                <span v-else-if="message.enhanceFailed" class="enhancement-state failed">AI 增强暂不可用</span>
+                <span v-else>{{ message.analysis.aiEnhanced ? 'AI 增强' : '规则分析' }}</span>
               </footer>
               <div v-if="message.analysis.followUpQuestions?.length" class="follow-ups">
                 <span>继续追问</span>
@@ -352,8 +430,8 @@ onMounted(loadContext)
 .quick-questions button:hover:not(:disabled) { color: #1559b7; }
 .conversation-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
 .conversation-head { display: flex; align-items: center; justify-content: space-between; min-height: 62px; padding: 10px 20px; border-bottom: 1px solid #e4e7ec; }
-.conversation-head > div { display: flex; align-items: center; gap: 10px; }
-.conversation-head > div > .el-icon { width: 34px; height: 34px; border-radius: 6px; color: #fff; background: #1f5fae; }
+.assistant-identity, .conversation-tools { display: flex; align-items: center; gap: 10px; }
+.assistant-identity > .el-icon { width: 34px; height: 34px; border-radius: 6px; color: #fff; background: #1f5fae; }
 .conversation-head b, .conversation-head span { display: block; }
 .conversation-head b { color: #171b22; font-size: 14px; }
 .conversation-head span { color: #8a929e; font-size: 10px; }
@@ -418,6 +496,9 @@ onMounted(loadContext)
 .suggestion-section .el-icon { margin-top: 2px; color: #1f5fae; }
 .answer-footer { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; color: #9098a4; font-size: 9px; line-height: 1.45; }
 .answer-footer span:first-child { flex: 1 1 360px; }
+.enhancement-state { display: inline-flex !important; align-items: center; gap: 4px; color: #526b8e; }
+.enhancement-state .el-icon { animation: pendingRotate 1.2s linear infinite; }
+.enhancement-state.failed { color: #98652a; }
 .follow-ups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
 .follow-ups > span { margin-right: 2px; color: #7f8997; font-size: 10px; }
 .follow-ups button { min-height: 30px; padding: 5px 8px; border: 1px solid #d9dfe7; border-radius: 5px; color: #526075; background: #fff; font: inherit; font-size: 10px; cursor: pointer; }

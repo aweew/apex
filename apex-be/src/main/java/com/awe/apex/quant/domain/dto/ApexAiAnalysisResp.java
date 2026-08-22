@@ -20,6 +20,11 @@ import java.util.List;
 public class ApexAiAnalysisResp {
 
     /**
+     * 会话ID。
+     */
+    private Long conversationId;
+
+    /**
      * 请求编号
      */
     private String requestId;

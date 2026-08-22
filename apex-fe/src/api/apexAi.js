@@ -5,5 +5,13 @@ export function getApexAiContext() {
 }
 
 export function analyzeWithXiaoling(payload) {
-  return http.post('/api/apex-ai/analyze', payload, { timeout: 90000 })
+  return http.post('/api/apex-ai/analyze', payload, { timeout: 30000 })
+}
+
+export function enhanceXiaolingAnalysis(payload) {
+  return http.post('/api/apex-ai/enhance', payload, { timeout: 60000 })
+}
+
+export function getLatestApexAiConversation() {
+  return http.get('/api/apex-ai/conversation/latest')
 }
