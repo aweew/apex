@@ -18,6 +18,7 @@ import os
 import re
 import sys
 import time
+from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -35,6 +36,7 @@ PROGRESS_PATH = ROOT / ".progress" / "bars_progress.json"
 SOURCE = "akshare"
 BJ_DAILY_REQUEST_INTERVAL_SECONDS = 1.0
 BJ_DAILY_RETRY_COUNT = 3
+PROXY_ENV_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 
 def load_env() -> None:
@@ -218,6 +220,34 @@ def upsert_bars(conn, code: str, bars: List[Tuple]) -> int:
     return len(bars)
 
 
+def has_http_proxy() -> bool:
+    return any(os.getenv(key) for key in PROXY_ENV_KEYS)
+
+
+def is_proxy_failure(error: Exception) -> bool:
+    message = str(error).lower()
+    return "proxyerror" in message or "unable to connect to proxy" in message
+
+
+@contextmanager
+def disable_http_proxy():
+    saved_proxies = {key: os.environ.pop(key) for key in PROXY_ENV_KEYS if key in os.environ}
+    try:
+        yield
+    finally:
+        os.environ.update(saved_proxies)
+
+
+def fetch_eastmoney_hist_bars(ak, code: str, start: str, end: str):
+    return ak.stock_zh_a_hist(
+        symbol=code,
+        period="daily",
+        start_date=start,
+        end_date=end,
+        adjust="qfq",
+    )
+
+
 def fetch_hist_bars(code: str, start: str, end: str):
     """北交所仅走东财；沪深股票东财失败后再试新浪。"""
     import akshare as ak
@@ -228,18 +258,21 @@ def fetch_hist_bars(code: str, start: str, end: str):
         for attempt in range(1, BJ_DAILY_RETRY_COUNT + 1):
             time.sleep(BJ_DAILY_REQUEST_INTERVAL_SECONDS)
             try:
-                df = ak.stock_zh_a_hist(
-                    symbol=code,
-                    period="daily",
-                    start_date=start,
-                    end_date=end,
-                    adjust="qfq",
-                )
+                df = fetch_eastmoney_hist_bars(ak, code, start, end)
                 if df is not None and not df.empty:
                     return df, "akshare-em"
                 last_error = "东方财富返回空数据"
             except Exception as ex:
                 last_error = str(ex)
+                if is_proxy_failure(ex) and has_http_proxy():
+                    try:
+                        with disable_http_proxy():
+                            df = fetch_eastmoney_hist_bars(ak, code, start, end)
+                        if df is not None and not df.empty:
+                            return df, "akshare-em-direct"
+                        last_error = "东方财富直连返回空数据"
+                    except Exception as direct_error:
+                        last_error = f"代理失败={ex}；直连复试失败={direct_error}"
             if attempt < BJ_DAILY_RETRY_COUNT:
                 time.sleep(attempt * 2)
         raise RuntimeError(f"em:{last_error or '东方财富未返回日线'}")
@@ -249,17 +282,20 @@ def fetch_hist_bars(code: str, start: str, end: str):
     errors: List[str] = []
 
     try:
-        df = ak.stock_zh_a_hist(
-            symbol=code,
-            period="daily",
-            start_date=start,
-            end_date=end,
-            adjust="qfq",
-        )
+        df = fetch_eastmoney_hist_bars(ak, code, start, end)
         if df is not None and not df.empty:
             return df, "akshare-em"
     except Exception as ex:
         errors.append(f"em:{ex}")
+        if is_proxy_failure(ex) and has_http_proxy():
+            try:
+                with disable_http_proxy():
+                    df = fetch_eastmoney_hist_bars(ak, code, start, end)
+                if df is not None and not df.empty:
+                    return df, "akshare-em-direct"
+                errors.append("em-direct:东方财富直连返回空数据")
+            except Exception as direct_error:
+                errors.append(f"em-direct:{direct_error}")
 
     try:
         df = ak.stock_zh_a_daily(

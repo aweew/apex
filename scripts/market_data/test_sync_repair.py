@@ -1,3 +1,4 @@
+import os
 import sys
 import tempfile
 import types
@@ -162,6 +163,35 @@ class MissingBarSelectionTest(unittest.TestCase):
                 sync_a_share.fetch_hist_bars("920176", "20240101", "20260814")
 
         self.assertEqual(5, sleep_mock.call_count)
+
+    def test_beijing_exchange_retries_eastmoney_without_proxy_after_proxy_failure(self):
+        proxy_states = []
+
+        def fetch_hist(**kwargs):
+            proxy_states.append(all(
+                key not in os.environ
+                for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
+            ))
+            if len(proxy_states) == 1:
+                raise RuntimeError("ProxyError: Remote end closed connection")
+            return types.SimpleNamespace(empty=False)
+
+        akshare_stub = types.SimpleNamespace(
+            stock_zh_a_hist=fetch_hist,
+            stock_zh_a_daily=lambda **kwargs: self.fail("北交所不应调用新浪日线"),
+        )
+
+        with patch.dict(os.environ, {
+            "HTTPS_PROXY": "http://127.0.0.1:7890",
+            "ALL_PROXY": "http://127.0.0.1:7890",
+        }), \
+                patch.dict(sys.modules, {"akshare": akshare_stub}), \
+                patch.object(sync_a_share.time, "sleep"):
+            _, source = sync_a_share.fetch_hist_bars("920176", "20240101", "20260814")
+            self.assertEqual("http://127.0.0.1:7890", os.environ.get("HTTPS_PROXY"))
+
+        self.assertEqual("akshare-em-direct", source)
+        self.assertEqual([False, True], proxy_states)
 
     def test_missing_bar_round_failure_does_not_block_later_rounds(self):
         args = types.SimpleNamespace(
