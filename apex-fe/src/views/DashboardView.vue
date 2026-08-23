@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { dashboardHome } from '../api/dashboard'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
+import { publishDataFreshness } from '../utils/dataFreshness.js'
 const router = useRouter()
 const HOME_CACHE_KEY = 'apex.dashboard.home.v16'
 const loading = ref(false)
@@ -238,6 +239,21 @@ function commandStatusLabel(status) {
   return labels[status] || '状态未知'
 }
 
+function publishDashboardDataFreshness(homeData) {
+  const commandData = homeData?.command
+  if (!commandData) return
+  const level = homeData?.dataHealth?.level
+    || (commandData.status === 'READY' ? 'GREEN' : commandData.status === 'STALE' || commandData.status === 'BLOCKED' ? 'RED' : 'YELLOW')
+  const marketDataAsOf = commandData.marketDataAsOf || '-'
+  const decisionDataAsOf = fmtCommandTime(commandData.decisionDataAsOf)
+  publishDataFreshness({
+    level,
+    label: `看板数据${dataLevelLabel(level)}`,
+    detail: `行情截至 ${marketDataAsOf} · 决策数据 ${decisionDataAsOf}`,
+    route: '/dashboard',
+  })
+}
+
 function operationStatusLabel(status) {
   const labels = {
     REQUIRED: '必做',
@@ -300,6 +316,7 @@ async function load(opts = {}) {
   try {
     const res = await dashboardHome(undefined, '我的自选', false)
     home.value = res.data
+    publishDashboardDataFreshness(res.data)
     writeHomeCache(res.data)
   } catch (e) {
     if (!hasCache) {
@@ -322,6 +339,7 @@ onMounted(() => {
   const cached = readHomeCache()
   if (cached) {
     home.value = cached
+    publishDashboardDataFreshness(cached)
     load({ silent: true })
   } else {
     load()

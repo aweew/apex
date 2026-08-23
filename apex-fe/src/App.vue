@@ -10,6 +10,7 @@ import { BRAND } from './brand/identity.js'
 import { isNavigating, requestCount } from './utils/appActivity'
 import { MAIN_NAV_GROUPS, PRIMARY_SHORTCUTS } from './navigation/menu.js'
 import { getCurrentUser, logout } from './api/auth'
+import { clearDataFreshness, dataFreshness } from './utils/dataFreshness.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -19,6 +20,7 @@ const mobileMenuOpen = ref(false)
 const query = ref('')
 const loading = ref(false)
 const results = ref([])
+const commandSelection = ref(0)
 const inputRef = ref(null)
 const glossaryRef = ref(null)
 const mobileMenuRef = ref(null)
@@ -31,6 +33,34 @@ const mobileBackPath = ref('')
 const mobileBackLabel = ref('')
 const currentUser = ref(getCurrentUser())
 const isPublicRoute = computed(() => Boolean(route.meta.public))
+const COMMAND_ROUTE_ITEMS = [
+  { to: '/dashboard', label: '看板', detail: '市场立场与今日指挥', keywords: '首页 工作台' },
+  { to: '/decision', label: '智能决策', detail: '买卖清单与执行条件', keywords: '决策 买入 卖出' },
+  { to: '/watchlist', label: '自选', detail: '维护关注标的', keywords: '股票 分组' },
+  { to: '/observe', label: '观察池', detail: '跟踪触发条件', keywords: '提醒 观察' },
+  { to: '/portfolio', label: '组合', detail: '组合与模拟交易', keywords: '持仓 账户' },
+  { to: '/market', label: '行情', detail: '指数与市场脉搏', keywords: '指数 大盘' },
+  { to: '/sector', label: '板块行情', detail: '行业与概念轮动', keywords: '题材 行业 概念' },
+  { to: '/capital-flow', label: '资金面', detail: '北向与主力资金', keywords: '资金 龙虎榜' },
+  { to: '/screener', label: '股票筛选', detail: '筛选全市场标的', keywords: '选股 条件' },
+  { to: '/news', label: '财经资讯', detail: '市场新闻与脉搏', keywords: '新闻 消息' },
+  { to: '/sync', label: '同步中心', detail: '更新行情与决策数据', keywords: '刷新 数据 任务' },
+  { to: '/backtest', label: '回测', detail: '验证策略表现', keywords: '策略 历史' },
+  { to: '/config', label: '参数设置', detail: '管理系统参数', keywords: '设置 配置' },
+]
+const filteredRouteCommands = computed(() => {
+  const keyword = String(query.value || '').trim().toLowerCase()
+  if (!keyword) return COMMAND_ROUTE_ITEMS.slice(0, 6).map((item) => ({ ...item, kind: 'route' }))
+  return COMMAND_ROUTE_ITEMS
+    .filter((item) => `${item.label} ${item.detail} ${item.keywords}`.toLowerCase().includes(keyword))
+    .map((item) => ({ ...item, kind: 'route' }))
+})
+const stockCommandResults = computed(() => {
+  const keyword = String(query.value || '').trim()
+  const source = keyword ? results.value : recentStocks.value
+  return source.map((item) => ({ ...item, kind: 'stock' }))
+})
+const commandResults = computed(() => [...filteredRouteCommands.value, ...stockCommandResults.value])
 let healthTimer
 let searchSeq = 0
 let debounceTimer
@@ -161,6 +191,10 @@ function openGlossary(termId) {
   glossaryRef.value?.openGlossary?.(termId)
 }
 
+function dataFreshnessClass() {
+  return `is-${String(dataFreshness.value?.level || '').toLowerCase()}`
+}
+
 async function pingHealth() {
   try {
     const res = await http.get('/api/health', { timeout: 4000, activity: false })
@@ -204,6 +238,7 @@ async function openSearch() {
   setMobileMenu(false)
   searchReturnFocus = document.activeElement
   searchOpen.value = true
+  commandSelection.value = 0
   loadRecentStocks()
   await nextTick()
   inputRef.value?.focus?.()
@@ -215,12 +250,14 @@ function closeSearch(restoreFocus = true) {
   searchOpen.value = false
   query.value = ''
   results.value = []
+  commandSelection.value = 0
   loading.value = false
   if (restoreFocus) nextTick(() => searchReturnFocus?.focus?.())
 }
 
 function onQueryInput() {
   clearTimeout(debounceTimer)
+  commandSelection.value = 0
   const keyword = String(query.value || '').trim()
   if (!keyword) {
     results.value = []
@@ -282,13 +319,30 @@ function goStock(code, name = '') {
   closeSearch(false)
 }
 
-function onEnter() {
-  const keyword = String(query.value || '').trim()
-  const code = keyword.replace(/\D/g, '').slice(0, 6)
-  if (results.value.length) {
-    goStock(results.value[0].code, results.value[0].name)
+function goCommand(item) {
+  if (!item) return
+  if (item.kind === 'stock') {
+    goStock(item.code, item.name)
     return
   }
+  router.push(item.to)
+  closeSearch(false)
+}
+
+function moveCommandSelection(step) {
+  const count = commandResults.value.length
+  if (!count) return
+  commandSelection.value = (commandSelection.value + step + count) % count
+}
+
+function runSelectedCommand() {
+  const item = commandResults.value[commandSelection.value]
+  if (item) {
+    goCommand(item)
+    return
+  }
+  const keyword = String(query.value || '').trim()
+  const code = keyword.replace(/\D/g, '').slice(0, 6)
   if (code.length === 6) goStock(code)
 }
 
@@ -325,12 +379,21 @@ watch(
   () => route.fullPath,
   () => {
     setMobileMenu(false)
+    clearDataFreshness()
     nextTick(() => {
       syncMobileModuleTitle()
       syncMobileBackTarget()
     })
   },
 )
+
+watch(commandResults, (items) => {
+  if (!items.length) {
+    commandSelection.value = 0
+    return
+  }
+  if (commandSelection.value >= items.length) commandSelection.value = items.length - 1
+})
 
 watch(
   [isNavigating, requestCount],
@@ -535,7 +598,17 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="mobile-menu-actions">
-          <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
+          <RouterLink
+            v-if="dataFreshness"
+            class="data-status"
+            :class="dataFreshnessClass()"
+            :to="dataFreshness.route"
+            :title="dataFreshness.detail || dataFreshness.label"
+          >
+            <i class="dot" />
+            {{ dataFreshness.label }}
+          </RouterLink>
+          <span v-else class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
             <i class="dot" />
             {{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '检测中…' }}
           </span>
@@ -543,13 +616,23 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="nav-actions desktop-nav-actions">
-        <span class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
+        <RouterLink
+          v-if="dataFreshness"
+          class="data-status"
+          :class="dataFreshnessClass()"
+          :to="dataFreshness.route"
+          :title="dataFreshness.detail || dataFreshness.label"
+        >
+          <i class="dot" />
+          <span>{{ dataFreshness.label }}</span>
+        </RouterLink>
+        <span v-else class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
           <i class="dot" />
           {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
         </span>
-        <button type="button" class="search-btn" title="搜索股票 Ctrl+K" @click="openSearch">
+        <button type="button" class="search-btn" title="打开命令中心 Ctrl+K" @click="openSearch">
           <Search aria-hidden="true" />
-          <span>搜索</span>
+          <span>命令中心</span>
         </button>
         <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
           <Reading aria-hidden="true" />
@@ -587,7 +670,7 @@ onBeforeUnmount(() => {
       class="search-layer"
       @click.self="closeSearch"
     >
-      <div class="search-panel" role="dialog" aria-label="搜索股票" aria-modal="true">
+      <div class="search-panel" role="dialog" aria-label="命令中心" aria-modal="true">
         <div class="search-head">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="7" />
@@ -597,14 +680,18 @@ onBeforeUnmount(() => {
             ref="inputRef"
             v-model="query"
             class="search-input"
-            placeholder="代码或名称"
+            placeholder="搜索股票、页面或操作"
             autocomplete="off"
             autocapitalize="none"
             enterkeyhint="search"
             inputmode="search"
             :spellcheck="false"
+            aria-controls="command-results"
+            :aria-activedescendant="commandResults[commandSelection] ? `command-result-${commandSelection}` : undefined"
             @input="onQueryInput"
-            @keydown.enter.prevent="onEnter"
+            @keydown.down.prevent="moveCommandSelection(1)"
+            @keydown.up.prevent="moveCommandSelection(-1)"
+            @keydown.enter.prevent="runSelectedCommand"
             @keydown.esc.prevent="closeSearch"
           />
           <button type="button" class="search-close" aria-label="关闭搜索" @click="closeSearch">
@@ -613,36 +700,58 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="search-body">
-          <div v-if="loading" class="search-tip" role="status">搜索中…</div>
-          <template v-else-if="!query.trim()">
-            <div v-if="recentStocks.length" class="search-recent">
-              <div class="search-tip">最近浏览</div>
-              <ul class="search-list search-recent-list">
-                <li v-for="item in recentStocks" :key="item.code">
-                  <button type="button" class="search-item" @click="goStock(item.code, item.name)">
-                    <StockIdentity :security="item" include-main />
+          <div v-if="loading" class="search-tip" role="status">正在搜索股票…</div>
+          <div v-else-if="!commandResults.length" class="search-tip">没有找到匹配页面或股票，请尝试代码、名称或功能名称</div>
+          <template v-else>
+            <section v-if="filteredRouteCommands.length" class="command-section" aria-labelledby="command-route-title">
+              <h2 id="command-route-title" class="command-section-title">页面与操作</h2>
+              <ul id="command-results" class="search-list command-list" role="listbox" aria-label="页面与操作">
+                <li v-for="(item, index) in filteredRouteCommands" :key="item.to">
+                  <button
+                    :id="`command-result-${index}`"
+                    type="button"
+                    class="search-item command-item"
+                    :class="{ selected: index === commandSelection }"
+                    role="option"
+                    :aria-selected="index === commandSelection"
+                    @mouseenter="commandSelection = index"
+                    @click="goCommand(item)"
+                  >
+                    <span class="command-item-copy">
+                      <b>{{ item.label }}</b>
+                      <small>{{ item.detail }}</small>
+                    </span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
                   </button>
                 </li>
               </ul>
-            </div>
-            <div v-else class="search-tip">
-              输入后回车打开第一条结果
-              <div class="search-keys">
-                Ctrl+K 搜索 · Ctrl+/ 名词 · Ctrl+1~4 看板/决策/观察/持仓
-              </div>
-            </div>
+            </section>
+            <section v-if="stockCommandResults.length" class="command-section" aria-labelledby="command-stock-title">
+              <h2 id="command-stock-title" class="command-section-title">{{ query.trim() ? '股票' : '最近股票' }}</h2>
+              <ul class="search-list command-list" role="listbox" aria-label="股票">
+                <li v-for="(item, index) in stockCommandResults" :key="item.code">
+                  <button
+                    :id="`command-result-${filteredRouteCommands.length + index}`"
+                    type="button"
+                    class="search-item"
+                    :class="{ selected: filteredRouteCommands.length + index === commandSelection }"
+                    role="option"
+                    :aria-selected="filteredRouteCommands.length + index === commandSelection"
+                    @mouseenter="commandSelection = filteredRouteCommands.length + index"
+                    @click="goCommand(item)"
+                  >
+                    <StockIdentity :security="item" include-main>
+                      <template v-if="query.trim()" #name><span v-html="item.nameHtml" /></template>
+                      <template v-if="query.trim()" #code><span v-html="item.codeHtml" /></template>
+                    </StockIdentity>
+                  </button>
+                </li>
+              </ul>
+            </section>
+            <div class="search-keys">上下键选择 · Enter 打开 · Ctrl+/ 名词百科</div>
           </template>
-          <div v-else-if="!results.length" class="search-tip">没有找到匹配股票，请尝试完整代码或名称</div>
-          <ul v-else class="search-list">
-            <li v-for="item in results" :key="item.code">
-              <button type="button" class="search-item" @click="goStock(item.code, item.name)">
-                <StockIdentity :security="item" include-main>
-                  <template #name><span v-html="item.nameHtml" /></template>
-                  <template #code><span v-html="item.codeHtml" /></template>
-                </StockIdentity>
-              </button>
-            </li>
-          </ul>
         </div>
       </div>
     </div>
@@ -908,7 +1017,8 @@ onBeforeUnmount(() => {
   margin-left: auto;
 }
 
-.health {
+.health,
+.data-status {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -920,6 +1030,29 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.45);
   border: 1px solid rgba(0, 0, 0, 0.05);
   white-space: nowrap;
+}
+
+.data-status {
+  max-width: 188px;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.data-status:hover {
+  border-color: var(--line-strong);
+  background: #f8fafc;
+}
+
+.data-status.is-green .dot {
+  background: #34c759;
+}
+
+.data-status.is-yellow .dot {
+  background: #ff9f0a;
+}
+
+.data-status.is-red .dot {
+  background: #ff3b30;
 }
 
 .health .dot {
@@ -1136,6 +1269,23 @@ onBeforeUnmount(() => {
   min-height: 120px;
 }
 
+.command-section {
+  padding: 12px 16px 0;
+}
+
+.command-section + .command-section {
+  margin-top: 8px;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.command-section-title {
+  margin: 0 0 6px;
+  color: var(--slate);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .search-tip {
   padding: 32px 16px;
   text-align: center;
@@ -1157,6 +1307,10 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+}
+
+.command-list {
+  padding: 0;
 }
 
 .search-list > li {
@@ -1188,6 +1342,46 @@ onBeforeUnmount(() => {
 
 .search-item:hover {
   background: rgba(0, 113, 227, 0.08);
+}
+
+.search-item.selected,
+.search-item:focus-visible {
+  outline: none;
+  background: rgba(0, 113, 227, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(0, 113, 227, 0.26);
+}
+
+.command-item {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.command-item-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.command-item-copy b {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.command-item-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-item svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
 }
 
 .search-item :deep(em) {
@@ -1489,6 +1683,16 @@ onBeforeUnmount(() => {
     background: #f8fafc;
   }
 
+  .mobile-menu-actions .data-status {
+    justify-content: center;
+    min-height: 44px;
+    max-width: none;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #f8fafc;
+    text-overflow: ellipsis;
+  }
+
   .mobile-action-btn {
     min-height: 44px;
     border: 1px solid var(--line-strong);
@@ -1600,6 +1804,14 @@ onBeforeUnmount(() => {
     text-align: left;
   }
 
+  .command-section {
+    padding: 12px 12px 0;
+  }
+
+  .command-section-title {
+    padding: 0 6px;
+  }
+
   .search-keys {
     display: none;
   }
@@ -1608,6 +1820,10 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
     gap: 2px;
     padding: 4px 8px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .command-list {
+    padding: 0;
   }
 
   .search-recent-list > li:last-child:nth-child(odd) {

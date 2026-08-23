@@ -36,6 +36,7 @@ import {
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
 import { useSessionViewState } from '../utils/viewState.js'
+import { publishDataFreshness } from '../utils/dataFreshness.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -202,6 +203,16 @@ function decisionDataTime() {
   return `数据截至 ${String(value).replace('T', ' ').slice(0, 16)}`
 }
 
+function publishDecisionDataFreshness() {
+  const level = decisionDataLevel.value
+  publishDataFreshness({
+    level,
+    label: `决策数据${dataLevelLabel(level)}`,
+    detail: `${decisionDataTime()} · ${decisionDataStatus()}`,
+    route: '/decision',
+  })
+}
+
 function decisionExecutionContext() {
   return {
     dataLevel: decisionDataLevel.value,
@@ -285,6 +296,7 @@ async function load() {
       loadPlaybook(),
     ])
     data.value = res.data
+    publishDecisionDataFreshness()
     pickDefaultTab()
     await Promise.all([loadHistory(), loadAttribution()])
     loadDecisionAdvice(data.value?.actionDate)
@@ -302,6 +314,7 @@ async function openHistoryDay(row) {
   try {
     const res = await fetchDecisionToday(row.actionDate, DEFAULT_GROUP)
     data.value = res.data
+    publishDecisionDataFreshness()
     pickDefaultTab()
     loadDecisionAdvice(data.value?.actionDate)
     loadBuyAi(false)
@@ -605,80 +618,87 @@ onBeforeUnmount(() => {
       @click="openShare"
     />
 
-    <!-- ① 市场立场 -->
-    <section
-      v-if="briefing"
-      class="stance-panel"
-      :class="stanceClass(briefing.stance)"
-    >
-      <div class="stance-main">
-        <div class="kicker">
-          <span>市场简报 · {{ briefing.asOf || '-' }}</span>
-          <span class="pill">{{ briefing.stance || '均衡' }}</span>
-          <el-tag
-            v-if="briefing.dataLevel"
-            size="small"
-            effect="plain"
-            :type="dataLevelType(briefing.dataLevel)"
-            round
-          >
-            数据{{ dataLevelLabel(briefing.dataLevel) }}
-          </el-tag>
-        </div>
-        <div class="stance-title-row">
-          <div class="score-ring" :style="{ '--pct': scorePct }">
-            <div class="score-ring-inner">
-              <strong>{{ briefing.stanceScore ?? '-' }}</strong>
-              <small>/100</small>
+    <details class="decision-evidence-toggle">
+      <summary>
+        <span>市场依据与数据状态</span>
+        <small>{{ briefing?.asOf ? `截至 ${briefing.asOf}` : '数据加载中' }}</small>
+      </summary>
+
+      <!-- ① 市场立场 -->
+      <section
+        v-if="briefing"
+        class="stance-panel"
+        :class="stanceClass(briefing.stance)"
+      >
+        <div class="stance-main">
+          <div class="kicker">
+            <span>市场简报 · {{ briefing.asOf || '-' }}</span>
+            <span class="pill">{{ briefing.stance || '均衡' }}</span>
+            <el-tag
+              v-if="briefing.dataLevel"
+              size="small"
+              effect="plain"
+              :type="dataLevelType(briefing.dataLevel)"
+              round
+            >
+              数据{{ dataLevelLabel(briefing.dataLevel) }}
+            </el-tag>
+          </div>
+          <div class="stance-title-row">
+            <div class="score-ring" :style="{ '--pct': scorePct }">
+              <div class="score-ring-inner">
+                <strong>{{ briefing.stanceScore ?? '-' }}</strong>
+                <small>/100</small>
+              </div>
+            </div>
+            <div class="stance-copy">
+              <p class="reason">{{ briefing.stanceReason }}</p>
+              <p class="advice">{{ briefing.positionAdvice || data?.riskNote }}</p>
             </div>
           </div>
-          <div class="stance-copy">
-            <p class="reason">{{ briefing.stanceReason }}</p>
-            <p class="advice">{{ briefing.positionAdvice || data?.riskNote }}</p>
+          <div v-if="hotThemes.length" class="theme-row theme-inline">
+            <span class="side-title inline"><TermTip term="mainline">主线</TermTip></span>
+            <div class="theme-chip-grid">
+              <button
+                v-for="t in hotThemes.slice(0, 6)"
+                :key="t.key"
+                type="button"
+                class="theme-chip"
+                :aria-label="`查看${t.name}成分股`"
+                @click="openTheme(t)"
+              >
+                <span class="theme-name">{{ t.name }}</span>
+                <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
+                <el-icon class="theme-link-icon"><ArrowRight /></el-icon>
+              </button>
+            </div>
           </div>
         </div>
-        <div v-if="hotThemes.length" class="theme-row theme-inline">
-          <span class="side-title inline"><TermTip term="mainline">主线</TermTip></span>
-          <div class="theme-chip-grid">
-            <button
-              v-for="t in hotThemes.slice(0, 6)"
-              :key="t.key"
-              type="button"
-              class="theme-chip"
-              :aria-label="`查看${t.name}成分股`"
-              @click="openTheme(t)"
-            >
-              <span class="theme-name">{{ t.name }}</span>
-              <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
-              <el-icon class="theme-link-icon"><ArrowRight /></el-icon>
-            </button>
+      </section>
+
+      <div v-if="factors.length" class="factor-strip">
+        <div v-for="f in factors" :key="f.name" class="factor-cell">
+          <label>{{ f.name }}</label>
+          <div class="factor-val">
+            <b :class="signalClass(f.signal)">{{ f.value }}</b>
+            <em :class="signalClass(f.signal)">{{ f.signal }}</em>
           </div>
+          <p>{{ f.note }}</p>
         </div>
       </div>
-    </section>
 
-    <div v-if="factors.length" class="factor-strip">
-      <div v-for="f in factors" :key="f.name" class="factor-cell">
-        <label>{{ f.name }}</label>
-        <div class="factor-val">
-          <b :class="signalClass(f.signal)">{{ f.value }}</b>
-          <em :class="signalClass(f.signal)">{{ f.signal }}</em>
-        </div>
-        <p>{{ f.note }}</p>
+      <div v-if="tips.length" class="tips-row">
+        <el-alert
+          v-for="(tip, idx) in tips.slice(0, 3)"
+          :key="idx"
+          class="tip-item"
+          :type="tipType(tip.level)"
+          :closable="false"
+          show-icon
+          :title="tip.text"
+        />
       </div>
-    </div>
-
-    <div v-if="tips.length" class="tips-row">
-      <el-alert
-        v-for="(tip, idx) in tips.slice(0, 3)"
-        :key="idx"
-        class="tip-item"
-        :type="tipType(tip.level)"
-        :closable="false"
-        show-icon
-        :title="tip.text"
-      />
-    </div>
+    </details>
 
     <section v-if="decisionAdvice || adviceLoading" class="advice-panel" v-loading="adviceLoading">
       <div v-if="decisionAdvice" class="advice-head">
@@ -1456,6 +1476,66 @@ onBeforeUnmount(() => {
 
 .decision .header {
   margin-bottom: 0;
+}
+
+.decision-evidence-toggle {
+  order: 3;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass);
+  box-shadow: var(--shadow-soft);
+}
+
+.decision-evidence-toggle > summary {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.decision-evidence-toggle > summary small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.decision-evidence-toggle[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.decision-evidence-toggle .stance-panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.decision-evidence-toggle .factor-strip,
+.decision-evidence-toggle .tips-row {
+  margin-right: 16px;
+  margin-left: 16px;
+}
+
+.decision-evidence-toggle .tips-row {
+  margin-bottom: 16px;
+}
+
+.advice-panel {
+  order: 1;
+}
+
+.action-panel {
+  order: 2;
+}
+
+.exec-bar,
+.more-collapse {
+  order: 4;
 }
 
 .dec-header {

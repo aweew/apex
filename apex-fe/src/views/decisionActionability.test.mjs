@@ -18,3 +18,13 @@ test('observation-only and red-data buy suggestions cannot open a paper order', 
   assert.match(decisionSource, /:disabled="!canExecutePaperBuy\(row\)"/)
   assert.match(decisionSource, /orderFromDecision\(/)
 })
+
+test('today action list remains before expandable decision evidence', () => {
+  const actionPanel = decisionSource.indexOf('<section class="action-panel">')
+  const evidencePanels = decisionSource.indexOf('<details class="decision-evidence-toggle">')
+
+  assert.ok(actionPanel > 0)
+  assert.ok(evidencePanels > 0)
+  assert.match(decisionSource, /\.action-panel\s*\{\s*order:\s*2;/)
+  assert.match(decisionSource, /\.decision-evidence-toggle\s*\{\s*order:\s*3;/)
+})
