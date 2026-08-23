@@ -51,7 +51,7 @@ mybatis-plus:
 # Swagger3 配置
 springdoc:
   api-docs:
-    enabled: true
+    enabled: ${APEX_API_DOCS_ENABLED:true}
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
@@ -83,16 +83,17 @@ sa-token:
   is-concurrent: true
   is-share: false
   token-style: uuid
-  jwt-secret-key: rtFDdiyVAjM8EYqwNgbS
+  jwt-secret-key: ${APEX_JWT_SECRET:}
   is-log: true
 
 # Apex 业务配置
 apex:
   scheduler:
     enabled: ${APEX_SCHEDULER_ENABLED:true}
+    close-decision-enabled: ${APEX_CLOSE_DECISION_ENABLED:true}
   mx-output-dir: ${user.dir}/../../.mx_output
-  local-username: admin
-  local-password: admin123
+  cors:
+    allowed-origin-patterns: ${APEX_CORS_ALLOWED_ORIGIN_PATTERNS:http://127.0.0.1:5173,http://localhost:5173}
   hot:
     python-cmd: python
     # IDEA 工作目录通常为 apex-be，相对仓库根为 ../scripts

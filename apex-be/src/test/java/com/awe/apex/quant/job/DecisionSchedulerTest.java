@@ -23,23 +23,19 @@ class DecisionSchedulerTest {
     private final DecisionScheduler scheduler = new DecisionScheduler();
 
     @Test
-    void schedulesThreeExpectedTradingSessionTimes() throws Exception {
+    void schedulesPreMarketAndIntradayDecisionSessions() throws Exception {
         Method preMarketSession = DecisionScheduler.class.getMethod("runPreMarketSession");
         Method mainSessions = DecisionScheduler.class.getMethod("runMainSessions");
-        Method closingSession = DecisionScheduler.class.getMethod("runClosingSession");
         Method outcomeCalculation = DecisionScheduler.class.getMethod("calculateDecisionOutcomes");
 
         Scheduled preMarketSchedule = preMarketSession.getAnnotation(Scheduled.class);
         Scheduled mainSchedule = mainSessions.getAnnotation(Scheduled.class);
-        Scheduled closingSchedule = closingSession.getAnnotation(Scheduled.class);
         Scheduled outcomeSchedule = outcomeCalculation.getAnnotation(Scheduled.class);
         assertEquals("0 50 6 * * MON-FRI", preMarketSchedule.cron());
         assertEquals("0 40 11,15 * * MON-FRI", mainSchedule.cron());
-        assertEquals("0 10 16 * * MON-FRI", closingSchedule.cron());
         assertEquals("0 30 18 * * MON-FRI", outcomeSchedule.cron());
         assertEquals("Asia/Shanghai", preMarketSchedule.zone());
         assertEquals("Asia/Shanghai", mainSchedule.zone());
-        assertEquals("Asia/Shanghai", closingSchedule.zone());
         assertEquals("Asia/Shanghai", outcomeSchedule.zone());
     }
 

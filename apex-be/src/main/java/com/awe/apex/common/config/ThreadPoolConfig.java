@@ -4,9 +4,9 @@ import com.awe.apex.common.config.properties.ThreadPoolProperties;
 import com.awe.apex.common.util.ThreadUtils;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.slf4j.MDC;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -19,7 +19,7 @@ import java.util.concurrent.*;
  * @author Awe
  * @since 2025/9/9 14:34
  **/
-@AutoConfiguration
+@Configuration
 @EnableConfigurationProperties(ThreadPoolProperties.class)
 public class ThreadPoolConfig {
 

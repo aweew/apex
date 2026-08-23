@@ -173,7 +173,7 @@ onMounted(load)
       <el-table-column prop="note" label="说明" min-width="160" show-overflow-tooltip />
     </el-table>
     <el-alert
-      :title="`定时同步：${autoSync?.configValue === 'true' ? '已开启' : '关闭'} · 分组 ${autoGroup?.configValue || '我的自选'} · 工作日 16:10 行情 / 18:30 过期日线`"
+      :title="`定时同步：${autoSync?.configValue === 'true' ? '已开启' : '关闭'} · 分组 ${autoGroup?.configValue || '我的自选'} · 工作日收盘同步完成后生成决策 / 18:30 过期日线`"
       type="info"
       :closable="false"
       style="margin-bottom: 12px"

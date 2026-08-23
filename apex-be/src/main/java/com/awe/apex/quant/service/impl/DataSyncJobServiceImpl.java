@@ -63,6 +63,9 @@ import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -134,11 +137,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     @Resource
     private SyncJobLeaseService syncJobLeaseService;
 
+    @Resource(name = "scheduledExecutorService")
+    private ScheduledExecutorService scheduledExecutorService;
+
     @Value("${apex.sync.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
 
     @Value("${apex.sync.script-dir:}")
     private String scriptDirConfig;
+
+    @Value("${apex.scheduler.close-decision-enabled:true}")
+    private boolean closeDecisionEnabled;
 
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "apex-sync-job");
@@ -152,6 +161,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private final Map<Long, Long> runningDecisionJobs = new ConcurrentHashMap<>();
     private final Map<Long, String> runningLeaseKeys = new ConcurrentHashMap<>();
     private final Map<Long, String> runningLeaseOwners = new ConcurrentHashMap<>();
+    private final Map<Long, Duration> runningLeaseTtls = new ConcurrentHashMap<>();
+    private final Map<Long, ScheduledFuture<?>> leaseRenewalFutures = new ConcurrentHashMap<>();
 
     /**
      * 清理超过任务超时窗口的僵尸记录，保留可能由其他实例执行的近期任务。
@@ -383,7 +394,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             syncJobMapper.insert(job);
             runningLeaseKeys.put(job.getId(), leaseKey);
             runningLeaseOwners.put(job.getId(), leaseOwner);
+            runningLeaseTtls.put(job.getId(), leaseTtl);
             leaseRegistered = true;
+            scheduleLeaseRenewal(job.getId());
             if ("DECISION".equals(spec.getTaskType())) {
                 runningDecisionJobs.put(SHARED_DECISION_KEY, job.getId());
             }
@@ -826,6 +839,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             }
             job.setFinishedAt(LocalDateTime.now());
             syncJobMapper.updateById(job);
+            if (closeDecisionEnabled && "SUCCESS".equals(job.getStatus())
+                    && "CLOSE_BUNDLE".equals(spec.getTaskType())) {
+                startDecisionAfterClose(job);
+            }
         } catch (Exception ex) {
             log.warn("同步任务失败，任务编号={}，任务类型={}，异常={}", jobId, spec.getTaskType(), ex.toString());
             if (Objects.nonNull(process)) {
@@ -1263,10 +1280,79 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         runningProcesses.remove(jobId);
         runningFutures.remove(jobId);
         cancelFlags.remove(jobId);
+        ScheduledFuture<?> leaseRenewalFuture = leaseRenewalFutures.remove(jobId);
+        if (Objects.nonNull(leaseRenewalFuture)) {
+            leaseRenewalFuture.cancel(false);
+        }
         String leaseKey = runningLeaseKeys.remove(jobId);
         String leaseOwner = runningLeaseOwners.remove(jobId);
+        runningLeaseTtls.remove(jobId);
         if (Objects.nonNull(syncJobLeaseService)) {
             syncJobLeaseService.release(leaseKey, leaseOwner);
+        }
+    }
+
+    private void scheduleLeaseRenewal(Long jobId) {
+        if (Objects.isNull(scheduledExecutorService)) {
+            log.warn("同步任务未配置租约续期调度器，任务编号={}", jobId);
+            return;
+        }
+        Duration leaseTtl = runningLeaseTtls.get(jobId);
+        if (Objects.isNull(leaseTtl)) {
+            return;
+        }
+        long intervalSeconds = Math.max(30, Math.min(300, leaseTtl.getSeconds() / 3));
+        ScheduledFuture<?> renewalFuture = scheduledExecutorService.scheduleAtFixedRate(
+                () -> renewLease(jobId), intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
+        leaseRenewalFutures.put(jobId, renewalFuture);
+    }
+
+    private void renewLease(Long jobId) {
+        String leaseKey = runningLeaseKeys.get(jobId);
+        String leaseOwner = runningLeaseOwners.get(jobId);
+        Duration leaseTtl = runningLeaseTtls.get(jobId);
+        if (StringUtils.isBlank(leaseKey) || StringUtils.isBlank(leaseOwner) || Objects.isNull(leaseTtl)) {
+            return;
+        }
+        try {
+            if (syncJobLeaseService.renew(leaseKey, leaseOwner, leaseTtl)) {
+                return;
+            }
+            cancelSyncJobAfterLeaseLoss(jobId, "租约已由其他实例接管");
+        } catch (Exception ex) {
+            cancelSyncJobAfterLeaseLoss(jobId, "租约续期失败：" + errorMessage(ex));
+        }
+    }
+
+    private void cancelSyncJobAfterLeaseLoss(Long jobId, String reason) {
+        AtomicBoolean cancelled = cancelFlags.get(jobId);
+        if (Objects.nonNull(cancelled)) {
+            cancelled.set(true);
+        }
+        Process process = runningProcesses.get(jobId);
+        if (Objects.nonNull(process) && process.isAlive()) {
+            ProcessIoUtils.destroyProcessTree(process);
+        }
+        Future<?> future = runningFutures.get(jobId);
+        if (Objects.nonNull(future)) {
+            future.cancel(true);
+        }
+        log.error("同步任务因失去跨实例运行租约而停止，任务编号={}，原因={}", jobId, reason);
+    }
+
+    private void startDecisionAfterClose(SyncJob closeJob) {
+        try {
+            SyncStartReq request = new SyncStartReq();
+            request.setTaskType("DECISION");
+            SyncJobResp decisionJob = startInternal(request);
+            appendLog(closeJob, "[收盘后决策] 已提交任务，任务编号=" + decisionJob.getId() + "\n");
+            syncJobMapper.updateById(closeJob);
+            log.info("收盘同步完成后已提交智能决策，收盘任务编号={}，决策任务编号={}",
+                    closeJob.getId(), decisionJob.getId());
+        } catch (Exception ex) {
+            appendLog(closeJob, "[警告] 收盘后决策提交失败：" + errorMessage(ex) + "\n");
+            syncJobMapper.updateById(closeJob);
+            log.warn("收盘同步完成后提交智能决策失败，收盘任务编号={}，原因={}", closeJob.getId(), errorMessage(ex));
         }
     }
 

@@ -30,7 +30,9 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -210,6 +212,24 @@ class DataSyncJobServiceOwnershipTest {
         service.shutdown();
 
         verify(syncJobLeaseService).release("apex:sync:lease:CLOSE_BUNDLE", "owner-901");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void losingLeaseCancelsTheCurrentTaskFuture() {
+        Map<Long, AtomicBoolean> cancelFlags = (Map<Long, AtomicBoolean>) ReflectionTestUtils.getField(service, "cancelFlags");
+        Map<Long, Future<?>> runningFutures = (Map<Long, Future<?>>) ReflectionTestUtils.getField(service, "runningFutures");
+        Future<?> future = mock(Future.class);
+        assertNotNull(cancelFlags);
+        assertNotNull(runningFutures);
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        cancelFlags.put(902L, cancelled);
+        runningFutures.put(902L, future);
+
+        ReflectionTestUtils.invokeMethod(service, "cancelSyncJobAfterLeaseLoss", 902L, "租约已失效");
+
+        assertTrue(cancelled.get());
+        verify(future).cancel(true);
     }
 
     @Test

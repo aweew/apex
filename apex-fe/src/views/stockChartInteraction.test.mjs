@@ -18,3 +18,11 @@ test('horizontal chart gestures stay inside the chart while vertical page scroll
   )
   assert.doesNotMatch(stockSource, /touch-action:\s*manipulation;/)
 })
+
+test('intraday polling pauses while the page is hidden and resumes on return', () => {
+  assert.match(stockSource, /if \(!isIntraday\.value \|\| document\.hidden\) return/)
+  assert.match(stockSource, /if \(!document\.hidden && isIntraday\.value && activeTab\.value === 'chart'\)/)
+  assert.match(stockSource, /function onDocumentVisibilityChange\(\)/)
+  assert.match(stockSource, /document\.addEventListener\('visibilitychange', onDocumentVisibilityChange\)/)
+  assert.match(stockSource, /document\.removeEventListener\('visibilitychange', onDocumentVisibilityChange\)/)
+})

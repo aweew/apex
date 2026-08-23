@@ -151,7 +151,6 @@ MYSQL_DATABASE=apex
 MYSQL_USER=apex_app
 MYSQL_PASSWORD=test-password
 REDIS_PASSWORD=test-redis-password
-APEX_LOCAL_PASSWORD=test-login-password
 APEX_JWT_SECRET=0123456789abcdef0123456789abcdef
 EOF
 

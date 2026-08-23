@@ -75,7 +75,6 @@ MYSQL_DOCKER_NETWORK=mysql_default
 MYSQL_USER=apex_app
 MYSQL_PASSWORD=数据库强密码
 REDIS_PASSWORD=Redis强密码
-APEX_LOCAL_PASSWORD=应用登录强密码
 APEX_JWT_SECRET=至少32位随机字符串
 ```
 
@@ -90,6 +89,9 @@ openssl rand -hex 32
 
 如需 AI 摘要，再设置 `APEX_AI_ENABLED=true` 和 `APEX_AI_API_KEY`。真实的
 `.env.production` 已被 Git 忽略，也不会被复制进镜像。
+
+生产默认关闭 Swagger。如需临时开放文档，设置 `APEX_API_DOCS_ENABLED=true`；跨域访问
+需要按实际来源设置 `APEX_CORS_ALLOWED_ORIGIN_PATTERNS`，同源部署无需额外配置。
 
 如需接入 OpenClaw，在同一份配置中增加 `APEX_BOT_ENABLED=true`、
 `APEX_BOT_CLIENT_KEY`、`APEX_BOT_CLIENT_SECRET`、`APEX_BOT_APEX_USER_ID` 和
@@ -193,7 +195,8 @@ curl --fail http://100.71.129.75:8088/apex/api/health
 健康接口返回成功后，浏览器打开：
 
 - 应用：`http://100.71.129.75:8088/`
-- Swagger：`http://100.71.129.75:8088/apex/swagger-ui.html`
+- Swagger：默认关闭；仅在设置 `APEX_API_DOCS_ENABLED=true` 后访问
+  `http://100.71.129.75:8088/apex/swagger-ui.html`
 
 前端和 API 使用同一地址，Nginx 将 `/apex` 转发给后端。浏览器不会访问自身的
 `127.0.0.1:8080`。

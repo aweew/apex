@@ -43,14 +43,6 @@ public class DecisionScheduler {
     }
 
     /**
-     * 16:10 使用更完整的收盘数据再次生成决策。
-     */
-    @Scheduled(cron = "0 10 16 * * MON-FRI", zone = "Asia/Shanghai")
-    public void runClosingSession() {
-        runScheduledDecision(LocalDate.now());
-    }
-
-    /**
      * 收盘数据同步后补算成熟的候选结果
      */
     @Scheduled(cron = "0 30 18 * * MON-FRI", zone = "Asia/Shanghai")

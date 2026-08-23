@@ -91,6 +91,7 @@ let intradayChart = null
 let industryChart = null
 let themeChart = null
 let intradayRefreshTimer = null
+let detailRequestController = null
 
 const showIndustry = ref(false)
 const pfDialog = ref(false)
@@ -680,6 +681,8 @@ function onPortfolioCardClick(row) {
 
 async function loadDetail(id, silent = false) {
   if (!id) {
+    detailRequestController?.abort()
+    detailRequestController = null
     detail.value = null
     rows.value = []
     dailyRows.value = []
@@ -689,12 +692,15 @@ async function loadDetail(id, silent = false) {
     renderIntradayChart()
     return
   }
+  detailRequestController?.abort()
+  const requestController = new AbortController()
+  detailRequestController = requestController
   detailLoading.value = true
   try {
     const [dRes, dayRes, intradayRes] = await Promise.all([
-      portfolioDetail(id),
-      listPortfolioDaily(id, 60),
-      listPortfolioIntraday(id),
+      portfolioDetail(id, { signal: requestController.signal }),
+      listPortfolioDaily(id, 60, { signal: requestController.signal }),
+      listPortfolioIntraday(id, { signal: requestController.signal }),
     ])
     detail.value = dRes?.data || null
     rows.value = detail.value?.holdings || []
@@ -708,9 +714,11 @@ async function loadDetail(id, silent = false) {
     renderDailyChart()
     renderIntradayChart()
   } catch (e) {
-    ElMessage.error(e.message || '加载详情失败')
+    if (e?.code !== 'ERR_CANCELED') {
+      ElMessage.error(e.message || '加载详情失败')
+    }
   } finally {
-    detailLoading.value = false
+    if (detailRequestController === requestController) detailLoading.value = false
   }
 }
 
@@ -1566,6 +1574,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  detailRequestController?.abort()
   window.removeEventListener('resize', onResize)
   window.clearInterval(intradayRefreshTimer)
   clearPortfolioSortInteraction()

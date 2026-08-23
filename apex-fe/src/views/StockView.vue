@@ -370,9 +370,9 @@ async function loadIntraday(silent = false) {
 
 function startIntradayPoll() {
   stopIntradayPoll()
-  if (!isIntraday.value) return
+  if (!isIntraday.value || document.hidden) return
   intradayPollTimer = setInterval(() => {
-    if (isIntraday.value && activeTab.value === 'chart') loadIntraday(true)
+    if (!document.hidden && isIntraday.value && activeTab.value === 'chart') loadIntraday(true)
   }, 60000)
 }
 
@@ -380,6 +380,17 @@ function stopIntradayPoll() {
   if (intradayPollTimer) {
     clearInterval(intradayPollTimer)
     intradayPollTimer = null
+  }
+}
+
+function onDocumentVisibilityChange() {
+  if (document.hidden) {
+    stopIntradayPoll()
+    return
+  }
+  if (isIntraday.value && activeTab.value === 'chart') {
+    loadIntraday(true)
+    startIntradayPoll()
   }
 }
 
@@ -1808,10 +1819,12 @@ onMounted(async () => {
     startIntradayPoll()
   }
   window.addEventListener('resize', onResize)
+  document.addEventListener('visibilitychange', onDocumentVisibilityChange)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  document.removeEventListener('visibilitychange', onDocumentVisibilityChange)
   stopIntradayPoll()
   disposeChart()
 })

@@ -28,7 +28,7 @@ public class SyncTaskRegistry {
                 .name("智能决策")
                 .groupName("决策任务")
                 .description("共享扫描全市场一次，再按用户组合生成交易动作")
-                .defaultParamsHint("工作日 06:50、11:40、15:40、16:10 由系统自动运行")
+                .defaultParamsHint("工作日 06:50、11:40、15:40 运行；收盘同步完成后自动补算")
                 .timeoutSec(1800)
                 .build());
         // 置顶：收盘后日常一键同步（不含全A日线，那类任务太重）

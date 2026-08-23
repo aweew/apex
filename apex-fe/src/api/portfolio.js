@@ -16,8 +16,8 @@ export function removePortfolio(id) {
   return http.delete(`/api/portfolio/${id}`)
 }
 
-export function portfolioDetail(id) {
-  return http.get(`/api/portfolio/${id}/detail`)
+export function portfolioDetail(id, requestConfig = {}) {
+  return http.get(`/api/portfolio/${id}/detail`, requestConfig)
 }
 
 export function savePortfolioHolding(portfolioId, payload) {
@@ -52,12 +52,15 @@ export function snapshotAllPortfolios() {
   return http.post('/api/portfolio/snapshot-all')
 }
 
-export function listPortfolioDaily(portfolioId, days = 60) {
-  return http.get(`/api/portfolio/${portfolioId}/daily`, { params: { days } })
+export function listPortfolioDaily(portfolioId, days = 60, requestConfig = {}) {
+  return http.get(`/api/portfolio/${portfolioId}/daily`, {
+    ...requestConfig,
+    params: { ...requestConfig.params, days },
+  })
 }
 
-export function listPortfolioIntraday(portfolioId) {
-  return http.get(`/api/portfolio/${portfolioId}/intraday`)
+export function listPortfolioIntraday(portfolioId, requestConfig = {}) {
+  return http.get(`/api/portfolio/${portfolioId}/intraday`, requestConfig)
 }
 
 export function refreshPortfolioQuotes(portfolioId, onlyMissing = false) {

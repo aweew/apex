@@ -22,6 +22,9 @@ public class SyncJobLeaseService {
     private static final DefaultRedisScript<Long> RELEASE_SCRIPT = new DefaultRedisScript<>(
             "if redis.call('get', KEYS[1]) == ARGV[1] then "
                     + "return redis.call('del', KEYS[1]) else return 0 end", Long.class);
+    private static final DefaultRedisScript<Long> RENEW_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                    + "return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end", Long.class);
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -61,6 +64,28 @@ public class SyncJobLeaseService {
             stringRedisTemplate.execute(RELEASE_SCRIPT, List.of(leaseKey), owner);
         } catch (Exception ex) {
             log.warn("释放同步任务租约失败，租约键={}，原因={}", leaseKey, ex.getMessage());
+        }
+    }
+
+    /**
+     * 延长当前任务持有的运行租约。
+     *
+     * @param leaseKey 租约键
+     * @param owner 当前任务唯一标识
+     * @param ttl 续期后的最长占用时间
+     * @return true=续期成功，false=租约已不属于当前任务
+     */
+    public boolean renew(String leaseKey, String owner, Duration ttl) {
+        if (StringUtils.isBlank(leaseKey) || StringUtils.isBlank(owner)
+                || Objects.isNull(ttl) || ttl.isZero() || ttl.isNegative()) {
+            throw new BusinessException("同步任务租约续期参数不完整");
+        }
+        try {
+            Long renewed = stringRedisTemplate.execute(RENEW_SCRIPT, List.of(leaseKey), owner, ttl.toMillis());
+            return Long.valueOf(1L).equals(renewed);
+        } catch (Exception ex) {
+            log.warn("同步任务租约续期失败，租约键={}，原因={}", leaseKey, ex.getMessage());
+            throw new BusinessException("同步任务租约续期失败，请检查 Redis", ex);
         }
     }
 }

@@ -18,12 +18,7 @@ public class ApexProperties {
     private String mxOutputDir;
 
     /**
-     * 本地登录用户名
+     * 跨域访问配置
      */
-    private String localUsername = "admin";
-
-    /**
-     * 本地登录密码
-     */
-    private String localPassword = "admin123";
+    private ApexCorsProperties cors = new ApexCorsProperties();
 }

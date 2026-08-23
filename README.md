@@ -68,7 +68,9 @@ sh scripts/deploy-nas.sh --install-command
 deploy-nas.sh --be
 ```
 
-本地登录（可选）：用户 `admin` / 密码 `admin123`（可在 `application.yml` 的 `apex.local-*` 修改）。
+本地登录使用已创建的账户；应用不再内置默认管理员密码。生产环境必须设置
+`APEX_JWT_SECRET`、数据库与 Redis 凭据，并按实际前端域名配置
+`APEX_CORS_ALLOWED_ORIGIN_PATTERNS`。
 
 ## 推荐使用流
 

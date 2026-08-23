@@ -8,6 +8,7 @@ import com.awe.apex.common.convert.LocalDateConverter;
 import com.awe.apex.common.convert.LocalDateTimeConverter;
 import com.awe.apex.common.convert.LocalTimeConverter;
 import com.awe.apex.common.interceptor.UserAssetInterceptor;
+import com.awe.apex.quant.config.ApexProperties;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,6 +33,9 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Resource
     private UserAssetInterceptor userAssetInterceptor;
+
+    @Resource
+    private ApexProperties apexProperties;
 
     private final List<String> defaultPath = CollUtil.newArrayList("/**");
 
@@ -71,8 +75,7 @@ public class WebConfig implements WebMvcConfigurer {
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
-        // 设置访问源地址
-        config.addAllowedOriginPattern("*");
+        config.setAllowedOriginPatterns(apexProperties.getCors().getAllowedOriginPatterns());
         // 设置访问源请求头
         config.addAllowedHeader("*");
         // 设置访问源请求方法
