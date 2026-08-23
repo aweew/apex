@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+const decisionSource = await readFile(new URL('./DecisionView.vue', import.meta.url), 'utf8')
+
+test('decision buys present the action plan and market data status on desktop and mobile', () => {
+  assert.match(decisionSource, /label="行动计划"/)
+  assert.ok((decisionSource.match(/class="decision-action-plan"/g) || []).length >= 2)
+  assert.match(decisionSource, /class="decision-data-status"/)
+  assert.match(decisionSource, /市场数据/)
+})
+
+test('observation-only and red-data buy suggestions cannot open a paper order', () => {
+  assert.match(decisionSource, /from '\.\.\/utils\/decisionActionability\.js'/)
+  assert.match(decisionSource, /function decisionExecutionContext\(\)/)
+  assert.match(decisionSource, /if \(buy && !canExecutePaperBuy\(row\)\)/)
+  assert.match(decisionSource, /:disabled="!canExecutePaperBuy\(row\)"/)
+  assert.match(decisionSource, /orderFromDecision\(/)
+})

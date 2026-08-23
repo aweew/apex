@@ -11,7 +11,7 @@ import {
   fetchDecisionPlaybook,
   fetchDecisionToday,
 } from '../api/decision'
-import { getAccount, orderFromSignal, placeOrder } from '../api/paper'
+import { getAccount, orderFromDecision, placeOrder } from '../api/paper'
 import {
   buildDecisionShareSheet,
   DECISION_SHARE_WIDTH,
@@ -26,6 +26,13 @@ import {
 import { preloadBrandAssets } from '../brand/identity.js'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
+import {
+  buyActionState as getBuyActionState,
+  canPaperBuy as isPaperBuyAllowed,
+  chinaMarketDate,
+  isCurrentLiveDecision,
+  paperBuyBlockedReason as getPaperBuyBlockedReason,
+} from '../utils/decisionActionability.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
 import { useSessionViewState } from '../utils/viewState.js'
@@ -122,6 +129,7 @@ const filteredBuys = computed(() => {
   })
 })
 const briefing = computed(() => data.value?.marketBriefing || null)
+const decisionDataLevel = computed(() => briefing.value?.dataLevel || 'RED')
 const factors = computed(() => briefing.value?.factors || [])
 const tips = computed(() => briefing.value?.tips || [])
 const hotThemes = computed(() => normalizeHotThemes(briefing.value))
@@ -177,6 +185,43 @@ function dataLevelLabel(level) {
   if (level === 'YELLOW') return '预警'
   if (level === 'RED') return '异常'
   return level || '-'
+}
+
+function decisionDataStatus() {
+  if (!isCurrentLiveDecision(decisionExecutionContext())) {
+    return '历史回放或未发布结果仅供复盘，不能按该清单执行'
+  }
+  if (decisionDataLevel.value === 'GREEN') return '数据完整，可按行动计划执行'
+  if (decisionDataLevel.value === 'RED') return '数据异常，买入建议仅供观察'
+  return '数据存在预警，执行前请复核行情和风险边界'
+}
+
+function decisionDataTime() {
+  const value = data.value?.asOfTime || data.value?.dataAsOf
+  if (!value) return '截至时间未提供'
+  return `数据截至 ${String(value).replace('T', ' ').slice(0, 16)}`
+}
+
+function decisionExecutionContext() {
+  return {
+    dataLevel: decisionDataLevel.value,
+    generated: data.value?.generated,
+    runMode: data.value?.runMode,
+    actionDate: data.value?.actionDate,
+    currentDate: chinaMarketDate(),
+  }
+}
+
+function canExecutePaperBuy(row) {
+  return isPaperBuyAllowed(row, decisionExecutionContext())
+}
+
+function buyActionState(row) {
+  return getBuyActionState(row, decisionExecutionContext())
+}
+
+function paperBuyBlockedReason(row) {
+  return getPaperBuyBlockedReason(row, decisionExecutionContext())
 }
 
 function openTheme(theme) {
@@ -459,10 +504,14 @@ function closeShare() {
 async function onPaperOrder(row) {
   if (!row || row.action === 'HOLD') return
   const buy = row.action === 'BUY'
+  if (buy && !canExecutePaperBuy(row)) {
+    ElMessage.warning(paperBuyBlockedReason(row))
+    return
+  }
   try {
     const { value } = await ElMessageBox.prompt(
       buy
-        ? '目标仓位比例(如 0.1=10%)；留空则按信号/建议仓位一键下单'
+        ? '目标仓位比例(如 0.1=10%)；留空则按决策建议仓位一键下单'
         : '卖出数量(股)；留空则按信号全平',
       `${row.code} ${row.action}`,
       {
@@ -473,9 +522,18 @@ async function onPaperOrder(row) {
     ordering.value = true
     const acc = await getAccount()
     const text = String(value ?? '').trim()
-    if (!text && row.signalId) {
-      await orderFromSignal(row.signalId, acc.data.id, buy ? row.suggestedWeight : undefined)
-      ElMessage.success('已按信号一键模拟成交')
+    if (buy) {
+      const targetWeight = Number(text)
+      if (text && !(targetWeight > 0 && targetWeight < 1)) {
+        ElMessage.warning('目标仓位须大于 0 且小于 1')
+        return
+      }
+      await orderFromDecision(
+        row.id,
+        acc.data.id,
+        targetWeight > 0 && targetWeight < 1 ? targetWeight : undefined,
+      )
+      ElMessage.success('已按决策一键模拟成交')
       router.push('/paper')
       return
     }
@@ -808,6 +866,10 @@ onBeforeUnmount(() => {
             <el-checkbox v-model="includeBj" @change="persistBuyFilters">含京市</el-checkbox>
             <span class="muted">显示 {{ filteredBuys.length }} / {{ buys.length }}</span>
           </div>
+          <div v-if="buys.length" class="decision-data-status" :class="`is-${decisionDataLevel.toLowerCase()}`">
+            <span><b>市场数据 {{ dataLevelLabel(decisionDataLevel) }}</b> · {{ decisionDataStatus() }}</span>
+            <span>{{ decisionDataTime() }}</span>
+          </div>
           <div v-if="!buys.length" class="page-empty">
             <h3>暂无买入机会</h3>
             <p>系统会在后台扫描全 A + 热点并写入观察池</p>
@@ -835,15 +897,19 @@ onBeforeUnmount(() => {
             <el-table-column label="评分" width="110">
               <template #default="{ row }"><ScoreBar :score="row.score" /></template>
             </el-table-column>
-            <el-table-column label="门禁" width="82">
+            <el-table-column label="行动计划" min-width="205">
               <template #default="{ row }">
-                <el-tag v-if="row.entryGatePassed === true" size="small" type="success" effect="plain">通过</el-tag>
-                <el-tag v-else-if="row.entryGatePassed === false" size="small" type="warning" effect="plain">观察</el-tag>
-                <span v-else class="muted">-</span>
+                <div class="decision-action-plan">
+                  <b :class="{ 'is-observe': !canExecutePaperBuy(row) }">
+                    {{ buyActionState(row) }}
+                  </b>
+                  <span>仓位 {{ fmtPct(row.suggestedWeight) }} · 参考 {{ fmtPrice(row.referencePrice) }}</span>
+                  <span v-if="row.stopLossPrice || row.takeProfitPrice">
+                    止损 {{ fmtPrice(row.stopLossPrice) }} · 止盈 {{ fmtPrice(row.takeProfitPrice) }}
+                  </span>
+                  <span v-else-if="row.exitRule">失效 {{ row.exitRule }}</span>
+                </div>
               </template>
-            </el-table-column>
-            <el-table-column label="仓位" width="72">
-              <template #default="{ row }">{{ fmtPct(row.suggestedWeight) }}</template>
             </el-table-column>
             <el-table-column width="100">
               <template #header><TermTip term="confluence">共振</TermTip></template>
@@ -937,7 +1003,20 @@ onBeforeUnmount(() => {
             />
             <el-table-column label="操作" width="140" fixed="right">
               <template #default="{ row }">
-                <el-button type="primary" link :loading="ordering" @click="onPaperOrder(row)">模拟买</el-button>
+                <el-tooltip
+                  :content="canExecutePaperBuy(row) ? '按行动计划模拟买入' : paperBuyBlockedReason(row)"
+                  placement="top"
+                >
+                  <span class="decision-order-trigger">
+                    <el-button
+                      type="primary"
+                      link
+                      :loading="ordering"
+                      :disabled="!canExecutePaperBuy(row)"
+                      @click="onPaperOrder(row)"
+                    >{{ canExecutePaperBuy(row) ? '模拟买' : '仅观察' }}</el-button>
+                  </span>
+                </el-tooltip>
                 <el-button
                   link
                   type="warning"
@@ -966,7 +1045,6 @@ onBeforeUnmount(() => {
               </div>
               <div class="decision-mobile-meta">
                 <span>{{ strategyName(row.strategyId) }}</span>
-                <span>仓位 {{ fmtPct(row.suggestedWeight) }}</span>
                 <span v-if="row.strategies?.length">共振 {{ row.strategies.join('+') }}</span>
                 <el-tag
                   v-if="row.entryGatePassed !== null && row.entryGatePassed !== undefined"
@@ -974,6 +1052,16 @@ onBeforeUnmount(() => {
                   :type="row.entryGatePassed ? 'success' : 'warning'"
                   effect="plain"
                 >{{ row.entryGatePassed ? '通过' : '观察' }}</el-tag>
+              </div>
+              <div class="decision-action-plan">
+                <b :class="{ 'is-observe': !canExecutePaperBuy(row) }">
+                  {{ buyActionState(row) }}
+                </b>
+                <span>建议仓位 {{ fmtPct(row.suggestedWeight) }} · 参考 {{ fmtPrice(row.referencePrice) }}</span>
+                <span v-if="row.stopLossPrice || row.takeProfitPrice">
+                  止损 {{ fmtPrice(row.stopLossPrice) }} · 止盈 {{ fmtPrice(row.takeProfitPrice) }}
+                </span>
+                <span v-else-if="row.exitRule">失效 {{ row.exitRule }}</span>
               </div>
               <div
                 v-if="row.mainlineMatch || row.valuationLabel || row.linkHint || row.riskFlags?.length"
@@ -1031,7 +1119,20 @@ onBeforeUnmount(() => {
                 <p v-if="row.scoreExplain"><strong>评分</strong>{{ row.scoreExplain }}</p>
               </details>
               <div class="decision-mobile-actions">
-                <el-button type="primary" plain :loading="ordering" @click="onPaperOrder(row)">模拟买</el-button>
+                <el-tooltip
+                  :content="canExecutePaperBuy(row) ? '按行动计划模拟买入' : paperBuyBlockedReason(row)"
+                  placement="top"
+                >
+                  <span class="decision-order-trigger">
+                    <el-button
+                      type="primary"
+                      plain
+                      :loading="ordering"
+                      :disabled="!canExecutePaperBuy(row)"
+                      @click="onPaperOrder(row)"
+                    >{{ canExecutePaperBuy(row) ? '模拟买' : '仅观察' }}</el-button>
+                  </span>
+                </el-tooltip>
                 <el-button
                   type="warning"
                   plain
@@ -1966,6 +2067,56 @@ onBeforeUnmount(() => {
   margin-right: 4px;
 }
 
+.decision-data-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 14px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid #d29a1d;
+  background: rgba(210, 154, 29, 0.08);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.decision-data-status b {
+  color: var(--ink);
+}
+
+.decision-data-status.is-green {
+  border-left-color: var(--up);
+  background: rgba(22, 142, 92, 0.08);
+}
+
+.decision-data-status.is-red {
+  border-left-color: var(--down);
+  background: rgba(214, 69, 69, 0.08);
+}
+
+.decision-action-plan {
+  display: grid;
+  gap: 3px;
+  min-width: 170px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.decision-action-plan b {
+  color: var(--up);
+  font-size: 12px;
+}
+
+.decision-action-plan b.is-observe {
+  color: #a87113;
+}
+
+.decision-order-trigger {
+  display: inline-flex;
+}
+
 .stock-insight {
   display: grid;
   gap: 6px;
@@ -2506,6 +2657,13 @@ onBeforeUnmount(() => {
     font-variant-numeric: tabular-nums;
   }
 
+  .decision-mobile-item .decision-action-plan {
+    margin-top: 8px;
+    padding: 8px 0 0 9px;
+    border-top: 1px solid var(--line);
+    border-left: 2px solid rgba(0, 113, 227, 0.22);
+  }
+
   .decision-mobile-flags {
     gap: 5px;
   }
@@ -2586,6 +2744,14 @@ onBeforeUnmount(() => {
     width: 100%;
     min-height: 44px;
     margin: 0;
+  }
+
+  .decision-mobile-actions .decision-order-trigger {
+    width: 100%;
+  }
+
+  .decision-mobile-actions .decision-order-trigger :deep(.el-button) {
+    width: 100%;
   }
 
   .decision-mobile-facts {

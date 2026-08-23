@@ -113,6 +113,16 @@ public interface IPaperService {
     PaperOrder orderFromSignal(Long signalId, Long accountId, BigDecimal targetWeight);
 
     /**
+     * 按当日正式决策创建模拟买入单
+     *
+     * @param decisionActionId 决策动作ID
+     * @param accountId        账户，可空
+     * @param targetWeight     买入目标仓位，可空
+     * @return 订单
+     */
+    PaperOrder orderFromDecision(Long decisionActionId, Long accountId, BigDecimal targetWeight);
+
+    /**
      * 刷新持仓市价与浮盈
      *
      * @param accountId 账户

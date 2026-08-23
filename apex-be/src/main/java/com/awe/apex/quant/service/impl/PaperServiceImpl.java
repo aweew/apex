@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.context.ApexUserContext;
+import com.awe.apex.quant.decision.DecisionDataReadiness;
 import com.awe.apex.quant.domain.dto.AtrStopItem;
 import com.awe.apex.quant.domain.dto.AtrStopResp;
 import com.awe.apex.quant.domain.dto.BetaTargetResp;
@@ -44,6 +45,8 @@ import com.awe.apex.quant.domain.dto.WeekdayPnlItem;
 import com.awe.apex.quant.domain.dto.WeekdayPnlResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.ApexUserProfile;
+import com.awe.apex.quant.domain.entity.DailyAction;
+import com.awe.apex.quant.domain.entity.DecisionRun;
 import com.awe.apex.quant.domain.entity.PaperAccount;
 import com.awe.apex.quant.domain.entity.PaperOrder;
 import com.awe.apex.quant.domain.entity.PaperPosition;
@@ -53,6 +56,8 @@ import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.domain.entity.Watchlist;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.ApexUserProfileMapper;
+import com.awe.apex.quant.mapper.DailyActionMapper;
+import com.awe.apex.quant.mapper.DecisionRunMapper;
 import com.awe.apex.quant.mapper.PaperAccountMapper;
 import com.awe.apex.quant.mapper.PaperOrderMapper;
 import com.awe.apex.quant.mapper.PaperPositionMapper;
@@ -77,6 +82,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -97,6 +103,7 @@ import java.util.Set;
 public class PaperServiceImpl implements IPaperService {
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
 
     @Resource
     private PaperAccountMapper paperAccountMapper;
@@ -130,6 +137,12 @@ public class PaperServiceImpl implements IPaperService {
 
     @Resource
     private StrategySignalMapper strategySignalMapper;
+
+    @Resource
+    private DailyActionMapper dailyActionMapper;
+
+    @Resource
+    private DecisionRunMapper decisionRunMapper;
 
     @Resource
     private IJournalService journalService;
@@ -839,6 +852,84 @@ public class PaperServiceImpl implements IPaperService {
         }
         PaperOrder order = placeOrder(req);
         order.setReason("信号#" + signalId + " " + signal.getStrategyId() + " " + side
+                + (StringUtils.isNotBlank(order.getReason()) ? " · " + order.getReason() : ""));
+        order.setUpdateTime(LocalDateTime.now());
+        paperOrderMapper.updateById(order);
+        return order;
+    }
+
+    /**
+     * 按当日正式决策创建模拟买入单
+     *
+     * @param decisionActionId 决策动作ID
+     * @param accountId        账户，可空
+     * @param targetWeight     买入目标仓位，可空
+     * @return 订单
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PaperOrder orderFromDecision(Long decisionActionId, Long accountId, BigDecimal targetWeight) {
+        if (Objects.isNull(decisionActionId)) {
+            throw new BusinessException("决策动作不能为空");
+        }
+
+        // 1. 仅接受当前用户在当日决策清单中的买入动作，排除历史复盘数据。
+        Long currentUserId = currentUserId();
+        DailyAction action = dailyActionMapper.selectOne(Wrappers.<DailyAction>lambdaQuery()
+                .eq(DailyAction::getId, decisionActionId)
+                .eq(DailyAction::getUserId, currentUserId)
+                .last("LIMIT 1"));
+        if (Objects.isNull(action)) {
+            throw new BusinessException("决策动作不存在或无权限");
+        }
+        LocalDate marketDate = LocalDate.now(SHANGHAI_ZONE);
+        if (!marketDate.equals(action.getActionDate())) {
+            throw new BusinessException("仅支持当日 LIVE 决策模拟买入");
+        }
+        if (!"BUY".equalsIgnoreCase(action.getAction())) {
+            throw new BusinessException("当前决策动作不是买入");
+        }
+        if (!Integer.valueOf(1).equals(action.getExecutableHint())) {
+            throw new BusinessException("该决策未通过风控门禁，仅供观察");
+        }
+        if (Objects.isNull(action.getRunId())) {
+            throw new BusinessException("决策运行信息缺失，仅供观察");
+        }
+
+        // 2. 重新确认运行已正式发布且市场数据可用，不能信任页面传参。
+        DecisionRun run = decisionRunMapper.selectOne(Wrappers.<DecisionRun>lambdaQuery()
+                .eq(DecisionRun::getId, action.getRunId())
+                .eq(DecisionRun::getUserId, currentUserId)
+                .eq(DecisionRun::getActionDate, marketDate)
+                .last("LIMIT 1"));
+        if (Objects.isNull(run) || !"LIVE".equalsIgnoreCase(run.getMode())) {
+            throw new BusinessException("当前决策不是可执行的 LIVE 运行");
+        }
+        if (!"SUCCESS".equalsIgnoreCase(run.getStatus()) || !Integer.valueOf(1).equals(run.getPublished())) {
+            throw new BusinessException("当前决策尚未正式发布，仅供观察");
+        }
+        if (!DecisionDataReadiness.canPublish(run.getDataLevel())) {
+            throw new BusinessException("市场数据未就绪，暂不允许按决策模拟买入");
+        }
+        if (Objects.nonNull(targetWeight)
+                && (targetWeight.signum() <= 0 || targetWeight.compareTo(BigDecimal.ONE) >= 0)) {
+            throw new BusinessException("目标仓位必须大于 0 且小于 1");
+        }
+
+        // 3. 沿用模拟盘风控和收盘价撮合，并以决策建议仓位作为默认值。
+        Long ownedAccountId = requireOwnedAccount(accountId).getId();
+        BigDecimal resolvedWeight = Objects.nonNull(targetWeight) ? targetWeight : action.getSuggestedWeight();
+        PositionSuggestResp suggest = suggestPosition(ownedAccountId, action.getCode(), resolvedWeight);
+        if (Objects.isNull(suggest.getSuggestedQuantity()) || suggest.getSuggestedQuantity() <= 0) {
+            throw new BusinessException("建议买入数量为 0，请检查资金/风控");
+        }
+        PaperOrderReq req = new PaperOrderReq();
+        req.setAccountId(ownedAccountId);
+        req.setCode(action.getCode());
+        req.setSide("BUY");
+        req.setQuantity(suggest.getSuggestedQuantity());
+        PaperOrder order = placeOrder(req);
+        order.setReason("决策#" + action.getId() + " 运行#" + run.getRunNo() + " BUY"
                 + (StringUtils.isNotBlank(order.getReason()) ? " · " + order.getReason() : ""));
         order.setUpdateTime(LocalDateTime.now());
         paperOrderMapper.updateById(order);

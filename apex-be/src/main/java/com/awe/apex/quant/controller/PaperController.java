@@ -122,6 +122,16 @@ public class PaperController {
     }
 
     /**
+     * 决策转模拟买入单
+     */
+    @PostMapping("/from-decision")
+    public Result<PaperOrder> fromDecision(@RequestParam Long decisionActionId,
+                                           @RequestParam(required = false) Long accountId,
+                                           @RequestParam(required = false) BigDecimal targetWeight) {
+        return Result.success(paperService.orderFromDecision(decisionActionId, accountId, targetWeight));
+    }
+
+    /**
      * 刷新持仓市价与浮盈
      */
     @PostMapping("/refresh-marks")

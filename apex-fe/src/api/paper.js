@@ -34,6 +34,12 @@ export function orderFromSignal(signalId, accountId, targetWeight) {
   })
 }
 
+export function orderFromDecision(decisionActionId, accountId, targetWeight) {
+  return http.post('/api/paper/from-decision', null, {
+    params: { decisionActionId, accountId, targetWeight },
+  })
+}
+
 export function refreshMarks(accountId) {
   return http.post('/api/paper/refresh-marks', null, { params: { accountId } })
 }
