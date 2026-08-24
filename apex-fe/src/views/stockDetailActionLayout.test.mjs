@@ -15,6 +15,7 @@ test('stock detail keeps only the compact high-value action toolbar', () => {
 
   assert.match(actions, /class="stock-action-toolbar"/)
   assert.match(actions, /class="stock-icon-action sync-action"[\s\S]*?aria-label="syncButtonLabel"/)
+  assert.doesNotMatch(actions, /class="stock-icon-action sync-action"[\s\S]*?type="primary"/)
   assert.match(actions, /class="stock-icon-action observe-action"[\s\S]*?aria-label="加入观察池"/)
   assert.match(actions, /历史回测/)
   assert.match(actions, /模拟买/)
@@ -36,6 +37,8 @@ test('stock sync exposes independent progress without resizing the primary actio
   assert.match(source, /const syncButtonLabel = computed/)
   assert.match(source, /if \(!code\.value \|\| syncingBars\.value\) return/)
   assert.match(source, /\.sync-progress,[\s\S]*?\.sync-result\s*\{[^}]*min-height:\s*15px;/)
+  assert.match(source, /\.stock-action-toolbar :deep\(\.sync-action\)\s*\{[\s\S]*?background:\s*#fff;/)
+  assert.match(source, /:deep\(\.sync-action:hover:not\(:disabled\)\)\s*\{[\s\S]*?background:\s*rgba\(0, 113, 227, 0\.06\);/)
 })
 
 test('stock detail only shows actionable daily-bar status notes', () => {

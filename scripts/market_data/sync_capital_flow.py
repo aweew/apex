@@ -8,7 +8,8 @@ import math
 import os
 import re
 import sys
-from datetime import date, datetime
+import time as time_module
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -25,6 +26,8 @@ except ImportError:  # pragma: no cover
 ROOT = Path(__file__).resolve().parent
 YUAN_PER_YI = Decimal("100000000")
 MONEY_PRECISION = Decimal("0.01")
+SOURCE_REQUEST_ATTEMPTS = 3
+DRAGON_TIGER_PUBLISH_TIME = time(17, 30)
 
 
 def load_env() -> None:
@@ -237,6 +240,31 @@ def recent_trade_date(today: Optional[date] = None) -> date:
     return resolve_trade_date(today)
 
 
+def resolve_dragon_tiger_trade_date(now: Optional[datetime] = None) -> date:
+    """返回已发布龙虎榜对应的最近交易日。"""
+    current_time = now or datetime.now()
+    if current_time.time() < DRAGON_TIGER_PUBLISH_TIME:
+        return recent_trade_date(current_time.date() - timedelta(days=1))
+    return recent_trade_date(current_time.date())
+
+
+def fetch_with_retry(fetch_action, source_name: str):
+    """重试可恢复的行情源网络异常。"""
+    for attempt in range(1, SOURCE_REQUEST_ATTEMPTS + 1):
+        try:
+            return fetch_action()
+        except (ConnectionError, TimeoutError, OSError) as ex:
+            if attempt == SOURCE_REQUEST_ATTEMPTS:
+                raise
+            print(f"{source_name} 请求失败，第 {attempt} 次重试：{ex}", file=sys.stderr)
+            time_module.sleep(attempt)
+
+
+def is_empty_dragon_tiger_response(ex: Exception) -> bool:
+    """识别东财未发布榜单时 AkShare 的空响应异常。"""
+    return isinstance(ex, TypeError) and str(ex) == "'NoneType' object is not subscriptable"
+
+
 def _upsert_northbound(conn: Any, rows: Iterable[Dict[str, Any]], synced_at: datetime) -> None:
     sql = """
         INSERT INTO northbound_flow
@@ -340,7 +368,10 @@ def sync_stock_fund_flow(
 ) -> int:
     """同步当日个股资金流排名，空结果不修改数据库。"""
     try:
-        frame = akshare_client.stock_individual_fund_flow_rank(indicator="今日")
+        frame = fetch_with_retry(
+            lambda: akshare_client.stock_individual_fund_flow_rank(indicator="今日"),
+            "个股资金流",
+        )
         rows = parse_stock_fund_flow_rows(frame, trade_date or recent_trade_date())
         if not rows:
             print("个股资金流结果为空，保留旧快照")
@@ -359,10 +390,19 @@ def sync_dragon_tiger(
     trade_date: Optional[date] = None,
 ) -> int:
     """同步指定交易日龙虎榜，空结果不修改数据库。"""
-    target_date = trade_date or recent_trade_date()
+    target_date = trade_date or resolve_dragon_tiger_trade_date()
     date_text = target_date.strftime("%Y%m%d")
     try:
-        frame = akshare_client.stock_lhb_detail_em(start_date=date_text, end_date=date_text)
+        frame = fetch_with_retry(
+            lambda: akshare_client.stock_lhb_detail_em(start_date=date_text, end_date=date_text),
+            "龙虎榜",
+        )
+    except Exception as ex:
+        if is_empty_dragon_tiger_response(ex):
+            print(f"龙虎榜 {target_date} 尚未发布，保留旧快照")
+            return 0
+        raise
+    try:
         rows = parse_dragon_tiger_rows(frame, target_date)
         if not rows:
             print(f"龙虎榜 {target_date} 结果为空，保留旧快照")

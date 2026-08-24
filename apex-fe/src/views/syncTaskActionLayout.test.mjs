@@ -37,6 +37,14 @@ test('sync task cards separate last execution from data health and keep controls
     syncSource,
     /\.task-health\s*\{[\s\S]*?min-height:\s*20px;[\s\S]*?margin-top:\s*auto;/,
   )
+  assert.match(
+    syncSource,
+    /\.health-label\s*\{[\s\S]*?flex-shrink:\s*0;[\s\S]*?white-space:\s*nowrap;/,
+  )
+  assert.match(
+    syncSource,
+    /\.health-time\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;/,
+  )
 })
 
 test('recent sync start times keep date and time on stable separate lines', () => {

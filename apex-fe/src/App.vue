@@ -630,9 +630,9 @@ onBeforeUnmount(() => {
           <i class="dot" />
           {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
         </span>
-        <button type="button" class="search-btn" title="打开命令中心 Ctrl+K" @click="openSearch">
+        <button type="button" class="search-btn" title="打开快捷入口 Ctrl+K" @click="openSearch">
           <Search aria-hidden="true" />
-          <span>命令中心</span>
+          <span>快捷入口</span>
         </button>
         <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
           <Reading aria-hidden="true" />
@@ -670,7 +670,7 @@ onBeforeUnmount(() => {
       class="search-layer"
       @click.self="closeSearch"
     >
-      <div class="search-panel" role="dialog" aria-label="命令中心" aria-modal="true">
+      <div class="search-panel" role="dialog" aria-label="快捷入口" aria-modal="true">
         <div class="search-head">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="7" />
@@ -750,9 +750,9 @@ onBeforeUnmount(() => {
                 </li>
               </ul>
             </section>
-            <div class="search-keys">上下键选择 · Enter 打开 · Ctrl+/ 名词百科</div>
           </template>
         </div>
+        <footer class="search-keys" aria-label="快捷键提示">上下键选择 · Enter 打开 · Ctrl+/ 名词百科</footer>
       </div>
     </div>
 
@@ -1205,9 +1205,9 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: center;
   padding: 14vh 16px 0;
-  background: rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(6px) saturate(110%);
+  -webkit-backdrop-filter: blur(6px) saturate(110%);
 }
 
 .search-panel {
@@ -1215,11 +1215,9 @@ onBeforeUnmount(() => {
   max-height: min(520px, 70vh);
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
   overflow: hidden;
 }
@@ -1265,8 +1263,9 @@ onBeforeUnmount(() => {
 }
 
 .search-body {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
-  min-height: 120px;
 }
 
 .command-section {
@@ -1294,9 +1293,13 @@ onBeforeUnmount(() => {
 }
 
 .search-keys {
-  margin-top: 10px;
+  flex: 0 0 auto;
+  padding: 10px 16px 12px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  background: #fff;
   font-size: 11px;
   color: var(--slate);
+  line-height: 1.4;
   letter-spacing: 0.01em;
 }
 

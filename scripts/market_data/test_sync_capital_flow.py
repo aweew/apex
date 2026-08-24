@@ -2,7 +2,7 @@ import sys
 import types
 import unittest
 from contextlib import redirect_stdout
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from io import StringIO
 from unittest.mock import patch
@@ -171,6 +171,16 @@ class SyncCapitalFlowTransactionTest(unittest.TestCase):
             sync_capital_flow.recent_trade_date(date(2026, 10, 2)),
         )
 
+    def test_dragon_tiger_uses_previous_trade_date_before_publish_time(self):
+        self.assertEqual(
+            date(2026, 8, 21),
+            sync_capital_flow.resolve_dragon_tiger_trade_date(datetime(2026, 8, 24, 12, 19)),
+        )
+        self.assertEqual(
+            date(2026, 8, 24),
+            sync_capital_flow.resolve_dragon_tiger_trade_date(datetime(2026, 8, 24, 17, 30)),
+        )
+
     def test_empty_source_does_not_write_or_commit(self):
         connection = FakeConnection()
         akshare_client = FakeAkshare(northbound=FakeFrame([]))
@@ -261,6 +271,55 @@ class SyncCapitalFlowTransactionTest(unittest.TestCase):
 
         self.assertEqual(1, row_count)
         self.assertEqual(1, connection.commit_count)
+        self.assertEqual(0, connection.rollback_count)
+
+    def test_stock_fund_flow_retries_connection_error(self):
+        frame = FakeFrame([{
+            "股票代码": "600519",
+            "股票简称": "贵州茅台",
+        }])
+        connection = FakeConnection()
+
+        class RetryAkshare:
+
+            def __init__(self):
+                self.call_count = 0
+
+            def stock_individual_fund_flow_rank(self, **kwargs):
+                self.call_count += 1
+                if self.call_count < 3:
+                    raise ConnectionError("Remote end closed connection")
+                return frame
+
+        akshare_client = RetryAkshare()
+        with patch.object(sync_capital_flow.time_module, "sleep") as sleep:
+            row_count = sync_capital_flow.sync_stock_fund_flow(
+                connection,
+                akshare_client,
+                trade_date=date(2026, 8, 24),
+            )
+
+        self.assertEqual(1, row_count)
+        self.assertEqual(3, akshare_client.call_count)
+        self.assertEqual(2, sleep.call_count)
+        self.assertEqual(1, connection.commit_count)
+
+    def test_dragon_tiger_empty_akshare_response_preserves_old_snapshot(self):
+        connection = FakeConnection()
+
+        class EmptyAkshare:
+
+            def stock_lhb_detail_em(self, **kwargs):
+                raise TypeError("'NoneType' object is not subscriptable")
+
+        row_count = sync_capital_flow.sync_dragon_tiger(
+            connection,
+            EmptyAkshare(),
+            trade_date=date(2026, 8, 24),
+        )
+
+        self.assertEqual(0, row_count)
+        self.assertEqual(0, connection.commit_count)
         self.assertEqual(0, connection.rollback_count)
 
     def test_all_mode_continues_after_one_dataset_fails(self):

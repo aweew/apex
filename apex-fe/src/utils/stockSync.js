@@ -71,14 +71,19 @@ export async function synchronizeStockData(options) {
  */
 export function stockSyncSummary(result) {
   const barCount = Number(result?.bars?.value?.barCount)
-  const barText = result?.bars?.ok
+  const barSyncing = result?.bars?.ok
+    && Array.isArray(result?.bars?.value?.details)
+    && result.bars.value.details.some((item) => /\bSYNCING\b/.test(String(item)))
+  const barText = barSyncing
+    ? '日线同步中'
+    : result?.bars?.ok
     ? `日线 ${Number.isFinite(barCount) ? barCount : 0} 根`
     : '日线失败'
   const quoteText = result?.quote?.ok ? '行情已更新' : '行情失败'
   const detailText = result?.detail?.ok ? '' : '，页面刷新失败'
   const successCount = Number(result?.bars?.ok) + Number(result?.quote?.ok)
 
-  if (successCount === 2 && result?.detail?.ok) {
+  if (successCount === 2 && result?.detail?.ok && !barSyncing) {
     return { type: 'success', text: `${barText} · ${quoteText}` }
   }
   if (successCount === 0) {

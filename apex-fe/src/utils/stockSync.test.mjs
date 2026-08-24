@@ -72,6 +72,22 @@ test('stock detail treats a fulfilled bar response with failCount as a failure',
   })
 })
 
+test('stock detail shows that an existing bar sync is still running', async () => {
+  const result = await synchronizeStockData({
+    code: '605358',
+    syncBars: async () => ({
+      data: { successCount: 1, failCount: 0, barCount: 0, details: ['605358 SYNCING'] },
+    }),
+    syncQuote: async () => ({ data: { latestPrice: 49.62 } }),
+    fetchDetail: async () => ({ data: { basic: { code: '605358' } } }),
+  })
+
+  assert.deepEqual(stockSyncSummary(result), {
+    type: 'warning',
+    text: '日线同步中 · 行情已更新',
+  })
+})
+
 test('stock detail reports request timeouts in Chinese and still refreshes local data', async () => {
   const timeoutError = Object.assign(new Error('timeout of 210000ms exceeded'), { code: 'ECONNABORTED' })
   const result = await synchronizeStockData({

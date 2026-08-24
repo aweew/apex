@@ -28,6 +28,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -99,6 +104,75 @@ class BarDailyServiceImplTest {
         assertTrue(maxActiveTasks.get() <= 2);
         assertEquals(3, response.getSuccessCount());
         assertEquals(3, response.getDetails().size());
+    }
+
+    @Test
+    void syncBarsShouldOnlyRequestRecentTailWhenBarsAlreadyExist() {
+        BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
+        DailyBarClient dailyBarClient = mock(DailyBarClient.class);
+        BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
+        BarDaily latestBar = new BarDaily();
+        latestBar.setTradeDate(LocalDate.of(2026, 8, 21));
+        when(barDailyMapper.selectOne(any())).thenReturn(latestBar);
+        when(dailyBarClient.fetchDailyBars(anyString(), anyString(), anyString())).thenReturn(List.of());
+        when(stockBasicMapper.selectOne(any())).thenReturn(null);
+        ReflectionTestUtils.setField(barDailyService, "baseMapper", barDailyMapper);
+        ReflectionTestUtils.setField(barDailyService, "dailyBarClient", dailyBarClient);
+        ReflectionTestUtils.setField(barDailyService, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(barDailyService, "dataSyncLogMapper", dataSyncLogMapper);
+        ReflectionTestUtils.setField(barDailyService, "syncTimeoutSeconds", 5);
+        BarSyncReq request = new BarSyncReq();
+        request.setCodes(List.of("688455"));
+        request.setEndDate("20260824");
+
+        barDailyService.syncBars(request);
+
+        ArgumentCaptor<String> beginDateCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> endDateCaptor = ArgumentCaptor.forClass(String.class);
+        verify(dailyBarClient).fetchDailyBars(eq("688455"), beginDateCaptor.capture(), endDateCaptor.capture());
+        assertEquals("2026-08-14", beginDateCaptor.getValue());
+        assertEquals("2026-08-24", endDateCaptor.getValue());
+    }
+
+    @Test
+    void syncBarsShouldSkipDuplicateWriteForCodeAlreadySyncing() throws Exception {
+        BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
+        DailyBarClient dailyBarClient = mock(DailyBarClient.class);
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
+        CountDownLatch firstRequestStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstRequest = new CountDownLatch(1);
+        when(dailyBarClient.fetchDailyBars(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+            firstRequestStarted.countDown();
+            releaseFirstRequest.await(2, TimeUnit.SECONDS);
+            return List.of();
+        });
+        when(stockBasicMapper.selectOne(any())).thenReturn(null);
+        ReflectionTestUtils.setField(barDailyService, "dailyBarClient", dailyBarClient);
+        ReflectionTestUtils.setField(barDailyService, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(barDailyService, "dataSyncLogMapper", dataSyncLogMapper);
+        ReflectionTestUtils.setField(barDailyService, "syncTimeoutSeconds", 5);
+        BarSyncReq request = new BarSyncReq();
+        request.setCodes(List.of("688455"));
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        try {
+            Future<BarSyncResp> firstResponse = executorService.submit(() -> barDailyService.syncBars(request));
+            assertTrue(firstRequestStarted.await(2, TimeUnit.SECONDS));
+
+            BarSyncResp duplicateResponse = barDailyService.syncBars(request);
+
+            assertEquals(1, duplicateResponse.getSuccessCount());
+            assertEquals(0, duplicateResponse.getBarCount());
+            assertEquals(List.of("688455 SYNCING"), duplicateResponse.getDetails());
+            verify(dailyBarClient, times(1)).fetchDailyBars(anyString(), anyString(), anyString());
+            releaseFirstRequest.countDown();
+            firstResponse.get(2, TimeUnit.SECONDS);
+        } finally {
+            releaseFirstRequest.countDown();
+            executorService.shutdownNow();
+        }
     }
 
     @Test

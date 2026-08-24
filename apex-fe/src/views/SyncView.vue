@@ -427,8 +427,13 @@ onUnmounted(stopPoll)
               <p class="hint">{{ task.defaultParamsHint }}</p>
               <div class="task-health">
                 <span class="health-dot" :class="healthClass(task.healthLevel)" />
-                <span :class="healthClass(task.healthLevel)">{{ healthLabel(task.healthLevel) }}</span>
-                <span class="health-time">最近完整成功 {{ fmtTime(task.lastSuccessAt) }}</span>
+                <span class="health-label" :class="healthClass(task.healthLevel)">{{ healthLabel(task.healthLevel) }}</span>
+                <span
+                  class="health-time"
+                  :title="`最近完整成功 ${fmtTime(task.lastSuccessAt)}`"
+                >
+                  最近完整成功 {{ fmtTime(task.lastSuccessAt) }}
+                </span>
               </div>
               <div class="task-actions">
                 <el-button
@@ -712,9 +717,17 @@ span.health-unknown {
   color: var(--muted);
 }
 
+.health-label {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .health-time {
+  min-width: 0;
   color: var(--muted);
   margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }

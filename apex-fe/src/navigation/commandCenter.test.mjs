@@ -8,7 +8,7 @@ test('command center searches routes and stocks from the same overlay', () => {
   assert.match(appSource, /const commandResults = computed/)
   assert.match(appSource, /const filteredRouteCommands = computed/)
   assert.match(appSource, /goCommand\(item\)/)
-  assert.match(appSource, /命令中心/)
+  assert.match(appSource, /快捷入口/)
   assert.match(appSource, /页面与操作/)
   assert.match(appSource, /股票/)
 })
@@ -19,6 +19,26 @@ test('command center supports keyboard selection instead of only opening the fir
   assert.match(appSource, /@keydown\.up\.prevent="moveCommandSelection\(-1\)"/)
   assert.match(appSource, /@keydown\.enter\.prevent="runSelectedCommand"/)
   assert.match(appSource, /:aria-selected="index === commandSelection"/)
+})
+
+test('command center keeps shortcut hints visible outside its scrollable result area', () => {
+  assert.match(
+    appSource,
+    /<\/div>\s*<footer class="search-keys" aria-label="快捷键提示">上下键选择 · Enter 打开 · Ctrl\+\/ 名词百科<\/footer>/,
+  )
+  assert.match(
+    appSource,
+    /\.search-body\s*\{[\s\S]*?flex:\s*1;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
+  )
+  assert.match(
+    appSource,
+    /\.search-keys\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?border-top:/,
+  )
+})
+
+test('command center uses an opaque surface and a legible modal overlay', () => {
+  assert.match(appSource, /\.search-layer\s*\{[\s\S]*?background:\s*rgba\(15, 23, 42, 0\.42\);/)
+  assert.match(appSource, /\.search-panel\s*\{[\s\S]*?background:\s*#fff;/)
 })
 
 test('navigation renders the current page data freshness instead of only service health', () => {

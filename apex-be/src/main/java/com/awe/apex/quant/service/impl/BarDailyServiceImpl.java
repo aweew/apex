@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,6 +54,10 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     /** 降低并发，减轻行情源限流 */
     private static final int MAX_PARALLEL = 2;
     private static final int MAX_SYNC_CODES = 80;
+    private static final int INITIAL_SYNC_LOOKBACK_DAYS = 400;
+    private static final int RECENT_SYNC_OVERLAP_DAYS = 7;
+
+    private final Set<String> syncingCodes = ConcurrentHashMap.newKeySet();
 
     @Value("${apex.bar-sync.timeout-seconds:180}")
     private int syncTimeoutSeconds;
@@ -270,11 +276,12 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     }
 
     private BarSyncResp doSync(List<String> codes, String beginDateRaw, String endDateRaw, String scopeDesc) {
-        LocalDate end = LocalDate.now();
-        // 约 400 自然日 ≈ 260+ 交易日，满足均线/信号回看
-        LocalDate begin = end.minusDays(400);
-        String beginDate = StringUtils.isNotBlank(beginDateRaw) ? beginDateRaw : begin.toString();
-        String endDate = StringUtils.isNotBlank(endDateRaw) ? endDateRaw : end.toString();
+        LocalDate end = StringUtils.isNotBlank(endDateRaw)
+                ? LocalDate.parse(endDateRaw, endDateRaw.contains("-")
+                        ? DateTimeFormatter.ISO_LOCAL_DATE : DateTimeFormatter.BASIC_ISO_DATE)
+                : LocalDate.now();
+        String beginDate = StringUtils.isNotBlank(beginDateRaw) ? beginDateRaw : "auto";
+        String endDate = end.toString();
         LocalDateTime fetchedAt = LocalDateTime.now();
 
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(MAX_PARALLEL, codes.size()));
@@ -297,7 +304,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 long groupTimeoutNanos = Math.max(1L, remainingNanos / remainingGroupCount);
                 List<Callable<SyncItem>> tasks = new ArrayList<>();
                 for (String code : groupCodes) {
-                    tasks.add(() -> syncOne(code, beginDate, endDate));
+                    tasks.add(() -> syncOne(code, beginDateRaw, end));
                 }
                 List<Future<SyncItem>> futures = pool.invokeAll(
                         tasks, groupTimeoutNanos, TimeUnit.NANOSECONDS);
@@ -379,11 +386,15 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         return full.substring(0, maxLen) + "...(truncated)";
     }
 
-    private SyncItem syncOne(String code, String beginDate, String endDate) {
+    private SyncItem syncOne(String code, String beginDate, LocalDate endDate) {
+        if (!syncingCodes.add(code)) {
+            return new SyncItem(code, true, 0, code + " SYNCING");
+        }
         try {
             // 错峰请求，降低行情源限流概率
             Thread.sleep(220L + (Math.abs(code.hashCode()) % 280));
-            List<BarDaily> bars = dailyBarClient.fetchDailyBars(code, beginDate, endDate);
+            String actualBeginDate = resolveBeginDate(code, beginDate, endDate);
+            List<BarDaily> bars = dailyBarClient.fetchDailyBars(code, actualBeginDate, endDate.toString());
             int upserted = upsertBars(bars);
             upsertStockBasic(code, MarketCodeUtils.resolveMarket(code));
             String source = bars.isEmpty() ? "unknown" : bars.get(0).getSource();
@@ -391,7 +402,28 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         } catch (Exception ex) {
             log.warn("同步日线失败，证券代码={}，异常={}", code, ex.getMessage());
             return new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage());
+        } finally {
+            syncingCodes.remove(code);
         }
+    }
+
+    private String resolveBeginDate(String code, String beginDateRaw, LocalDate endDate) {
+        if (StringUtils.isNotBlank(beginDateRaw)) {
+            return beginDateRaw;
+        }
+        LocalDate defaultBeginDate = endDate.minusDays(INITIAL_SYNC_LOOKBACK_DAYS);
+        if (Objects.isNull(baseMapper)) {
+            return defaultBeginDate.toString();
+        }
+        BarDaily latestBar = baseMapper.selectOne(Wrappers.<BarDaily>lambdaQuery()
+                .eq(BarDaily::getCode, code)
+                .le(BarDaily::getTradeDate, endDate)
+                .orderByDesc(BarDaily::getTradeDate)
+                .last("limit 1"));
+        if (Objects.isNull(latestBar) || Objects.isNull(latestBar.getTradeDate())) {
+            return defaultBeginDate.toString();
+        }
+        return latestBar.getTradeDate().minusDays(RECENT_SYNC_OVERLAP_DAYS).toString();
     }
 
     private int upsertBars(List<BarDaily> bars) {

@@ -1910,7 +1910,6 @@ function dash(v) {
           <el-tooltip content="同步行情" placement="bottom">
             <el-button
               class="stock-icon-action sync-action"
-              type="primary"
               circle
               :loading="syncingBars"
               :disabled="syncingBars"
@@ -2523,6 +2522,18 @@ function dash(v) {
   min-width: 38px;
   padding: 0;
   border-radius: 50%;
+}
+
+.stock-action-toolbar :deep(.sync-action) {
+  color: var(--ink-soft);
+  border-color: var(--line);
+  background: #fff;
+}
+
+.stock-action-toolbar :deep(.sync-action:hover:not(:disabled)) {
+  color: var(--accent);
+  border-color: rgba(0, 113, 227, 0.35);
+  background: rgba(0, 113, 227, 0.06);
 }
 
 .stock-action-toolbar :deep(.stock-text-action) {
