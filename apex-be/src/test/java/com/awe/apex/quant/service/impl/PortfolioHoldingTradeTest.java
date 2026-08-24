@@ -3,6 +3,7 @@ package com.awe.apex.quant.service.impl;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.HoldingTradeReq;
+import com.awe.apex.quant.domain.entity.JournalTrade;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.domain.enums.PortfolioTradeSourceEnum;
@@ -24,6 +25,7 @@ import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -131,6 +133,23 @@ class PortfolioHoldingTradeTest {
                 () -> service.tradeHolding(11L, tradeRequest("BUY", 10, "0", null)));
 
         assertEquals("成交价必须大于0", exception.getMessage());
+    }
+
+    @Test
+    void duplicateBotBuyReturnsTheAlreadyUpdatedHolding() {
+        PortfolioHolding existing = holding(200, "12.0000");
+        when(portfolioHoldingMapper.selectById(21L)).thenReturn(existing);
+        when(tradeRecordService.findBySourceRef(7L, "600519", PortfolioTradeSourceEnum.WECHAT_BOT,
+                "wechat-message-1:600519")).thenReturn(JournalTrade.builder()
+                .portfolioId(11L).code("600519").side("BUY").quantity(100).afterQuantity(200)
+                .price(new BigDecimal("14.0000")).build());
+
+        PortfolioHolding result = service.tradeHolding(11L, tradeRequest("BUY", 100, "14.0000", null),
+                PortfolioTradeSourceEnum.WECHAT_BOT, "wechat-message-1:600519");
+
+        assertSame(existing, result);
+        verify(portfolioHoldingMapper, never()).update(any(), any());
+        verify(tradeRecordService, never()).recordChange(any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     private PortfolioHolding holding(Integer quantity, String costPrice) {

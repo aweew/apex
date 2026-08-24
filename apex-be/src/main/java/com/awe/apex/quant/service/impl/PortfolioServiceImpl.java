@@ -16,6 +16,7 @@ import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.PortfolioTopHoldingResp;
 import com.awe.apex.quant.domain.dto.ObserveTechSignal;
 import com.awe.apex.quant.domain.entity.BarDaily;
+import com.awe.apex.quant.domain.entity.JournalTrade;
 import com.awe.apex.quant.domain.entity.MyHolding;
 import com.awe.apex.quant.domain.entity.Portfolio;
 import com.awe.apex.quant.domain.entity.PortfolioDaily;
@@ -529,7 +530,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req) {
-        return tradeHolding(portfolioId, req, PortfolioTradeSourceEnum.PORTFOLIO_WEB);
+        return tradeHolding(portfolioId, req, PortfolioTradeSourceEnum.PORTFOLIO_WEB, null);
     }
 
     /**
@@ -544,6 +545,22 @@ public class PortfolioServiceImpl implements IPortfolioService {
     @Transactional(rollbackFor = Exception.class)
     public PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req,
                                          PortfolioTradeSourceEnum source) {
+        return tradeHolding(portfolioId, req, source, null);
+    }
+
+    /**
+     * 按指定来源和幂等引用买入或卖出组合持仓。
+     *
+     * @param portfolioId 组合ID
+     * @param req         成交请求
+     * @param source      变动来源
+     * @param sourceRef   来源幂等引用
+     * @return 变更后的持仓，全部卖出时返回空
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req,
+                                         PortfolioTradeSourceEnum source, String sourceRef) {
         Portfolio portfolio = requireEditablePortfolio(portfolioId);
         if (Objects.isNull(req)) {
             throw new BusinessException("成交请求不能为空");
@@ -562,13 +579,14 @@ public class PortfolioServiceImpl implements IPortfolioService {
         }
 
         PortfolioHolding holding = null;
+        String normalizedCode = null;
         if (Objects.nonNull(req.getHoldingId())) {
             holding = portfolioHoldingMapper.selectById(req.getHoldingId());
             if (Objects.isNull(holding) || !Objects.equals(holding.getPortfolioId(), portfolioId)) {
                 throw new BusinessException("持仓不存在");
             }
         } else if (StringUtils.isNotBlank(req.getCode())) {
-            String normalizedCode = MarketCodeUtils.normalizeHoldingCode(req.getCode());
+            normalizedCode = MarketCodeUtils.normalizeHoldingCode(req.getCode());
             if (StringUtils.isBlank(normalizedCode)) {
                 throw new BusinessException("证券代码无效");
             }
@@ -582,6 +600,28 @@ public class PortfolioServiceImpl implements IPortfolioService {
         }
         if (buying && Objects.isNull(holding) && StringUtils.isBlank(req.getCode())) {
             throw new BusinessException("证券代码不能为空");
+        }
+        if (StringUtils.isBlank(normalizedCode) && Objects.nonNull(holding)) {
+            normalizedCode = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
+        }
+
+        if (StringUtils.isNotBlank(sourceRef)) {
+            JournalTrade recordedTrade = tradeRecordService.findBySourceRef(portfolio.getUserId(), normalizedCode,
+                    source, sourceRef);
+            if (Objects.nonNull(recordedTrade)) {
+                int currentQuantity = Objects.nonNull(holding) && Objects.nonNull(holding.getQuantity())
+                        ? holding.getQuantity() : 0;
+                boolean samePrice = Objects.nonNull(recordedTrade.getPrice())
+                        && recordedTrade.getPrice().compareTo(req.getTradePrice()) == 0;
+                if (!Objects.equals(recordedTrade.getPortfolioId(), portfolioId)
+                        || !Objects.equals(recordedTrade.getSide(), side)
+                        || !Objects.equals(recordedTrade.getQuantity(), req.getQuantity())
+                        || !Objects.equals(recordedTrade.getAfterQuantity(), currentQuantity)
+                        || !samePrice) {
+                    throw new BusinessException("重复请求的持仓变动内容不一致");
+                }
+                return holding;
+            }
         }
 
         int beforeQuantity = Objects.nonNull(holding) && Objects.nonNull(holding.getQuantity())
@@ -599,7 +639,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
         if (selling && changedQuantity == 0) {
             portfolioHoldingMapper.deleteById(holding.getId());
             tradeRecordService.recordChange(portfolio, holding.getCode(), holding.getName(),
-                    beforeQuantity, 0, req.getTradePrice(), req.getTradeTime(), source, null);
+                    beforeQuantity, 0, req.getTradePrice(), req.getTradeTime(), source, sourceRef);
             if (Objects.equals(portfolio.getIsDefault(), 1)) {
                 MyHolding myHolding = myHoldingMapper.selectOne(Wrappers.<MyHolding>lambdaQuery()
                         .eq(MyHolding::getUserId, portfolio.getUserId())
@@ -633,7 +673,7 @@ public class PortfolioServiceImpl implements IPortfolioService {
         saveReq.setNote(Objects.nonNull(holding) ? holding.getNote() : null);
         saveReq.setTradePrice(req.getTradePrice());
         saveReq.setTradeTime(req.getTradeTime());
-        return saveHolding(portfolioId, saveReq, source, null);
+        return saveHolding(portfolioId, saveReq, source, sourceRef);
     }
 
     /**

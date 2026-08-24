@@ -7,8 +7,10 @@ import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.bot.service.IBotToolService;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.BotHoldingInput;
+import com.awe.apex.quant.domain.dto.BotTradeInput;
 import com.awe.apex.quant.domain.dto.BotToolReq;
 import com.awe.apex.quant.domain.dto.BotToolResp;
+import com.awe.apex.quant.domain.dto.HoldingTradeReq;
 import com.awe.apex.quant.domain.dto.PortfolioHoldingSaveReq;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.dto.PortfolioTipItem;
@@ -89,6 +91,8 @@ public class BotToolServiceImpl implements IBotToolService {
             response = switch (operation) {
                 case "PORTFOLIO_ADVICE" -> portfolioAdvice(request, requestId);
                 case "PORTFOLIO_STATUS" -> portfolioStatus(request, requestId);
+                case "HOLDING_BUY" -> holdingBuy(request, requestId);
+                case "HOLDING_SELL" -> holdingSell(request, requestId);
                 case "HOLDING_IMPORT" -> holdingImport(request, requestId);
                 case "SMART_TRADER_RANKING" -> smartTraderRanking(request, requestId);
                 case "SMART_TRADER_POSITION" -> smartTraderPosition(request, requestId);
@@ -216,8 +220,55 @@ public class BotToolServiceImpl implements IBotToolService {
     }
 
     private BotToolResp holdingImport(BotToolReq request, String requestId) {
+        if (!Boolean.TRUE.equals(request.getFullReplace())) {
+            throw new BusinessException("全量更新必须明确确认 fullReplace=true；买入或加仓请使用 HOLDING_BUY");
+        }
         Portfolio portfolio = activePortfolioByName(request.getPortfolioName());
         return userContext.runAsUser(portfolio.getUserId(), () -> importHoldings(portfolio, request, requestId));
+    }
+
+    private BotToolResp holdingBuy(BotToolReq request, String requestId) {
+        return holdingTrade(request, requestId, "BUY");
+    }
+
+    private BotToolResp holdingSell(BotToolReq request, String requestId) {
+        return holdingTrade(request, requestId, "SELL");
+    }
+
+    private BotToolResp holdingTrade(BotToolReq request, String requestId, String side) {
+        Portfolio portfolio = activePortfolioByName(request.getPortfolioName());
+        return userContext.runAsUser(portfolio.getUserId(), () -> executeHoldingTrade(portfolio, request, requestId, side));
+    }
+
+    private BotToolResp executeHoldingTrade(Portfolio portfolio, BotToolReq request, String requestId, String side) {
+        resolveTradeCodes(request.getTrades());
+        validateTradeInputs(request.getTrades());
+        String operation = "BUY".equals(side) ? "HOLDING_BUY" : "HOLDING_SELL";
+        String action = "BUY".equals(side) ? "新增买入" : "卖出";
+        StringBuilder answer = new StringBuilder("已").append(action).append("「")
+                .append(portfolio.getName()).append("」：");
+        for (int index = 0; index < request.getTrades().size(); index++) {
+            BotTradeInput input = request.getTrades().get(index);
+            HoldingTradeReq tradeReq = new HoldingTradeReq();
+            tradeReq.setCode(input.getCode());
+            tradeReq.setName(input.getName());
+            tradeReq.setSide(side);
+            tradeReq.setQuantity(input.getQuantity());
+            tradeReq.setTradePrice(input.getTradePrice());
+            tradeReq.setTradeTime(input.getTradeTime());
+            portfolioService.tradeHolding(portfolio.getId(), tradeReq,
+                    PortfolioTradeSourceEnum.WECHAT_BOT, requestId + ":" + input.getCode());
+            if (index > 0) {
+                answer.append("；");
+            }
+            answer.append(defaultText(input.getName(), input.getCode())).append("（").append(input.getCode()).append("）")
+                    .append(" ").append(input.getQuantity()).append(" 股，成交价 ").append(input.getTradePrice());
+        }
+        portfolioService.refreshQuotes(portfolio.getId(), false);
+        portfolioService.snapshot(portfolio.getId());
+        answer.append("；仅变更指定持仓，已完成行情刷新和今日快照。");
+        return BotToolResp.builder().requestId(requestId).intent(operation)
+                .answer(answer.toString()).dataLevel("GREEN").build();
     }
 
     private BotToolResp importHoldings(Portfolio portfolio, BotToolReq request, String requestId) {
@@ -380,6 +431,52 @@ public class BotToolServiceImpl implements IBotToolService {
             }
             input.setCode(matchedStocks.get(0).getCode());
             input.setName(matchedStocks.get(0).getName());
+        }
+    }
+
+    private void resolveTradeCodes(List<BotTradeInput> inputs) {
+        if (CollUtil.isEmpty(inputs)) {
+            return;
+        }
+        for (BotTradeInput input : inputs) {
+            if (StringUtils.isNotBlank(input.getCode())) {
+                input.setCode(MarketCodeUtils.normalizeHoldingCode(input.getCode()));
+                continue;
+            }
+            if (StringUtils.isBlank(input.getName())) {
+                throw new BusinessException("成交缺少证券代码和名称");
+            }
+            List<StockBasic> matchedStocks = stockBasicMapper.selectList(
+                    Wrappers.<StockBasic>lambdaQuery()
+                            .eq(StockBasic::getName, input.getName().trim())
+                            .last("LIMIT 2"));
+            if (CollUtil.isEmpty(matchedStocks)) {
+                throw new BusinessException("无法识别证券名称: " + input.getName());
+            }
+            if (matchedStocks.size() > 1 || StringUtils.isBlank(matchedStocks.get(0).getCode())) {
+                throw new BusinessException("证券名称匹配不唯一，请补充代码: " + input.getName());
+            }
+            input.setCode(MarketCodeUtils.normalizeHoldingCode(matchedStocks.get(0).getCode()));
+            input.setName(matchedStocks.get(0).getName());
+        }
+    }
+
+    private void validateTradeInputs(List<BotTradeInput> inputs) {
+        if (CollUtil.isEmpty(inputs)) {
+            throw new BusinessException("未解析到可确认的成交，请补充证券代码、数量和成交价");
+        }
+        Set<String> codes = new HashSet<>();
+        for (BotTradeInput input : inputs) {
+            if (StringUtils.isBlank(input.getCode()) || !input.getCode().matches("\\d{6}")) {
+                throw new BusinessException("证券代码无效: " + input.getCode());
+            }
+            if (!codes.add(input.getCode())) {
+                throw new BusinessException("存在重复证券代码: " + input.getCode());
+            }
+            if (Objects.isNull(input.getQuantity()) || input.getQuantity() <= 0
+                    || Objects.isNull(input.getTradePrice()) || input.getTradePrice().signum() <= 0) {
+                throw new BusinessException("成交数量或成交价无效: " + input.getCode());
+            }
         }
     }
 

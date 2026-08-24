@@ -124,6 +124,18 @@ public interface IPortfolioService {
     PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req, PortfolioTradeSourceEnum source);
 
     /**
+     * 按指定来源和幂等引用买入或卖出组合持仓。
+     *
+     * @param portfolioId 组合ID
+     * @param req         成交请求
+     * @param source      变动来源
+     * @param sourceRef   来源幂等引用
+     * @return 变更后的持仓，全部卖出时返回空
+     */
+    PortfolioHolding tradeHolding(Long portfolioId, HoldingTradeReq req,
+                                  PortfolioTradeSourceEnum source, String sourceRef);
+
+    /**
      * 删除持仓
      *
      * @param portfolioId 组合ID

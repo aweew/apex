@@ -30,9 +30,37 @@ For explicitly named portfolios and all holding-update workflows, run `scripts/a
 - Portfolio advice: `{"operation":"PORTFOLIO_ADVICE","userId":"<sender>","conversationId":"<conversation>","portfolioName":"<name-exactly-as-user-supplied>"}`
 - Portfolio status: `{"operation":"PORTFOLIO_STATUS","userId":"<sender>","conversationId":"<conversation>","portfolioName":"<name-exactly-as-user-supplied>"}`
 
-For a WeClaw image attachment or a text table, extract JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. When the message explicitly provides them, also pass `tradePrice` and ISO-8601 `tradeTime`; otherwise leave them absent. Every row needs a positive quantity and a positive cost price. When a code is missing, pass the exact recognized stock name and leave `code` empty: Apex resolves it only by an exact, unique `stock_basic.name` match. Do not infer a code, trade price, or trade time yourself. If Apex cannot resolve the name or finds more than one match, state that the portfolio was not changed and return its error.
+For a WeClaw image attachment or a text table that represents the complete account state, extract JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. When the message explicitly provides them, also pass `tradePrice` and ISO-8601 `tradeTime`; otherwise leave them absent. Every row needs a positive quantity and a positive cost price. When a code is missing, pass the exact recognized stock name and leave `code` empty: Apex resolves it only by an exact, unique `stock_basic.name` match. Do not infer a code, trade price, or trade time yourself. If Apex cannot resolve the name or finds more than one match, state that the portfolio was not changed and return its error.
 
-When the user sends a brokerage screenshot or a text table and says `更新郑十万的持仓` (or names another portfolio), directly import the complete, validated rows:
+When the user explicitly says `买入`、`加仓` or `新增买入`, use `HOLDING_BUY`, never `HOLDING_IMPORT`. Treat the stated quantity as this transaction's quantity and the stated price as its actual trade price. This operation changes only the named securities and never deletes other holdings:
+
+```json
+{
+  "operation": "HOLDING_BUY",
+  "userId": "<sender>",
+  "conversationId": "<conversation>",
+  "portfolioName": "浩总",
+  "trades": [
+    {"code": "600547", "name": "山东黄金", "quantity": 200, "tradePrice": 36.35}
+  ]
+}
+```
+
+When the user explicitly says `卖出`、`减仓` or `清仓`, use `HOLDING_SELL`, never `HOLDING_IMPORT`. Treat the stated quantity as this transaction's quantity and the stated price as its actual trade price. This operation changes only the named securities; a full sell removes only that stock:
+
+```json
+{
+  "operation": "HOLDING_SELL",
+  "userId": "<sender>",
+  "conversationId": "<conversation>",
+  "portfolioName": "浩总",
+  "trades": [
+    {"code": "600547", "name": "山东黄金", "quantity": 100, "tradePrice": 37.20}
+  ]
+}
+```
+
+Use `HOLDING_IMPORT` only when the user explicitly provides a complete brokerage screenshot or a complete text table and asks to `全量更新`、`同步全部持仓` or `按截图覆盖`. Set `fullReplace` to `true` only for that explicit confirmation. It is the only operation that can remove holdings absent from the submitted list:
 
 ```json
 {
@@ -40,6 +68,7 @@ When the user sends a brokerage screenshot or a text table and says `更新郑�
   "userId": "<sender>",
   "conversationId": "<conversation>",
   "portfolioName": "郑十万",
+  "fullReplace": true,
   "holdings": [
     {"code": "000063", "name": "中兴通讯", "quantity": 500, "costPrice": 34.21, "marketValue": 17540.00, "tradePrice": 35.08, "tradeTime": "2026-08-18T10:26:00"}
   ],
@@ -51,7 +80,7 @@ Call `scripts/apex_tool.sh` with this JSON and return `data.answer` unchanged. `
 
 ## Holding Update Completion Rule
 
-A portfolio update is successful only when `scripts/apex_tool.sh` returns a successful Apex envelope whose `data.intent` is exactly `HOLDING_IMPORT`. Extraction, a rendered holding table, market observations, an agent-memory write, or an assistant statement are not evidence of a database update.
+A portfolio update is successful only when `scripts/apex_tool.sh` returns a successful Apex envelope whose `data.intent` is exactly `HOLDING_BUY`, `HOLDING_SELL`, or `HOLDING_IMPORT`, matching the submitted operation. Extraction, a rendered holding table, market observations, an agent-memory write, or an assistant statement are not evidence of a database update.
 
 Before that successful response, never say or imply that the portfolio was updated, saved, recorded, or will be tracked. In particular, never say that data was saved to `memory/...`; agent memory is not the Apex portfolio database. On a validation error, tool error, unavailable attachment, or missing code, clearly state that the portfolio was not changed and return the Apex error when one exists.
 

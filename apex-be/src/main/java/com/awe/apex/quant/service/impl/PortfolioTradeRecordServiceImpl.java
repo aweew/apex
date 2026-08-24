@@ -265,8 +265,9 @@ public class PortfolioTradeRecordServiceImpl implements IPortfolioTradeRecordSer
         return toResponses(trades);
     }
 
-    private JournalTrade findBySourceRef(Long userId, String code, PortfolioTradeSourceEnum source,
-                                         String sourceRef) {
+    @Override
+    public JournalTrade findBySourceRef(Long userId, String code, PortfolioTradeSourceEnum source,
+                                        String sourceRef) {
         if (StringUtils.isBlank(sourceRef)) {
             return null;
         }

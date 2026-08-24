@@ -35,6 +35,17 @@ public interface IPortfolioTradeRecordService {
                               PortfolioTradeSourceEnum source, String sourceRef);
 
     /**
+     * 根据来源幂等引用查询已记录的交易流水。
+     *
+     * @param userId 用户ID
+     * @param code 证券代码
+     * @param source 记录来源
+     * @param sourceRef 来源幂等引用
+     * @return 已记录的交易流水，不存在时返回空
+     */
+    JournalTrade findBySourceRef(Long userId, String code, PortfolioTradeSourceEnum source, String sourceRef);
+
+    /**
      * 分页查询共享组合交易记录。
      *
      * @param portfolioId 组合ID

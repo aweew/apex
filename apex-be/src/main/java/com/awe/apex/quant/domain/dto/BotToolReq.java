@@ -14,7 +14,7 @@ import java.util.List;
 @Data
 public class BotToolReq {
 
-    /** 工具名称：PORTFOLIO_ADVICE / PORTFOLIO_STATUS / HOLDING_IMPORT */
+    /** 工具名称：PORTFOLIO_ADVICE / PORTFOLIO_STATUS / HOLDING_BUY / HOLDING_SELL / HOLDING_IMPORT */
     @NotBlank(message = "工具名称不能为空")
     private String operation;
 
@@ -41,6 +41,13 @@ public class BotToolReq {
     /** 截图解析出的持仓 */
     @Valid
     private List<BotHoldingInput> holdings = new ArrayList<>();
+
+    /** 是否已明确确认用完整清单覆盖当前持仓 */
+    private Boolean fullReplace;
+
+    /** 单笔或多笔新增买入成交 */
+    @Valid
+    private List<BotTradeInput> trades = new ArrayList<>();
 
     /** 截图中的证券市值，用于校验 */
     private BigDecimal totalMarketValue;
