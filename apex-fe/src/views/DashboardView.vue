@@ -7,7 +7,7 @@ import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 import { publishDataFreshness } from '../utils/dataFreshness.js'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v16'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v17'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
@@ -40,6 +40,9 @@ const hasExecutableNewPosition = computed(() => commandOperationItems.value.some
 ))
 const morningBriefing = computed(() => home.value?.morningBriefing || null)
 const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
+const marketOpinion = computed(() => morningBriefing.value?.marketOpinion || null)
+const institutionViews = computed(() => marketOpinion.value?.institutionViews || [])
+const activeSeats = computed(() => marketOpinion.value?.activeSeats || [])
 const legacyIndexSymbols = new Set(['usIXIC', 'usDJI', 'usINX'])
 const overnightIndexes = computed(() => {
   const indexQuotes = morningBriefing.value?.indexQuotes
@@ -48,6 +51,7 @@ const overnightIndexes = computed(() => {
   return marketQuotes.filter((quote) => legacyIndexSymbols.has(quote.symbol))
 })
 const overnightThemes = computed(() => morningBriefing.value?.marketThemes || [])
+const asiaIndexes = computed(() => morningBriefing.value?.asiaQuotes || [])
 const overnightStars = computed(() => {
   const starQuotes = morningBriefing.value?.starQuotes
   if (Array.isArray(starQuotes)) return starQuotes
@@ -129,6 +133,25 @@ function newsSourceLabel(source) {
     cctv: '央视',
   }
   return labels[source] || source || ''
+}
+
+function opinionTime(value) {
+  if (!value) return '时间未披露'
+  return String(value).replace('T', ' ').slice(5, 16)
+}
+
+function opinionTone(direction) {
+  const text = String(direction || '')
+  if (/买入|增持|推荐|看多/.test(text)) return 'bull'
+  if (/卖出|减持|回避|看空/.test(text)) return 'bear'
+  return ''
+}
+
+function formatOpinionAmount(value) {
+  const amount = Number(value)
+  if (Number.isNaN(amount)) return ''
+  const sign = amount > 0 ? '+' : ''
+  return `${sign}${(amount / 100000000).toFixed(2)} 亿`
 }
 
 function pctDir(v) {
@@ -604,6 +627,46 @@ onMounted(() => {
           </div>
           <p class="command-headline">{{ command.preMarketSummary?.headline || '盘前结论待生成' }}</p>
 
+          <div v-if="command.preMarketSummary?.forecast?.marketOutlook" class="command-forecast">
+            <span class="command-forecast-label">今日预测</span>
+            <p>{{ command.preMarketSummary.forecast.marketOutlook }}</p>
+
+            <div
+              v-if="command.preMarketSummary.forecast.focusItems?.length || command.preMarketSummary.forecast.riskItems?.length"
+              class="command-forecast-grid"
+            >
+              <div v-if="command.preMarketSummary.forecast.focusItems?.length" class="command-forecast-direction focus">
+                <strong>关注方向</strong>
+                <span
+                  v-for="item in command.preMarketSummary.forecast.focusItems"
+                  :key="`${item.name}-${item.reason}`"
+                >
+                  <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
+                  <small v-if="item.watchStocks?.length">候选 {{ item.watchStocks.join('、') }}</small>
+                </span>
+              </div>
+              <div v-if="command.preMarketSummary.forecast.riskItems?.length" class="command-forecast-direction risk">
+                <strong>回避方向</strong>
+                <span
+                  v-for="item in command.preMarketSummary.forecast.riskItems"
+                  :key="`${item.name}-${item.reason}`"
+                >
+                  <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
+                </span>
+              </div>
+            </div>
+
+            <div v-if="command.preMarketSummary.forecast.watchConditions?.length" class="command-forecast-watch">
+              <span>盘中确认</span>
+              <p
+                v-for="item in command.preMarketSummary.forecast.watchConditions"
+                :key="`${item.title}-${item.condition}`"
+              >
+                <b>{{ item.title }}</b>{{ item.condition ? `：${item.condition}` : '' }}
+              </p>
+            </div>
+          </div>
+
           <div
             v-if="command.preMarketSummary?.opportunityItems?.length || command.preMarketSummary?.riskItems?.length"
             class="command-directions"
@@ -736,6 +799,23 @@ onMounted(() => {
 
           <div class="overnight-layer">
             <div class="overnight-layer-head">
+              <h5>亚太情绪</h5>
+              <span>盘前可用的亚太指数</span>
+            </div>
+            <div v-if="asiaIndexes.length" class="asia-index-grid">
+              <div v-for="quote in asiaIndexes" :key="quote.symbol" class="overnight-quote">
+                <div class="overnight-quote-name">
+                  <strong>{{ quote.name || quote.symbol }}</strong>
+                  <small v-if="fmtQuotePrice(quote.latestPrice)">{{ fmtQuotePrice(quote.latestPrice) }}</small>
+                </div>
+                <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
+              </div>
+            </div>
+            <p v-else class="morning-context-empty">亚太指数暂未获取</p>
+          </div>
+
+          <div class="overnight-layer">
+            <div class="overnight-layer-head">
               <h5>主题情绪</h5>
               <span>按涨跌幅中位数排序</span>
             </div>
@@ -817,6 +897,36 @@ onMounted(() => {
               <small v-if="item.source">{{ newsSourceLabel(item.source) }}</small>
             </article>
           </div>
+
+          <section v-if="marketOpinion" class="opinion-radar" aria-label="市场观点雷达">
+            <div class="opinion-radar-head">
+              <h5>观点雷达</h5>
+              <time>{{ fmtBriefingTime(marketOpinion.snapshotTime) }}</time>
+            </div>
+            <div class="opinion-summary-grid">
+              <p><span>共识</span>{{ marketOpinion.consensus || '暂未形成有效共识' }}</p>
+              <p><span>分歧</span>{{ marketOpinion.divergence || '暂未发现明确分歧' }}</p>
+            </div>
+            <div v-if="institutionViews.length" class="opinion-group">
+              <div class="opinion-group-head"><h6>机构观点</h6><span>公开研报</span></div>
+              <article v-for="item in institutionViews" :key="item.url || item.title" class="opinion-item">
+                <span class="opinion-direction" :class="opinionTone(item.direction)">{{ item.direction || '未评级' }}</span>
+                <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+                <span v-else class="opinion-item-title">{{ item.title }}</span>
+                <small>{{ item.subjectName }} · {{ item.relatedName || item.topic || opinionTime(item.publishedAt) }}</small>
+              </article>
+            </div>
+            <div v-if="activeSeats.length" class="opinion-group">
+              <div class="opinion-group-head"><h6>活跃席位</h6><span>龙虎榜行为</span></div>
+              <article v-for="item in activeSeats" :key="item.url + item.subjectName" class="opinion-item">
+                <span class="opinion-direction seat">席位</span>
+                <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.subjectName }}</a>
+                <span v-else class="opinion-item-title">{{ item.subjectName }}</span>
+                <small>{{ formatOpinionAmount(item.netAmount) || '金额未披露' }} · {{ opinionTime(item.publishedAt) }}</small>
+              </article>
+            </div>
+            <p class="opinion-kol-status">{{ marketOpinion.kolSourceStatus }}</p>
+          </section>
         </div>
       </div>
     </section>
@@ -1983,6 +2093,82 @@ onMounted(() => {
   font-weight: 620;
 }
 
+.command-forecast {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-left: 2px solid rgba(0, 113, 227, 0.5);
+  background: rgba(0, 113, 227, 0.04);
+}
+
+.command-forecast-label,
+.command-forecast-watch > span {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.command-forecast > p {
+  margin: 3px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.command-forecast-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 8px;
+}
+
+.command-forecast-direction {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.command-forecast-direction > strong {
+  font-size: 10px;
+}
+
+.command-forecast-direction > span {
+  color: var(--slate);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.command-forecast-direction > span b,
+.command-forecast-watch b {
+  color: var(--ink-soft);
+  font-weight: 650;
+}
+
+.command-forecast-direction > span small {
+  display: block;
+  margin-top: 2px;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.command-forecast-direction.focus > strong { color: #248a3d; }
+.command-forecast-direction.risk > strong { color: var(--up); }
+
+.command-forecast-watch {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.command-forecast-watch p {
+  margin: 3px 0 0;
+  color: var(--slate);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .command-directions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2021,6 +2207,15 @@ onMounted(() => {
 
 .command-watch {
   margin-top: 10px;
+}
+
+.asia-index-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  min-width: 0;
+  width: 100%;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
 .command-watch > span {
@@ -2257,6 +2452,8 @@ onMounted(() => {
 .morning-context-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
   gap: 0;
   margin-top: 16px;
 }
@@ -2329,6 +2526,8 @@ onMounted(() => {
 .overnight-index-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 6px;
@@ -2338,12 +2537,16 @@ onMounted(() => {
 .overnight-theme-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
   column-gap: 18px;
 }
 
 .overnight-star-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
   column-gap: 18px;
 }
 
@@ -2392,8 +2595,12 @@ onMounted(() => {
 }
 
 .overnight-quote-name small {
+  min-width: 0;
+  overflow: hidden;
   color: var(--muted);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .overnight-quote > b {
@@ -2609,6 +2816,119 @@ onMounted(() => {
   text-align: right;
 }
 
+.opinion-radar {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.opinion-radar-head,
+.opinion-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.opinion-radar-head h5,
+.opinion-group-head h6 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.opinion-radar-head time,
+.opinion-group-head span,
+.opinion-kol-status {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.opinion-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+  margin: 8px 0 10px;
+}
+
+.opinion-summary-grid p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.opinion-summary-grid span {
+  display: inline-block;
+  min-width: 30px;
+  margin-right: 8px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.opinion-group + .opinion-group {
+  margin-top: 10px;
+}
+
+.opinion-group-head {
+  margin-bottom: 3px;
+}
+
+.opinion-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 30px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  font-size: 11px;
+}
+
+.opinion-direction {
+  min-width: 28px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.opinion-direction.bull { color: var(--up); }
+.opinion-direction.bear { color: var(--down); }
+.opinion-direction.seat { color: var(--accent); }
+
+.opinion-item a,
+.opinion-item-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  line-height: 1.4;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opinion-item a:hover { color: var(--accent); }
+
+.opinion-item small {
+  min-width: 0;
+  max-width: 130px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opinion-kol-status {
+  margin: 9px 0 0;
+}
+
 .morning-context-empty {
   margin: 12px 0;
   color: var(--muted);
@@ -2633,6 +2953,10 @@ onMounted(() => {
   }
 
   .command-directions {
+    grid-template-columns: 1fr;
+  }
+
+  .command-forecast-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2726,6 +3050,25 @@ onMounted(() => {
   .morning-news-item small {
     padding-top: 1px;
   }
+
+  .opinion-item {
+    align-items: start;
+    min-height: 38px;
+    padding: 5px 0;
+  }
+
+  .opinion-item a,
+  .opinion-item-title {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .opinion-item small {
+    max-width: 82px;
+    padding-top: 1px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -2758,13 +3101,15 @@ onMounted(() => {
     align-items: center;
   }
 
+}
+
+@media (max-width: 640px) {
   .morning-context-grid {
     grid-template-columns: 1fr;
-    gap: 0;
   }
 
   .morning-context-block {
-    padding: 0;
+    width: 100%;
   }
 
   .morning-news-block {

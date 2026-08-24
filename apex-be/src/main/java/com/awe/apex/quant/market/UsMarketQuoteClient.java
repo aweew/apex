@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 腾讯美股收盘行情客户端。
+ * 腾讯盘前跨市场行情客户端。
  */
 @Slf4j
 @Component
@@ -26,7 +26,7 @@ public class UsMarketQuoteClient {
     private static final DateTimeFormatter QUOTE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
-     * 批量读取美股指数及个股最新报价。
+     * 批量读取美股、亚太指数及个股最新报价。
      *
      * @param symbols 腾讯行情符号
      * @return 有效报价列表

@@ -134,6 +134,15 @@ public class SyncTaskRegistry {
                 .timeoutSec(600)
                 .build());
         register(SyncTaskSpec.builder()
+                .taskType("MARKET_OPINION")
+                .name("机构观点与活跃席位")
+                .groupName("市场看板")
+                .description("同步公开机构研报与龙虎榜活跃营业部，不抓取未授权大V内容")
+                .scriptFile("sync_market_opinions.py")
+                .defaultParamsHint("limit=80")
+                .timeoutSec(180)
+                .build());
+        register(SyncTaskSpec.builder()
                 .taskType("SECTOR_QUOTE")
                 .name("板块行情+资金")
                 .groupName("板块")
@@ -305,6 +314,12 @@ public class SyncTaskRegistry {
                 args.add(StringUtils.isNotBlank(safe.getSources()) ? safe.getSources().trim() : "eastmoney,cls,ths,sina");
                 args.add("--limit");
                 args.add(String.valueOf(Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0 ? safe.getLimit() : 80));
+            }
+            case "MARKET_OPINION" -> {
+                if (Objects.nonNull(safe.getLimit()) && safe.getLimit() > 0) {
+                    args.add("--limit");
+                    args.add(String.valueOf(Math.min(safe.getLimit(), 100)));
+                }
             }
             case "SECTOR_QUOTE" -> {
                 args.add("--mode");

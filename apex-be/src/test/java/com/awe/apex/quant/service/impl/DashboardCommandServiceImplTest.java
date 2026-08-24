@@ -5,9 +5,11 @@ import com.awe.apex.quant.domain.dto.DashboardCommandResp;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
+import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.OperationGuideItemResp;
 import com.awe.apex.quant.domain.enums.DashboardCommandPhaseEnum;
 import com.awe.apex.quant.domain.enums.DashboardCommandStatusEnum;
@@ -82,6 +84,48 @@ class DashboardCommandServiceImplTest {
                 OperationGuideStatusEnum.REQUIRED, 2);
         assertGuideItem(command, 1, OperationGuideCodeEnum.BUY_CONDITIONALLY,
                 OperationGuideStatusEnum.READY, 3);
+    }
+
+    @Test
+    void shouldBuildConcreteForecastFromOvernightAsiaAndPreviousCloseThemes() {
+        DecisionItemResp buyItem = DecisionItemResp.builder()
+                .code("601088")
+                .name("中国神华")
+                .mainlineMatch(true)
+                .mainlineName("煤炭开采")
+                .executableHint(true)
+                .build();
+        MarketBriefingResp marketBriefing = market(PREVIOUS_TRADE_DATE, "GREEN", List.of("煤炭开采", "保险Ⅱ"));
+        marketBriefing.setHotThemeItems(List.of(
+                MarketHotThemeItem.builder().name("煤炭开采").pctChg(new BigDecimal("2.17")).build(),
+                MarketHotThemeItem.builder().name("保险Ⅱ").pctChg(new BigDecimal("1.23")).build()
+        ));
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(8, 10))
+                .marketBriefing(marketBriefing)
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .indexQuotes(List.of(quote("usIXIC", "纳斯达克", "-0.30")))
+                        .asiaQuotes(List.of(quote("hkHSTECH", "恒生科技", "-3.61")))
+                        .marketThemes(List.of())
+                        .build())
+                .decision(DecisionTodayResp.builder()
+                        .actionDate(TRADE_DATE)
+                        .dataAsOf(PREVIOUS_TRADE_DATE)
+                        .generated(true)
+                        .buys(List.of(buyItem))
+                        .executableCount(1)
+                        .build())
+                .build());
+
+        assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("承压后分化"));
+        assertEquals("煤炭开采", command.getPreMarketSummary().getForecast().getFocusItems().get(0).getName());
+        assertEquals(List.of("中国神华"),
+                command.getPreMarketSummary().getForecast().getFocusItems().get(0).getWatchStocks());
+        assertEquals("科技成长", command.getPreMarketSummary().getForecast().getRiskItems().get(0).getName());
+        assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().get(0)
+                .getCondition().contains("上涨家数"));
     }
 
     @Test
@@ -472,6 +516,14 @@ class DashboardCommandServiceImplTest {
                 .limitUpCount(35)
                 .limitDownCount(8)
                 .hotThemes(hotThemes)
+                .build();
+    }
+
+    private OvernightMarketQuote quote(String symbol, String name, String pctChg) {
+        return OvernightMarketQuote.builder()
+                .symbol(symbol)
+                .name(name)
+                .pctChg(new BigDecimal(pctChg))
                 .build();
     }
 

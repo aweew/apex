@@ -39,6 +39,11 @@ public class MorningBriefingResp {
     private List<OvernightMarketQuote> indexQuotes;
 
     /**
+     * 亚太市场指数报价。
+     */
+    private List<OvernightMarketQuote> asiaQuotes;
+
+    /**
      * 明星异动报价。
      */
     private List<OvernightMarketQuote> starQuotes;
@@ -57,6 +62,11 @@ public class MorningBriefingResp {
      * 今日消息面完整快照。
      */
     private NewsPulseResp newsPulse;
+
+    /**
+     * 机构观点、活跃席位与授权大V状态。
+     */
+    private MarketOpinionRadarResp marketOpinion;
 
     /**
      * 晨报摘要。

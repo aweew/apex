@@ -15,12 +15,23 @@ test('dashboard places overnight market and news before action panels', () => {
 })
 
 test('dashboard uses command headline with legacy advice fallback and a new cache version', () => {
-  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v16'/)
+  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v17'/)
   assert.match(dashboardSource, /const command\s*=\s*computed\(\(\)\s*=>\s*home\.value\?\.command\s*\|\|\s*null\)/)
   assert.match(
     dashboardSource,
     /command\?\.preMarketSummary\?\.headline[\s\S]{0,300}?market\?\.positionAdvice/,
   )
+})
+
+test('dashboard renders the structured today forecast and Asia-Pacific basis', () => {
+  assert.match(dashboardSource, /command\.preMarketSummary\?\.forecast\?\.marketOutlook/)
+  assert.match(dashboardSource, /class="command-forecast"/)
+  assert.match(dashboardSource, /forecast\.focusItems/)
+  assert.match(dashboardSource, /forecast\.riskItems/)
+  assert.match(dashboardSource, /forecast\.watchConditions/)
+  assert.match(dashboardSource, /morningBriefing\.value\?\.asiaQuotes/)
+  assert.match(dashboardSource, /<h5>亚太情绪<\/h5>/)
+  assert.match(dashboardSource, /class="asia-index-grid"/)
 })
 
 test('dashboard places the command band after market effect and before pre-market context', () => {
@@ -90,7 +101,7 @@ test('dashboard command band is two-column on desktop and safe on phone layouts'
   )
   assert.match(
     dashboardSource,
-    /\.morning-context-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*gap:\s*0;/s,
+    /\.morning-context-grid\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*gap:\s*0;/s,
   )
   assert.match(dashboardSource, /\.command-action\s*\{[^}]*min-height:\s*44px;/s)
   assert.match(dashboardSource, /\.command-action[^}]*overflow-wrap:\s*anywhere;/s)
@@ -98,12 +109,36 @@ test('dashboard command band is two-column on desktop and safe on phone layouts'
 })
 
 test('dashboard morning context has a compact responsive layout', () => {
-  assert.match(dashboardSource, /\.morning-context-grid\s*\{[^}]*grid-template-columns:/s)
+  assert.match(dashboardSource, /\.morning-news-block\s*\{[^}]*padding-left:\s*28px;[^}]*border-left:\s*1px solid var\(--line\);/s)
   assert.match(
     dashboardSource,
-    /@media \(max-width: 900px\)[\s\S]*\.morning-context-grid\s*\{[^}]*grid-template-columns:\s*1fr/s,
+    /@media \(max-width: 640px\)[\s\S]*\.morning-context-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
   )
   assert.match(dashboardSource, /v-for="item in morningNewsCards"/)
+  assert.match(dashboardSource, /const marketOpinion = computed\(\(\) => morningBriefing\.value\?\.marketOpinion \|\| null\)/)
+  assert.match(dashboardSource, /<h5>观点雷达<\/h5>/)
+  assert.match(dashboardSource, /<h6>机构观点<\/h6>/)
+  assert.match(dashboardSource, /<h6>活跃席位<\/h6>/)
+  assert.match(dashboardSource, /marketOpinion\.kolSourceStatus/)
+})
+
+test('dashboard constrains overnight grids and quote prices within their desktop column', () => {
+  assert.match(
+    dashboardSource,
+    /\.overnight-index-grid\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.overnight-theme-grid\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.overnight-star-grid\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.overnight-quote-name small\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/s,
+  )
 })
 
 test('dashboard morning context leads with a conclusion and keeps supporting evidence quiet', () => {
@@ -118,7 +153,7 @@ test('dashboard morning context leads with a conclusion and keeps supporting evi
   assert.match(dashboardSource, /\.morning-context-block\s*\{[^}]*align-self:\s*start;/s)
   assert.match(
     dashboardSource,
-    /@media \(max-width: 900px\)[\s\S]*?\.morning-news-block\s*\{[^}]*order:\s*-1;[^}]*border-bottom:\s*1px solid/s,
+    /@media \(max-width: 640px\)[\s\S]*?\.morning-news-block\s*\{[^}]*order:\s*-1;[^}]*border-bottom:\s*1px solid/s,
   )
   assert.match(
     dashboardSource,
@@ -158,10 +193,6 @@ test('dashboard keeps overnight layers stable across desktop and phone layouts',
   assert.match(
     dashboardSource,
     /\.overnight-star-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
-  )
-  assert.match(
-    dashboardSource,
-    /@media \(max-width: 560px\)[\s\S]*?\.overnight-theme-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
   )
 })
 

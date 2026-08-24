@@ -5,6 +5,7 @@ import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketOpinionRadarResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
@@ -13,6 +14,7 @@ import com.awe.apex.quant.market.MarketBriefingMath;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.market.UsMarketQuoteClient;
 import com.awe.apex.quant.service.IMorningBriefingService;
+import com.awe.apex.quant.service.IMarketOpinionService;
 import com.awe.apex.quant.service.INewsPulseService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -45,10 +47,13 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
     private ApexBotProperties properties;
 
     @Resource
-    private UsMarketQuoteClient usMarketQuoteClient;
+    private UsMarketQuoteClient marketQuoteClient;
 
     @Resource
     private INewsPulseService newsPulseService;
+
+    @Resource
+    private IMarketOpinionService marketOpinionService;
 
     @Resource
     private RedisCacheService redisCacheService;
@@ -69,6 +74,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
         String[] configuredSymbolGroups = {
                 properties.getMorningBriefing().getSymbols(),
                 properties.getMorningBriefing().getIndexSymbols(),
+                properties.getMorningBriefing().getAsiaIndexSymbols(),
                 properties.getMorningBriefing().getStarSymbols(),
                 properties.getMorningBriefing().getTechnologyGiantsSymbols(),
                 properties.getMorningBriefing().getAiChipSymbols(),
@@ -87,17 +93,20 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 }
             }
         }
-        List<OvernightMarketQuote> marketQuotes = usMarketQuoteClient.fetch(symbols);
+        List<OvernightMarketQuote> marketQuotes = marketQuoteClient.fetch(symbols);
         if (Objects.isNull(marketQuotes)) {
             marketQuotes = List.of();
         }
         List<OvernightMarketQuote> indexQuotes = selectQuotes(marketQuotes,
                 parseSymbols(properties.getMorningBriefing().getIndexSymbols()));
+        List<OvernightMarketQuote> asiaQuotes = selectQuotes(marketQuotes,
+                parseSymbols(properties.getMorningBriefing().getAsiaIndexSymbols()));
         List<OvernightMarketTheme> marketThemes = buildMarketThemes(marketQuotes);
         List<OvernightMarketQuote> starQuotes = buildStarQuotes(marketQuotes);
 
         // 2. 汇总夜间新闻标题和完整摘要快照
         NewsPulseResp newsPulse = loadNewsPulse();
+        MarketOpinionRadarResp marketOpinion = loadMarketOpinion();
         List<String> newsTitles = new ArrayList<>();
         if (Objects.nonNull(newsPulse) && CollUtil.isNotEmpty(newsPulse.getCards())) {
             for (NewsPulseCardResp card : newsPulse.getCards()) {
@@ -111,7 +120,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
         }
 
         // 3. 输出市场温度、主题强弱和明星异动三层结果
-        String summary = buildSummary(indexQuotes, marketThemes, starQuotes, newsPulse);
+        String summary = buildSummary(indexQuotes, asiaQuotes, marketThemes, starQuotes, newsPulse);
         List<String> validQuoteSymbols = new ArrayList<>();
         for (OvernightMarketQuote marketQuote : marketQuotes) {
             if (StringUtils.isNotBlank(marketQuote.getSymbol())
@@ -126,10 +135,12 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 .generatedAt(generatedAt)
                 .marketQuotes(marketQuotes)
                 .indexQuotes(indexQuotes)
+                .asiaQuotes(asiaQuotes)
                 .starQuotes(starQuotes)
                 .marketThemes(marketThemes)
                 .newsTitles(newsTitles)
                 .newsPulse(newsPulse)
+                .marketOpinion(marketOpinion)
                 .summary(summary)
                 .dataLevel(quoteDataIncomplete ? "YELLOW" : "GREEN")
                 .build();
@@ -308,6 +319,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
     }
 
     private String buildSummary(List<OvernightMarketQuote> indexQuotes,
+                                List<OvernightMarketQuote> asiaQuotes,
                                 List<OvernightMarketTheme> marketThemes,
                                 List<OvernightMarketQuote> starQuotes,
                                 NewsPulseResp newsPulse) {
@@ -316,6 +328,14 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
             summary.append("美股行情暂未获取。");
         } else {
             appendQuotes(summary, indexQuotes, indexQuotes.size());
+            summary.append("。");
+        }
+
+        summary.append("\n亚太市场：");
+        if (CollUtil.isEmpty(asiaQuotes)) {
+            summary.append("亚太指数暂未获取。");
+        } else {
+            appendQuotes(summary, asiaQuotes, asiaQuotes.size());
             summary.append("。");
         }
 
@@ -374,6 +394,15 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
             return newsPulseService.pulse(6, true);
         } catch (Exception ex) {
             log.warn("盘前晨报夜间新闻摘要失败，原因={}", ex.getMessage());
+            return null;
+        }
+    }
+
+    private MarketOpinionRadarResp loadMarketOpinion() {
+        try {
+            return marketOpinionService.radar();
+        } catch (Exception ex) {
+            log.warn("盘前晨报市场观点加载失败，原因={}", ex.getMessage());
             return null;
         }
     }

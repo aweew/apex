@@ -22,6 +22,11 @@ public class PreMarketSummaryResp {
     private String headline;
 
     /**
+     * 今日市场预测。
+     */
+    private MarketForecastResp forecast;
+
+    /**
      * 机会方向，最多两项。
      */
     private List<CommandDirectionItemResp> opportunityItems;

@@ -35,6 +35,7 @@ class MorningBriefingServiceImplTest {
     private MorningBriefingServiceImpl service;
     private UsMarketQuoteClient usMarketQuoteClient;
     private INewsPulseService newsPulseService;
+    private IMarketOpinionService marketOpinionService;
     private RedisCacheService redisCacheService;
     private ApexBotProperties properties;
 
@@ -43,11 +44,13 @@ class MorningBriefingServiceImplTest {
         service = new MorningBriefingServiceImpl();
         usMarketQuoteClient = mock(UsMarketQuoteClient.class);
         newsPulseService = mock(INewsPulseService.class);
+        marketOpinionService = mock(IMarketOpinionService.class);
         redisCacheService = mock(RedisCacheService.class);
         properties = new ApexBotProperties();
         ReflectionTestUtils.setField(service, "properties", properties);
-        ReflectionTestUtils.setField(service, "usMarketQuoteClient", usMarketQuoteClient);
+        ReflectionTestUtils.setField(service, "marketQuoteClient", usMarketQuoteClient);
         ReflectionTestUtils.setField(service, "newsPulseService", newsPulseService);
+        ReflectionTestUtils.setField(service, "marketOpinionService", marketOpinionService);
         ReflectionTestUtils.setField(service, "redisCacheService", redisCacheService);
     }
 
@@ -62,6 +65,7 @@ class MorningBriefingServiceImplTest {
         List<String> requestedSymbols = symbolsCaptor.getValue();
         assertTrue(requestedSymbols.containsAll(List.of(
                 "usIXIC", "usDJI", "usINX",
+                "hkHSI", "hkHSTECH",
                 "usMSFT", "usAAPL", "usAMZN", "usGOOG", "usMETA", "usTSLA", "usSPCX",
                 "usNVDA", "usAVGO", "usARM", "usMRVL", "usMU",
                 "usSNDK", "usSKHY", "usAMD", "usWDC", "usSTX",
@@ -154,6 +158,22 @@ class MorningBriefingServiceImplTest {
                 .map(OvernightMarketQuote::getSymbol)
                 .toList());
         assertEquals(5, response.getMarketQuotes().size());
+    }
+
+    @Test
+    void groupsAsiaIndexesSeparatelyAndIncludesThemInSummary() {
+        when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of(
+                quote("usIXIC", "纳斯达克", "0.81"),
+                quote("hkHSI", "恒生指数", "-1.20"),
+                quote("hkHSTECH", "恒生科技", "-2.10")
+        ));
+
+        MorningBriefingResp response = service.generate();
+
+        assertEquals(List.of("hkHSI", "hkHSTECH"), response.getAsiaQuotes().stream()
+                .map(OvernightMarketQuote::getSymbol)
+                .toList());
+        assertTrue(response.getSummary().contains("亚太市场：恒生指数 -1.20%"));
     }
 
     @Test
@@ -258,6 +278,7 @@ class MorningBriefingServiceImplTest {
     void marksReportGreenWhenEveryConfiguredQuoteIsAvailable() {
         properties.getMorningBriefing().setSymbols("usIXIC,usAMD");
         properties.getMorningBriefing().setIndexSymbols("usIXIC");
+        properties.getMorningBriefing().setAsiaIndexSymbols("");
         properties.getMorningBriefing().setStarSymbols("usAMD");
         properties.getMorningBriefing().setTechnologyGiantsSymbols("usAMD");
         properties.getMorningBriefing().setAiChipSymbols("usAMD");

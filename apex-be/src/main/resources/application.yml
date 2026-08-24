@@ -101,6 +101,9 @@ apex:
   news:
     python-cmd: python
     script-path: ${user.dir}/../scripts/market_data/sync_news.py
+  market-opinion:
+    python-cmd: python
+    script-path: ${user.dir}/../scripts/market_data/sync_market_opinions.py
   # 大模型（Key 放 application-local.yml，勿入库）
   ai:
     enabled: true
@@ -122,8 +125,9 @@ apex:
     watchlist-group: ${APEX_BOT_WATCHLIST_GROUP:我的自选}
     morning-briefing:
       enabled: ${APEX_BOT_MORNING_BRIEFING_ENABLED:true}
-      symbols: ${APEX_BOT_MORNING_BRIEFING_SYMBOLS:usIXIC,usDJI,usINX,usMSFT,usAAPL,usAMZN,usGOOG,usMETA,usTSLA,usSPCX,usNVDA,usAMD,usAVGO,usARM,usMRVL,usMU,usSKHY,usSNDK,usWDC,usSTX,usTSM,usGFS,usASML,usAMAT,usLRCX,usKLAC,usSNPS,usCDNS,usQCOM,usINTC,usTXN,usADI,usNXPI,usON,usBABA,usPDD}
+      symbols: ${APEX_BOT_MORNING_BRIEFING_SYMBOLS:usIXIC,usDJI,usINX,hkHSI,hkHSTECH,usMSFT,usAAPL,usAMZN,usGOOG,usMETA,usTSLA,usSPCX,usNVDA,usAMD,usAVGO,usARM,usMRVL,usMU,usSKHY,usSNDK,usWDC,usSTX,usTSM,usGFS,usASML,usAMAT,usLRCX,usKLAC,usSNPS,usCDNS,usQCOM,usINTC,usTXN,usADI,usNXPI,usON,usBABA,usPDD}
       index-symbols: ${APEX_BOT_MORNING_BRIEFING_INDEX_SYMBOLS:usIXIC,usDJI,usINX}
+      asia-index-symbols: ${APEX_BOT_MORNING_BRIEFING_ASIA_INDEX_SYMBOLS:hkHSI,hkHSTECH}
       star-symbols: ${APEX_BOT_MORNING_BRIEFING_STAR_SYMBOLS:usMSFT,usAAPL,usAMZN,usGOOG,usMETA,usTSLA,usSPCX,usNVDA,usAMD,usAVGO,usARM,usMRVL,usMU,usSKHY,usSNDK,usWDC,usSTX,usTSM,usGFS,usASML,usAMAT,usLRCX,usKLAC,usSNPS,usCDNS,usQCOM,usINTC,usTXN,usADI,usNXPI,usON,usBABA,usPDD}
       star-quote-limit: ${APEX_BOT_MORNING_BRIEFING_STAR_QUOTE_LIMIT:8}
       technology-giants-symbols: ${APEX_BOT_MORNING_BRIEFING_TECHNOLOGY_GIANTS_SYMBOLS:usMSFT,usAAPL,usAMZN,usGOOG,usMETA,usTSLA,usSPCX}

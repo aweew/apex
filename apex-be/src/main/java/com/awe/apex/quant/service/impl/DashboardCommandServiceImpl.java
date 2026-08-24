@@ -9,8 +9,13 @@ import com.awe.apex.quant.domain.dto.DashboardCommandResp;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketForecastDirectionResp;
+import com.awe.apex.quant.domain.dto.MarketForecastResp;
+import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
+import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
+import com.awe.apex.quant.domain.dto.OvernightMarketTheme;
 import com.awe.apex.quant.domain.dto.OperationGuideItemResp;
 import com.awe.apex.quant.domain.dto.PreMarketSummaryResp;
 import com.awe.apex.quant.domain.dto.TodayOperationGuideResp;
@@ -39,6 +44,9 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
 
     private static final LocalTime SESSION_START = LocalTime.of(9, 30);
     private static final LocalTime SESSION_END = LocalTime.of(15, 0);
+    private static final BigDecimal ASIA_WEAK_THRESHOLD = new BigDecimal("-1.00");
+    private static final BigDecimal OVERNIGHT_WEAK_THRESHOLD = new BigDecimal("-0.50");
+    private static final BigDecimal OVERNIGHT_STRONG_THRESHOLD = new BigDecimal("0.50");
 
     /**
      * 根据已有市场和用户数据生成盘前总结与今日操作指引。
@@ -150,6 +158,7 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         DecisionTodayResp decision = context.getDecision();
         boolean decisionFresh = isDecisionFresh(decision, tradeDate, expectedMarketDate);
         String headline = buildHeadline(context, status, tradeDate, expectedMarketDate, decisionFresh);
+        MarketForecastResp forecast = buildForecast(context, status, decisionFresh);
 
         // 机会只来自当日可执行决策，不再把宽泛市场主题包装成用户机会。
         List<CommandDirectionItemResp> opportunityItems = new ArrayList<>();
@@ -276,11 +285,230 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
 
         return PreMarketSummaryResp.builder()
                 .headline(headline)
+                .forecast(forecast)
                 .opportunityItems(opportunityItems)
                 .riskItems(riskItems)
                 .evidenceItems(List.of())
                 .watchConditions(watchConditions)
                 .build();
+    }
+
+    private MarketForecastResp buildForecast(DashboardCommandContextBO context,
+                                             DashboardCommandStatusEnum status,
+                                             boolean decisionFresh) {
+        if (DashboardCommandStatusEnum.BLOCKED.equals(status)
+                || DashboardCommandStatusEnum.STALE.equals(status)) {
+            return MarketForecastResp.builder()
+                    .marketOutlook("关键行情数据不可用，暂不形成今日预测。")
+                    .focusItems(List.of())
+                    .riskItems(List.of())
+                    .watchConditions(List.of(CommandWatchConditionResp.builder()
+                            .title("恢复预测")
+                            .condition("补齐隔夜、亚太和上一交易日 A 股数据后重新生成")
+                            .build()))
+                    .build();
+        }
+
+        MarketBriefingResp marketBriefing = context.getMarketBriefing();
+        MorningBriefingResp morningBriefing = context.getMorningBriefing();
+        List<OvernightMarketQuote> overnightIndexes = Objects.nonNull(morningBriefing)
+                ? morningBriefing.getIndexQuotes() : List.of();
+        List<OvernightMarketQuote> asiaIndexes = Objects.nonNull(morningBriefing)
+                ? morningBriefing.getAsiaQuotes() : List.of();
+        BigDecimal overnightAverage = averageQuotePctChg(overnightIndexes);
+        BigDecimal asiaAverage = averageQuotePctChg(asiaIndexes);
+        boolean asiaWeak = Objects.nonNull(asiaAverage) && asiaAverage.compareTo(ASIA_WEAK_THRESHOLD) <= 0;
+        boolean overnightWeak = Objects.nonNull(overnightAverage)
+                && overnightAverage.compareTo(OVERNIGHT_WEAK_THRESHOLD) <= 0;
+        boolean overnightStrong = Objects.nonNull(overnightAverage)
+                && overnightAverage.compareTo(OVERNIGHT_STRONG_THRESHOLD) >= 0;
+        boolean technologyPressure = asiaWeak || hasWeakTechnologyTheme(morningBriefing);
+        List<MarketForecastDirectionResp> focusItems = buildForecastFocusItems(marketBriefing,
+                context.getDecision(), decisionFresh, technologyPressure);
+        List<MarketForecastDirectionResp> riskItems = buildForecastRiskItems(marketBriefing,
+                morningBriefing, asiaWeak, technologyPressure);
+        List<CommandWatchConditionResp> watchConditions = buildForecastWatchConditions(marketBriefing,
+                asiaWeak, overnightWeak);
+
+        String marketOutlook;
+        if (asiaWeak) {
+            marketOutlook = "预计开盘承压后分化，A 股" + marketBriefing.getStance()
+                    + "基线不变；亚太均值" + formatPercent(asiaAverage) + "限制科技开盘节奏。";
+        } else if (overnightWeak) {
+            marketOutlook = "预计低开后分化，A 股" + marketBriefing.getStance()
+                    + "基线不变；隔夜指数均值" + formatPercent(overnightAverage) + "形成扰动。";
+        } else if (overnightStrong) {
+            marketOutlook = "预计偏强开盘后分化，A 股" + marketBriefing.getStance()
+                    + "基线不变；外盘修复不等于直接追高。";
+        } else {
+            marketOutlook = "预计平开后分化，A 股" + marketBriefing.getStance()
+                    + "基线不变，优先验证昨日强势方向的承接。";
+        }
+        if (Objects.isNull(morningBriefing) || CollUtil.isEmpty(asiaIndexes)) {
+            marketOutlook += " 亚太行情缺失，预测仅基于隔夜与 A 股收盘结构。";
+        }
+
+        return MarketForecastResp.builder()
+                .marketOutlook(marketOutlook)
+                .focusItems(focusItems)
+                .riskItems(riskItems)
+                .watchConditions(watchConditions)
+                .build();
+    }
+
+    private List<MarketForecastDirectionResp> buildForecastFocusItems(MarketBriefingResp marketBriefing,
+                                                                        DecisionTodayResp decision,
+                                                                        boolean decisionFresh,
+                                                                        boolean technologyPressure) {
+        List<MarketForecastDirectionResp> focusItems = new ArrayList<>();
+        List<MarketHotThemeItem> hotThemeItems = marketBriefing.getHotThemeItems();
+        if (CollUtil.isEmpty(hotThemeItems)) {
+            return focusItems;
+        }
+        for (MarketHotThemeItem hotThemeItem : hotThemeItems) {
+            if (Objects.isNull(hotThemeItem) || StringUtils.isBlank(hotThemeItem.getName())
+                    || Objects.nonNull(hotThemeItem.getPctChg()) && hotThemeItem.getPctChg().signum() <= 0
+                    || technologyPressure && isTechnologyTheme(hotThemeItem.getName())) {
+                continue;
+            }
+            String themeName = hotThemeItem.getName().trim();
+            List<String> watchStocks = findMatchingStocks(decision, decisionFresh, themeName);
+            String reason = Objects.nonNull(hotThemeItem.getPctChg())
+                    ? "昨日收盘 " + formatPercent(hotThemeItem.getPctChg()) + "，位于 "
+                    + marketBriefing.getStance() + " 基线下的相对强势方向"
+                    : "昨日收盘热点，需由开盘承接确认强度";
+            focusItems.add(MarketForecastDirectionResp.builder()
+                    .name(themeName)
+                    .reason(reason)
+                    .watchStocks(watchStocks)
+                    .action("只在回踩后有承接时关注，不追高开")
+                    .build());
+            if (focusItems.size() >= 2) {
+                break;
+            }
+        }
+        return focusItems;
+    }
+
+    private List<MarketForecastDirectionResp> buildForecastRiskItems(MarketBriefingResp marketBriefing,
+                                                                       MorningBriefingResp morningBriefing,
+                                                                       boolean asiaWeak,
+                                                                       boolean technologyPressure) {
+        List<MarketForecastDirectionResp> riskItems = new ArrayList<>();
+        if (technologyPressure) {
+            BigDecimal asiaAverage = Objects.nonNull(morningBriefing)
+                    ? averageQuotePctChg(morningBriefing.getAsiaQuotes()) : null;
+            String reason = asiaWeak
+                    ? "亚太科技指数均值 " + formatPercent(asiaAverage) + "，开盘情绪偏弱"
+                    : "隔夜 AI 与芯片主题走弱，未确认前不按反弹处理";
+            riskItems.add(MarketForecastDirectionResp.builder()
+                    .name("科技成长")
+                    .reason(reason)
+                    .watchStocks(List.of())
+                    .action("回避高开追涨，等待盘中承接确认")
+                    .build());
+        }
+        if (riskItems.size() < 2 && Objects.nonNull(marketBriefing.getBreadthUp())
+                && Objects.nonNull(marketBriefing.getBreadthDown())
+                && marketBriefing.getBreadthDown() > marketBriefing.getBreadthUp()) {
+            riskItems.add(MarketForecastDirectionResp.builder()
+                    .name("弱势跟风题材")
+                    .reason("昨日下跌家数 " + marketBriefing.getBreadthDown() + " 高于上涨家数 "
+                            + marketBriefing.getBreadthUp())
+                    .watchStocks(List.of())
+                    .action("不因盘中瞬时拉升追入")
+                    .build());
+        }
+        return riskItems;
+    }
+
+    private List<CommandWatchConditionResp> buildForecastWatchConditions(MarketBriefingResp marketBriefing,
+                                                                            boolean asiaWeak,
+                                                                            boolean overnightWeak) {
+        List<CommandWatchConditionResp> watchConditions = new ArrayList<>();
+        if (Objects.nonNull(marketBriefing.getBreadthUp()) && Objects.nonNull(marketBriefing.getBreadthDown())) {
+            int requiredUpCount = (int) Math.ceil(marketBriefing.getBreadthDown() * 0.8D);
+            String condition = marketBriefing.getBreadthDown() > marketBriefing.getBreadthUp()
+                    ? "上涨家数需回到 " + requiredUpCount + " 家以上，才确认昨日弱广度开始修复"
+                    : "上涨家数继续高于下跌家数，才保留开盘后的进攻节奏";
+            watchConditions.add(CommandWatchConditionResp.builder()
+                    .title("市场广度")
+                    .condition(condition)
+                    .build());
+        }
+        if (asiaWeak || overnightWeak) {
+            watchConditions.add(CommandWatchConditionResp.builder()
+                    .title("外部扰动")
+                    .condition("科技成长开盘后不能继续放大跌幅，否则停止新增仓")
+                    .build());
+        }
+        return watchConditions;
+    }
+
+    private List<String> findMatchingStocks(DecisionTodayResp decision, boolean decisionFresh, String themeName) {
+        List<String> watchStocks = new ArrayList<>();
+        if (!decisionFresh || Objects.isNull(decision) || CollUtil.isEmpty(decision.getBuys())) {
+            return watchStocks;
+        }
+        for (DecisionItemResp buyItem : decision.getBuys()) {
+            if (Objects.isNull(buyItem) || !Boolean.TRUE.equals(buyItem.getExecutableHint())
+                    || StringUtils.isBlank(buyItem.getName())
+                    || StringUtils.isBlank(buyItem.getMainlineName())
+                    || !themeName.equals(buyItem.getMainlineName().trim())) {
+                continue;
+            }
+            watchStocks.add(buyItem.getName().trim());
+            if (watchStocks.size() >= 2) {
+                break;
+            }
+        }
+        return watchStocks;
+    }
+
+    private boolean hasWeakTechnologyTheme(MorningBriefingResp morningBriefing) {
+        if (Objects.isNull(morningBriefing) || CollUtil.isEmpty(morningBriefing.getMarketThemes())) {
+            return false;
+        }
+        for (OvernightMarketTheme marketTheme : morningBriefing.getMarketThemes()) {
+            if (Objects.nonNull(marketTheme) && StringUtils.isNotBlank(marketTheme.getCode())
+                    && (marketTheme.getCode().contains("CHIP") || marketTheme.getCode().contains("SEMICONDUCTOR"))
+                    && Objects.nonNull(marketTheme.getMedianPctChg())
+                    && marketTheme.getMedianPctChg().compareTo(OVERNIGHT_WEAK_THRESHOLD) <= 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTechnologyTheme(String themeName) {
+        return themeName.contains("半导体") || themeName.contains("芯片") || themeName.contains("算力")
+                || themeName.contains("人工智能") || themeName.contains("AI") || themeName.contains("通信");
+    }
+
+    private BigDecimal averageQuotePctChg(List<OvernightMarketQuote> marketQuotes) {
+        if (CollUtil.isEmpty(marketQuotes)) {
+            return null;
+        }
+        BigDecimal totalPctChg = BigDecimal.ZERO;
+        int validQuoteCount = 0;
+        for (OvernightMarketQuote marketQuote : marketQuotes) {
+            if (Objects.isNull(marketQuote) || Objects.isNull(marketQuote.getPctChg())) {
+                continue;
+            }
+            totalPctChg = totalPctChg.add(marketQuote.getPctChg());
+            validQuoteCount++;
+        }
+        if (validQuoteCount == 0) {
+            return null;
+        }
+        return totalPctChg.divide(BigDecimal.valueOf(validQuoteCount), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private String formatPercent(BigDecimal value) {
+        if (Objects.isNull(value)) {
+            return "--";
+        }
+        return (value.signum() > 0 ? "+" : "") + value.setScale(2, java.math.RoundingMode.HALF_UP) + "%";
     }
 
     private String buildHeadline(DashboardCommandContextBO context,

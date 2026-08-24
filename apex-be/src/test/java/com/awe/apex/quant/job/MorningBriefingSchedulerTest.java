@@ -5,6 +5,7 @@ import com.awe.apex.quant.bot.service.IBotNotificationService;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsRefreshResp;
 import com.awe.apex.quant.service.IMorningBriefingService;
+import com.awe.apex.quant.service.IMarketOpinionService;
 import com.awe.apex.quant.service.INewsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,7 @@ class MorningBriefingSchedulerTest {
     private final ApexBotProperties properties = new ApexBotProperties();
     private final INewsService newsService = mock(INewsService.class);
     private final IMorningBriefingService morningBriefingService = mock(IMorningBriefingService.class);
+    private final IMarketOpinionService marketOpinionService = mock(IMarketOpinionService.class);
     private final IBotNotificationService notificationService = mock(IBotNotificationService.class);
     private final MorningBriefingScheduler scheduler = new MorningBriefingScheduler();
 
@@ -30,6 +32,7 @@ class MorningBriefingSchedulerTest {
         ReflectionTestUtils.setField(scheduler, "properties", properties);
         ReflectionTestUtils.setField(scheduler, "newsService", newsService);
         ReflectionTestUtils.setField(scheduler, "morningBriefingService", morningBriefingService);
+        ReflectionTestUtils.setField(scheduler, "marketOpinionService", marketOpinionService);
         ReflectionTestUtils.setField(scheduler, "notificationService", notificationService);
         when(newsService.refresh("eastmoney,cls,ths,sina", 80))
                 .thenReturn(NewsRefreshResp.builder().message("完成").build());
@@ -47,6 +50,7 @@ class MorningBriefingSchedulerTest {
         scheduler.generateMorningBriefing();
 
         verify(newsService).refresh("eastmoney,cls,ths,sina", 80);
+        verify(marketOpinionService).refresh();
         verify(morningBriefingService).generate();
         verify(notificationService, never()).notifyMorningBriefing(org.mockito.ArgumentMatchers.any());
     }
