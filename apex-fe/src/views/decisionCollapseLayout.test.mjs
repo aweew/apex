@@ -4,6 +4,17 @@ import test from 'node:test'
 
 const decisionSource = await readFile(new URL('./DecisionView.vue', import.meta.url), 'utf8')
 
+test('decision workspace tabs and scope controls share one compact toolbar', () => {
+  assert.match(
+    decisionSource,
+    /<header class="header dec-header">[\s\S]*?<div class="dec-toolbar">[\s\S]*?<DecisionWorkspaceTabs \/>[\s\S]*?<div class="dec-controls">[\s\S]*?<\/div>\s*<\/div>[\s\S]*?<\/header>/,
+  )
+  assert.match(
+    decisionSource,
+    /\.dec-toolbar\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*flex-start;/,
+  )
+})
+
 test('mobile decision collapse keeps each arrow centered beside its two-line heading', () => {
   const mobileStyles = decisionSource.slice(decisionSource.indexOf('@media (max-width: 560px)'))
 

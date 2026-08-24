@@ -326,7 +326,6 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page signal-page">
-    <DecisionWorkspaceTabs />
     <header class="header signal-header">
       <div class="signal-heading">
         <p class="eyebrow">Signals</p>
@@ -359,6 +358,7 @@ onBeforeUnmount(() => {
         </el-button>
       </div>
     </header>
+    <DecisionWorkspaceTabs />
 
     <div class="signal-metrics" v-loading="overviewLoading">
       <div class="signal-metric">

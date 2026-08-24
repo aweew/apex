@@ -240,7 +240,7 @@ function openTheme(theme) {
   const query = { type: theme.boardType || 'CONCEPT' }
   if (theme.code) query.code = theme.code
   else query.q = theme.name
-  router.push({ path: '/sector', query })
+  router.push({ path: '/market', query: { ...query, tab: 'sector' } })
 }
 
 async function loadHistory() {
@@ -582,7 +582,6 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page decision" v-loading="loading">
-    <DecisionWorkspaceTabs />
     <header class="header dec-header">
       <div class="dec-heading">
         <p class="eyebrow">Decision</p>
@@ -591,23 +590,26 @@ onBeforeUnmount(() => {
           {{ data?.message || '先看市场立场，再按评分出买卖单' }}
         </p>
       </div>
-      <div class="dec-controls">
-        <label class="market-scope" title="默认不含北交所；开启后在决策清单中纳入京市">
-          <span>
-            <em>股票范围</em>
-            <b>京市</b>
-          </span>
-          <el-switch
-            v-model="includeBj"
-            size="small"
-            aria-label="纳入京市"
-            @change="persistBuyFilters"
-          />
-        </label>
-        <el-button class="sync-link" link type="primary" @click="router.push('/sync')">
-          同步中心
-          <el-icon><ArrowRight /></el-icon>
-        </el-button>
+      <div class="dec-toolbar">
+        <DecisionWorkspaceTabs />
+        <div class="dec-controls">
+          <label class="market-scope" title="默认不含北交所；开启后在决策清单中纳入京市">
+            <span>
+              <em>股票范围</em>
+              <b>京市</b>
+            </span>
+            <el-switch
+              v-model="includeBj"
+              size="small"
+              aria-label="纳入京市"
+              @change="persistBuyFilters"
+            />
+          </label>
+          <el-button class="sync-link" link type="primary" @click="router.push('/sync')">
+            同步中心
+            <el-icon><ArrowRight /></el-icon>
+          </el-button>
+        </div>
       </div>
     </header>
 
@@ -1540,9 +1542,9 @@ onBeforeUnmount(() => {
 
 .dec-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
   padding: 2px 2px 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -1566,6 +1568,18 @@ onBeforeUnmount(() => {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.dec-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.dec-toolbar :deep(.decision-workspace-tabs) {
+  margin: 0;
 }
 
 .dec-controls {
@@ -2462,8 +2476,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
-  .dec-header {
-    grid-template-columns: minmax(0, 1fr) auto;
+  .dec-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
   }
 
   .note-row {

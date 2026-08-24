@@ -138,7 +138,7 @@ a {
 .header > div:first-child {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   column-gap: 6px;
 }
 

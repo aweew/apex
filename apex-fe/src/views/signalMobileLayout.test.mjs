@@ -7,6 +7,13 @@ const [signalSource, termTipSource] = await Promise.all([
   readFile(new URL('../components/TermTip.vue', import.meta.url), 'utf8'),
 ])
 
+test('strategy signal workspace tabs follow the module header', () => {
+  assert.match(
+    signalSource,
+    /<header class="header signal-header">[\s\S]*?<\/header>\s*<DecisionWorkspaceTabs \/>/,
+  )
+})
+
 test('strategy signal page keeps loading feedback local to the affected content', () => {
   assert.doesNotMatch(signalSource, /class="page signal-page"\s+v-loading=/)
   assert.match(signalSource, /class="signal-results"\s+v-loading="listLoading \|\| ordering"/)
