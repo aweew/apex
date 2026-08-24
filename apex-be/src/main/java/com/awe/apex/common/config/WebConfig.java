@@ -1,6 +1,5 @@
 package com.awe.apex.common.config;
 
-import cn.hutool.core.collection.CollUtil;
 import cn.dev33.satoken.interceptor.SaInterceptor;
 import cn.dev33.satoken.router.SaRouter;
 import cn.dev33.satoken.stp.StpUtil;
@@ -19,7 +18,6 @@ import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -37,25 +35,18 @@ public class WebConfig implements WebMvcConfigurer {
     @Resource
     private ApexProperties apexProperties;
 
-    private final List<String> defaultPath = CollUtil.newArrayList("/**");
-
-    private final List<String> excludePath = Arrays.asList(
-            "/swagger-ui.html",
-            "/swagger-ui/**",
-            "/v2/**",
-            "/v3/**",
-            "/**/doc.html",
-            "/webjars/**",
-            "/swagger-resources/**",
-            "/test/**",
-            "/**/login",
-            "/csrf"
+    private static final List<String> PUBLIC_PATHS = List.of(
+            "/api/auth/login",
+            "/api/auth/register",
+            "/api/auth/reset",
+            "/api/health/**",
+            "/bot/v1/**"
     );
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new SaInterceptor(handle -> SaRouter.match("/api/**")
-                        .notMatch("/api/auth/login", "/api/auth/register", "/api/auth/reset", "/api/health")
+        registry.addInterceptor(new SaInterceptor(handle -> SaRouter.match("/**")
+                        .notMatch(PUBLIC_PATHS.toArray(String[]::new))
                         .check(r -> StpUtil.checkLogin())))
                 .addPathPatterns("/**").order(-100);
         registry.addInterceptor(userAssetInterceptor).addPathPatterns("/api/paper/**").order(-90);

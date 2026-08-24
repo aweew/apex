@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.io.IOException;
 import java.util.Map;
@@ -46,6 +47,18 @@ public class GlobalExceptionHandler {
         markRequestLevel(request, Constants.LOG_LEVEL_WARN);
         log.warn("登录态失效，类型={}", exception.getType());
         return Result.failure(HttpStatus.UNAUTHORIZED.value(), "登录已失效，请重新登录");
+    }
+
+    /**
+     * 保持不存在资源的 HTTP 语义，避免客户端将 404 误判为业务成功。
+     *
+     * @param exception 资源未找到异常
+     * @return 未找到响应
+     */
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    @ExceptionHandler(NoResourceFoundException.class)
+    public Result<?> handleNoResourceFoundException(NoResourceFoundException exception) {
+        return Result.failure(HttpStatus.NOT_FOUND.value(), "请求资源不存在");
     }
 
     /**
