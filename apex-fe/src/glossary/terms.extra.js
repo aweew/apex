@@ -1,5 +1,139 @@
 /** 追加词条片段：由脚本合并进 terms.js，勿单独 import */
 export const EXTRA_TERMS = [
+  // —— 策略（因子研究） ——
+  {
+    id: 'research_score',
+    title: 'Research Score',
+    aliases: ['研究评分', '研究分', 'RESEARCH_V2'],
+    category: '策略',
+    short: '把可用的质量、动量、成长、估值和资金因子按固定权重汇总的研究刻度。',
+    plain: '它用于横向比较研究信号，不是买卖指令；市场环境单独作为门控，不计进该分数。',
+    detail:
+      '每个维度先在可比样本中换算为分位，再按已发布快照中的固定权重汇总。覆盖不足时，系统会保留缺失和低置信度，而不是补造分数。分数反映当前可追溯数据下的相对位置，不能替代个股尽调、仓位和风险控制。',
+    tip: '先看覆盖度与快照日期，再比较同一时点、同一口径下的标的。',
+    highlights: ['横向比较研究信号', '不计进该分数', '保留缺失和低置信度'],
+    related: ['factor_coverage', 'percentile', 'market_gate'],
+  },
+  {
+    id: 'market_gate',
+    title: '市场门控',
+    aliases: ['市场环境门控', '市场状态'],
+    category: '策略',
+    short: '用市场环境决定仓位和入场节奏的独立约束，不参与个股研究评分。',
+    plain: '市场偏防守时，优秀个股也未必适合重仓；市场数据不足时，系统不会假装给出环境结论。',
+    detail:
+      '门控展示的是市场简报的进攻、均衡或防守状态，以及对应时点。它和 Research Score 并列，是为了避免把市场风险偏好混成个股基本面分数。两个信号需要分别判断：个股是否值得研究，和当前是否适合执行。',
+    highlights: ['仓位和入场节奏', '不参与个股研究评分', '不会假装给出环境结论'],
+    related: ['research_score', 'market_factor'],
+  },
+  {
+    id: 'factor_coverage',
+    title: '因子覆盖度',
+    aliases: ['可用权重覆盖', '数据覆盖'],
+    category: '策略',
+    short: '当前已具备有效数据的因子权重占全部设计权重的比例。',
+    plain: '覆盖度低说明结论依赖的证据不完整，不等于标的本身差。',
+    detail:
+      '例如某个重要维度缺少最新财报或可比样本，其对应权重不会被虚构填满。覆盖度与分数一起显示，帮助区分「分数低」和「信息不够」。不同模型的覆盖度只能在各自口径内比较。',
+    tip: '覆盖度不足时，优先补数据或降低结论强度，而不是只盯总分。',
+    highlights: ['证据不完整', '不会被虚构填满', '分数低', '信息不够'],
+    related: ['research_score', 'percentile'],
+  },
+  {
+    id: 'percentile',
+    title: '分位',
+    aliases: ['百分位', '因子分位', 'percentile'],
+    category: '策略',
+    short: '某个指标在可比样本中的相对位置，0 到 100 表示从低到高。',
+    plain: '分位 80 表示该指标高于约 80% 的可比样本，但不代表一定更好。',
+    detail:
+      '研究评分优先在行业内比较，样本不足时再使用全市场。不同因子的好坏方向不一定相同：高 ROE 通常更好，高估值却未必更好，因此系统会先按各因子的经济含义统一方向，再进行汇总。',
+    highlights: ['高于约 80% 的可比样本', '不代表一定更好', '统一方向'],
+    related: ['research_score', 'factor_coverage', 'pe_percentile'],
+  },
+  {
+    id: 'quality_factor',
+    title: '质量因子',
+    aliases: ['质量', 'QUALITY'],
+    category: '策略',
+    short: '衡量公司盈利能力、财务稳健性和现金流质量的因子。',
+    detail:
+      '当前研究快照以 ROE 为代表指标，优先在行业内比较。它不是对公司质量的完整评级，仍需结合杠杆、利润来源和现金流验证。',
+    related: ['roe', 'growth_factor'],
+  },
+  {
+    id: 'momentum_factor',
+    title: '动量因子',
+    aliases: ['动量', 'MOMENTUM'],
+    category: '策略',
+    short: '衡量股价相对基准近期走势强弱的因子。',
+    detail:
+      '当前研究快照使用 RS20 与 RS60 相对沪深300的均值。动量强只说明趋势相对更强，不能保证趋势延续；波动、估值和市场环境仍需单独评估。',
+    related: ['rs20', 'rs60', 'market_gate'],
+  },
+  {
+    id: 'growth_factor',
+    title: '成长因子',
+    aliases: ['成长', 'GROWTH'],
+    category: '策略',
+    short: '衡量最新财报中盈利增长速度的因子。',
+    detail:
+      '当前研究快照使用净利润同比。单期高增长可能来自低基数、一次性收益或周期波动，因此不能脱离营收、现金流和持续性单独解读。',
+    related: ['yoy', 'quality_factor'],
+  },
+  {
+    id: 'valuation_factor',
+    title: '估值因子',
+    aliases: ['估值', 'VALUATION'],
+    category: '策略',
+    short: '用盈利收益率衡量价格相对盈利是否更有安全边际的因子。',
+    detail:
+      '盈利收益率可理解为 PE 的倒数。亏损、PE 无效或不可比时，该维度保持缺失。低估值并不自动代表便宜，可能反映盈利下滑或行业风险。',
+    related: ['pe_ttm', 'pe_percentile'],
+  },
+  {
+    id: 'capital_factor',
+    title: '资金因子',
+    aliases: ['资金', 'CAPITAL'],
+    category: '策略',
+    short: '衡量最新成交活跃度相对近期常态的因子。',
+    detail:
+      '当前研究快照使用最新成交额相对前20日均额。放量可能代表关注和增量资金，也可能是高位分歧，必须结合价格位置和市场环境。',
+    related: ['volume_ratio', 'momentum_factor'],
+  },
+  {
+    id: 'technical_factor',
+    title: '技术因子',
+    aliases: ['技术', 'TECHNICAL'],
+    category: '策略',
+    short: '描述趋势、波动和交易拥挤度的技术指标集合。',
+    detail:
+      '本页展示 RSI、MACD、ATR 和波动率等原始指标，供观察使用；它们当前不直接构成 Research Score。不同指标的信号含义不同，不应简单相加。',
+    related: ['rsi', 'macd', 'atr'],
+  },
+  {
+    id: 'market_factor',
+    title: '市场因子',
+    aliases: ['市场', 'MARKET'],
+    category: '策略',
+    short: '描述全市场风险偏好、涨跌广度与赚钱效应的指标集合。',
+    detail:
+      '本页市场因子用于观察整体环境，市场门控才是仓位与入场节奏的独立约束。市场数据缺失时应保持缺失，不从个股数据反推市场结论。',
+    related: ['market_gate', 'market_breadth', 'money_effect'],
+  },
+  {
+    id: 'alpha_heuristic',
+    title: 'HEURISTIC V1 对照',
+    aliases: ['Alpha Score', '规则综合分', 'HEURISTIC_V1'],
+    category: '策略',
+    short: '由固定规则计算的旧版综合分，用于与 Research Score 对照。',
+    plain: '它保留动量、ROE、盈利增长、量能和市场强度等规则权重，但不等同于研究快照。',
+    detail:
+      'V1 是可解释的启发式评分，页面将其与新版研究评分并列，方便观察口径差异。缺失项会降低覆盖度；两套分数的模型、样本和时点不同，不能机械地把数值当成同一把尺。',
+    highlights: ['固定规则计算', '不等同于研究快照', '口径差异'],
+    related: ['research_score', 'factor_coverage'],
+  },
+
   // —— 绩效（补充） ——
   {
     id: 'annualized_return',

@@ -4,12 +4,25 @@ import { findTerm, GLOSSARY_EVENT } from '../glossary/lookup.js'
 
 const props = defineProps({
   /** 词条 id 或别名 */
-  term: { type: String, required: true },
+  term: { type: String, default: '' },
+  /** 未收录词条时显示的指标名称 */
+  title: { type: String, default: '' },
+  /** 未收录词条时显示的简要解释 */
+  description: { type: String, default: '' },
+  /** 未收录词条时显示的补充说明 */
+  detail: { type: String, default: '' },
+  /** 未收录词条的分类标签 */
+  category: { type: String, default: '指标说明' },
   /** 气泡放置 */
   placement: { type: String, default: 'top' },
 })
 
 const entry = computed(() => findTerm(props.term))
+const displayTitle = computed(() => entry.value?.title || props.title || props.term)
+const displayCategory = computed(() => entry.value?.category || props.category)
+const displayDescription = computed(() => entry.value?.plain || entry.value?.short || props.description)
+const displayDetail = computed(() => entry.value?.tip || props.detail)
+const hasContent = computed(() => Boolean(displayTitle.value && displayDescription.value))
 const isMobile = ref(false)
 let mobileMediaQuery
 
@@ -22,6 +35,13 @@ function openFull() {
   window.dispatchEvent(
     new CustomEvent(GLOSSARY_EVENT, { detail: { termId: entry.value.id } }),
   )
+}
+
+function openReference(event) {
+  if (!entry.value) return
+  event.stopPropagation()
+  event.preventDefault()
+  openFull()
 }
 
 onMounted(() => {
@@ -40,35 +60,41 @@ onBeforeUnmount(() => {
     v-if="entry && isMobile"
     type="button"
     class="term-tip"
+    :aria-label="`查看${displayTitle}的解释`"
     @click.stop.prevent="openFull"
   >
-    <slot>{{ entry.title }}</slot>
+    <slot>{{ displayTitle }}</slot>
   </button>
   <el-popover
-    v-else-if="entry"
+    v-else-if="hasContent"
     :placement="placement"
     :width="320"
-    trigger="hover"
-    :show-after="180"
+    :trigger="isMobile ? 'click' : 'hover'"
+    :show-after="isMobile ? 0 : 180"
     popper-class="term-tip-popper"
   >
     <template #reference>
-      <button type="button" class="term-tip" @click.stop.prevent="openFull">
-        <slot>{{ entry.title }}</slot>
+      <button
+        type="button"
+        class="term-tip"
+        :aria-label="`查看${displayTitle}的解释`"
+        @click="openReference"
+      >
+        <slot>{{ displayTitle }}</slot>
       </button>
     </template>
     <div class="term-tip__body">
       <div class="term-tip__head">
-        <strong>{{ entry.title }}</strong>
-        <span class="term-tip__cat">{{ entry.category }}</span>
+        <strong>{{ displayTitle }}</strong>
+        <span v-if="displayCategory" class="term-tip__cat">{{ displayCategory }}</span>
       </div>
-      <p class="term-tip__short">{{ entry.plain || entry.short }}</p>
-      <p v-if="entry.tip" class="term-tip__hint">{{ entry.tip }}</p>
-      <button type="button" class="term-tip__more" @click="openFull">打开名词百科</button>
+      <p class="term-tip__short">{{ displayDescription }}</p>
+      <p v-if="displayDetail" class="term-tip__hint">{{ displayDetail }}</p>
+      <button v-if="entry" type="button" class="term-tip__more" @click="openFull">打开名词百科</button>
     </div>
   </el-popover>
-  <span v-else class="term-tip term-tip--miss" :title="`未收录：${term}`">
-    <slot>{{ term }}</slot>
+  <span v-else class="term-tip term-tip--miss" :title="`未收录：${displayTitle}`">
+    <slot>{{ displayTitle }}</slot>
   </span>
 </template>
 
@@ -90,6 +116,13 @@ onBeforeUnmount(() => {
 }
 
 .term-tip:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.term-tip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 2px;
   color: var(--accent);
   border-bottom-color: var(--accent);
 }

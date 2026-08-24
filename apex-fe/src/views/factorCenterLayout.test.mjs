@@ -4,9 +4,9 @@ import test from 'node:test'
 
 const source = await readFile(new URL('./FactorCenterView.vue', import.meta.url), 'utf8')
 
-test('factor center exposes seven factor categories and fixed alpha weights', () => {
+test('factor center exposes seven factor categories and keeps legacy alpha weights as comparison', () => {
   assert.match(source, /v-for="category in detail\.categories"/)
-  assert.match(source, /Alpha Score/)
+  assert.match(source, /HEURISTIC V1 对照/)
   assert.match(source, /Momentum 30%/)
   assert.match(source, /ROE 20%/)
   assert.match(source, /Earnings Growth 20%/)
@@ -21,6 +21,17 @@ test('factor center supports embedded stock detail mode', () => {
   assert.match(source, /watch\(\s*\(\) => props\.stockCode/)
   assert.match(source, /v-if="!embedded" class="header factor-header"/)
   assert.match(source, /v-if="!embedded" class="security-strip"/)
+})
+
+test('factor center presents market gate and research score separately from legacy alpha', () => {
+  assert.match(source, /class="research-summary"/)
+  assert.match(source, /detail\.marketGate\?\.label/)
+  assert.match(source, /detail\.research\?\.score/)
+  assert.match(source, /detail\.research\?\.confidence/)
+  assert.match(source, /researchComponents/)
+  assert.match(source, /component\.percentile/)
+  assert.match(source, /formatContribution\(component\.contribution\)/)
+  assert.match(source, /HEURISTIC V1 对照/)
 })
 
 test('factor center keeps missing data visible instead of rendering a fabricated value', () => {
@@ -40,6 +51,18 @@ test('factor explanations are visible and low-weight alpha components start coll
   assert.doesNotMatch(source, /<el-collapse[^>]+v-model=/)
 })
 
+test('factor center reuses glossary tips for research metrics and dynamic factor descriptions', () => {
+  assert.match(source, /<TermTip term="market_gate">市场门控<\/TermTip>/)
+  assert.match(source, /<TermTip term="research_score">Research Score<\/TermTip>/)
+  assert.match(source, /<TermTip term="factor_coverage">可用权重覆盖<\/TermTip>/)
+  assert.match(source, /<TermTip term="percentile">分位<\/TermTip>/)
+  assert.match(source, /:term="factorTerm\(component\.key\)"/)
+  assert.match(source, /:description="component\.description"/)
+  assert.match(source, /:term="factorTerm\(category\.key\)"/)
+  assert.match(source, /:term="factorTerm\(factor\.key\)"/)
+  assert.match(source, /:description="factor\.description"/)
+})
+
 test('factor center resolves names and ignores stale stock responses', () => {
   assert.match(source, /let requestSeq = 0/)
   assert.match(source, /const currentRequest = \+\+requestSeq/)
@@ -52,5 +75,6 @@ test('factor center uses stable responsive grids and mobile touch targets', () =
   assert.match(source, /\.factor-layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(260px, 340px\) minmax\(0, 1fr\);/)
   assert.match(source, /\.factor-categories\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
   assert.match(source, /@media \(max-width: 820px\)[\s\S]*?\.factor-layout,[\s\S]*?\.factor-categories\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+  assert.match(source, /\.research-components\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/)
   assert.match(source, /@media \(max-width: 820px\)[\s\S]*?\.factor-query :deep\(\.el-input__wrapper\)[\s\S]*?min-height:\s*44px;/)
 })

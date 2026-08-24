@@ -26,6 +26,33 @@ const primaryAlphaComponents = computed(() =>
 const secondaryAlphaComponents = computed(() =>
   (detail.value?.alphaComponents || []).filter((component) => Number(component.weight) <= 15),
 )
+const researchComponents = computed(() => detail.value?.research?.components || [])
+const researchEvidence = computed(() =>
+  researchComponents.value
+    .filter((component) => component.available && component.contribution != null)
+    .sort((left, right) => Number(right.contribution) - Number(left.contribution)),
+)
+const factorTerms = {
+  QUALITY: 'quality_factor',
+  MOMENTUM: 'momentum_factor',
+  GROWTH: 'growth_factor',
+  VALUATION: 'valuation_factor',
+  CAPITAL: 'capital_factor',
+  TECHNICAL: 'technical_factor',
+  MARKET: 'market_factor',
+  PE: 'pe_ttm',
+  PB: 'pb',
+  RSI: 'rsi',
+  MACD: 'macd',
+  ATR: 'atr',
+  VOLATILITY: 'volatility',
+  MAIN_CAPITAL: 'main_fund_flow',
+  AMOUNT: 'amount',
+  AMOUNT_RATIO: 'volume_ratio',
+  MARKET_BREADTH: 'market_breadth',
+  LIMIT_HEIGHT: 'lianban',
+  MONEY_EFFECT: 'money_effect',
+}
 
 const scoreTone = computed(() => {
   if (detail.value?.alphaScore == null || detail.value?.alphaScore === '') return 'is-missing'
@@ -114,6 +141,22 @@ function formatRawValue(component) {
   return `${formatNumber(component.rawValue)}%`
 }
 
+function formatResearchRaw(component) {
+  if (!component?.available || component.rawValue == null) return '暂无数据'
+  return `${formatNumber(component.rawValue)}${component.unit || ''}`
+}
+
+function formatContribution(value) {
+  if (value == null || value === '') return '-'
+  const number = Number(value)
+  if (Number.isNaN(number)) return String(value)
+  return `${number > 0 ? '+' : ''}${number.toFixed(1)}`
+}
+
+function factorTerm(key) {
+  return factorTerms[key] || ''
+}
+
 function goStockDetail() {
   if (detail.value?.code) router.push(`/stock/${detail.value.code}`)
 }
@@ -186,18 +229,62 @@ onMounted(() => loadDetail())
         </div>
       </section>
 
+      <section class="research-summary" aria-label="研究评分">
+        <div class="market-gate" :class="`is-${String(detail.marketGate?.level || 'missing').toLowerCase()}`">
+          <span><TermTip term="market_gate">市场门控</TermTip></span>
+          <strong>{{ detail.marketGate?.label || '数据不足' }}</strong>
+          <small>{{ detail.marketGate?.asOf ? `截至 ${detail.marketGate.asOf}` : '时点缺失' }}</small>
+        </div>
+        <div class="research-score">
+          <span><TermTip term="research_score">Research Score</TermTip></span>
+          <strong>{{ formatNumber(detail.research?.score, 1) }}</strong>
+          <b>{{ detail.research?.label || '研究信息不足' }}</b>
+          <small>{{ detail.research?.model || 'RESEARCH_V2' }} · {{ detail.research?.confidence || 'LOW' }} 置信度</small>
+        </div>
+        <div class="research-meta">
+          <span><TermTip term="factor_coverage">可用权重覆盖</TermTip></span>
+          <strong>{{ formatNumber(detail.research?.coverage, 0) }}%</strong>
+          <small>{{ detail.research?.asOf ? `快照 ${detail.research.asOf}` : '尚未发布快照' }}</small>
+        </div>
+        <p class="research-reason">{{ detail.research?.reason }}</p>
+        <div class="research-components">
+          <div
+            v-for="component in researchComponents"
+            :key="component.key"
+            class="research-component"
+            :class="{ 'is-missing': !component.available }"
+          >
+            <span>
+              <TermTip :term="factorTerm(component.key)" :title="component.label" :description="component.description">
+                {{ component.label }}
+              </TermTip>
+            </span>
+            <strong>{{ formatResearchRaw(component) }}</strong>
+            <b>
+              <TermTip term="percentile">分位</TermTip>
+              {{ component.percentile == null ? '-' : `${formatNumber(component.percentile, 0)}%` }}
+            </b>
+            <em :class="Number(component.contribution) >= 0 ? 'is-positive' : 'is-negative'">{{ formatContribution(component.contribution) }}</em>
+          </div>
+        </div>
+        <div v-if="researchEvidence.length" class="research-evidence">
+          <span>主要支持 {{ researchEvidence.slice(0, 3).map((component) => component.label).join('、') }}</span>
+          <span>主要风险 {{ researchEvidence.slice(-2).reverse().map((component) => component.label).join('、') }}</span>
+        </div>
+      </section>
+
       <div class="factor-layout">
         <aside class="alpha-panel" :class="scoreTone">
           <div class="alpha-heading">
             <div>
-              <span>Alpha Score</span>
+              <span><TermTip term="alpha_heuristic">HEURISTIC V1 对照</TermTip></span>
               <strong>{{ detail.alphaLabel }}</strong>
               <small>{{ detail.scoreModel }}</small>
             </div>
             <div class="alpha-score">{{ formatNumber(detail.alphaScore, 1) }}</div>
           </div>
           <div class="coverage-row">
-            <span>数据覆盖</span>
+            <span><TermTip term="factor_coverage">数据覆盖</TermTip></span>
             <strong>{{ formatNumber(detail.coverage, 0) }}%</strong>
           </div>
           <el-progress
@@ -214,7 +301,11 @@ onMounted(() => loadDetail())
               :class="{ 'is-missing': !component.available }"
             >
               <div class="component-name">
-                <strong>{{ component.label }}</strong>
+                <strong>
+                  <TermTip :title="component.label" :description="component.description">
+                    {{ component.label }}
+                  </TermTip>
+                </strong>
                 <span>{{ formatRawValue(component) }}</span>
               </div>
               <div class="component-score">
@@ -244,7 +335,11 @@ onMounted(() => loadDetail())
                   :class="{ 'is-missing': !component.available }"
                 >
                   <div class="component-name">
-                    <strong>{{ component.label }}</strong>
+                    <strong>
+                      <TermTip :title="component.label" :description="component.description">
+                        {{ component.label }}
+                      </TermTip>
+                    </strong>
                     <span>{{ formatRawValue(component) }}</span>
                   </div>
                   <div class="component-score">
@@ -280,7 +375,11 @@ onMounted(() => loadDetail())
             class="factor-category"
           >
             <header>
-              <h2>{{ category.label }}</h2>
+              <h2>
+                <TermTip :term="factorTerm(category.key)" :title="category.label" :description="category.description">
+                  {{ category.label }}
+                </TermTip>
+              </h2>
               <p>{{ category.description }}</p>
             </header>
             <div class="factor-items">
@@ -289,9 +388,12 @@ onMounted(() => loadDetail())
                 :key="factor.key"
                 class="factor-item"
                 :class="{ 'is-missing': factor.status === 'MISSING' }"
-                :title="factor.description"
               >
-                <span>{{ factor.label }}</span>
+                <span>
+                  <TermTip :term="factorTerm(factor.key)" :title="factor.label" :description="factor.description">
+                    {{ factor.label }}
+                  </TermTip>
+                </span>
                 <strong>{{ formatFactor(factor) }}</strong>
                 <p class="factor-description">{{ factor.description }}</p>
                 <small>{{ factor.asOf ? `截至 ${factor.asOf}` : '时点缺失' }}</small>
@@ -376,6 +478,106 @@ onMounted(() => loadDetail())
   gap: 16px;
   align-items: start;
   margin-top: 16px;
+}
+
+.research-summary {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(190px, 1fr) minmax(150px, 0.8fr);
+  gap: 12px 18px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-top: 3px solid var(--accent);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--glass);
+}
+
+.market-gate,
+.research-score,
+.research-meta {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.market-gate span,
+.research-score span,
+.research-meta span,
+.research-components span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.market-gate strong,
+.research-score b,
+.research-meta strong {
+  font-size: 16px;
+}
+
+.research-score strong {
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.market-gate small,
+.research-score small,
+.research-meta small,
+.research-reason,
+.research-evidence {
+  color: var(--slate);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.market-gate.is-offensive strong,
+.research-component em.is-positive {
+  color: var(--down);
+}
+
+.market-gate.is-defensive strong,
+.research-component em.is-negative {
+  color: var(--up);
+}
+
+.research-reason {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.research-components {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.research-component {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.research-component strong,
+.research-component b,
+.research-component em {
+  font-size: 12px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.research-component.is-missing {
+  opacity: 0.56;
+}
+
+.research-evidence {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 8px 18px;
 }
 
 .alpha-panel,
@@ -667,6 +869,19 @@ onMounted(() => loadDetail())
 }
 
 @media (max-width: 820px) {
+  .research-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .research-score {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .research-components {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .factor-center-page {
     --page-title-size: 24px;
     padding: 16px 14px 36px;
