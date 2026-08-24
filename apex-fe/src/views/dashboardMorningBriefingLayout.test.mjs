@@ -25,13 +25,13 @@ test('dashboard uses command headline with legacy advice fallback and a new cach
 
 test('dashboard places the command band after market effect and before pre-market context', () => {
   const effectIndex = dashboardSource.indexOf('aria-label="赚钱效应"')
-  const commandIndex = dashboardSource.indexOf('aria-label="盘前指挥"')
+  const commandIndex = dashboardSource.indexOf('aria-label="开盘准备"')
   const contextIndex = dashboardSource.indexOf('aria-label="盘前依据"')
 
   assert.ok(effectIndex > 0)
   assert.ok(commandIndex > effectIndex)
   assert.ok(contextIndex > commandIndex)
-  assert.match(dashboardSource, /<section\s+v-if="command"[^>]+class="command-band[^>]+aria-label="盘前指挥"/s)
+  assert.match(dashboardSource, /<section\s+v-if="command"[^>]+class="command-band[^>]+aria-label="开盘准备"/s)
   assert.match(dashboardSource, /command\.tradeDate/)
   assert.match(dashboardSource, /command\.marketDataAsOf/)
   assert.match(dashboardSource, /command\.decisionDataAsOf/)
@@ -87,6 +87,10 @@ test('dashboard command band is two-column on desktop and safe on phone layouts'
   assert.match(
     dashboardSource,
     /@media \(max-width: 900px\)[\s\S]*?\.command-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.morning-context-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*gap:\s*0;/s,
   )
   assert.match(dashboardSource, /\.command-action\s*\{[^}]*min-height:\s*44px;/s)
   assert.match(dashboardSource, /\.command-action[^}]*overflow-wrap:\s*anywhere;/s)

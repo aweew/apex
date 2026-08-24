@@ -580,10 +580,10 @@ onMounted(() => {
       </div>
     </section>
 
-    <section v-if="command" class="command-band enter delay-1" aria-label="盘前指挥">
+    <section v-if="command" class="command-band enter delay-1" aria-label="开盘准备">
       <div class="command-head">
         <div>
-          <h3>盘前指挥</h3>
+          <h3>开盘准备</h3>
           <p>目标交易日 {{ command.tradeDate || '-' }}</p>
         </div>
         <span class="command-status" :class="`status-${String(command.status || '').toLowerCase()}`">
@@ -591,7 +591,7 @@ onMounted(() => {
         </span>
       </div>
 
-      <div class="command-meta" aria-label="盘前指挥数据时间">
+      <div class="command-meta" aria-label="开盘准备数据时间">
         <span>行情截至 <b>{{ command.marketDataAsOf || '-' }}</b></span>
         <span>决策数据 <b>{{ fmtCommandTime(command.decisionDataAsOf) }}</b></span>
         <span>生成于 <b>{{ fmtCommandTime(command.generatedAt) }}</b></span>
@@ -1104,7 +1104,7 @@ onMounted(() => {
           <p class="panel-desc">今日关注题材与操作提示</p>
         </div>
         <div class="panel-links">
-          <el-button link type="primary" @click="router.push('/sector')">板块</el-button>
+          <el-button link type="primary" @click="router.push({ path: '/market', query: { tab: 'sector' } })">板块</el-button>
           <el-button link type="primary" @click="router.push('/limit-up')">连板天梯</el-button>
         </div>
       </div>
@@ -2256,8 +2256,8 @@ onMounted(() => {
 
 .morning-context-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
-  gap: 28px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
   margin-top: 16px;
 }
 
