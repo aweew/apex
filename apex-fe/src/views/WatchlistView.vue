@@ -22,11 +22,12 @@ const loading = ref(false)
 const syncing = ref(false)
 const rows = ref([])
 const selected = ref([])
+const importDialogVisible = ref(false)
 const keyword = ref('')
 const statusFilter = ref('')
 const peMax = ref('')
 const onlyHasBars = ref(false)
-const sortByPct = ref(true)
+const sortMode = ref('pctChgDesc')
 const industryFilter = ref('')
 const filePath = ref('mx_zixuan_我的自选股列表.csv')
 const groupName = ref('我的自选')
@@ -38,7 +39,7 @@ useSessionViewState('watchlist', {
   statusFilter,
   peMax,
   onlyHasBars,
-  sortByPct,
+  sortMode,
   industryFilter,
 })
 
@@ -74,7 +75,7 @@ const filtered = computed(() => {
   if (onlyHasBars.value) {
     list = list.filter((r) => (r.barCount || 0) >= 60)
   }
-  if (sortByPct.value) {
+  if (sortMode.value === 'pctChgDesc') {
     list.sort((a, b) => Number(b.pctChg || -999) - Number(a.pctChg || -999))
   }
   return list
@@ -123,11 +124,16 @@ async function onImport() {
     })
     ElMessage.success(res.data.message || `导入 ${res.data.importCount} 条`)
     await loadList()
+    importDialogVisible.value = false
   } catch (e) {
     ElMessage.error(e.message || '导入失败')
   } finally {
     loading.value = false
   }
+}
+
+function openImportDialog() {
+  importDialogVisible.value = true
 }
 
 async function onSyncSelected() {
@@ -223,6 +229,10 @@ async function onSyncStale() {
 }
 
 async function onSyncCommand(command) {
+  if (command === 'import-watchlist') {
+    openImportDialog()
+    return
+  }
   if (command === 'sync-group') {
     await onSyncGroup()
     return
@@ -264,17 +274,6 @@ onMounted(loadList)
     </header>
 
     <section class="watchlist-action-panel" aria-label="自选管理">
-      <div class="watchlist-import">
-        <label class="watchlist-field">
-          <span>导入文件</span>
-          <el-input v-model="filePath" placeholder="妙想导出文件名" />
-        </label>
-        <label class="watchlist-field watchlist-group-field">
-          <span>分组</span>
-          <el-input v-model="groupName" placeholder="我的自选" />
-        </label>
-        <el-button type="primary" :loading="loading" @click="onImport">导入自选</el-button>
-      </div>
       <div class="watchlist-daily-actions">
         <div>
           <h2>日常操作</h2>
@@ -291,7 +290,8 @@ onMounted(loadList)
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="sync-group">同步全组 K 线</el-dropdown-item>
+                <el-dropdown-item command="import-watchlist">导入自选</el-dropdown-item>
+                <el-dropdown-item command="sync-group" divided>同步全组 K 线</el-dropdown-item>
                 <el-dropdown-item command="sync-stale">只同步过期 K 线</el-dropdown-item>
                 <el-dropdown-item command="fill-bars" divided>补齐缺失 K 线</el-dropdown-item>
                 <el-dropdown-item command="fill-quotes">补齐缺失行情</el-dropdown-item>
@@ -314,6 +314,21 @@ onMounted(loadList)
         ><el-icon><Download /></el-icon>导出</el-link>
       </div>
     </section>
+
+    <el-dialog v-model="importDialogVisible" title="导入自选" width="min(520px, calc(100vw - 32px))">
+      <el-form label-position="top">
+        <el-form-item label="导入文件">
+          <el-input v-model="filePath" placeholder="妙想导出文件名" />
+        </el-form-item>
+        <el-form-item label="分组">
+          <el-input v-model="groupName" placeholder="我的自选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="loading" @click="onImport">导入自选</el-button>
+      </template>
+    </el-dialog>
 
     <section v-if="movers || corr?.codes?.length" class="watchlist-insights" aria-label="自选行情提示">
       <div v-if="movers" class="mover-summary">
@@ -372,18 +387,21 @@ onMounted(loadList)
         </div>
       </div>
       <div class="watchlist-filter-controls">
-        <el-input v-model="keyword" clearable placeholder="搜索代码、名称或行业" />
-        <el-select v-model="statusFilter" clearable placeholder="同步状态">
+        <el-input v-model="keyword" class="watchlist-keyword-filter" clearable placeholder="搜索代码、名称或行业" />
+        <el-select v-model="statusFilter" class="watchlist-status-filter" clearable placeholder="数据状态">
           <el-option label="正常" value="OK" />
           <el-option label="过期" value="STALE" />
           <el-option label="无 K 线" value="EMPTY" />
         </el-select>
-        <el-select v-model="industryFilter" clearable filterable placeholder="行业">
+        <el-select v-model="industryFilter" class="watchlist-industry-filter" clearable filterable placeholder="行业">
           <el-option v-for="industry in industries" :key="industry" :label="industry" :value="industry" />
         </el-select>
-        <el-input v-model="peMax" clearable placeholder="PE 上限" />
-        <el-checkbox v-model="onlyHasBars">K 线不少于 60 天</el-checkbox>
-        <el-checkbox v-model="sortByPct">按今日涨跌幅排序</el-checkbox>
+        <el-input v-model="peMax" class="watchlist-pe-filter" clearable placeholder="PE 上限" />
+        <el-checkbox v-model="onlyHasBars" class="watchlist-data-filter">K 线不少于 60 天</el-checkbox>
+        <el-select v-model="sortMode" class="watchlist-sort-control" aria-label="列表排序">
+          <el-option label="今日涨跌幅降序" value="pctChgDesc" />
+          <el-option label="默认顺序" value="default" />
+        </el-select>
       </div>
     </section>
 
@@ -391,7 +409,7 @@ onMounted(loadList)
       v-if="!loading && !rows.length"
       description="还没有自选。先导入妙想 CSV/JSON，再点「同步全组」。"
     >
-      <el-button type="primary" @click="onImport">导入自选</el-button>
+      <el-button type="primary" @click="openImportDialog">导入自选</el-button>
     </el-empty>
 
     <el-table
@@ -452,7 +470,7 @@ onMounted(loadList)
       <el-table-column prop="pb" width="80" sortable>
         <template #header><TermTip term="pb">PB</TermTip></template>
       </el-table-column>
-      <el-table-column prop="circMv" width="110" sortable>
+      <el-table-column prop="circMv" width="128" sortable label-class-name="watchlist-circ-mv-header">
         <template #header><TermTip term="circ_mv">流通市值(亿)</TermTip></template>
         <template #default="{ row }">
           {{ row.circMv != null ? (Number(row.circMv) / 1e8).toFixed(1) : '-' }}
@@ -498,33 +516,12 @@ onMounted(loadList)
   overflow: hidden;
 }
 
-.watchlist-import,
 .watchlist-daily-actions,
 .watchlist-destinations {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-}
-
-.watchlist-import {
-  border-bottom: 1px solid var(--glass-border);
-  background: #f8fbff;
-}
-
-.watchlist-field {
-  display: grid;
-  grid-template-columns: auto minmax(180px, 1fr);
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 340px;
-  color: var(--slate);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.watchlist-group-field {
-  flex-basis: 220px;
 }
 
 .watchlist-daily-actions {
@@ -693,13 +690,30 @@ onMounted(loadList)
 }
 
 .watchlist-filter-controls {
-  display: grid;
-  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(120px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
 
-.watchlist-filter-controls :deep(.el-checkbox) {
+.watchlist-keyword-filter {
+  width: min(320px, 100%);
+}
+
+.watchlist-status-filter,
+.watchlist-sort-control {
+  width: 168px;
+}
+
+.watchlist-industry-filter {
+  width: 184px;
+}
+
+.watchlist-pe-filter {
+  width: 120px;
+}
+
+.watchlist-data-filter {
   min-height: 32px;
   margin-right: 0;
 }
@@ -710,10 +724,14 @@ onMounted(loadList)
   box-shadow: var(--shadow-soft);
 }
 
-@media (max-width: 960px) {
-  .watchlist-filter-controls {
-    grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(120px, 1fr));
-  }
+.watchlist-table :deep(th.watchlist-circ-mv-header > .cell) {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.watchlist-table :deep(th.watchlist-circ-mv-header .caret-wrapper) {
+  flex: 0 0 24px;
 }
 
 @media (max-width: 720px) {
@@ -723,29 +741,12 @@ onMounted(loadList)
     border-radius: 8px;
   }
 
-  .watchlist-import,
   .watchlist-daily-actions,
   .watchlist-destinations,
   .watchlist-insights,
   .watchlist-list-section {
     padding-right: 12px;
     padding-left: 12px;
-  }
-
-  .watchlist-import {
-    display: grid;
-    grid-template-columns: 1fr;
-    align-items: stretch;
-  }
-
-  .watchlist-field,
-  .watchlist-group-field {
-    grid-template-columns: 1fr;
-    gap: 5px;
-  }
-
-  .watchlist-import :deep(.el-button) {
-    width: 100%;
   }
 
   .watchlist-daily-actions {
@@ -781,19 +782,25 @@ onMounted(loadList)
 
   .watchlist-filter-controls {
     grid-template-columns: 1fr 1fr;
+    display: grid;
   }
 
-  .watchlist-filter-controls :deep(.el-input),
-  .watchlist-filter-controls :deep(.el-select) {
-    min-width: 0;
+  .watchlist-keyword-filter,
+  .watchlist-status-filter,
+  .watchlist-industry-filter,
+  .watchlist-pe-filter,
+  .watchlist-sort-control {
+    width: 100%;
   }
 
-  .watchlist-filter-controls :deep(.el-input:first-child) {
+  .watchlist-keyword-filter,
+  .watchlist-data-filter,
+  .watchlist-sort-control {
     grid-column: 1 / -1;
   }
 
-  .watchlist-filter-controls :deep(.el-checkbox) {
-    grid-column: 1 / -1;
+  .watchlist-data-filter {
+    margin-left: 0;
   }
 
   .watchlist-table {
