@@ -69,6 +69,16 @@ public class FactorCenterResp {
     private String scoreModel;
 
     /**
+     * 市场环境门控
+     */
+    private MarketGateResp marketGate;
+
+    /**
+     * 横截面研究评分
+     */
+    private ResearchScoreResp research;
+
+    /**
      * Alpha 评分组成
      */
     private List<AlphaComponentResp> alphaComponents;

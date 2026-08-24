@@ -2,12 +2,15 @@ package com.awe.apex.quant.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.exception.BusinessException;
+import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.AlphaComponentResp;
 import com.awe.apex.quant.domain.dto.FactorCategoryResp;
 import com.awe.apex.quant.domain.dto.FactorCenterResp;
 import com.awe.apex.quant.domain.dto.FactorItemResp;
 import com.awe.apex.quant.domain.dto.LimitUpLadderResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketGateResp;
+import com.awe.apex.quant.domain.dto.ResearchScoreResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.NorthboundFlow;
 import com.awe.apex.quant.domain.entity.StockBasic;
@@ -24,6 +27,7 @@ import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
 import com.awe.apex.quant.mapper.StockFundFlowMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.service.IFactorCenterService;
+import com.awe.apex.quant.service.IFactorResearchSnapshotService;
 import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -78,6 +82,9 @@ public class FactorCenterServiceImpl implements IFactorCenterService {
 
     @Resource
     private FactorCalculator factorCalculator;
+
+    @Resource
+    private IFactorResearchSnapshotService factorResearchSnapshotService;
 
     /**
      * 查询个股七类因子与 Alpha 评分。
@@ -156,6 +163,7 @@ public class FactorCenterServiceImpl implements IFactorCenterService {
                 dailyBars, latestAbstract, latestIndicator, marketBriefing, dailyAsOf);
         BigDecimal alphaScore = factorCalculator.calculateAlphaScore(alphaComponents);
         BigDecimal coverage = factorCalculator.calculateCoverage(alphaComponents);
+        ResearchScoreResp research = factorResearchSnapshotService.queryLatest(securityCode);
         return FactorCenterResp.builder()
                 .code(stockBasic.getCode())
                 .name(stockBasic.getName())
@@ -167,9 +175,31 @@ public class FactorCenterServiceImpl implements IFactorCenterService {
                 .coverage(coverage)
                 .alphaLabel(resolveAlphaLabel(alphaScore))
                 .scoreModel("HEURISTIC_V1")
+                .marketGate(buildMarketGate(marketBriefing))
+                .research(research)
                 .alphaComponents(alphaComponents)
                 .categories(categories)
                 .message(buildMessage(coverage, dailyAsOf))
+                .build();
+    }
+
+    private MarketGateResp buildMarketGate(MarketBriefingResp marketBriefing) {
+        if (Objects.isNull(marketBriefing) || !Boolean.TRUE.equals(marketBriefing.getDataSufficient())
+                || Objects.isNull(marketBriefing.getAsOf()) || StringUtils.isBlank(marketBriefing.getStance())) {
+            return MarketGateResp.builder()
+                    .status(MISSING)
+                    .label("市场数据不足")
+                    .reason("市场环境不进入个股研究评分，数据充分后仅用于仓位与入场门控")
+                    .build();
+        }
+        String level = "均衡".equals(marketBriefing.getStance()) ? "BALANCED"
+                : "进攻".equals(marketBriefing.getStance()) ? "OFFENSIVE" : "DEFENSIVE";
+        return MarketGateResp.builder()
+                .status(AVAILABLE)
+                .level(level)
+                .label(marketBriefing.getStance())
+                .asOf(marketBriefing.getAsOf())
+                .reason("市场环境仅作为仓位与入场门控，不计入个股研究评分")
                 .build();
     }
 

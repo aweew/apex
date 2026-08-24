@@ -19,6 +19,7 @@ import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDecisionService;
+import com.awe.apex.quant.service.IFactorResearchSnapshotService;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IMorningBriefingService;
@@ -47,6 +48,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -121,6 +123,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Resource
     private IDecisionService decisionService;
+
+    @Resource
+    private IFactorResearchSnapshotService factorResearchSnapshotService;
 
     @Resource
     private ApexUserContext userContext;
@@ -822,6 +827,10 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 }
                 if (exit == 0) {
                     postProcessingWarning = onMarketDataSynced(job, cancelled);
+                    if (StringUtils.isBlank(postProcessingWarning) && !partialScriptResult
+                            && "NIGHTLY_REPAIR".equals(spec.getTaskType())) {
+                        postProcessingWarning = publishFactorResearchSnapshot(job);
+                    }
                 }
                 if (cancelled.get()) {
                     job.setStatus("CANCELLED");
@@ -895,6 +904,36 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             sb.append("[错误] ").append(error).append('\n');
         }
         return sb.toString();
+    }
+
+    /**
+     * 在凌晨全市场补齐成功后发布研究快照。
+     *
+     * @param job 同步任务
+     * @return 发布失败说明，空串代表成功
+     */
+    private String publishFactorResearchSnapshot(SyncJob job) {
+        if (Objects.isNull(factorResearchSnapshotService)) {
+            log.warn("因子研究快照服务未注入，任务编号={}", job.getId());
+            return "";
+        }
+        try {
+            JsonNode params = objectMapper.readTree(job.getParamsJson());
+            String expectedDate = params.path("expectedDate").asText();
+            if (StringUtils.isBlank(expectedDate)) {
+                return "因子研究快照发布失败：缺少目标交易日";
+            }
+            LocalDate tradeDate = LocalDate.parse(expectedDate);
+            appendLog(job, "[因子研究快照] 开始发布，交易日=" + tradeDate + "\n");
+            factorResearchSnapshotService.publish(tradeDate);
+            appendLog(job, "[因子研究快照] 发布完成，交易日=" + tradeDate + "\n");
+            return "";
+        } catch (Exception ex) {
+            String message = StringUtils.isNotBlank(ex.getMessage()) ? ex.getMessage() : ex.getClass().getSimpleName();
+            appendLog(job, "[因子研究快照] 发布失败：" + message + "\n");
+            log.warn("因子研究快照发布失败，任务编号={}，异常={}", job.getId(), message);
+            return "因子研究快照发布失败：" + message;
+        }
     }
 
     /**

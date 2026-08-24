@@ -20,6 +20,7 @@ import com.awe.apex.quant.mapper.StockFinIndicatorMapper;
 import com.awe.apex.quant.mapper.StockFundFlowMapper;
 import com.awe.apex.quant.service.ILimitUpLadderService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IFactorResearchSnapshotService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -47,6 +48,7 @@ class FactorCenterServiceImplTest {
         NorthboundFlowMapper northboundFlowMapper = mock(NorthboundFlowMapper.class);
         IMarketBriefingService marketBriefingService = mock(IMarketBriefingService.class);
         ILimitUpLadderService limitUpLadderService = mock(ILimitUpLadderService.class);
+        IFactorResearchSnapshotService factorResearchSnapshotService = mock(IFactorResearchSnapshotService.class);
 
         when(stockBasicMapper.selectOne(any())).thenReturn(StockBasic.builder()
                 .code("600519")
@@ -99,6 +101,8 @@ class FactorCenterServiceImplTest {
                 .tradeDate(tradeDate)
                 .maxLianban(5)
                 .build());
+        when(factorResearchSnapshotService.queryLatest("600519")).thenReturn(
+                com.awe.apex.quant.domain.dto.ResearchScoreResp.builder().status("MISSING").build());
 
         FactorCenterServiceImpl service = new FactorCenterServiceImpl();
         ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
@@ -110,6 +114,7 @@ class FactorCenterServiceImplTest {
         ReflectionTestUtils.setField(service, "marketBriefingService", marketBriefingService);
         ReflectionTestUtils.setField(service, "limitUpLadderService", limitUpLadderService);
         ReflectionTestUtils.setField(service, "factorCalculator", new FactorCalculator());
+        ReflectionTestUtils.setField(service, "factorResearchSnapshotService", factorResearchSnapshotService);
 
         FactorCenterResp result = service.query("600519");
 

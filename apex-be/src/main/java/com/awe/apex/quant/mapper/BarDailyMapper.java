@@ -95,6 +95,29 @@ public interface BarDailyMapper extends BaseMapper<BarDaily> {
                                     @Param("limit") int limit);
 
     /**
+     * 查询因子研究所需的全市场日线。
+     *
+     * @param beginDate 起始交易日
+     * @param endDate 截止交易日
+     * @return 升序日线
+     */
+    @Select("""
+            SELECT t1.code,
+                   t1.trade_date,
+                   t1.close_price,
+                   t1.amount
+            FROM bar_daily t1
+            WHERE t1.trade_date >= #{beginDate}
+              AND t1.trade_date <= #{endDate}
+              AND t1.deleted = 0
+              AND t1.close_price IS NOT NULL
+              AND t1.close_price > 0
+            ORDER BY t1.code ASC, t1.trade_date ASC
+            """)
+    List<BarDaily> selectFactorResearchBars(@Param("beginDate") LocalDate beginDate,
+                                            @Param("endDate") LocalDate endDate);
+
+    /**
      * 计算全市场最新收盘价站上MA20的股票比例
      *
      * @param asOfDate 截止日期
