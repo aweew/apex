@@ -107,6 +107,20 @@ test('embedded heatmap favors readable mobile blocks over clipped labels', async
   assert.match(heatmapSource, /\.share-card\.is-embedded \{[\s\S]*?background: #f2f5f7;/)
 })
 
+test('heatmap constituent drawer dismisses the chart tooltip and keeps sector context and sorting actionable', async () => {
+  const heatmapSource = await readFile(new URL('./HeatmapView.vue', import.meta.url), 'utf8')
+
+  assert.match(
+    heatmapSource,
+    /async function openNode\(node\)[\s\S]*?chart\?\.dispatchAction\(\{ type: 'hideTip' \}\)[\s\S]*?drawerSector\.value = node[\s\S]*?drawerOpen\.value = true/,
+  )
+  assert.match(heatmapSource, /tooltip:\s*\{[\s\S]*?triggerOn: 'mousemove'/)
+  assert.match(heatmapSource, /class="drawer-sector-summary"[\s\S]*?板块涨跌幅[\s\S]*?fmtPct\(drawerSector\?\.pctChg\)/)
+  assert.match(heatmapSource, /prop="latestPrice" label="现价" width="72" sortable :sort-method="compareLatestPrice"/)
+  assert.match(heatmapSource, /prop="pctChg" width="80" sortable :sort-method="comparePctChg"/)
+  assert.match(heatmapSource, /prop="circMv" label="流通" width="72" sortable :sort-method="compareCircMv"/)
+})
+
 test('treemap labels shrink through readable size tiers before hiding', () => {
   assert.equal(resolveTreemapLabelFontSize({ width: 100, height: 50 }), 12)
   assert.equal(resolveTreemapLabelFontSize({ width: 70, height: 34 }), 11)

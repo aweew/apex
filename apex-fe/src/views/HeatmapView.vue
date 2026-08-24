@@ -37,6 +37,7 @@ const data = ref(null)
 const drawerOpen = ref(false)
 const drawerLoading = ref(false)
 const drawerTitle = ref('')
+const drawerSector = ref(null)
 const drawerRows = ref([])
 
 const sharing = ref(false)
@@ -109,6 +110,29 @@ function pctColor(v) {
   const n = Number(v)
   if (Number.isNaN(n) || n === 0) return '#8b949e'
   return n > 0 ? '#f04848' : '#1aad5b'
+}
+
+function compareNullableNumber(leftValue, rightValue) {
+  const leftNumber = Number(leftValue)
+  const rightNumber = Number(rightValue)
+  const leftMissing = leftValue == null || leftValue === '' || Number.isNaN(leftNumber)
+  const rightMissing = rightValue == null || rightValue === '' || Number.isNaN(rightNumber)
+  if (leftMissing && rightMissing) return 0
+  if (leftMissing) return 1
+  if (rightMissing) return -1
+  return leftNumber - rightNumber
+}
+
+function compareLatestPrice(left, right) {
+  return compareNullableNumber(left.latestPrice, right.latestPrice)
+}
+
+function comparePctChg(left, right) {
+  return compareNullableNumber(left.pctChg, right.pctChg)
+}
+
+function compareCircMv(left, right) {
+  return compareNullableNumber(left.circMv, right.circMv)
 }
 
 function clamp01(x) {
@@ -277,6 +301,7 @@ function renderChart() {
       animationDuration: 280,
       animationEasing: 'cubicOut',
       tooltip: {
+        triggerOn: 'mousemove',
         backgroundColor: 'rgba(12,16,21,0.94)',
         borderColor: 'rgba(255,255,255,0.1)',
         borderWidth: 1,
@@ -418,7 +443,9 @@ async function load() {
 
 async function openNode(node) {
   if (!node?.name) return
+  chart?.dispatchAction({ type: 'hideTip' })
   drawerTitle.value = node.name
+  drawerSector.value = node
   drawerOpen.value = true
   drawerLoading.value = true
   drawerRows.value = []
@@ -650,22 +677,33 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <el-drawer v-model="drawerOpen" :title="drawerTitle" size="420px">
+    <el-drawer v-model="drawerOpen" :title="`${drawerTitle}成分股`" size="420px">
       <div v-loading="drawerLoading">
-        <el-table :data="drawerRows" size="small" stripe height="100%" empty-text="暂无成分">
+        <div class="drawer-sector-summary">
+          <span>板块涨跌幅</span>
+          <strong :style="{ color: pctColor(drawerSector?.pctChg) }">{{ fmtPct(drawerSector?.pctChg) }}</strong>
+        </div>
+        <el-table
+          :data="drawerRows"
+          size="small"
+          stripe
+          height="100%"
+          empty-text="暂无成分"
+          :default-sort="{ prop: 'pctChg', order: 'descending' }"
+        >
           <el-table-column prop="name" label="股票" min-width="132">
             <template #default="{ row }">
               <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
             </template>
           </el-table-column>
-          <el-table-column prop="latestPrice" label="现价" width="72" />
-          <el-table-column prop="pctChg" width="80">
+          <el-table-column prop="latestPrice" label="现价" width="72" sortable :sort-method="compareLatestPrice" />
+          <el-table-column prop="pctChg" width="80" sortable :sort-method="comparePctChg">
             <template #header><TermTip term="pct_chg">涨跌%</TermTip></template>
             <template #default="{ row }">
               <span :style="{ color: pctColor(row.pctChg) }">{{ fmtPct(row.pctChg) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="circMv" label="流通" width="72">
+          <el-table-column prop="circMv" label="流通" width="72" sortable :sort-method="compareCircMv">
             <template #default="{ row }">{{ fmtYi(row.circMv) }}</template>
           </el-table-column>
         </el-table>
@@ -879,6 +917,24 @@ onBeforeUnmount(() => {
 
 .share-card.is-embedded .chart {
   background: #f2f5f7;
+}
+
+.drawer-sector-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--glass-border, rgba(15, 23, 42, 0.1));
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+}
+
+.drawer-sector-summary strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
 }
 
 .share-tip {
