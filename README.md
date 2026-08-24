@@ -1,93 +1,97 @@
 # Apex 本地量化平台
 
-A 股日频波段决策助手：自选 → 信号 → 回测 → 模拟盘 → 日终清单 → 人工成交复盘。
+A 股日频研究与模拟交易平台，围绕“数据同步 -> 市场研判 -> 选股/决策 -> 回测 -> 组合与复盘”组织工作流。系统只用于个人研究和模拟，不构成投资建议。
 
-## 目录
+## 文档导航
 
-- `apex-be`：Java / Spring Boot / MySQL 后端（包名 `com.awe.apex`）
-- `apex-fe`：Vue 3 + Vite + Element Plus 前端
+| 文档 | 说明 |
+| --- | --- |
+| [架构设计](docs/ARCHITECTURE.md) | 系统边界、数据流、存储与用户隔离 |
+| [操作指引](docs/OPERATIONS.md) | 本地启动、数据初始化、日常使用、验证与排障 |
+| [NAS 部署](docs/NAS_DEPLOYMENT.md) | 生产 Docker/NAS 的配置、发布与恢复 |
+| [行情脚本](scripts/market_data/README.md) | AKShare 数据导入脚本及数据口径 |
+| [后端说明](apex-be/README.md) | 后端分层、接口域和数据库迁移 |
+| [前端说明](apex-fe/README.md) | 前端目录、开发命令和接口代理 |
 
-## 环境
+## 模块分类
 
-- JDK 17+
-- Maven 3.8+
-- MySQL `localhost:3306`，库名 `apex`
-- Node.js 20+
+| 分类 | 前端入口 | 主要能力 |
+| --- | --- | --- |
+| 工作台 | 看板、决策、小灵 | 市场摘要、当日决策、AI 研究问答与晨报 |
+| 个人资产 | 自选、观察池、组合、模拟盘 | 自选分组、触发观察、组合持仓、模拟交易与交易记录 |
+| 市场研究 | 行情、股票、板块、资金面、连板天梯、资讯 | 指数与热力图、个股详情、行业/概念、资金流、连板和新闻 |
+| 策略研究 | 信号、回测、参数 | 股票池、策略信号、回测对比、策略参数与风控规则 |
+| 数据运维 | 同步、数据质量、日终清单 | 任务编排、进度与日志、完整性检查、收盘后复盘清单 |
+| 外部接入 | OpenClaw、微信小程序 | 受控 Bot API 与轻量移动端查看，按各自配置启用 |
 
-## 数据库
+完整的模块边界、接口域和数据归属见 [架构设计](docs/ARCHITECTURE.md#模块边界)。
+
+## 快速开始
+
+前置条件：JDK 17+、Maven 3.8+、Node.js 20+、Python 3.10+（数据同步时需要）和 Docker Compose（推荐用于本地 MySQL、Redis）。
 
 ```bash
-# 在 MySQL 中依次执行
-apex-be/docs/sql/01_create_database.sql
-apex-be/docs/sql/02_schema.sql
-apex-be/docs/sql/03_p1_schema.sql
-apex-be/docs/sql/04_p2_schema.sql
-```
+# 1. 启动本地基础服务。首次启动会初始化 apex 数据库结构。
+docker compose up -d mysql redis
 
-全 A 列表 + 历史日线导入（AKShare → MySQL，可断点续传）：见 `scripts/market_data/README.md`。
-
-复制本地配置：
-
-```bash
+# 2. 配置后端。将数据库密码改为本地实际值；使用上一步默认容器时为 apex123。
 cp apex-be/src/main/resources/application-local.yml.example \
    apex-be/src/main/resources/application-local.yml
-# 填写用户名密码
-```
 
-## 启动
-
-```bash
-# 后端
+# 3. 启动后端。
 cd apex-be
 mvn spring-boot:run
-# http://127.0.0.1:8080/apex
-# Swagger: http://127.0.0.1:8080/apex/swagger-ui.html
 
-# 前端
+# 4. 另开终端启动前端。
 cd apex-fe
 npm install
 npm run dev
-# http://localhost:5173/
 ```
 
-NAS Docker 生产部署见 [`docs/NAS_DEPLOYMENT.md`](docs/NAS_DEPLOYMENT.md)。该方案
-使用 Nginx 托管前端并反向代理后端，复用 NAS 上已有的 MySQL。
+- 应用：<http://127.0.0.1:5173/>
+- 后端健康检查：<http://127.0.0.1:8080/apex/api/health>
+- Swagger：<http://127.0.0.1:8080/apex/swagger-ui.html>
 
-```bash
-sh scripts/deploy-nas.sh       # 部署前后端
-sh scripts/deploy-nas.sh --be  # 只部署后端
-sh scripts/deploy-nas.sh --fe  # 只部署前端
-```
-
-脚本默认先拉取最新代码，再构建、启动并验证服务。
-
-NAS 上可安装全局命令，之后能在任意目录执行：
-
-```bash
-sh scripts/deploy-nas.sh --install-command
-deploy-nas.sh --be
-```
-
-本地登录使用已创建的账户；应用不再内置默认管理员密码。生产环境必须设置
-`APEX_JWT_SECRET`、数据库与 Redis 凭据，并按实际前端域名配置
-`APEX_CORS_ALLOWED_ORIGIN_PATTERNS`。
+首次打开需使用已创建账户登录；系统不内置默认管理员密码。开发环境默认关闭定时任务，手动同步仍可使用。完整的初始化、登录和首轮数据导入步骤见 [操作指引](docs/OPERATIONS.md#本地初始化与启动)。
 
 ## 推荐使用流
 
-1. 自选页导入妙想 CSV（`.mx_output/`）
-2. 同步日线
-3. 信号页刷新股票池并运行 S1/S2/S3
-4. 回测页验证策略（含成本；过去表现不代表未来收益）
-5. 模拟盘练习下单（有仓位风控）
-6. 日终清单一键生成，并录入真实成交到 journal
-7. 看板查看资产/预警/近五日信号
+1. 在“数据同步”完成股票列表和日线的首轮导入，确认数据质量与任务状态。
+2. 导入或维护“自选”，在行情、板块、资金面和资讯中建立研究上下文。
+3. 刷新共享股票池，运行信号或智能决策；数据不足时先补同步，不把结果当作完整覆盖。
+4. 在“回测”检验策略，明确交易成本、样本区间和回撤，再决定是否纳入观察。
+5. 用“观察池”和“组合”记录计划与实际持仓；模拟盘仅用于演练。
+6. 收盘后生成日终清单，记录真实成交和复盘结论。
+
+## 常用验证
+
+```bash
+cd apex-fe
+npm test
+npm run build
+
+cd ../apex-be
+mvn test
+mvn package
+
+cd ..
+git diff --check
+bash scripts/deploy-nas.test.sh
+```
+
+各测试覆盖的是源代码和构建产物。要确认实际行情、登录权限和同步结果，还需要在已配置的运行环境中执行 [操作指引](docs/OPERATIONS.md#验收检查)。
+
+## 生产部署
+
+生产环境由 `docker-compose.prod.yml` 运行前端、后端和 Redis；MySQL 是现有外部服务，不由本项目创建或销毁。前端默认发布到 `8088`，并将 `/apex` 反向代理到后端。生产配置应从 `.env.production.example` 复制为未入库的 `.env.production`，设置数据库、Redis 和 JWT 凭据后再部署。
+
+```bash
+sh scripts/deploy-nas.sh --check
+sh scripts/deploy-nas.sh
+```
+
+请按 [NAS 部署](docs/NAS_DEPLOYMENT.md) 完成网络、密钥、备份和 DSM 反向代理配置；不要把 MySQL、Redis、JWT 或 AI 密钥提交到仓库。
 
 ## 免责声明
 
-本系统仅供个人研究与模拟，不构成投资建议。过去表现不代表未来收益。
-
-## 冒烟验证
-
-```bash
-bash apex/scripts/smoke.sh
-```
+本系统仅供个人研究与模拟。市场数据可能延迟、缺失或部分失败；历史回测和模型输出不代表未来收益，也不构成任何投资建议。
