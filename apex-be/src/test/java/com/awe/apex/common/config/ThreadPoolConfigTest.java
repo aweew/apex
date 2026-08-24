@@ -7,6 +7,7 @@ import org.slf4j.MDC;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -14,6 +15,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class ThreadPoolConfigTest {
+
+    @Test
+    void syncJobExecutorShouldUseBoundedQueueAndRejectSaturatedSubmissions() {
+        ThreadPoolConfig threadPoolConfig = new ThreadPoolConfig();
+        ThreadPoolProperties properties = new ThreadPoolProperties();
+        properties.setKeepAliveSeconds(30);
+        ThreadPoolTaskExecutor executorService = threadPoolConfig.syncJobTaskExecutor(properties);
+        executorService.initialize();
+
+        try {
+            assertEquals(2, executorService.getCorePoolSize());
+            assertEquals(2, executorService.getMaxPoolSize());
+            assertEquals(16, executorService.getThreadPoolExecutor().getQueue().remainingCapacity());
+            assertInstanceOf(ThreadPoolExecutor.AbortPolicy.class,
+                    executorService.getThreadPoolExecutor().getRejectedExecutionHandler());
+        } finally {
+            executorService.shutdown();
+        }
+    }
 
     @Test
     void asyncTaskShouldRunOnce() throws Exception {

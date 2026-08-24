@@ -43,6 +43,25 @@ public class ThreadPoolConfig {
     }
 
     /**
+     * 执行耗时同步任务，队列满时直接拒绝，避免同步逻辑占用请求或调度线程。
+     *
+     * @param threadPoolProperties 线程池配置
+     * @return 同步任务执行器
+     */
+    @Bean(name = "syncJobTaskExecutor")
+    public ThreadPoolTaskExecutor syncJobTaskExecutor(ThreadPoolProperties threadPoolProperties) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(16);
+        executor.setKeepAliveSeconds(threadPoolProperties.getKeepAliveSeconds());
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setTaskDecorator(MdcTaskDecorator::new);
+        executor.setThreadNamePrefix("sync-job-");
+        return executor;
+    }
+
+    /**
      * 执行周期性或定时任务
      */
     @Bean(name = "scheduledExecutorService")

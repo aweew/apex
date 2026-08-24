@@ -24,6 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Files;
@@ -40,6 +41,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -68,12 +70,17 @@ class DataSyncJobServiceExecutionTest {
     private final SyncJobLeaseService syncJobLeaseService = mock(SyncJobLeaseService.class);
     private final ApexUserContext userContext = new ApexUserContext();
     private final DataSyncJobServiceImpl service = new DataSyncJobServiceImpl();
+    private final ThreadPoolTaskExecutor taskExecutor = new ThreadPoolTaskExecutor();
     private final AtomicReference<SyncJob> savedJob = new AtomicReference<>();
     private final CopyOnWriteArrayList<SyncJob> updates = new CopyOnWriteArrayList<>();
     private final AtomicLong jobSequence = new AtomicLong(100L);
 
     @BeforeEach
     void setUp() throws Exception {
+        taskExecutor.setCorePoolSize(1);
+        taskExecutor.setMaxPoolSize(1);
+        taskExecutor.setQueueCapacity(10);
+        taskExecutor.initialize();
         Path scriptRunner = scriptDir.resolve("test-python");
         Files.writeString(scriptRunner, "#!/bin/sh\nif [ \"$1\" = \"-u\" ]; then shift; fi\nexec /bin/sh \"$@\"\n");
         Files.writeString(scriptDir.resolve("sync_hot.py"), "exit 0\n");
@@ -93,6 +100,7 @@ class DataSyncJobServiceExecutionTest {
         ReflectionTestUtils.setField(service, "objectMapper", new ObjectMapper());
         ReflectionTestUtils.setField(service, "scriptDatabaseEnvironment", mock(ScriptDatabaseEnvironment.class));
         ReflectionTestUtils.setField(service, "syncJobLeaseService", syncJobLeaseService);
+        ReflectionTestUtils.setField(service, "syncJobTaskExecutor", taskExecutor);
         ReflectionTestUtils.setField(service, "pythonCmd", scriptRunner.toString());
         ReflectionTestUtils.setField(service, "scriptDirConfig", scriptDir.toString());
 
@@ -135,6 +143,7 @@ class DataSyncJobServiceExecutionTest {
     @AfterEach
     void tearDown() {
         service.shutdown();
+        taskExecutor.shutdown();
     }
 
     @Test
@@ -177,6 +186,42 @@ class DataSyncJobServiceExecutionTest {
 
         assertEquals("PARTIAL", result.getStatus());
         assertEquals("完成，但部分条目失败（详见日志）", result.getMessage());
+    }
+
+    @Test
+    void saturatedExecutorMarksQueuedJobFailedAndReleasesTheLease() throws Exception {
+        ThreadPoolTaskExecutor saturatedExecutor = new ThreadPoolTaskExecutor();
+        saturatedExecutor.setCorePoolSize(1);
+        saturatedExecutor.setMaxPoolSize(1);
+        saturatedExecutor.setQueueCapacity(0);
+        saturatedExecutor.initialize();
+        CountDownLatch workerStarted = new CountDownLatch(1);
+        CountDownLatch releaseWorker = new CountDownLatch(1);
+        saturatedExecutor.execute(() -> {
+            workerStarted.countDown();
+            try {
+                releaseWorker.await();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(workerStarted.await(1, TimeUnit.SECONDS));
+        ReflectionTestUtils.setField(service, "syncJobTaskExecutor", saturatedExecutor);
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("HOT");
+
+        try {
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> service.startSystemTask(request));
+
+            assertTrue(exception.getMessage().contains("同步执行队列繁忙"));
+            assertEquals("FAILED", savedJob.get().getStatus());
+            assertEquals("同步执行队列繁忙，请稍后重试", savedJob.get().getMessage());
+            verify(syncJobLeaseService).release(anyString(), anyString());
+        } finally {
+            releaseWorker.countDown();
+            saturatedExecutor.shutdown();
+        }
     }
 
     @Test

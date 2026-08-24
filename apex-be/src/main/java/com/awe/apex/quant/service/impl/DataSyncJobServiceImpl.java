@@ -40,6 +40,8 @@ import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskRejectedException;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.Charset;
@@ -60,8 +62,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletionService;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
@@ -145,6 +147,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     @Resource(name = "scheduledExecutorService")
     private ScheduledExecutorService scheduledExecutorService;
 
+    @Resource(name = "syncJobTaskExecutor")
+    private ThreadPoolTaskExecutor syncJobTaskExecutor;
+
     @Value("${apex.sync.python-cmd:${apex.hot.python-cmd:python}}")
     private String pythonCmd;
 
@@ -153,12 +158,6 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Value("${apex.scheduler.close-decision-enabled:true}")
     private boolean closeDecisionEnabled;
-
-    private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "apex-sync-job");
-        t.setDaemon(true);
-        return t;
-    });
 
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
     private final Map<Long, Future<?>> runningFutures = new ConcurrentHashMap<>();
@@ -418,8 +417,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 }
                 FutureTask<Void> future = new FutureTask<>(jobTask, null);
                 runningFutures.put(job.getId(), future);
-                executor.execute(future);
+                syncJobTaskExecutor.execute(future);
                 return toResp(job);
+            } catch (TaskRejectedException ex) {
+                runningDecisionJobs.remove(SHARED_DECISION_KEY, job.getId());
+                job.setStatus("FAILED");
+                job.setMessage("同步执行队列繁忙，请稍后重试");
+                job.setFinishedAt(LocalDateTime.now());
+                appendLog(job, "[任务提交失败] " + clip(ex.getMessage(), 300) + "\n");
+                syncJobMapper.updateById(job);
+                cleanup(job.getId());
+                throw new BusinessException("同步执行队列繁忙，请稍后重试", ex);
             } catch (RuntimeException ex) {
                 runningDecisionJobs.remove(SHARED_DECISION_KEY, job.getId());
                 cleanup(job.getId());
@@ -675,7 +683,6 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         for (Future<?> future : new ArrayList<>(runningFutures.values())) {
             future.cancel(true);
         }
-        executor.shutdownNow();
         for (Long jobId : new ArrayList<>(runningLeaseKeys.keySet())) {
             cleanup(jobId);
         }
@@ -1001,7 +1008,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 log.warn("清理市场简报缓存失败，任务类型={}，异常={}", type, ex.getMessage());
             }
         }
-        if ("NEWS".equals(type) || "CLOSE_BUNDLE".equals(type)) {
+        if ("NEWS".equals(type) || "CLOSE_BUNDLE".equals(type) || "MARKET_OPINION".equals(type)) {
             try {
                 morningBriefingService.invalidateCache();
             } catch (Exception ex) {

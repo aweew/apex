@@ -24,6 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
@@ -60,10 +61,15 @@ class DataSyncJobServiceOwnershipTest {
     private final ApexUserContext userContext = mock(ApexUserContext.class);
     private final SyncJobLeaseService syncJobLeaseService = mock(SyncJobLeaseService.class);
     private final DataSyncJobServiceImpl service = new DataSyncJobServiceImpl();
+    private final ThreadPoolTaskExecutor taskExecutor = new ThreadPoolTaskExecutor();
     private final AtomicReference<SyncJob> savedJob = new AtomicReference<>();
 
     @BeforeEach
     void setUp() {
+        taskExecutor.setCorePoolSize(1);
+        taskExecutor.setMaxPoolSize(1);
+        taskExecutor.setQueueCapacity(10);
+        taskExecutor.initialize();
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), SyncJob.class);
         ReflectionTestUtils.setField(service, "syncJobMapper", syncJobMapper);
         ReflectionTestUtils.setField(service, "syncTaskRegistry", new SyncTaskRegistry());
@@ -73,6 +79,7 @@ class DataSyncJobServiceOwnershipTest {
         ReflectionTestUtils.setField(service, "userAuthService", userAuthService);
         ReflectionTestUtils.setField(service, "userContext", userContext);
         ReflectionTestUtils.setField(service, "syncJobLeaseService", syncJobLeaseService);
+        ReflectionTestUtils.setField(service, "syncJobTaskExecutor", taskExecutor);
         when(userContext.currentUserId()).thenReturn(7L);
         when(syncJobLeaseService.tryAcquire(any(), any(), any())).thenReturn(true);
         when(syncJobMapper.selectOne(any())).thenReturn(null);
@@ -93,6 +100,7 @@ class DataSyncJobServiceOwnershipTest {
     @AfterEach
     void tearDown() {
         service.shutdown();
+        taskExecutor.shutdown();
     }
 
     @Test
