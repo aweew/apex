@@ -11,6 +11,8 @@ Apex 是 A 股研究、模拟交易和复盘工具。它将外部数据落入本
 
 ## 总体架构
 
+![Apex 系统架构图](https://image.aweew.com/apex/%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E5%9B%BE.png)
+
 ```mermaid
 flowchart LR
     browser["Web 浏览器\nVue 3 + Vite"]
@@ -34,6 +36,8 @@ flowchart LR
     scheduler --> service
     service --> scripts --> sources
 ```
+
+![Apex 应用架构图](https://image.aweew.com/apex/apex%20%E6%9E%B6%E6%9E%84.png)
 
 开发模式中，Vite 将 `/apex` 代理到 `127.0.0.1:8080`；生产模式中，Nginx 托管前端静态文件，并将同一路径反向代理给后端。因此浏览器始终使用同源的 `/apex` API，不应直接配置 NAS 的后端端口。
 
