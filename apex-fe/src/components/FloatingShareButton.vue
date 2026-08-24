@@ -251,5 +251,9 @@ onBeforeUnmount(() => {
   .floating-share-button {
     transition: none;
   }
+
+  .spinning {
+    animation: none;
+  }
 }
 </style>

@@ -74,6 +74,21 @@ test('mobile search and glossary keep their content regions independently scroll
   assert.match(glossarySource, /\.glossary-detail\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?touch-action:\s*pan-y;/)
 })
 
+test('glossary restores keyboard focus to its original trigger after close', () => {
+  assert.match(glossarySource, /if \(!visible\.value\) returnFocus = document\.activeElement/)
+  assert.match(glossarySource, /const focusTarget = returnFocus/)
+  assert.match(glossarySource, /nextTick\(\(\) => focusTarget\?\.focus\?\.\(\)\)/)
+})
+
+test('glossary announces search results and exposes selected filters semantically', () => {
+  assert.match(glossarySource, /aria-controls="glossary-results"/)
+  assert.match(glossarySource, /:aria-pressed="!category"/)
+  assert.match(glossarySource, /:aria-pressed="category === cat"/)
+  assert.match(glossarySource, /class="glossary-result-count" role="status" aria-live="polite" aria-atomic="true"/)
+  assert.match(glossarySource, /<ul id="glossary-results" class="glossary-list">/)
+  assert.match(glossarySource, /:aria-pressed="active\?\.id === term\.id"/)
+})
+
 test('shared mobile dialogs and drawers retain vertical touch scrolling', () => {
   assert.match(sharedStyles, /\.el-dialog__body,[\s\S]*?\.el-drawer__body\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/)
   assert.match(sharedStyles, /\.el-dialog__body,[\s\S]*?\.el-drawer__body\s*\{[\s\S]*?touch-action:\s*auto;/)

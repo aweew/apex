@@ -10,6 +10,7 @@ import {
 } from './floatingPosition.js'
 
 const sharedStyleSource = await readFile(new URL('../style.css', import.meta.url), 'utf8')
+const shareButtonSource = await readFile(new URL('../components/FloatingShareButton.vue', import.meta.url), 'utf8')
 
 test('floating position stays inside the viewport', () => {
   const bounds = { viewportWidth: 390, viewportHeight: 720, width: 46, height: 46 }
@@ -51,4 +52,11 @@ test('page entrance does not create a containing block for fixed controls', () =
   )
 
   assert.doesNotMatch(pageIn, /transform:/)
+})
+
+test('share progress animation respects reduced-motion preferences', () => {
+  assert.match(
+    shareButtonSource,
+    /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.spinning\s*\{[\s\S]*?animation:\s*none;/,
+  )
 })

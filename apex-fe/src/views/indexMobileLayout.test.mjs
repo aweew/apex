@@ -83,12 +83,13 @@ test('industry and concept rankings open the matching sector constituents', () =
   assert.match(indexSource, /\.rank-row\s*\{[^}]*grid-template-columns:\s*22px minmax\(0, 1fr\) auto;[^}]*min-height:\s*44px;/)
 })
 
-test('market overview keeps the chart and two rankings as aligned peer panels', () => {
-  assert.match(indexSource, /<section class="chart-panel">[\s\S]*?<section class="side-card ranking-panel">[\s\S]*?<section class="side-card ranking-panel">/)
-  assert.doesNotMatch(indexSource, /<aside class="side-panels">/)
+test('market overview keeps the chart and rankings in a filled responsive layout', () => {
+  assert.match(indexSource, /<section class="chart-panel">[\s\S]*?<aside class="market-rankings" aria-label="板块涨幅">[\s\S]*?<section class="side-card ranking-panel">[\s\S]*?<section class="side-card ranking-panel">[\s\S]*?<\/aside>/)
   assert.match(indexSource, /<div v-if="activeCode && detailBars\.length" ref="chartRef" class="chart" \/>/)
   assert.match(indexSource, /暂无可用指数走势，请刷新或同步指数后重试/)
-  assert.match(indexSource, /\.main-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1\.55fr\) repeat\(2, minmax\(250px, 0\.8fr\)\);[\s\S]*?align-items:\s*start;/)
+  assert.match(indexSource, /\.main-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1\.55fr\) minmax\(520px, 1\.6fr\);[\s\S]*?align-items:\s*start;/)
+  assert.match(indexSource, /\.market-rankings\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+  assert.match(mobileStyles, /\.market-rankings\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
 })
 
 test('embedded heatmap controls use balanced mobile rows', async () => {
@@ -145,7 +146,7 @@ test('treemap labels hide only when two minimum-size Chinese characters cannot f
 test('observe pool keeps mobile controls and cards inside stable tracks', async () => {
   const observeSource = await readFile(new URL('./ObserveView.vue', import.meta.url), 'utf8')
   const mobileStyles = observeSource.slice(observeSource.indexOf('@media (max-width: 560px)'))
-  assert.match(mobileStyles, /\.page \.header > \.actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/)
+  assert.match(mobileStyles, /\.page \.header > \.actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
   assert.doesNotMatch(observeSource, /导出CSV/)
   assert.match(observeSource, /:prefix-icon="Search"/)
   assert.match(observeSource, /class="filter-bar"[\s\S]*?class="status-chips"[\s\S]*?class="search"/)

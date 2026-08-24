@@ -37,6 +37,7 @@ const sharePreviewUrl = ref('')
 const copying = ref(false)
 const downloading = ref(false)
 let sharePreviewObjectUrl = ''
+let returnFocus = null
 
 const categories = allCategories()
 
@@ -94,6 +95,7 @@ function isMobileViewport() {
 }
 
 async function openGlossary(termKey) {
+  if (!visible.value) returnFocus = document.activeElement
   visible.value = true
   const hit = termKey ? findTerm(termKey) : null
   if (hit) {
@@ -109,10 +111,13 @@ async function openGlossary(termKey) {
 }
 
 function close() {
+  const focusTarget = returnFocus
+  returnFocus = null
   visible.value = false
   query.value = ''
   mobileDetailOpen.value = false
   closeShare()
+  nextTick(() => focusTarget?.focus?.())
 }
 
 function select(term) {
@@ -305,6 +310,7 @@ defineExpose({ openGlossary, close })
           class="glossary-input"
           placeholder="搜索：夏普、回撤、止损、情绪周期、MACD…"
           autocomplete="off"
+          aria-controls="glossary-results"
           @keydown.esc.prevent="handleEscape"
         />
       </div>
@@ -314,6 +320,7 @@ defineExpose({ openGlossary, close })
           type="button"
           class="cat"
           :class="{ on: !category }"
+          :aria-pressed="!category"
           @click="category = ''"
         >
           全部
@@ -324,21 +331,23 @@ defineExpose({ openGlossary, close })
           type="button"
           class="cat"
           :class="{ on: category === cat }"
+          :aria-pressed="category === cat"
           @click="category = cat"
         >
           {{ cat }}
         </button>
       </div>
 
-      <div class="glossary-result-count">共 {{ list.length }} 个词条</div>
+      <div class="glossary-result-count" role="status" aria-live="polite" aria-atomic="true">共 {{ list.length }} 个词条</div>
 
       <div class="glossary-body">
-        <ul class="glossary-list">
+        <ul id="glossary-results" class="glossary-list">
           <li v-for="term in list" :key="term.id">
             <button
               type="button"
               class="glossary-item"
               :class="{ on: active?.id === term.id }"
+              :aria-pressed="active?.id === term.id"
               @click="select(term)"
             >
               <span class="item-copy">

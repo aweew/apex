@@ -629,7 +629,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page" v-loading="loading">
+  <div class="page observe-page" v-loading="loading">
     <header class="header">
       <div>
         <p class="eyebrow">Observe</p>
@@ -707,7 +707,7 @@ onBeforeUnmount(() => {
 
     <div v-else-if="!visibleRows.length" class="list-empty">当前筛选下没有标的</div>
 
-    <div v-else class="cards">
+    <TransitionGroup v-else name="observe-card" tag="div" class="cards">
       <article
         v-for="row in visibleRows"
         :key="row.id"
@@ -821,7 +821,7 @@ onBeforeUnmount(() => {
           <button type="button" class="op danger" @click="onRemove(row)">删除</button>
         </div>
       </article>
-    </div>
+    </TransitionGroup>
 
     <el-dialog
       v-model="dialogVisible"
@@ -931,7 +931,29 @@ onBeforeUnmount(() => {
 <style scoped>
 .page {
   padding: 20px 24px 56px;
-  user-select: none;
+}
+
+/* 研究理由和触发条件需要能直接复制到交易计划；按钮本身仍沿用全局禁选规则。 */
+.observe-page .card {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* 筛选结果变化时，用短促过渡确认列表已更新，不制造持续干扰。 */
+.observe-card-enter-active,
+.observe-card-leave-active,
+.observe-card-move {
+  transition: opacity 160ms ease, transform 180ms ease;
+}
+
+.observe-card-enter-from,
+.observe-card-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.observe-card-leave-active {
+  position: absolute;
 }
 
 .header {
@@ -1629,7 +1651,7 @@ onBeforeUnmount(() => {
 
   .page .header > .actions {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
     gap: 8px;
   }
@@ -1808,6 +1830,14 @@ onBeforeUnmount(() => {
     padding: 4px 2px;
     font-size: 11px;
     white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .observe-card-enter-active,
+  .observe-card-leave-active,
+  .observe-card-move {
+    transition: none;
   }
 }
 

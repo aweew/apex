@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight } from '@element-plus/icons-vue'
+import { ArrowRight, MagicStick } from '@element-plus/icons-vue'
 import {
   fetchDecisionAttribution,
   fetchDecisionAdvice,
@@ -608,6 +608,10 @@ onBeforeUnmount(() => {
           <el-button class="sync-link" link type="primary" @click="router.push('/sync')">
             同步中心
             <el-icon><ArrowRight /></el-icon>
+          </el-button>
+          <el-button class="xiaoling-link" type="primary" plain @click="router.push('/ai-center')">
+            <el-icon><MagicStick /></el-icon>
+            小灵分析
           </el-button>
         </div>
       </div>
@@ -1629,6 +1633,11 @@ onBeforeUnmount(() => {
   margin-left: 2px;
 }
 
+.xiaoling-link {
+  min-height: 40px;
+  font-weight: 600;
+}
+
 /* —— 市场立场 —— */
 .stance-panel {
   position: relative;
@@ -2582,6 +2591,10 @@ onBeforeUnmount(() => {
   .sync-link {
     min-height: 44px;
     padding: 0 2px;
+  }
+
+  .xiaoling-link {
+    min-height: 44px;
   }
 
   .action-panel {

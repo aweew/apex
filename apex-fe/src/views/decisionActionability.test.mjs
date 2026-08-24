@@ -28,3 +28,8 @@ test('today action list remains before expandable decision evidence', () => {
   assert.match(decisionSource, /\.action-panel\s*\{\s*order:\s*2;/)
   assert.match(decisionSource, /\.decision-evidence-toggle\s*\{\s*order:\s*3;/)
 })
+
+test('decision workspace provides the Xiaoling analysis entry without restoring global navigation', () => {
+  assert.match(decisionSource, /class="xiaoling-link"[\s\S]*?@click="router\.push\('\/ai-center'\)"/)
+  assert.match(decisionSource, /<MagicStick \/>/)
+})

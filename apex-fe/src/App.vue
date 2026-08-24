@@ -59,6 +59,11 @@ const stockCommandResults = computed(() => {
   return source.map((item) => ({ ...item, kind: 'stock' }))
 })
 const commandResults = computed(() => [...filteredRouteCommands.value, ...stockCommandResults.value])
+const commandResultStatus = computed(() => {
+  if (loading.value) return '正在搜索股票'
+  if (!commandResults.value.length) return '没有找到匹配页面或股票'
+  return `找到 ${commandResults.value.length} 项结果，使用上下方向键选择，按 Enter 打开`
+})
 let healthTimer
 let searchSeq = 0
 let debounceTimer
@@ -675,6 +680,7 @@ onBeforeUnmount(() => {
           <input
             ref="inputRef"
             v-model="query"
+            role="combobox"
             class="search-input"
             placeholder="搜索股票、页面或操作"
             autocomplete="off"
@@ -683,6 +689,9 @@ onBeforeUnmount(() => {
             inputmode="search"
             :spellcheck="false"
             aria-controls="command-results"
+            aria-describedby="command-result-status"
+            :aria-expanded="searchOpen"
+            aria-autocomplete="list"
             :aria-activedescendant="commandResults[commandSelection] ? `command-result-${commandSelection}` : undefined"
             @input="onQueryInput"
             @keydown.down.prevent="moveCommandSelection(1)"
@@ -695,13 +704,16 @@ onBeforeUnmount(() => {
             <span class="mobile-label">取消</span>
           </button>
         </div>
-        <div class="search-body">
+        <p id="command-result-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {{ commandResultStatus }}
+        </p>
+        <div id="command-results" class="search-body">
           <div v-if="loading" class="search-tip" role="status">正在搜索股票…</div>
           <div v-else-if="!commandResults.length" class="search-tip">没有找到匹配页面或股票，请尝试代码、名称或功能名称</div>
           <template v-else>
             <section v-if="filteredRouteCommands.length" class="command-section" aria-labelledby="command-route-title">
               <h2 id="command-route-title" class="command-section-title">页面与操作</h2>
-              <ul id="command-results" class="search-list command-list" role="listbox" aria-label="页面与操作">
+              <ul class="search-list command-list" role="listbox" aria-label="页面与操作">
                 <li v-for="(item, index) in filteredRouteCommands" :key="item.to">
                   <button
                     :id="`command-result-${index}`"

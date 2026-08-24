@@ -21,6 +21,16 @@ test('command center supports keyboard selection instead of only opening the fir
   assert.match(appSource, /:aria-selected="index === commandSelection"/)
 })
 
+test('command center exposes stable combobox semantics and announces dynamic results', () => {
+  assert.match(appSource, /role="combobox"/)
+  assert.match(appSource, /aria-controls="command-results"/)
+  assert.match(appSource, /:aria-expanded="searchOpen"/)
+  assert.match(appSource, /aria-autocomplete="list"/)
+  assert.match(appSource, /id="command-result-status" class="sr-only" role="status" aria-live="polite"/)
+  assert.match(appSource, /const commandResultStatus = computed/)
+  assert.match(appSource, /<div id="command-results" class="search-body">/)
+})
+
 test('command center keeps shortcut hints visible outside its scrollable result area', () => {
   assert.match(
     appSource,

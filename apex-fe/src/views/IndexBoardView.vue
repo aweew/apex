@@ -763,7 +763,7 @@ onBeforeUnmount(() => {
           <p class="hint">成交量柱：红=较前日放量，绿=较前日缩量</p>
         </section>
 
-        <template>
+        <aside class="market-rankings" aria-label="板块涨幅">
           <section class="side-card ranking-panel">
             <div class="panel-head">
               <h2><TermTip term="sector">行业涨幅</TermTip> <small v-if="industryTradeDate">{{ industryTradeDate }}</small></h2>
@@ -797,7 +797,7 @@ onBeforeUnmount(() => {
             </ul>
             <p v-else class="side-empty">暂无概念数据</p>
           </section>
-        </template>
+        </aside>
       </div>
 
       <!-- 涨跌榜 + 快捷 -->
@@ -1275,10 +1275,18 @@ onBeforeUnmount(() => {
 
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) repeat(2, minmax(250px, 0.8fr));
+  grid-template-columns: minmax(0, 1.55fr) minmax(520px, 1.6fr);
   align-items: start;
   gap: 12px;
   margin-bottom: 12px;
+}
+
+.market-rankings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
 }
 
 .chart-panel,
@@ -1693,6 +1701,9 @@ onBeforeUnmount(() => {
 
   .cards {
     grid-template-columns: 1fr 1fr;
+  }
+  .market-rankings {
+    grid-template-columns: 1fr;
   }
   .pulse-width {
     grid-template-columns: 1fr;
