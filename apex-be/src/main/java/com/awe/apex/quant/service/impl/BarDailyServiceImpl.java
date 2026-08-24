@@ -85,6 +85,21 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
      */
     @Override
     public BarSyncResp syncBars(BarSyncReq req) {
+        return syncBars(req, false);
+    }
+
+    /**
+     * 同步详情页日线，优先使用新浪快速数据源。
+     *
+     * @param req 同步请求
+     * @return 同步结果
+     */
+    @Override
+    public BarSyncResp syncBarsFast(BarSyncReq req) {
+        return syncBars(req, true);
+    }
+
+    private BarSyncResp syncBars(BarSyncReq req, boolean preferFastSource) {
         if (Objects.isNull(req) || req.getCodes() == null || req.getCodes().isEmpty()) {
             throw new BusinessException("codes 不能为空");
         }
@@ -101,7 +116,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         if (codes.size() > MAX_SYNC_CODES) {
             throw new BusinessException("单次最多同步 " + MAX_SYNC_CODES + " 个证券代码，全 A 日线请使用同步中心任务");
         }
-        return doSync(new ArrayList<>(codes), req.getBeginDate(), req.getEndDate(), "codes=" + codes);
+        return doSync(new ArrayList<>(codes), req.getBeginDate(), req.getEndDate(), "codes=" + codes, preferFastSource);
     }
 
     /**
@@ -130,7 +145,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         }
         String scope = "group=" + groupName + ", codes=" + codes.size()
                 + (list.size() > MAX_SYNC_CODES ? ("(cap " + MAX_SYNC_CODES + ")") : "");
-        return doSync(new ArrayList<>(codes), beginDate, endDate, scope);
+        return doSync(new ArrayList<>(codes), beginDate, endDate, scope, false);
     }
 
     /**
@@ -161,7 +176,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         if (staleCodes.isEmpty()) {
             return emptySyncResponse();
         }
-        return doSync(staleCodes, null, null, "stale group=" + groupName + ", n=" + staleCodes.size());
+        return doSync(staleCodes, null, null, "stale group=" + groupName + ", n=" + staleCodes.size(), false);
     }
 
     /**
@@ -186,7 +201,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
             return emptySyncResponse();
         }
 
-        return doSync(staleCodes, null, null, "shared stale codes n=" + staleCodes.size());
+        return doSync(staleCodes, null, null, "shared stale codes n=" + staleCodes.size(), false);
     }
 
     private List<String> findStaleCodes(List<String> codes, int limit) {
@@ -275,7 +290,8 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 .build();
     }
 
-    private BarSyncResp doSync(List<String> codes, String beginDateRaw, String endDateRaw, String scopeDesc) {
+    private BarSyncResp doSync(List<String> codes, String beginDateRaw, String endDateRaw, String scopeDesc,
+                               boolean preferFastSource) {
         LocalDate end = StringUtils.isNotBlank(endDateRaw)
                 ? LocalDate.parse(endDateRaw, endDateRaw.contains("-")
                         ? DateTimeFormatter.ISO_LOCAL_DATE : DateTimeFormatter.BASIC_ISO_DATE)
@@ -304,7 +320,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 long groupTimeoutNanos = Math.max(1L, remainingNanos / remainingGroupCount);
                 List<Callable<SyncItem>> tasks = new ArrayList<>();
                 for (String code : groupCodes) {
-                    tasks.add(() -> syncOne(code, beginDateRaw, end));
+                    tasks.add(() -> syncOne(code, beginDateRaw, end, preferFastSource));
                 }
                 List<Future<SyncItem>> futures = pool.invokeAll(
                         tasks, groupTimeoutNanos, TimeUnit.NANOSECONDS);
@@ -386,7 +402,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
         return full.substring(0, maxLen) + "...(truncated)";
     }
 
-    private SyncItem syncOne(String code, String beginDate, LocalDate endDate) {
+    private SyncItem syncOne(String code, String beginDate, LocalDate endDate, boolean preferFastSource) {
         if (!syncingCodes.add(code)) {
             return new SyncItem(code, true, 0, code + " SYNCING");
         }
@@ -394,7 +410,9 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
             // 错峰请求，降低行情源限流概率
             Thread.sleep(220L + (Math.abs(code.hashCode()) % 280));
             String actualBeginDate = resolveBeginDate(code, beginDate, endDate);
-            List<BarDaily> bars = dailyBarClient.fetchDailyBars(code, actualBeginDate, endDate.toString());
+            List<BarDaily> bars = preferFastSource
+                    ? dailyBarClient.fetchDailyBarsFast(code, actualBeginDate, endDate.toString())
+                    : dailyBarClient.fetchDailyBars(code, actualBeginDate, endDate.toString());
             int upserted = upsertBars(bars);
             upsertStockBasic(code, MarketCodeUtils.resolveMarket(code));
             String source = bars.isEmpty() ? "unknown" : bars.get(0).getSource();

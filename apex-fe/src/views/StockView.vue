@@ -10,9 +10,9 @@ import {
   fetchStockFundamental,
   fetchStockIntraday,
   refreshCompanyProfile,
-  syncStockBasic,
+  syncStockQuote,
 } from '../api/stock'
-import { syncBars } from '../api/bars'
+import { syncBarsFast } from '../api/bars'
 import { saveObserve } from '../api/observe'
 import { fetchTradeMarkers } from '../api/trade'
 import { aggregateBars, defaultVisibleStart, tdSequential } from '../utils/kline'
@@ -1567,7 +1567,7 @@ async function load(refreshQuote = false) {
       }
     })
     if (refreshQuote) {
-      await syncStockBasic(code.value.trim())
+      await syncStockQuote(code.value.trim())
       const again = await fetchStockDetail(code.value.trim(), BAR_LIMIT, false)
       applyDetail(again.data)
     }
@@ -1682,8 +1682,8 @@ async function syncStockData() {
     const pure = code.value.trim()
     const result = await synchronizeStockData({
       code: pure,
-      syncBars,
-      syncQuote: syncStockBasic,
+      syncBars: syncBarsFast,
+      syncQuote: syncStockQuote,
       fetchDetail: async (stockCode) => {
         const detail = await fetchStockDetail(stockCode, BAR_LIMIT, false)
         if (stockCode === code.value.trim()) {

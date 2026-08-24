@@ -137,6 +137,27 @@ class BarDailyServiceImplTest {
     }
 
     @Test
+    void syncBarsFastShouldUseSinaPreferredDailyBars() {
+        BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
+        DailyBarClient dailyBarClient = mock(DailyBarClient.class);
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
+        when(dailyBarClient.fetchDailyBarsFast(anyString(), anyString(), anyString())).thenReturn(List.of());
+        when(stockBasicMapper.selectOne(any())).thenReturn(null);
+        ReflectionTestUtils.setField(barDailyService, "dailyBarClient", dailyBarClient);
+        ReflectionTestUtils.setField(barDailyService, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(barDailyService, "dataSyncLogMapper", dataSyncLogMapper);
+        ReflectionTestUtils.setField(barDailyService, "syncTimeoutSeconds", 5);
+        BarSyncReq request = new BarSyncReq();
+        request.setCodes(List.of("688455"));
+
+        barDailyService.syncBarsFast(request);
+
+        verify(dailyBarClient).fetchDailyBarsFast(eq("688455"), anyString(), anyString());
+        verify(dailyBarClient, never()).fetchDailyBars(eq("688455"), anyString(), anyString());
+    }
+
+    @Test
     void syncBarsShouldSkipDuplicateWriteForCodeAlreadySyncing() throws Exception {
         BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
         DailyBarClient dailyBarClient = mock(DailyBarClient.class);

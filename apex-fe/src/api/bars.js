@@ -4,6 +4,10 @@ export function syncBars(payload) {
   return http.post('/api/data/bars/sync', payload, { timeout: 210000 })
 }
 
+export function syncBarsFast(payload) {
+  return http.post('/api/data/bars/sync-fast', payload, { timeout: 10000 })
+}
+
 export function syncBarsGroup(groupName, beginDate, endDate) {
   return http.post('/api/data/bars/sync-group', null, {
     params: { groupName, beginDate, endDate },

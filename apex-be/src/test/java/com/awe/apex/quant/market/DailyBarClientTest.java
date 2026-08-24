@@ -60,4 +60,38 @@ class DailyBarClientTest {
         assertEquals(2, eastMoneyRequests.get());
         assertEquals(3, sinaRequests.get());
     }
+
+    @Test
+    void fastDailyBarsShouldUseSinaWithoutWaitingForEastMoney() throws Exception {
+        AtomicInteger eastMoneyRequests = new AtomicInteger();
+        AtomicInteger sinaRequests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/eastmoney", exchange -> {
+            eastMoneyRequests.incrementAndGet();
+            exchange.sendResponseHeaders(200, 0);
+            exchange.close();
+        });
+        server.createContext("/sina", exchange -> {
+            sinaRequests.incrementAndGet();
+            byte[] response = ("[{\"day\":\"2026-08-18\",\"open\":\"10.00\",\"high\":\"10.50\","
+                    + "\"low\":\"9.80\",\"close\":\"10.20\",\"volume\":\"1000\"}]")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        DailyBarClient dailyBarClient = new DailyBarClient();
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        ReflectionTestUtils.setField(dailyBarClient, "eastMoneyUrl", baseUrl + "/eastmoney");
+        ReflectionTestUtils.setField(dailyBarClient, "sinaUrl", baseUrl + "/sina");
+
+        List<BarDaily> bars = dailyBarClient.fetchDailyBarsFast("000001", "2026-08-18", "2026-08-18");
+
+        assertEquals(1, bars.size());
+        assertEquals(DailyBarClient.SOURCE_SINA, bars.get(0).getSource());
+        assertEquals(1, sinaRequests.get());
+        assertEquals(0, eastMoneyRequests.get());
+    }
 }

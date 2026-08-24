@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 日线行情客户端（东财前复权优先，新浪仅作非研究场景兜底）
+ * 日线行情客户端
  */
 @Slf4j
 @Component
@@ -37,6 +37,8 @@ public class DailyBarClient {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter COMPACT = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration FAST_REQUEST_TIMEOUT = Duration.ofSeconds(2);
     private static final int EAST_MONEY_FAIL_THRESHOLD = 2;
     private static final long EAST_MONEY_COOLDOWN_MS = 10 * 60 * 1000L;
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
@@ -64,7 +66,7 @@ public class DailyBarClient {
         Exception eastMoneyError = null;
         if (System.currentTimeMillis() >= eastMoneyCooldownUntil.get()) {
             try {
-                List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate);
+                List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate, DEFAULT_REQUEST_TIMEOUT);
                 eastMoneyFailCount.set(0);
                 eastMoneyCooldownUntil.set(0);
                 return eastMoneyBars;
@@ -84,7 +86,7 @@ public class DailyBarClient {
             eastMoneyError = new BusinessException("东财日线接口熔断中");
         }
         try {
-            List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate);
+            List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate, DEFAULT_REQUEST_TIMEOUT);
             if (!sinaBars.isEmpty()) {
                 return sinaBars;
             }
@@ -95,7 +97,47 @@ public class DailyBarClient {
         }
     }
 
-    private List<BarDaily> fetchFromEastMoney(String pureCode, String beginDate, String endDate) {
+    /**
+     * 拉取个股详情页日线，新浪优先以缩短用户等待，东财仅作快速兜底。
+     *
+     * @param code      证券代码
+     * @param beginDate 开始日期
+     * @param endDate   结束日期
+     * @return 日线列表
+     */
+    public List<BarDaily> fetchDailyBarsFast(String code, String beginDate, String endDate) {
+        String pureCode = MarketCodeUtils.normalizeCode(code);
+        Exception sinaError = null;
+        try {
+            List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate, FAST_REQUEST_TIMEOUT);
+            if (!sinaBars.isEmpty()) {
+                return sinaBars;
+            }
+            throw new BusinessException("新浪日线无数据");
+        } catch (Exception ex) {
+            sinaError = ex;
+            log.warn("新浪快速日线失败，尝试东财兜底，证券代码={}，异常={}", pureCode, ex.getMessage());
+        }
+        Exception eastMoneyError = null;
+        if (System.currentTimeMillis() >= eastMoneyCooldownUntil.get()) {
+            try {
+                List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate, FAST_REQUEST_TIMEOUT);
+                eastMoneyFailCount.set(0);
+                eastMoneyCooldownUntil.set(0);
+                return eastMoneyBars;
+            } catch (Exception ex) {
+                eastMoneyError = ex;
+                markEastMoneyFailure(pureCode, ex);
+            }
+        } else {
+            eastMoneyError = new BusinessException("东财日线接口熔断中");
+        }
+        throw new BusinessException("拉取快速日线失败: " + pureCode + ", sina: "
+                + messageOf(sinaError) + " | eastmoney: " + messageOf(eastMoneyError));
+    }
+
+    private List<BarDaily> fetchFromEastMoney(String pureCode, String beginDate, String endDate,
+                                              Duration requestTimeout) {
         String secId = MarketCodeUtils.toEastMoneySecId(pureCode);
         String begin = toCompact(beginDate);
         String end = toCompact(endDate);
@@ -106,7 +148,7 @@ public class DailyBarClient {
                 + "&klt=101&fqt=1"
                 + "&beg=" + begin
                 + "&end=" + end;
-        String body = httpGet(url, "https://quote.eastmoney.com/");
+        String body = httpGet(url, "https://quote.eastmoney.com/", requestTimeout);
         try {
             JsonNode root = OBJECT_MAPPER.readTree(body);
             JsonNode data = root.path("data");
@@ -153,7 +195,8 @@ public class DailyBarClient {
         }
     }
 
-    private List<BarDaily> fetchFromSina(String pureCode, String beginDate, String endDate) {
+    private List<BarDaily> fetchFromSina(String pureCode, String beginDate, String endDate,
+                                         Duration requestTimeout) {
         String market = MarketCodeUtils.resolveMarket(pureCode);
         String prefix = "sz";
         if ("SH".equals(market)) {
@@ -164,7 +207,7 @@ public class DailyBarClient {
         String symbol = prefix + pureCode;
         String url = sinaUrl
                 + "?symbol=" + symbol + "&scale=240&ma=no&datalen=640";
-        String body = httpGet(url, "https://finance.sina.com.cn/");
+        String body = httpGet(url, "https://finance.sina.com.cn/", requestTimeout);
         try {
             JsonNode arr = OBJECT_MAPPER.readTree(body);
             if (!arr.isArray()) {
@@ -226,11 +269,23 @@ public class DailyBarClient {
                 .build();
     }
 
-    private String httpGet(String url, String referer) {
+    private void markEastMoneyFailure(String code, Exception ex) {
+        int failCount = eastMoneyFailCount.incrementAndGet();
+        if (failCount >= EAST_MONEY_FAIL_THRESHOLD) {
+            eastMoneyCooldownUntil.set(System.currentTimeMillis() + EAST_MONEY_COOLDOWN_MS);
+            eastMoneyFailCount.set(0);
+            log.warn("东财日线连续失败，熔断 {} 分钟，证券代码={}，异常={}",
+                    EAST_MONEY_COOLDOWN_MS / 60000, code, ex.getMessage());
+            return;
+        }
+        log.warn("东财前复权日线失败，尝试新浪兜底，证券代码={}，异常={}", code, ex.getMessage());
+    }
+
+    private String httpGet(String url, String referer, Duration requestTimeout) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(10))
+                    .timeout(requestTimeout)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                     .header("Accept", "application/json,text/plain,*/*")
                     .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")

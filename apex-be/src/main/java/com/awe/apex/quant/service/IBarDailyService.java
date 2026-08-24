@@ -22,6 +22,14 @@ public interface IBarDailyService extends IService<BarDaily> {
     BarSyncResp syncBars(BarSyncReq req);
 
     /**
+     * 同步详情页日线，优先使用低延迟数据源。
+     *
+     * @param req 同步请求
+     * @return 同步结果
+     */
+    BarSyncResp syncBarsFast(BarSyncReq req);
+
+    /**
      * 按自选分组同步日线（服务端分批，默认上限 80）
      *
      * @param groupName 分组名

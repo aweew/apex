@@ -35,6 +35,17 @@ public class BarDailyController {
     }
 
     /**
+     * 同步个股详情页日线
+     *
+     * @param req 同步请求
+     * @return 同步结果
+     */
+    @PostMapping("/sync-fast")
+    public Result<BarSyncResp> syncFast(@Valid @RequestBody BarSyncReq req) {
+        return Result.success(barDailyService.syncBarsFast(req));
+    }
+
+    /**
      * 按自选分组同步日线
      */
     @PostMapping("/sync-group")

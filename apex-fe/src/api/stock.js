@@ -15,6 +15,10 @@ export function syncStockBasic(code) {
   return http.post(`/api/stock/${code}/sync`, null, { timeout: 60000 })
 }
 
+export function syncStockQuote(code) {
+  return http.post(`/api/stock/${code}/sync-quote`, null, { timeout: 10000 })
+}
+
 export function searchStock(q, limit = 15) {
   return http.get('/api/stock/search', { params: { q, limit }, activity: false })
 }

@@ -66,6 +66,17 @@ public class StockController {
     }
 
     /**
+     * 同步实时行情
+     *
+     * @param code 证券代码
+     * @return 实时行情
+     */
+    @PostMapping("/{code}/sync-quote")
+    public Result<StockBasic> syncQuote(@PathVariable String code) {
+        return Result.success(stockService.syncQuote(code));
+    }
+
+    /**
      * 股票详情（默认只读本地；refresh=true 才刷新外网基本信息）
      *
      * @param code     证券代码

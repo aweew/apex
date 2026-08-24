@@ -30,6 +30,8 @@ public class StockQuoteClient {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final DateTimeFormatter LIST_DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final BigDecimal YI = new BigDecimal("100000000");
+    private static final int DEFAULT_QUOTE_TIMEOUT_MS = 10000;
+    private static final int FAST_QUOTE_TIMEOUT_MS = 2000;
 
     /** 东财连续失败次数达到阈值后熔断 */
     private static final int EM_FAIL_THRESHOLD = 3;
@@ -80,7 +82,7 @@ public class StockQuoteClient {
         String market = MarketCodeUtils.resolveMarket(pure);
         StockBasic basic;
         try {
-            basic = fetchFromSina(pure, market);
+            basic = fetchFromSina(pure, market, DEFAULT_QUOTE_TIMEOUT_MS);
         } catch (BusinessException sinaException) {
             LocalDateTime now = LocalDateTime.now();
             basic = StockBasic.builder()
@@ -91,22 +93,59 @@ public class StockQuoteClient {
                     .updateTime(now)
                     .deleted(0)
                     .build();
-            if (!overwriteRealtimeFromTencent(basic)) {
+            if (!overwriteRealtimeFromTencent(basic, DEFAULT_QUOTE_TIMEOUT_MS)) {
                 throw sinaException;
             }
             log.warn("新浪行情失败，已使用腾讯行情兜底，证券代码={}，原因={}", pure, sinaException.getMessage());
             return basic;
         }
         // 腾讯覆盖现价/涨跌幅：新浪盘后偶发 0 价或空字段，导致持仓现价/涨跌错乱
-        overwriteRealtimeFromTencent(basic);
+        overwriteRealtimeFromTencent(basic, DEFAULT_QUOTE_TIMEOUT_MS);
         return basic;
     }
 
-    private StockBasic fetchFromSina(String code, String market) {
+    /**
+     * 拉取详情页实时行情，优先新浪并限制单源等待时间。
+     *
+     * @param code 证券代码
+     * @return 实时行情快照
+     */
+    public StockBasic fetchRealtimeFast(String code) {
+        String pure = MarketCodeUtils.normalizeHoldingCode(code);
+        String market = MarketCodeUtils.resolveMarket(pure);
+        StockBasic basic;
+        try {
+            basic = fetchFromSina(pure, market, FAST_QUOTE_TIMEOUT_MS);
+        } catch (BusinessException sinaException) {
+            LocalDateTime now = LocalDateTime.now();
+            basic = StockBasic.builder()
+                    .code(pure)
+                    .market(market)
+                    .quoteTime(now)
+                    .createTime(now)
+                    .updateTime(now)
+                    .deleted(0)
+                    .build();
+            if (!overwriteRealtimeFromTencent(basic, FAST_QUOTE_TIMEOUT_MS)) {
+                throw sinaException;
+            }
+            log.warn("新浪快速行情失败，已使用腾讯行情兜底，证券代码={}，原因={}", pure, sinaException.getMessage());
+            return basic;
+        }
+        if (Objects.nonNull(basic.getLatestPrice()) && basic.getLatestPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return basic;
+        }
+        if (overwriteRealtimeFromTencent(basic, FAST_QUOTE_TIMEOUT_MS)) {
+            return basic;
+        }
+        throw new BusinessException("新浪和腾讯均未返回有效现价: " + pure);
+    }
+
+    private StockBasic fetchFromSina(String code, String market, int timeoutMs) {
         String symbol = toSinaSymbol(code, market);
         String url = sinaQuoteUrl + symbol;
         try (HttpResponse response = HttpRequest.get(url)
-                .timeout(12000)
+                .timeout(timeoutMs)
                 .header("User-Agent", browserUa())
                 .header("Referer", "https://finance.sina.com.cn")
                 .execute()) {
@@ -220,8 +259,8 @@ public class StockQuoteClient {
     /**
      * 腾讯实时价/涨跌幅覆盖（优先于新浪空价/0价）
      */
-    private boolean overwriteRealtimeFromTencent(StockBasic basic) {
-        String[] parts = fetchTencentParts(basic);
+    private boolean overwriteRealtimeFromTencent(StockBasic basic, int timeoutMs) {
+        String[] parts = fetchTencentParts(basic, timeoutMs);
         if (Objects.isNull(parts) || parts.length < 33) {
             return false;
         }
@@ -249,7 +288,7 @@ public class StockQuoteClient {
      * 腾讯估值字段补充（不覆盖已有有效现价）
      */
     private void enrichFromTencentValuation(StockBasic basic) {
-        String[] parts = fetchTencentParts(basic);
+        String[] parts = fetchTencentParts(basic, DEFAULT_QUOTE_TIMEOUT_MS);
         if (Objects.isNull(parts) || parts.length < 47) {
             return;
         }
@@ -278,14 +317,14 @@ public class StockQuoteClient {
         appendSource(basic, "tencent");
     }
 
-    private String[] fetchTencentParts(StockBasic basic) {
+    private String[] fetchTencentParts(StockBasic basic, int timeoutMs) {
         if (Objects.isNull(basic) || StringUtils.isBlank(basic.getCode())) {
             return null;
         }
         String symbol = toSinaSymbol(basic.getCode(), basic.getMarket());
         String url = tencentQuoteUrl + symbol;
         try (HttpResponse response = HttpRequest.get(url)
-                .timeout(10000)
+                .timeout(timeoutMs)
                 .header("User-Agent", browserUa())
                 .header("Referer", "https://gu.qq.com/")
                 .execute()) {

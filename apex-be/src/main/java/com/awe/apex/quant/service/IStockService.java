@@ -21,6 +21,14 @@ public interface IStockService {
     StockBasic syncBasic(String code);
 
     /**
+     * 同步并落库实时行情，不补估值和行业资料。
+     *
+     * @param code 证券代码
+     * @return 实时行情
+     */
+    StockBasic syncQuote(String code);
+
+    /**
      * 查询详情（默认只读本地；refresh=true 时才同步外网基本信息，不自动拉日线）
      *
      * @param code      证券代码

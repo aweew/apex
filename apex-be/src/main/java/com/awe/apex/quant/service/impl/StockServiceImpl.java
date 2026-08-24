@@ -74,6 +74,27 @@ public class StockServiceImpl implements IStockService {
             throw new BusinessException("代码无效");
         }
         StockBasic fetched = stockQuoteClient.fetchBasic(pure);
+        return saveSyncedBasic(pure, fetched, false);
+    }
+
+    /**
+     * 同步实时行情，不触发估值和行业补全。
+     *
+     * @param code 证券代码
+     * @return 实时行情
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public StockBasic syncQuote(String code) {
+        String pure = MarketCodeUtils.normalizeHoldingCode(code);
+        if (StringUtils.isBlank(pure)) {
+            throw new BusinessException("代码无效");
+        }
+        StockBasic fetched = stockQuoteClient.fetchRealtimeFast(pure);
+        return saveSyncedBasic(pure, fetched, true);
+    }
+
+    private StockBasic saveSyncedBasic(String pure, StockBasic fetched, boolean quoteOnly) {
         StockBasic existing = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                 .eq(StockBasic::getCode, pure)
                 .last("limit 1"));
@@ -87,13 +108,15 @@ public class StockServiceImpl implements IStockService {
         existing.setName(fetched.getName());
         existing.setMarket(fetched.getMarket());
         existing.setStFlag(fetched.getStFlag());
-        existing.setPeDynamic(fetched.getPeDynamic());
-        existing.setPeStatic(fetched.getPeStatic());
-        existing.setPeTtm(fetched.getPeTtm());
-        existing.setPb(fetched.getPb());
-        existing.setTotalMv(fetched.getTotalMv());
-        existing.setCircMv(fetched.getCircMv());
-        existing.setIndustry(fetched.getIndustry());
+        if (!quoteOnly) {
+            existing.setPeDynamic(fetched.getPeDynamic());
+            existing.setPeStatic(fetched.getPeStatic());
+            existing.setPeTtm(fetched.getPeTtm());
+            existing.setPb(fetched.getPb());
+            existing.setTotalMv(fetched.getTotalMv());
+            existing.setCircMv(fetched.getCircMv());
+            existing.setIndustry(fetched.getIndustry());
+        }
         existing.setLatestPrice(fetched.getLatestPrice());
         existing.setPctChg(fetched.getPctChg());
         existing.setSource(fetched.getSource());
