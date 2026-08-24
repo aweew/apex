@@ -336,6 +336,24 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 ? "影响最大的方向是" + leadingName + "，贡献 "
                 + signed(contributors.get(0).getContributionPct(), 2) + " 个百分点。"
                 : "当前持仓缺少可用的当日盈亏明细。");
+        List<ApexAiMetric> metrics = buildPortfolioMetrics(detail, totalTodayPnl, coverageRate, dataLevel,
+                coveredCount, positionCount);
+        if (containsAny(question, "哪只", "个股", "股票", "影响最大", "拖累最大")) {
+            return analyzePortfolioStockImpact(detail, totalTodayPnl, previousMarketValue, residualValue,
+                    dataLevel, metrics);
+        }
+        if (containsAny(question, "行业集中", "集中度", "行业权重", "行业暴露")) {
+            return analyzePortfolioIndustryExposure(detail, totalTodayPnl, residualValue, dataLevel, metrics);
+        }
+        if (containsAny(question, "先处理", "处理哪些", "优先处理", "持仓风险", "风险怎么样", "该卖", "止损")) {
+            return analyzePortfolioReviewPriority(detail, totalTodayPnl, previousMarketValue, residualValue,
+                    dataLevel, metrics);
+        }
+        boolean currentDayMoveQuestion = containsAny(question, "今天", "当日")
+                && containsAny(question, "下跌", "上涨", "跌", "涨", "表现");
+        if (!containsAny(question, "收益", "盈亏", "板块", "行业", "归因") && !currentDayMoveQuestion) {
+            return answerUnsupportedPortfolioQuestion(detail, question, dataLevel);
+        }
         return ApexAiAnalysisResp.builder()
                 .requestId(UUID.randomUUID().toString())
                 .analysisType(ApexAiAnalysisTypeEnum.PORTFOLIO.getCode())
@@ -349,15 +367,7 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 .dataNote("按持仓行业聚合当日浮盈，以昨日持仓市值计算收益贡献；不含现金收益和已卖出证券的盘后影响。")
                 .aiEnhanced(false)
                 .generatedAt(LocalDateTime.now())
-                .metrics(List.of(
-                        metric("今日收益率", signed(detail.getTodayPct(), 2) + "%", detail.getTodayPct(), "%",
-                                tone(detail.getTodayPct()), "持仓当日盈亏 / 昨日持仓市值"),
-                        metric("今日盈亏", signed(totalTodayPnl, 2) + " 元", totalTodayPnl, "元",
-                                tone(totalTodayPnl), "当前有行情持仓的当日浮盈合计"),
-                        metric("总权益", amount(detail.getTotalEquity()) + " 元", detail.getTotalEquity(), "元",
-                                "NEUTRAL", "持仓市值与组合现金之和"),
-                        metric("行情覆盖", coverageRate.toPlainString() + "%", coverageRate, "%",
-                                "GREEN".equals(dataLevel) ? "UP" : "WARNING", coveredCount + "/" + positionCount + " 只持仓")))
+                .metrics(metrics)
                 .contributors(contributors)
                 .suggestions(buildPortfolioSuggestions(detail, contributors, missingQuoteCount, residualValue))
                 .followUpQuestions(List.of(
@@ -366,6 +376,245 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                         "结合今天的决策，我应该先处理哪些持仓？"))
                 .disclaimer(DISCLAIMER)
                 .build();
+    }
+
+    private ApexAiAnalysisResp analyzePortfolioStockImpact(PortfolioSummaryResp detail, BigDecimal totalTodayPnl,
+                                                            BigDecimal previousMarketValue, BigDecimal residualValue,
+                                                            String dataLevel, List<ApexAiMetric> metrics) {
+        List<PortfolioHolding> holdings = new ArrayList<>();
+        if (CollUtil.isNotEmpty(detail.getHoldings())) {
+            for (PortfolioHolding holding : detail.getHoldings()) {
+                if (Objects.nonNull(holding.getTodayPnl())) {
+                    holdings.add(holding);
+                }
+            }
+        }
+        holdings.sort(Comparator.comparing(holding -> holding.getTodayPnl().abs(), Comparator.reverseOrder()));
+        List<ApexAiContributor> contributors = new ArrayList<>();
+        int stockLimit = Math.min(5, holdings.size());
+        for (int index = 0; index < stockLimit; index++) {
+            PortfolioHolding holding = holdings.get(index);
+            BigDecimal contributionPct = previousMarketValue.abs().compareTo(BigDecimal.ONE) >= 0
+                    ? holding.getTodayPnl().multiply(BigDecimal.valueOf(100))
+                    .divide(previousMarketValue, 4, RoundingMode.HALF_UP) : null;
+            contributors.add(ApexAiContributor.builder()
+                    .rank(index + 1)
+                    .name(StringUtils.isNotBlank(holding.getName()) ? holding.getName() : holding.getCode())
+                    .detail((StringUtils.isNotBlank(holding.getIndustry()) ? holding.getIndustry() + " · " : "")
+                            + "当日浮盈 " + signed(holding.getTodayPnl(), 2) + " 元")
+                    .value(holding.getTodayPnl().setScale(2, RoundingMode.HALF_UP))
+                    .contributionPct(contributionPct)
+                    .sampleCount(1)
+                    .direction(direction(holding.getTodayPnl()))
+                    .build());
+        }
+        String summary = CollUtil.isEmpty(contributors)
+                ? detail.getName() + "当前没有可用于个股归因的当日盈亏明细。"
+                : detail.getName() + "对今日收益影响最大的是" + contributors.get(0).getName() + "，当日浮盈 "
+                + signed(contributors.get(0).getValue(), 2) + " 元，占组合昨日持仓市值的 "
+                + signed(contributors.get(0).getContributionPct(), 2) + " 个百分点。";
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.PORTFOLIO.getCode())
+                .title(detail.getName() + " · 个股影响排序")
+                .summary(summary)
+                .portfolioId(detail.getId())
+                .totalValue(totalTodayPnl)
+                .residualValue(residualValue)
+                .dataLevel(dataLevel)
+                .dataAsOf(detail.getQuoteTime())
+                .dataNote("按单只持仓当日浮盈排序，以昨日持仓市值计算收益贡献。")
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .metrics(metrics)
+                .contributors(contributors)
+                .suggestions(List.of("先核对首位个股是否触及既定止损、止盈或仓位上限",
+                        "再结合行业归因判断是单只波动还是同方向风险暴露"))
+                .followUpQuestions(List.of("今天哪些板块拖累了组合？", "当前组合行业集中度是否过高？",
+                        "结合今天的决策，我应该先处理哪些持仓？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp analyzePortfolioIndustryExposure(PortfolioSummaryResp detail,
+                                                                 BigDecimal totalTodayPnl, BigDecimal residualValue,
+                                                                 String dataLevel, List<ApexAiMetric> metrics) {
+        List<ApexAiIndustryAttributionBO> industryAttributions = new ArrayList<>();
+        if (CollUtil.isNotEmpty(detail.getHoldings())) {
+            for (PortfolioHolding holding : detail.getHoldings()) {
+                String industry = StringUtils.isNotBlank(holding.getIndustry()) ? holding.getIndustry().trim() : "未分类";
+                ApexAiIndustryAttributionBO attribution = null;
+                for (ApexAiIndustryAttributionBO candidate : industryAttributions) {
+                    if (industry.equals(candidate.getIndustry())) {
+                        attribution = candidate;
+                        break;
+                    }
+                }
+                if (Objects.isNull(attribution)) {
+                    attribution = ApexAiIndustryAttributionBO.builder().industry(industry).build();
+                    industryAttributions.add(attribution);
+                }
+                attribution.getHoldings().add(holding);
+                if (Objects.nonNull(holding.getTodayPnl())) {
+                    attribution.setTodayPnl(attribution.getTodayPnl().add(holding.getTodayPnl()));
+                }
+            }
+        }
+        BigDecimal totalMarketValue = BigDecimal.ZERO;
+        for (ApexAiIndustryAttributionBO attribution : industryAttributions) {
+            for (PortfolioHolding holding : attribution.getHoldings()) {
+                if (Objects.nonNull(holding.getMarketValue())) {
+                    totalMarketValue = totalMarketValue.add(holding.getMarketValue());
+                }
+            }
+        }
+        List<ApexAiContributor> contributors = new ArrayList<>();
+        for (ApexAiIndustryAttributionBO attribution : industryAttributions) {
+            BigDecimal industryMarketValue = BigDecimal.ZERO;
+            for (PortfolioHolding holding : attribution.getHoldings()) {
+                if (Objects.nonNull(holding.getMarketValue())) {
+                    industryMarketValue = industryMarketValue.add(holding.getMarketValue());
+                }
+            }
+            BigDecimal weightPct = totalMarketValue.compareTo(BigDecimal.ZERO) > 0
+                    ? industryMarketValue.multiply(BigDecimal.valueOf(100))
+                    .divide(totalMarketValue, 4, RoundingMode.HALF_UP) : null;
+            contributors.add(ApexAiContributor.builder()
+                    .rank(0)
+                    .name(attribution.getIndustry())
+                    .detail(attribution.getHoldings().size() + " 只持仓 · 行业市值 " + amount(industryMarketValue)
+                            + " 元 · 当日浮盈 " + signed(attribution.getTodayPnl(), 2) + " 元")
+                    .value(industryMarketValue.setScale(2, RoundingMode.HALF_UP))
+                    .contributionPct(weightPct)
+                    .sampleCount(attribution.getHoldings().size())
+                    .direction("NEUTRAL")
+                    .build());
+        }
+        contributors.sort(Comparator.comparing(ApexAiContributor::getValue, Comparator.reverseOrder()));
+        for (int index = 0; index < contributors.size(); index++) {
+            contributors.get(index).setRank(index + 1);
+        }
+        String summary = CollUtil.isEmpty(contributors) || Objects.isNull(contributors.get(0).getContributionPct())
+                ? detail.getName() + "缺少可用持仓市值，暂不能判断行业集中度。"
+                : detail.getName() + "最大行业暴露是" + contributors.get(0).getName() + "，占持仓市值 "
+                + signed(contributors.get(0).getContributionPct(), 2) + "%（"
+                + amount(contributors.get(0).getValue()) + " 元）。";
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.PORTFOLIO.getCode())
+                .title(detail.getName() + " · 行业集中度")
+                .summary(summary)
+                .portfolioId(detail.getId())
+                .totalValue(totalTodayPnl)
+                .residualValue(residualValue)
+                .dataLevel(totalMarketValue.compareTo(BigDecimal.ZERO) > 0 ? dataLevel : "YELLOW")
+                .dataAsOf(detail.getQuoteTime())
+                .dataNote("按当前有市值的持仓归集行业暴露；行业权重不含现金。")
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .metrics(metrics)
+                .contributors(contributors)
+                .suggestions(List.of("将最大行业暴露与预设行业风险预算比较，再决定是否需要减仓或分散",
+                        "行业内多只持仓同步波动时，优先评估共同风险而非只看单只盈亏"))
+                .followUpQuestions(List.of("今天哪些板块拖累了组合？", "哪只股票对今天收益影响最大？",
+                        "结合今天的决策，我应该先处理哪些持仓？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp analyzePortfolioReviewPriority(PortfolioSummaryResp detail, BigDecimal totalTodayPnl,
+                                                               BigDecimal previousMarketValue, BigDecimal residualValue,
+                                                               String dataLevel, List<ApexAiMetric> metrics) {
+        List<PortfolioHolding> holdings = new ArrayList<>();
+        if (CollUtil.isNotEmpty(detail.getHoldings())) {
+            for (PortfolioHolding holding : detail.getHoldings()) {
+                if (Objects.nonNull(holding.getTodayPnl())) {
+                    holdings.add(holding);
+                }
+            }
+        }
+        holdings.sort(Comparator.comparing(holding -> holding.getTodayPnl().abs(), Comparator.reverseOrder()));
+        List<ApexAiContributor> contributors = new ArrayList<>();
+        int stockLimit = Math.min(3, holdings.size());
+        for (int index = 0; index < stockLimit; index++) {
+            PortfolioHolding holding = holdings.get(index);
+            boolean stopLossTriggered = Objects.nonNull(holding.getMarketPrice()) && Objects.nonNull(holding.getStopLoss())
+                    && holding.getMarketPrice().compareTo(holding.getStopLoss()) <= 0;
+            BigDecimal contributionPct = previousMarketValue.abs().compareTo(BigDecimal.ONE) >= 0
+                    ? holding.getTodayPnl().multiply(BigDecimal.valueOf(100))
+                    .divide(previousMarketValue, 4, RoundingMode.HALF_UP) : null;
+            String riskDetail = stopLossTriggered
+                    ? "现价 " + amount(holding.getMarketPrice()) + " 元已不高于止损价 " + amount(holding.getStopLoss()) + " 元"
+                    : "当日浮盈 " + signed(holding.getTodayPnl(), 2) + " 元，需按既定风控规则复核";
+            contributors.add(ApexAiContributor.builder()
+                    .rank(index + 1)
+                    .name(StringUtils.isNotBlank(holding.getName()) ? holding.getName() : holding.getCode())
+                    .detail(riskDetail)
+                    .value(holding.getTodayPnl().setScale(2, RoundingMode.HALF_UP))
+                    .contributionPct(contributionPct)
+                    .sampleCount(1)
+                    .direction(stopLossTriggered || holding.getTodayPnl().signum() < 0 ? "NEGATIVE" : "NEUTRAL")
+                    .build());
+        }
+        String summary = CollUtil.isEmpty(contributors)
+                ? detail.getName() + "当前没有可用于持仓复核的当日盈亏明细。"
+                : detail.getName() + "建议先复核" + contributors.get(0).getName() + "："
+                + contributors.get(0).getDetail() + "。此排序仅按当日影响与已录入止损价生成，未替代交易决策。";
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.PORTFOLIO.getCode())
+                .title(detail.getName() + " · 持仓复核优先级")
+                .summary(summary)
+                .portfolioId(detail.getId())
+                .totalValue(totalTodayPnl)
+                .residualValue(residualValue)
+                .dataLevel(dataLevel)
+                .dataAsOf(detail.getQuoteTime())
+                .dataNote("优先级按当日盈亏绝对值排序；止损状态仅使用已录入的止损价与当前行情。")
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .metrics(metrics)
+                .contributors(contributors)
+                .suggestions(List.of("先核对首位持仓的止损、止盈、仓位上限与原始买入逻辑是否仍成立",
+                        "不要仅因单日涨跌改动规则；结合当日决策和行业暴露后再执行交易"))
+                .followUpQuestions(List.of("哪只股票对今天收益影响最大？", "当前组合行业集中度是否过高？",
+                        "今天哪些板块拖累了组合？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp answerUnsupportedPortfolioQuestion(PortfolioSummaryResp detail, String question,
+                                                                    String dataLevel) {
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.PORTFOLIO.getCode())
+                .title(detail.getName() + " · 组合数据问答")
+                .summary("已收到问题：“" + question + "”。当前组合规则分析只覆盖当日收益归因、个股影响、行业集中度和持仓复核；"
+                        + "该问题需要可用的 AI 对话或额外数据源，不能用同一份收益归因结果代替回答。")
+                .portfolioId(detail.getId())
+                .dataLevel(dataLevel)
+                .dataAsOf(detail.getQuoteTime())
+                .dataNote("当前问题未匹配可验证的组合规则分析能力")
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .followUpQuestions(List.of("为什么今天收益下跌？", "哪只股票对今天收益影响最大？",
+                        "当前组合行业集中度是否过高？", "结合今天的决策，我应该先处理哪些持仓？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private List<ApexAiMetric> buildPortfolioMetrics(PortfolioSummaryResp detail, BigDecimal totalTodayPnl,
+                                                      BigDecimal coverageRate, String dataLevel, int coveredCount,
+                                                      int positionCount) {
+        return List.of(
+                metric("今日收益率", signed(detail.getTodayPct(), 2) + "%", detail.getTodayPct(), "%",
+                        tone(detail.getTodayPct()), "持仓当日盈亏 / 昨日持仓市值"),
+                metric("今日盈亏", signed(totalTodayPnl, 2) + " 元", totalTodayPnl, "元",
+                        tone(totalTodayPnl), "当前有行情持仓的当日浮盈合计"),
+                metric("总权益", amount(detail.getTotalEquity()) + " 元", detail.getTotalEquity(), "元",
+                        "NEUTRAL", "持仓市值与组合现金之和"),
+                metric("行情覆盖", coverageRate.toPlainString() + "%", coverageRate, "%",
+                        "GREEN".equals(dataLevel) ? "UP" : "WARNING", coveredCount + "/" + positionCount + " 只持仓"));
     }
 
     private ApexAiAnalysisResp analyzeStrategy(ApexAiAnalyzeReq request, String question) {

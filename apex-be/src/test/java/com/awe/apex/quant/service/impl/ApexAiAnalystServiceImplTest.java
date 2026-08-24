@@ -229,6 +229,55 @@ class ApexAiAnalystServiceImplTest {
         assertEquals("默认组合 · 今日收益归因", response.getTitle());
     }
 
+    @Test
+    void distinguishesStockImpactIndustryExposureAndReviewPriorityQuestions() {
+        PortfolioSummaryResp option = PortfolioSummaryResp.builder()
+                .id(8L).name("我的组合").isDefault(true).editable(true).build();
+        PortfolioHolding chip = holding("688001", "芯片一号", "半导体", "-1800");
+        chip.setMarketValue(new BigDecimal("60000"));
+        chip.setMarketPrice(new BigDecimal("10"));
+        chip.setStopLoss(new BigDecimal("10.50"));
+        PortfolioHolding bank = holding("600000", "银行一号", "银行", "-500");
+        bank.setMarketValue(new BigDecimal("30000"));
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of(option));
+        when(portfolioService.detail(8L)).thenReturn(PortfolioSummaryResp.builder()
+                .id(8L).name("我的组合").marketValue(new BigDecimal("90000"))
+                .totalEquity(new BigDecimal("100000")).todayPnl(new BigDecimal("-2300"))
+                .todayPct(new BigDecimal("-2.49")).positionCount(2).missingQuoteCount(0)
+                .quoteTime(LocalDateTime.of(2026, 8, 21, 14, 55)).holdings(List.of(chip, bank)).build());
+
+        ApexAiAnalysisResp stockResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("哪只股票对今天收益影响最大？").analysisType("PORTFOLIO").portfolioId(8L).build());
+        ApexAiAnalysisResp exposureResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("当前组合行业集中度是否过高？").analysisType("PORTFOLIO").portfolioId(8L).build());
+        ApexAiAnalysisResp reviewResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("结合今天的决策，我应该先处理哪些持仓？").analysisType("PORTFOLIO").portfolioId(8L).build());
+
+        assertEquals("我的组合 · 个股影响排序", stockResponse.getTitle());
+        assertEquals("芯片一号", stockResponse.getContributors().get(0).getName());
+        assertEquals("我的组合 · 行业集中度", exposureResponse.getTitle());
+        assertEquals("半导体", exposureResponse.getContributors().get(0).getName());
+        assertEquals(new BigDecimal("66.6667"), exposureResponse.getContributors().get(0).getContributionPct());
+        assertEquals("我的组合 · 持仓复核优先级", reviewResponse.getTitle());
+        assertTrue(reviewResponse.getSummary().contains("止损价"));
+    }
+
+    @Test
+    void doesNotReusePortfolioAttributionForUnsupportedQuestion() {
+        PortfolioSummaryResp option = PortfolioSummaryResp.builder()
+                .id(8L).name("我的组合").isDefault(true).editable(true).build();
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of(option));
+        when(portfolioService.detail(8L)).thenReturn(PortfolioSummaryResp.builder()
+                .id(8L).name("我的组合").positionCount(0).missingQuoteCount(0).holdings(List.of()).build());
+
+        ApexAiAnalysisResp response = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("明天大盘会涨吗？").analysisType("PORTFOLIO").portfolioId(8L).build());
+
+        assertEquals("我的组合 · 组合数据问答", response.getTitle());
+        assertTrue(response.getSummary().contains("不能用同一份收益归因结果代替回答"));
+        assertTrue(response.getContributors().isEmpty());
+    }
+
     private PortfolioHolding holding(String code, String name, String industry, String todayPnl) {
         return PortfolioHolding.builder()
                 .code(code)
