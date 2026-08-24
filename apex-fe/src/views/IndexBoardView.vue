@@ -10,10 +10,12 @@ import { ElMessage } from 'element-plus'
 import { Download, Grid, Histogram, Refresh } from '@element-plus/icons-vue'
 import { fetchIndexBars, fetchIndexBoard, refreshIndexBoard } from '../api/indexBoard'
 import { fetchMarketBriefing, getMarketBoard } from '../api/market'
+import { fetchMarketHeatmap } from '../api/heatmap'
 import { fetchSectorBoard } from '../api/sector'
 import {
   buildMarketShareSheet,
   mountMarketShareSheet,
+  renderMarketShareHeatmap,
 } from '../utils/marketShareSheet.js'
 import {
   captureElementBlob,
@@ -395,10 +397,20 @@ async function captureMarketShare() {
   if (!titleDate) throw new Error('市场快照日期缺失，请刷新后再分享')
   const shareIndustryRows = industryTradeDate.value === titleDate ? industryRows.value : []
   const shareConceptRows = conceptTradeDate.value === titleDate ? conceptRows.value : []
+  let heatmap = null
+  try {
+    const response = await fetchMarketHeatmap({
+      type: 'INDUSTRY',
+      colorBy: 'pctChg',
+      sizeBy: 'circMv',
+      limit: 80,
+    })
+    if (snapshotStamp(response.data) === titleDate) heatmap = response.data
+  } catch (e) {
+    console.warn('分享行情截图时未获取到行业云图', e)
+  }
   const sheet = buildMarketShareSheet({
     titleDate,
-    message: briefing.value?.message || '沪深市场总览 · 赚钱效应 · 板块热力',
-    stance: briefing.value?.stance || '',
     volumeText: briefing.value?.indexVolumeText || '--',
     volumeLabel: volumeChangeText.value,
     breadth: breadth.value
@@ -420,8 +432,10 @@ async function captureMarketShare() {
       name: row.name,
       pctChg: row.pctChg ?? row.avgPctChg,
     })),
+    heatmap,
   })
   const mounted = mountMarketShareSheet(sheet)
+  const heatmapChart = renderMarketShareHeatmap(sheet, heatmap?.nodes)
   try {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
     const width = 960
@@ -433,7 +447,7 @@ async function captureMarketShare() {
       scale: Math.min(dpr, 2.5),
       width,
       height,
-      backgroundColor: '#0f1419',
+      backgroundColor: '#edf2f7',
       style: {
         width: `${width}px`,
         height: `${height}px`,
@@ -444,6 +458,7 @@ async function captureMarketShare() {
       },
     })
   } finally {
+    heatmapChart?.dispose()
     mounted.dispose()
   }
 }

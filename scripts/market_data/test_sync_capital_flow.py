@@ -1,3 +1,4 @@
+import os
 import sys
 import types
 import unittest
@@ -292,7 +293,9 @@ class SyncCapitalFlowTransactionTest(unittest.TestCase):
                 return frame
 
         akshare_client = RetryAkshare()
-        with patch.object(sync_capital_flow.time_module, "sleep") as sleep:
+        with patch.dict(os.environ, {
+            key: "" for key in sync_capital_flow.PROXY_ENV_KEYS
+        }, clear=False), patch.object(sync_capital_flow.time_module, "sleep") as sleep:
             row_count = sync_capital_flow.sync_stock_fund_flow(
                 connection,
                 akshare_client,
@@ -302,6 +305,39 @@ class SyncCapitalFlowTransactionTest(unittest.TestCase):
         self.assertEqual(1, row_count)
         self.assertEqual(3, akshare_client.call_count)
         self.assertEqual(2, sleep.call_count)
+        self.assertEqual(1, connection.commit_count)
+
+    def test_stock_fund_flow_retries_without_proxy_after_connection_failure(self):
+        frame = FakeFrame([{
+            "股票代码": "600519",
+            "股票简称": "贵州茅台",
+        }])
+        connection = FakeConnection()
+
+        class ProxySensitiveAkshare:
+
+            def __init__(self):
+                self.proxy_states = []
+
+            def stock_individual_fund_flow_rank(self, **kwargs):
+                self.proxy_states.append(sync_capital_flow.has_http_proxy())
+                if sync_capital_flow.has_http_proxy():
+                    raise ConnectionError("Remote end closed connection")
+                return frame
+
+        akshare_client = ProxySensitiveAkshare()
+        with patch.dict(os.environ, {"HTTPS_PROXY": "http://127.0.0.1:7890"}, clear=False), \
+                patch.object(sync_capital_flow.time_module, "sleep") as sleep:
+            row_count = sync_capital_flow.sync_stock_fund_flow(
+                connection,
+                akshare_client,
+                trade_date=date(2026, 8, 24),
+            )
+            self.assertEqual("http://127.0.0.1:7890", os.environ.get("HTTPS_PROXY"))
+
+        self.assertEqual(1, row_count)
+        self.assertEqual([True, False], akshare_client.proxy_states)
+        self.assertEqual(0, sleep.call_count)
         self.assertEqual(1, connection.commit_count)
 
     def test_dragon_tiger_empty_akshare_response_preserves_old_snapshot(self):

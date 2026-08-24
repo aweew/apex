@@ -399,7 +399,7 @@ onMounted(loadList)
       v-loading="loading"
       :data="filtered"
       class="watchlist-table"
-      height="calc(100vh - 390px)"
+      height="calc(100vh - 300px)"
       @selection-change="(val) => (selected = val)"
     >
       <el-table-column type="selection" width="48" />

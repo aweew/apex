@@ -24,3 +24,7 @@ test('watchlist provides a compact mobile layout for importing, actions, and fil
   assert.match(source, /\.watchlist-import[\s\S]*grid-template-columns:\s*1fr;/)
   assert.match(source, /\.watchlist-filter-controls[\s\S]*grid-template-columns:\s*1fr 1fr;/)
 })
+
+test('watchlist keeps enough desktop height for scanning more rows', () => {
+  assert.match(source, /class="watchlist-table"[\s\S]*height="calc\(100vh - 300px\)"/)
+})

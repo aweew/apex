@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import time as time_module
+from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
@@ -28,6 +29,7 @@ YUAN_PER_YI = Decimal("100000000")
 MONEY_PRECISION = Decimal("0.01")
 SOURCE_REQUEST_ATTEMPTS = 3
 DRAGON_TIGER_PUBLISH_TIME = time(17, 30)
+PROXY_ENV_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 
 def load_env() -> None:
@@ -248,15 +250,50 @@ def resolve_dragon_tiger_trade_date(now: Optional[datetime] = None) -> date:
     return recent_trade_date(current_time.date())
 
 
+def has_http_proxy() -> bool:
+    """判断当前采集进程是否配置了 HTTP 代理。"""
+    return any(os.getenv(key) for key in PROXY_ENV_KEYS)
+
+
+@contextmanager
+def disable_http_proxy():
+    """临时移除 HTTP 代理，供东财接口直连复试。"""
+    saved_proxies = {key: os.environ.pop(key) for key in PROXY_ENV_KEYS if key in os.environ}
+    try:
+        yield
+    finally:
+        os.environ.update(saved_proxies)
+
+
 def fetch_with_retry(fetch_action, source_name: str):
     """重试可恢复的行情源网络异常。"""
     for attempt in range(1, SOURCE_REQUEST_ATTEMPTS + 1):
         try:
             return fetch_action()
         except (ConnectionError, TimeoutError, OSError) as ex:
+            direct_error = None
+            if has_http_proxy():
+                try:
+                    with disable_http_proxy():
+                        result = fetch_action()
+                    print(f"{source_name} 代理链路失败，东财直连复试成功")
+                    return result
+                except (ConnectionError, TimeoutError, OSError) as direct_ex:
+                    direct_error = direct_ex
             if attempt == SOURCE_REQUEST_ATTEMPTS:
+                if direct_error is not None:
+                    raise RuntimeError(
+                        f"{source_name} 代理及东财直连均失败，代理异常={ex}，直连异常={direct_error}"
+                    ) from direct_error
                 raise
-            print(f"{source_name} 请求失败，第 {attempt} 次重试：{ex}", file=sys.stderr)
+            if direct_error is not None:
+                print(
+                    f"{source_name} 代理链路和东财直连均失败，第 {attempt} 次重试："
+                    f"代理异常={ex}，直连异常={direct_error}",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"{source_name} 请求失败，第 {attempt} 次重试：{ex}", file=sys.stderr)
             time_module.sleep(attempt)
 
 

@@ -32,7 +32,7 @@ test('brand identity uses Lingji as the canonical Chinese name', () => {
   assert.equal(BRAND.nameEn, 'Apex')
   assert.equal(BRAND.slogan, '灵极 Apex · 量化｜洞见 · 观变')
   assert.equal(BRAND.taglineShort, '洞见 · 观变')
-  assert.equal(BRAND.documentTitle, '灵极 Apex · 量化决策中枢')
+  assert.equal(BRAND.documentTitle, '灵极 Apex｜ 洞见·观变')
   assert.match(indexSource, new RegExp(`<title>${BRAND.documentTitle}</title>`))
   assert.match(miniIndexSource, new RegExp(BRAND.slogan))
   assert.equal(brandEyebrow('策略实验室'), '灵极 · 策略实验室')

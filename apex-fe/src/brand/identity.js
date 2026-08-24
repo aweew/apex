@@ -15,7 +15,7 @@ export const BRAND = {
   slogan: '灵极 Apex · 量化｜洞见 · 观变',
   product: '本地量化台',
   /** 文档 / 浏览器标题 */
-  documentTitle: '灵极 Apex · 量化决策中枢',
+  documentTitle: '灵极 Apex｜ 洞见·观变',
   /** 页眉短标语（导航窄位） */
   taglineShort: '洞见 · 观变',
   assets: {
