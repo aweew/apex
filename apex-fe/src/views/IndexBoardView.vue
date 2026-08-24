@@ -7,7 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { Download, Grid, Histogram, Refresh } from '@element-plus/icons-vue'
+import { Download, Histogram, Refresh } from '@element-plus/icons-vue'
 import { fetchIndexBars, fetchIndexBoard, refreshIndexBoard } from '../api/indexBoard'
 import { fetchMarketBriefing, getMarketBoard } from '../api/market'
 import { fetchMarketHeatmap } from '../api/heatmap'
@@ -24,6 +24,8 @@ import {
   shareFilename,
 } from '../utils/shareCapture.js'
 import HeatmapView from './HeatmapView.vue'
+import CapitalFlowView from './CapitalFlowView.vue'
+import SectorBoardView from './SectorBoardView.vue'
 import { isConceptBoard, normalizeHotThemes } from '../utils/hotTheme.js'
 import { formatVolumeChangeText } from '../utils/marketVolume.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
@@ -35,7 +37,7 @@ const route = useRoute()
 const loading = ref(false)
 const quoteRefreshing = ref(false)
 const indexSyncing = ref(false)
-const marketTab = ref('ab') // ab | global
+const marketTab = ref('ab') // ab | global | capital-flow | sector
 const indexData = ref(null)
 const briefing = ref(null)
 const marketBoard = ref(null)
@@ -50,6 +52,7 @@ const chartRef = ref(null)
 let chart
 
 useSessionViewState('market', { marketTab })
+if (['capital-flow', 'sector'].includes(route.query.tab)) marketTab.value = route.query.tab
 
 const sharing = ref(false)
 const shareOpen = ref(false)
@@ -218,9 +221,28 @@ function sparkPath(closes) {
 function openSectorConstituents(row, type) {
   if (!row?.code) return
   router.push({
-    path: '/sector',
-    query: { type, code: row.code },
+    path: '/market',
+    query: { tab: 'sector', type, code: row.code },
   })
+}
+
+function setMarketTab(tab) {
+  marketTab.value = tab
+  const query = { ...route.query }
+  if (tab === 'capital-flow') {
+    query.tab = 'capital-flow'
+    delete query.type
+    delete query.code
+    delete query.q
+  } else if (tab === 'sector') {
+    query.tab = 'sector'
+  } else {
+    delete query.tab
+    delete query.type
+    delete query.code
+    delete query.q
+  }
+  router.replace({ query })
 }
 
 async function load(forceBriefing = false, showLoading = true) {
@@ -371,7 +393,23 @@ function onResize() {
   chart?.resize()
 }
 
-watch(detailBars, () => nextTick(renderChart))
+watch(detailBars, async () => {
+  await nextTick()
+  if (!chartRef.value) {
+    chart?.dispose()
+    chart = null
+    return
+  }
+  renderChart()
+})
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (tab === 'capital-flow' || tab === 'sector') marketTab.value = tab
+    else if (marketTab.value === 'capital-flow' || marketTab.value === 'sector') marketTab.value = 'ab'
+  },
+)
 
 watch(marketTab, async () => {
   await nextTick()
@@ -546,45 +584,53 @@ onBeforeUnmount(() => {
             type="button"
             class="tab"
             :class="{ on: marketTab === 'ab' }"
-            @click="marketTab = 'ab'"
+            @click="setMarketTab('ab')"
           >沪深A股</button>
           <button
             type="button"
             class="tab"
             :class="{ on: marketTab === 'global' }"
-            @click="marketTab = 'global'"
+            @click="setMarketTab('global')"
           >全球指数</button>
+          <button
+            type="button"
+            class="tab"
+            :class="{ on: marketTab === 'capital-flow' }"
+            @click="setMarketTab('capital-flow')"
+          >资金流</button>
+          <button
+            type="button"
+            class="tab"
+            :class="{ on: marketTab === 'sector' }"
+            @click="setMarketTab('sector')"
+          >板块</button>
         </div>
-        <el-button class="market-action" type="primary" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
+        <el-button v-if="marketTab === 'ab' || marketTab === 'global'" class="market-action" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
           <el-icon v-if="!quoteRefreshing"><Refresh /></el-icon>
           <span class="desktop-action-label">刷新行情</span>
           <span class="mobile-action-label">刷新</span>
         </el-button>
-        <el-button class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
+        <el-button v-if="marketTab === 'ab' || marketTab === 'global'" class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
           <el-icon v-if="!indexSyncing"><Download /></el-icon>
           <span class="desktop-action-label">同步指数</span>
           <span class="mobile-action-label">同步</span>
         </el-button>
-        <el-button class="market-action mobile-icon-action" plain aria-label="打开板块行情" title="板块" @click="router.push('/sector')">
-          <el-icon><Grid /></el-icon>
-          <span class="desktop-action-label">板块</span>
-        </el-button>
-        <el-button class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
+        <el-button v-if="marketTab === 'ab' || marketTab === 'global'" class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
           <el-icon><Histogram /></el-icon>
-          <span class="desktop-action-label">涨停</span>
+          <span class="desktop-action-label">连板天梯</span>
         </el-button>
       </div>
     </header>
 
     <FloatingShareButton
-      v-if="!shareOpen"
+      v-if="(marketTab === 'ab' || marketTab === 'global') && !shareOpen"
       :loading="sharing"
       label="分享行情截图"
       @click="openShare"
     />
 
     <el-alert
-      v-if="cnStaleHint"
+      v-if="(marketTab === 'ab' || marketTab === 'global') && cnStaleHint"
       class="stale-alert"
       type="info"
       show-icon
@@ -710,16 +756,18 @@ onBeforeUnmount(() => {
               >{{ item.name }}</button>
             </div>
           </div>
-          <div v-if="activeCode" ref="chartRef" class="chart" />
-          <div v-else class="chart-empty">选择上方指数查看走势</div>
+          <div v-if="activeCode && detailBars.length" ref="chartRef" class="chart" />
+          <div v-else class="chart-empty">
+            {{ activeCode ? '暂无可用指数走势，请刷新或同步指数后重试' : '选择上方指数查看走势' }}
+          </div>
           <p class="hint">成交量柱：红=较前日放量，绿=较前日缩量</p>
         </section>
 
-        <aside class="side-panels">
-          <section class="side-card">
+        <template>
+          <section class="side-card ranking-panel">
             <div class="panel-head">
               <h2><TermTip term="sector">行业涨幅</TermTip> <small v-if="industryTradeDate">{{ industryTradeDate }}</small></h2>
-              <button type="button" class="link" @click="router.push('/sector')">更多</button>
+              <button type="button" class="link" @click="setMarketTab('sector')">更多</button>
             </div>
             <ul v-if="industryRows.length" class="rank-list">
               <li v-for="(row, idx) in industryRows.slice(0, 8)" :key="row.code || row.name || idx" class="detail-row">
@@ -733,10 +781,10 @@ onBeforeUnmount(() => {
             <p v-else class="side-empty">暂无行业数据</p>
           </section>
 
-          <section class="side-card">
+          <section class="side-card ranking-panel">
             <div class="panel-head">
               <h2><TermTip term="concept_board">概念涨幅</TermTip> <small v-if="conceptTradeDate">{{ conceptTradeDate }}</small></h2>
-              <button type="button" class="link" @click="router.push({ path: '/sector', query: { type: 'CONCEPT' } })">更多</button>
+              <button type="button" class="link" @click="router.push({ path: '/market', query: { tab: 'sector', type: 'CONCEPT' } })">更多</button>
             </div>
             <ul v-if="conceptRows.length" class="rank-list">
               <li v-for="(row, idx) in conceptRows.slice(0, 8)" :key="row.code || row.name || idx" class="detail-row">
@@ -749,7 +797,7 @@ onBeforeUnmount(() => {
             </ul>
             <p v-else class="side-empty">暂无概念数据</p>
           </section>
-        </aside>
+        </template>
       </div>
 
       <!-- 涨跌榜 + 快捷 -->
@@ -826,7 +874,7 @@ onBeforeUnmount(() => {
       <HeatmapView embedded />
     </template>
 
-    <template v-else>
+    <template v-else-if="marketTab === 'global'">
       <section
         v-for="sec in globalSections"
         :key="sec.key"
@@ -868,7 +916,11 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
-    <el-collapse v-if="lastLog" class="log-box">
+    <CapitalFlowView v-else-if="marketTab === 'capital-flow'" embedded />
+
+    <SectorBoardView v-else embedded />
+
+    <el-collapse v-if="(marketTab === 'ab' || marketTab === 'global') && lastLog" class="log-box">
       <el-collapse-item title="最近指数同步日志" name="log">
         <pre class="log">{{ lastLog }}</pre>
       </el-collapse-item>
@@ -1223,7 +1275,8 @@ onBeforeUnmount(() => {
 
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(0, 1.55fr) repeat(2, minmax(250px, 0.8fr));
+  align-items: start;
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -1311,12 +1364,6 @@ onBeforeUnmount(() => {
   margin: 6px 0 0;
   font-size: 12px;
   color: var(--mc-muted);
-}
-
-.side-panels {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .rank-list {

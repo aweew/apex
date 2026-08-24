@@ -135,3 +135,23 @@ test('an explicit concept type is preserved when filtering a legacy theme by nam
     /function applyRouteQuery\(\)[\s\S]*?if \(q\) \{[\s\S]*?nameFilter\.value = q[\s\S]*?if \(!TAB_META\[type\]\) \{[\s\S]*?activeTab\.value = 'THEME'/,
   )
 })
+
+test('sector ranking renders a fixed page instead of the complete board list', () => {
+  assert.match(sectorSource, /const RANKING_PAGE_SIZE = 50/)
+  assert.match(sectorSource, /const rankingPage = ref\(1\)/)
+  assert.match(
+    sectorSource,
+    /const pagedItems = computed\(\(\) => \{[\s\S]*?const start = \(rankingPage\.value - 1\) \* RANKING_PAGE_SIZE[\s\S]*?return items\.value\.slice\(start, start \+ RANKING_PAGE_SIZE\)/,
+  )
+  assert.match(sectorSource, /<el-table[\s\S]*?:data="pagedItems"/)
+})
+
+test('sector ranking paging keeps global ranks and resets after list-affecting changes', () => {
+  assert.match(sectorSource, /rankingPage\.value = 1/)
+  assert.match(sectorSource, /rankingPageOffset \+ \$index \+ 1/)
+  assert.match(sectorSource, /class="sector-pagination"/)
+  assert.match(sectorSource, /@current-change="onRankingPageChange"/)
+  assert.match(sectorSource, /class="sector-mobile-pagination"/)
+  assert.match(sectorSource, /@click="onRankingPageChange\(rankingPage - 1\)"/)
+  assert.match(sectorSource, /@click="onRankingPageChange\(rankingPage \+ 1\)"/)
+})

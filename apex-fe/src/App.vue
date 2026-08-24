@@ -39,9 +39,7 @@ const COMMAND_ROUTE_ITEMS = [
   { to: '/watchlist', label: '自选', detail: '维护关注标的', keywords: '股票 分组' },
   { to: '/observe', label: '观察池', detail: '跟踪触发条件', keywords: '提醒 观察' },
   { to: '/portfolio', label: '组合', detail: '组合与模拟交易', keywords: '持仓 账户' },
-  { to: '/market', label: '行情', detail: '指数与市场脉搏', keywords: '指数 大盘' },
-  { to: '/sector', label: '板块行情', detail: '行业与概念轮动', keywords: '题材 行业 概念' },
-  { to: '/capital-flow', label: '资金面', detail: '北向与主力资金', keywords: '资金 龙虎榜' },
+  { to: '/market', label: '行情', detail: '指数、资金流与板块轮动', keywords: '指数 大盘 资金 北向 主力 龙虎榜 板块 行业 概念 题材' },
   { to: '/screener', label: '股票筛选', detail: '筛选全市场标的', keywords: '选股 条件' },
   { to: '/news', label: '财经资讯', detail: '市场新闻与脉搏', keywords: '新闻 消息' },
   { to: '/sync', label: '同步中心', detail: '更新行情与决策数据', keywords: '刷新 数据 任务' },
@@ -117,8 +115,6 @@ function resolveRouteLabel(pathname) {
     ['/market', '行情中心'],
     ['/screener', '股票筛选'],
     ['/factors', '因子中心'],
-    ['/sector', '板块行情'],
-    ['/capital-flow', '资金面'],
     ['/limit-up', '连板天梯'],
     ['/news', '财经资讯'],
     ['/backtest', '回测'],
@@ -1104,6 +1100,12 @@ onBeforeUnmount(() => {
   padding-right: 6px;
   margin-right: 4px;
   border-right: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.nav-group:first-child {
+  padding-left: 6px;
+  margin-left: 4px;
+  border-left: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .nav-group-links {

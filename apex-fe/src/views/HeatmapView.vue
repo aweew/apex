@@ -597,10 +597,10 @@ onBeforeUnmount(() => {
         <p>{{ subtitle }}</p>
       </div>
       <div class="actions">
-        <el-radio-group v-model="boardType" size="small" class="heatmap-type">
+        <el-radio-group v-model="boardType" class="heatmap-type">
           <el-radio-button v-for="t in TYPE_OPTS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
         </el-radio-group>
-        <el-select v-model="colorBy" size="small" class="heatmap-select" style="width: 110px">
+        <el-select v-model="colorBy" class="heatmap-select" style="width: 110px">
           <el-option
             v-for="c in COLOR_OPTS"
             :key="c.value"
@@ -609,7 +609,7 @@ onBeforeUnmount(() => {
             :disabled="(boardType === 'INDUSTRY' && c.value === 'netInflow') || (boardType !== 'INDUSTRY' && c.value === 'pe')"
           />
         </el-select>
-        <el-select v-model="sizeBy" size="small" class="heatmap-select" style="width: 110px">
+        <el-select v-model="sizeBy" class="heatmap-select" style="width: 110px">
           <el-option
             v-for="s in SIZE_OPTS"
             :key="s.value"
@@ -619,7 +619,7 @@ onBeforeUnmount(() => {
           />
         </el-select>
         <el-button class="heatmap-refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button plain @click="router.push('/sector')">板块榜</el-button>
+        <el-button plain @click="router.push({ path: '/market', query: { tab: 'sector' } })">板块榜</el-button>
       </div>
     </header>
 
@@ -629,10 +629,10 @@ onBeforeUnmount(() => {
         <p>{{ subtitle }}</p>
       </div>
       <div class="actions">
-        <el-radio-group v-model="boardType" size="small" class="heatmap-type">
+        <el-radio-group v-model="boardType" class="heatmap-type">
           <el-radio-button v-for="t in TYPE_OPTS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
         </el-radio-group>
-        <el-select v-model="colorBy" size="small" class="heatmap-select" style="width: 110px">
+        <el-select v-model="colorBy" class="heatmap-select" style="width: 110px">
           <el-option
             v-for="c in COLOR_OPTS"
             :key="c.value"
@@ -641,7 +641,7 @@ onBeforeUnmount(() => {
             :disabled="(boardType === 'INDUSTRY' && c.value === 'netInflow') || (boardType !== 'INDUSTRY' && c.value === 'pe')"
           />
         </el-select>
-        <el-select v-model="sizeBy" size="small" class="heatmap-select" style="width: 110px">
+        <el-select v-model="sizeBy" class="heatmap-select" style="width: 110px">
           <el-option
             v-for="s in SIZE_OPTS"
             :key="s.value"
@@ -756,6 +756,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
   margin-bottom: 12px;
   padding: 14px 16px;
@@ -803,8 +804,12 @@ onBeforeUnmount(() => {
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
+}
+
+.heatmap-type {
+  margin-right: 2px;
 }
 
 @media (max-width: 560px) {

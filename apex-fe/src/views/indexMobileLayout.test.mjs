@@ -78,9 +78,17 @@ test('industry and concept rankings open the matching sector constituents', () =
   )
   assert.match(
     indexSource,
-    /function openSectorConstituents\(row, type\)[\s\S]*?query:\s*\{ type, code: row\.code \}/,
+    /function openSectorConstituents\(row, type\)[\s\S]*?path: '\/market',[\s\S]*?query:\s*\{ tab: 'sector', type, code: row\.code \}/,
   )
   assert.match(indexSource, /\.rank-row\s*\{[^}]*grid-template-columns:\s*22px minmax\(0, 1fr\) auto;[^}]*min-height:\s*44px;/)
+})
+
+test('market overview keeps the chart and two rankings as aligned peer panels', () => {
+  assert.match(indexSource, /<section class="chart-panel">[\s\S]*?<section class="side-card ranking-panel">[\s\S]*?<section class="side-card ranking-panel">/)
+  assert.doesNotMatch(indexSource, /<aside class="side-panels">/)
+  assert.match(indexSource, /<div v-if="activeCode && detailBars\.length" ref="chartRef" class="chart" \/>/)
+  assert.match(indexSource, /暂无可用指数走势，请刷新或同步指数后重试/)
+  assert.match(indexSource, /\.main-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1\.55fr\) repeat\(2, minmax\(250px, 0\.8fr\)\);[\s\S]*?align-items:\s*start;/)
 })
 
 test('embedded heatmap controls use balanced mobile rows', async () => {

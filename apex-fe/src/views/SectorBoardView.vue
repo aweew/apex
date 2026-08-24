@@ -21,6 +21,12 @@ import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
 const route = useRoute()
+defineProps({
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
+})
 const tradeDateStore = useTradeDateStore()
 const { tradeDate } = storeToRefs(tradeDateStore)
 const loading = ref(false)
@@ -64,6 +70,7 @@ const TAB_META = {
 }
 
 const TYPE_LABEL = { INDUSTRY: '行业', CONCEPT: '概念', THEME: '题材' }
+const RANKING_PAGE_SIZE = 50
 const MOBILE_PRIMARY_SORTS = [
   { label: '涨跌', fullLabel: '涨跌幅', value: 'pctChg' },
   { label: '3日', fullLabel: '3日涨幅', value: 'pctChg3d' },
@@ -102,6 +109,17 @@ const items = computed(() => {
   if (!kw) return list
   return list.filter((row) => String(row.name || '').includes(kw))
 })
+const rankingPage = ref(1)
+const rankingPageOffset = computed(() => (rankingPage.value - 1) * RANKING_PAGE_SIZE)
+const rankingTotalPages = computed(() => Math.max(1, Math.ceil(items.value.length / RANKING_PAGE_SIZE)))
+const pagedItems = computed(() => {
+  const start = (rankingPage.value - 1) * RANKING_PAGE_SIZE
+  return items.value.slice(start, start + RANKING_PAGE_SIZE)
+})
+
+function onRankingPageChange(page) {
+  rankingPage.value = Math.min(Math.max(1, page), rankingTotalPages.value)
+}
 
 function applyRouteQuery() {
   const q = String(route.query.q || '').trim()
@@ -185,6 +203,7 @@ async function loadRotation() {
 
 async function load() {
   loading.value = true
+  rankingPage.value = 1
   const requestedDate = tradeDate.value
   try {
     const res = await fetchSectorBoard({
@@ -429,6 +448,10 @@ watch([sortBy, order], () => {
   load()
 })
 
+watch(nameFilter, () => {
+  rankingPage.value = 1
+})
+
 watch(tradeDate, (val, oldVal) => {
   if (suppressDateWatch || val === oldVal) return
   load()
@@ -474,7 +497,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page" v-loading="loading || refreshing">
+  <div :class="['sector-page', { page: !embedded, embedded }]" v-loading="loading || refreshing">
     <header class="header sector-header">
       <div>
         <p class="eyebrow">Sector</p>
@@ -693,7 +716,7 @@ onBeforeUnmount(() => {
       </el-tabs>
 
       <el-table
-        :data="items"
+        :data="pagedItems"
         class="board-table"
         size="small"
         stripe
@@ -704,8 +727,14 @@ onBeforeUnmount(() => {
       >
         <el-table-column label="#" width="52" align="center">
           <template #default="{ $index }">
-            <span v-if="$index < 3" class="rank" :class="'rank-' + ($index + 1)">{{ $index + 1 }}</span>
-            <span v-else class="rank-muted">{{ $index + 1 }}</span>
+            <span
+              v-if="rankingPageOffset + $index < 3"
+              class="rank"
+              :class="'rank-' + (rankingPageOffset + $index + 1)"
+            >
+              {{ rankingPageOffset + $index + 1 }}
+            </span>
+            <span v-else class="rank-muted">{{ rankingPageOffset + $index + 1 }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="name" label="名称" min-width="110" sortable />
@@ -764,6 +793,31 @@ onBeforeUnmount(() => {
         </el-table-column>
         <el-table-column prop="moveReason" label="涨跌原因" min-width="220" show-overflow-tooltip />
       </el-table>
+      <div v-if="items.length > RANKING_PAGE_SIZE" class="sector-pagination">
+        <el-pagination
+          background
+          layout="total, prev, pager, next"
+          :total="items.length"
+          :current-page="rankingPage"
+          :page-size="RANKING_PAGE_SIZE"
+          @current-change="onRankingPageChange"
+        />
+      </div>
+      <div v-if="items.length > RANKING_PAGE_SIZE" class="sector-mobile-pagination" aria-label="板块榜单分页">
+        <el-button
+          :disabled="rankingPage <= 1"
+          @click="onRankingPageChange(rankingPage - 1)"
+        >
+          上一页
+        </el-button>
+        <span>{{ rankingPage }} / {{ rankingTotalPages }}</span>
+        <el-button
+          :disabled="rankingPage >= rankingTotalPages"
+          @click="onRankingPageChange(rankingPage + 1)"
+        >
+          下一页
+        </el-button>
+      </div>
     </section>
 
     <el-drawer
@@ -1248,6 +1302,16 @@ onBeforeUnmount(() => {
   background: #fff;
 }
 
+.sector-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 14px;
+}
+
+.sector-mobile-pagination {
+  display: none;
+}
+
 .lead-pct {
   margin-left: 6px;
   font-size: 12px;
@@ -1694,6 +1758,28 @@ onBeforeUnmount(() => {
 
   .board-table {
     border-radius: 8px;
+  }
+
+  .sector-pagination {
+    display: none;
+  }
+
+  .sector-mobile-pagination {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding-top: 12px;
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  .sector-mobile-pagination :deep(.el-button) {
+    min-height: 40px;
+    margin: 0;
+    border-radius: 7px;
   }
 
 }

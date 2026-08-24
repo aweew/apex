@@ -42,7 +42,7 @@ test('decision mainline themes open the matching concept constituents', () => {
   )
   assert.match(
     decisionSource,
-    /function openTheme\(theme\)[\s\S]*?const query = \{ type: theme\.boardType \|\| 'CONCEPT' \}[\s\S]*?if \(theme\.code\) query\.code = theme\.code[\s\S]*?else query\.q = theme\.name[\s\S]*?router\.push\(\{ path: '\/sector', query \}\)/,
+    /function openTheme\(theme\)[\s\S]*?const query = \{ type: theme\.boardType \|\| 'CONCEPT' \}[\s\S]*?if \(theme\.code\) query\.code = theme\.code[\s\S]*?else query\.q = theme\.name[\s\S]*?router\.push\(\{ path: '\/market', query: \{ \.\.\.query, tab: 'sector' \} \}\)/,
   )
   assert.match(decisionSource, /\.theme-chip\s*\{[^}]*cursor:\s*pointer;/)
 })

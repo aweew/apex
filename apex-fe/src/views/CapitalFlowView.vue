@@ -15,6 +15,12 @@ import {
 } from '../utils/capitalFlow.js'
 
 const router = useRouter()
+defineProps({
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
+})
 const currentUser = getCurrentUser()
 const isAdmin = computed(() => currentUser?.role === 'ADMIN')
 const loading = ref(false)
@@ -80,8 +86,8 @@ onMounted(loadOverview)
 </script>
 
 <template>
-  <div class="page capital-flow-page" v-loading="loading">
-    <header class="header capital-flow-header">
+  <div :class="['capital-flow-page', { page: !embedded, embedded }]" v-loading="loading">
+    <header v-if="!embedded" class="header capital-flow-header">
       <div>
         <p class="eyebrow">Capital Flow</p>
         <h1>资金面</h1>
@@ -108,6 +114,32 @@ onMounted(loadOverview)
         </el-dropdown>
       </div>
     </header>
+    <section v-else class="capital-flow-embedded-header" aria-label="资金流">
+      <div>
+        <h2>资金流</h2>
+        <p>北向披露、主力净流入、板块资金与龙虎榜的本地快照</p>
+      </div>
+      <div v-if="isAdmin" class="actions">
+        <el-dropdown :disabled="Boolean(refreshingMode)" @command="onRefresh">
+          <el-button
+            class="capital-refresh-button"
+            type="primary"
+            :icon="Refresh"
+            :loading="Boolean(refreshingMode)"
+            aria-label="刷新资金流"
+          >
+            刷新
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="flow">刷新资金流</el-dropdown-item>
+              <el-dropdown-item command="lhb">刷新龙虎榜</el-dropdown-item>
+              <el-dropdown-item command="all" divided>全部刷新</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
+    </section>
 
     <section class="northbound-summary" aria-labelledby="northbound-title">
       <div class="section-heading">
@@ -302,6 +334,31 @@ onMounted(loadOverview)
   margin: 0 auto;
 }
 
+.capital-flow-page.embedded {
+  max-width: none;
+}
+
+.capital-flow-embedded-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.capital-flow-embedded-header h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.capital-flow-embedded-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .section-heading,
 .subsection-heading,
 .flow-card-head {
@@ -414,6 +471,14 @@ onMounted(loadOverview)
 }
 
 @media (max-width: 720px) {
+  .capital-flow-embedded-header {
+    align-items: flex-start;
+  }
+
+  .capital-flow-embedded-header .actions {
+    flex: 0 0 auto;
+  }
+
   .capital-flow-header {
     align-items: center;
   }
