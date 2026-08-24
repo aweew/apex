@@ -37,6 +37,11 @@ public class ApexAiContributor {
     private BigDecimal value;
 
     /**
+     * 证据数值展示文本。
+     */
+    private String displayValue;
+
+    /**
      * 对组合收益率的贡献百分点
      */
     private BigDecimal contributionPct;

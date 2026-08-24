@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.ai.KimiChatClient;
+import com.awe.apex.quant.bot.service.IBotHoldingRiskService;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.ApexAiAnalysisResp;
 import com.awe.apex.quant.domain.dto.ApexAiAnalyzeReq;
@@ -8,16 +9,33 @@ import com.awe.apex.quant.domain.dto.ApexAiContextResp;
 import com.awe.apex.quant.domain.dto.ApexAiEnhanceReq;
 import com.awe.apex.quant.domain.dto.ApexAiPortfolioOption;
 import com.awe.apex.quant.domain.dto.ApexAiStrategyOption;
+import com.awe.apex.quant.domain.dto.BotHoldingRiskItem;
+import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
+import com.awe.apex.quant.domain.dto.CapitalFlowOverviewResp;
+import com.awe.apex.quant.domain.dto.DecisionAdviceActionResp;
+import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
 import com.awe.apex.quant.domain.dto.DecisionStrategyPerformance;
+import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
+import com.awe.apex.quant.domain.dto.NewsPulseResp;
+import com.awe.apex.quant.domain.dto.NorthboundFlowResp;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
+import com.awe.apex.quant.domain.dto.StockAnalysisResp;
+import com.awe.apex.quant.domain.dto.StockAnalysisFreshnessResp;
+import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.mapper.ApexAiQueryMapper;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.ApexAiConversationService;
 import com.awe.apex.quant.service.IDecisionService;
+import com.awe.apex.quant.service.ICapitalFlowService;
+import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.INewsPulseService;
 import com.awe.apex.quant.service.IPortfolioService;
+import com.awe.apex.quant.service.IStockAnalysisService;
+import com.awe.apex.quant.service.IStockService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -38,6 +56,12 @@ class ApexAiAnalystServiceImplTest {
 
     private final IPortfolioService portfolioService = mock(IPortfolioService.class);
     private final IDecisionService decisionService = mock(IDecisionService.class);
+    private final IMarketBriefingService marketBriefingService = mock(IMarketBriefingService.class);
+    private final IBotHoldingRiskService botHoldingRiskService = mock(IBotHoldingRiskService.class);
+    private final IStockService stockService = mock(IStockService.class);
+    private final IStockAnalysisService stockAnalysisService = mock(IStockAnalysisService.class);
+    private final ICapitalFlowService capitalFlowService = mock(ICapitalFlowService.class);
+    private final INewsPulseService newsPulseService = mock(INewsPulseService.class);
     private final KimiChatClient kimiChatClient = mock(KimiChatClient.class);
     private final ApexAiQueryMapper apexAiQueryMapper = mock(ApexAiQueryMapper.class);
     private final ApexUserContext userContext = mock(ApexUserContext.class);
@@ -49,6 +73,12 @@ class ApexAiAnalystServiceImplTest {
     void setUp() {
         ReflectionTestUtils.setField(service, "portfolioService", portfolioService);
         ReflectionTestUtils.setField(service, "decisionService", decisionService);
+        ReflectionTestUtils.setField(service, "marketBriefingService", marketBriefingService);
+        ReflectionTestUtils.setField(service, "botHoldingRiskService", botHoldingRiskService);
+        ReflectionTestUtils.setField(service, "stockService", stockService);
+        ReflectionTestUtils.setField(service, "stockAnalysisService", stockAnalysisService);
+        ReflectionTestUtils.setField(service, "capitalFlowService", capitalFlowService);
+        ReflectionTestUtils.setField(service, "newsPulseService", newsPulseService);
         ReflectionTestUtils.setField(service, "kimiChatClient", kimiChatClient);
         ReflectionTestUtils.setField(service, "apexAiQueryMapper", apexAiQueryMapper);
         ReflectionTestUtils.setField(service, "userContext", userContext);
@@ -276,6 +306,154 @@ class ApexAiAnalystServiceImplTest {
         assertEquals("我的组合 · 组合数据问答", response.getTitle());
         assertTrue(response.getSummary().contains("不能用同一份收益归因结果代替回答"));
         assertTrue(response.getContributors().isEmpty());
+    }
+
+    @Test
+    void answersMarketDecisionRiskAndStockQuestionsWithApexEvidence() {
+        when(marketBriefingService.briefing(false)).thenReturn(MarketBriefingResp.builder()
+                .asOf(java.time.LocalDate.of(2026, 8, 24))
+                .stance("均衡")
+                .stanceReason("量能与市场广度分化")
+                .positionAdvice("控制仓位")
+                .dataLevel("GREEN")
+                .build());
+        when(decisionService.advice(null)).thenReturn(DecisionAdviceResp.builder()
+                .actionDate(java.time.LocalDate.of(2026, 8, 24))
+                .summary("优先观察主线强度")
+                .actions(List.of(DecisionAdviceActionResp.builder()
+                        .priority(1).code("300750").name("宁德时代").action("WATCH")
+                        .reason("等待信号确认").build()))
+                .build());
+        when(botHoldingRiskService.analyze()).thenReturn(BotHoldingRiskResp.builder()
+                .holdingCount(2).quotedCount(2).criticalCount(1).warnCount(0)
+                .dataAsOf("2026-08-24T14:55:00")
+                .alerts(List.of(BotHoldingRiskItem.builder().code("300750").name("宁德时代")
+                        .level("CRITICAL").message("已触发止损线").build()))
+                .build());
+        when(stockService.search("宁德时代", 5)).thenReturn(List.of(
+                StockSearchItem.builder().code("300750").name("宁德时代").build()));
+        when(stockAnalysisService.analyze("300750", "BUY", 120, false, false)).thenReturn(StockAnalysisResp.builder()
+                .code("300750").name("宁德时代").stance("可跟踪").summary("趋势等待确认")
+                .actionHint("等待信号确认").latestPrice(new BigDecimal("210.50"))
+                .pctChg(new BigDecimal("1.20")).build());
+
+        ApexAiAnalysisResp marketResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("今天大盘怎么样？").analysisType("AUTO").build());
+        ApexAiAnalysisResp decisionResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("今天应该买什么？").analysisType("AUTO").build());
+        ApexAiAnalysisResp riskResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("我的持仓风险怎么样？").analysisType("AUTO").build());
+        ApexAiAnalysisResp stockResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("宁德时代能买吗？").analysisType("AUTO").build());
+
+        assertEquals("MARKET", marketResponse.getAnalysisType());
+        assertTrue(marketResponse.getSummary().contains("均衡"));
+        assertEquals("DECISION", decisionResponse.getAnalysisType());
+        assertTrue(decisionResponse.getSummary().contains("优先观察主线强度"));
+        assertEquals("RISK", riskResponse.getAnalysisType());
+        assertEquals("宁德时代", riskResponse.getContributors().get(0).getName());
+        assertEquals("STOCK", stockResponse.getAnalysisType());
+        assertEquals("宁德时代", stockResponse.getContributors().get(0).getName());
+    }
+
+    @Test
+    void combinesTodayDecisionWhenReviewingPortfolioPriority() {
+        PortfolioSummaryResp option = PortfolioSummaryResp.builder()
+                .id(8L).name("我的组合").isDefault(true).editable(true).build();
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of(option));
+        when(portfolioService.detail(8L)).thenReturn(PortfolioSummaryResp.builder()
+                .id(8L).name("我的组合").marketValue(new BigDecimal("90000"))
+                .todayPnl(new BigDecimal("-1800")).todayPct(new BigDecimal("-2"))
+                .positionCount(1).missingQuoteCount(0)
+                .holdings(List.of(holding("300750", "宁德时代", "电池", "-1800"))).build());
+        when(decisionService.advice(null)).thenReturn(DecisionAdviceResp.builder()
+                .summary("等待信号确认")
+                .actions(List.of(DecisionAdviceActionResp.builder().code("300750")
+                        .name("宁德时代").action("REDUCE").reason("跌破策略阈值").build()))
+                .build());
+
+        ApexAiAnalysisResp response = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("结合今天的决策，我应该先处理哪些持仓？")
+                .analysisType("PORTFOLIO").portfolioId(8L).build());
+
+        assertTrue(response.getSummary().contains("REDUCE"));
+        verify(decisionService).advice(null);
+    }
+
+    @Test
+    void marksStaleStockAndUndisclosedCapitalFlowAsIncomplete() {
+        when(stockAnalysisService.analyze("300750", "BUY", 120, false, false)).thenReturn(StockAnalysisResp.builder()
+                .code("300750").name("宁德时代").summary("日线仍需补齐")
+                .freshness(StockAnalysisFreshnessResp.builder()
+                        .lastBarDate(java.time.LocalDate.of(2026, 8, 21))
+                        .expectedTradeDate(java.time.LocalDate.of(2026, 8, 24))
+                        .barsStale(true)
+                        .note("日线存在滞后")
+                        .build())
+                .build());
+        when(capitalFlowService.overview(5)).thenReturn(CapitalFlowOverviewResp.builder()
+                .northboundFlow(NorthboundFlowResp.builder()
+                        .tradeDate(java.time.LocalDate.of(2026, 8, 24))
+                        .dataStatus("NOT_DISCLOSED")
+                        .syncedAt(LocalDateTime.of(2026, 8, 24, 15, 10))
+                        .build())
+                .build());
+
+        ApexAiAnalysisResp stockResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("300750能买吗？").analysisType("AUTO").build());
+        ApexAiAnalysisResp capitalFlowResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("北向资金怎么样？").analysisType("AUTO").build());
+
+        assertEquals("YELLOW", stockResponse.getDataLevel());
+        assertEquals(LocalDateTime.of(2026, 8, 21, 0, 0), stockResponse.getDataAsOf());
+        assertTrue(stockResponse.getDataNote().contains("日线存在滞后"));
+        assertEquals("YELLOW", capitalFlowResponse.getDataLevel());
+        assertTrue(capitalFlowResponse.getSummary().contains("未披露"));
+    }
+
+    @Test
+    void answersCapitalFlowAndNewsPulseWithInternalNavigation() {
+        when(capitalFlowService.overview(5)).thenReturn(CapitalFlowOverviewResp.builder()
+                .northboundFlow(NorthboundFlowResp.builder()
+                        .tradeDate(java.time.LocalDate.of(2026, 8, 24))
+                        .netBuyAmount(new BigDecimal("120000000"))
+                        .dataStatus("PUBLISHED")
+                        .syncedAt(LocalDateTime.of(2026, 8, 24, 15, 10))
+                        .build())
+                .build());
+        when(newsPulseService.pulse(5, false)).thenReturn(NewsPulseResp.builder()
+                .bullCount(3).bearCount(1).executiveSummary("利好消息略多，但需结合公告核验。")
+                .message("今日消息面已聚合 4 条资讯")
+                .summarizedAt(LocalDateTime.of(2026, 8, 24, 15, 15))
+                .cards(List.of(NewsPulseCardResp.builder().title("政策支持新质生产力")
+                        .summary("关注相关题材的持续性").sentiment("利好").build()))
+                .build());
+
+        ApexAiAnalysisResp capitalFlowResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("资金面有什么变化？").analysisType("AUTO").build());
+        ApexAiAnalysisResp newsResponse = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("今天消息面怎么样？").analysisType("AUTO").build());
+
+        assertEquals("CAPITAL_FLOW", capitalFlowResponse.getAnalysisType());
+        assertEquals("GREEN", capitalFlowResponse.getDataLevel());
+        assertEquals("/market?tab=capital-flow", capitalFlowResponse.getActions().get(0).getRoute());
+        assertEquals("NEWS_PULSE", newsResponse.getAnalysisType());
+        assertEquals("政策支持新质生产力", newsResponse.getContributors().get(0).getName());
+        assertEquals("/news", newsResponse.getActions().get(0).getRoute());
+    }
+
+    @Test
+    void marksEmptyNewsPulseAsUnavailable() {
+        when(newsPulseService.pulse(5, false)).thenReturn(NewsPulseResp.builder()
+                .summarizedAt(LocalDateTime.of(2026, 8, 24, 15, 15))
+                .cards(List.of())
+                .build());
+
+        ApexAiAnalysisResp response = service.analyze(ApexAiAnalyzeReq.builder()
+                .question("今天消息面怎么样？").analysisType("AUTO").build());
+
+        assertEquals("RED", response.getDataLevel());
+        assertTrue(response.getSummary().contains("没有可用消息面数据"));
     }
 
     private PortfolioHolding holding(String code, String name, String industry, String todayPnl) {

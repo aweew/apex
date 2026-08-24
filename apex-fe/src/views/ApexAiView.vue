@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ChatDotRound,
   CircleCheck,
@@ -23,6 +24,7 @@ const analysisModes = [
   { label: '组合', value: 'PORTFOLIO' },
   { label: '策略', value: 'STRATEGY' },
 ]
+const router = useRouter()
 const context = ref({ aiConfigured: false, portfolios: [], strategies: [], recommendedQuestions: [] })
 const contextLoading = ref(true)
 const contextError = ref('')
@@ -107,8 +109,13 @@ function inferMode(prompt) {
 
 function askSuggested(prompt, forcedMode = '') {
   question.value = prompt
-  analysisMode.value = forcedMode || inferMode(prompt)
+  analysisMode.value = analysisModes.some((mode) => mode.value === forcedMode) ? forcedMode : 'AUTO'
   submitQuestion()
+}
+
+function runAnalysisAction(action) {
+  if (!action?.route) return
+  router.push(action.route)
 }
 
 async function scrollToLatest() {
@@ -205,6 +212,7 @@ function dataLabel(level) {
 }
 
 function contributorValue(analysis, contributor) {
+  if (contributor.displayValue) return contributor.displayValue
   return analysis.analysisType === 'PORTFOLIO'
     ? formatSigned(contributor.value, ' 元')
     : formatSigned(contributor.value, '%')
@@ -293,10 +301,13 @@ onMounted(() => Promise.allSettled([loadContext(), loadLatestConversation()]))
         <div ref="threadRef" class="conversation-thread" aria-live="polite">
           <div v-if="!messages.length && !analyzing" class="starter-view">
             <div class="starter-mark"><MagicStick /></div>
-            <h2>今天想先分析什么？</h2>
+            <h2>现在先做什么？</h2>
             <div class="starter-actions">
-              <button type="button" :disabled="!context.portfolios.length" @click="askSuggested('为什么今天收益下跌？')">
-                <DataAnalysis /><span><b>组合收益归因</b><small>按行业与持仓拆解当日盈亏</small></span>
+              <button type="button" @click="askSuggested('今天应该买什么？')">
+                <TrendCharts /><span><b>今日操作</b><small>读取市场立场与今日决策</small></span>
+              </button>
+              <button type="button" :disabled="!context.portfolios.length" @click="askSuggested('我的持仓风险怎么样？')">
+                <DataAnalysis /><span><b>组合处理</b><small>优先复核持仓风险与止损</small></span>
               </button>
               <button type="button" :disabled="!context.strategies.length" @click="askSuggested('这个策略最近为什么失效？')">
                 <TrendCharts /><span><b>策略有效性诊断</b><small>核对样本、共振与市场立场</small></span>
@@ -363,6 +374,14 @@ onMounted(() => Promise.allSettled([loadContext(), loadLatestConversation()]))
                     <el-icon><Promotion /></el-icon><span>{{ suggestion }}</span>
                   </li></ul>
                 </section>
+              </div>
+
+              <div v-if="message.analysis.actions?.length" class="analysis-actions">
+                <span>下一步</span>
+                <el-button v-for="action in message.analysis.actions" :key="`${action.label}-${action.route}`"
+                  size="small" :type="action.tone === 'PRIMARY' ? 'primary' : 'default'" @click="runAnalysisAction(action)">
+                  {{ action.label }}
+                </el-button>
               </div>
 
               <footer class="answer-footer">
@@ -441,7 +460,7 @@ onMounted(() => Promise.allSettled([loadContext(), loadLatestConversation()]))
 .starter-mark { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid #bfd0e6; border-radius: 8px; color: #1f5fae; background: #f3f7fc; }
 .starter-view h2 { margin: 16px 0 20px; color: #171b22; font-size: 20px; letter-spacing: 0; }
 .starter-view > p { margin-top: 14px; color: #9b4f42; font-size: 12px; }
-.starter-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 260px)); gap: 10px; width: 100%; justify-content: center; }
+.starter-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 260px)); gap: 10px; width: 100%; justify-content: center; }
 .starter-actions button { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 68px; padding: 12px; border: 1px solid #dce1e8; border-radius: 7px; color: #445064; background: #fff; text-align: left; cursor: pointer; }
 .starter-actions button:hover:not(:disabled) { border-color: #9eb9da; background: #f7faff; }
 .starter-actions button > svg { width: 23px; color: #1f5fae; }
@@ -494,6 +513,8 @@ onMounted(() => Promise.allSettled([loadContext(), loadLatestConversation()]))
 .suggestion-section { padding-left: 18px; border-left: 1px solid #e2e6ec; }
 .suggestion-section li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 7px; padding: 9px 0; color: #4b5667; font-size: 11px; line-height: 1.55; }
 .suggestion-section .el-icon { margin-top: 2px; color: #1f5fae; }
+.analysis-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.analysis-actions > span { margin-right: 2px; color: #7f8997; font-size: 10px; }
 .answer-footer { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; color: #9098a4; font-size: 9px; line-height: 1.45; }
 .answer-footer span:first-child { flex: 1 1 360px; }
 .enhancement-state { display: inline-flex !important; align-items: center; gap: 4px; color: #526b8e; }
@@ -510,7 +531,7 @@ onMounted(() => Promise.allSettled([loadContext(), loadLatestConversation()]))
 .composer :deep(.el-textarea__inner) { min-height: 52px !important; max-height: 112px; border-radius: 6px; box-shadow: 0 0 0 1px #d7dde6 inset; line-height: 1.5; }
 .send-button { width: 44px; height: 44px; }
 
-@media (max-width: 1080px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1080px) { .metric-grid, .starter-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) {
   .ai-header { align-items: flex-start; }
   .ai-workbench { grid-template-columns: 1fr; min-height: auto; overflow: visible; }

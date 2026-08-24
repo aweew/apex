@@ -108,6 +108,12 @@ public class ApexAiAnalysisResp {
     private List<String> suggestions = new ArrayList<>();
 
     /**
+     * 分析后的站内下一步动作。
+     */
+    @Builder.Default
+    private List<ApexAiAction> actions = new ArrayList<>();
+
+    /**
      * 推荐追问
      */
     @Builder.Default

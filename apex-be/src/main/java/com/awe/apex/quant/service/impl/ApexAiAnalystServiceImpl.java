@@ -5,7 +5,9 @@ import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.ai.KimiChatClient;
 import com.awe.apex.quant.ai.KimiChatMessage;
+import com.awe.apex.quant.bot.service.IBotHoldingRiskService;
 import com.awe.apex.quant.context.ApexUserContext;
+import com.awe.apex.quant.domain.dto.ApexAiAction;
 import com.awe.apex.quant.domain.bo.ApexAiIndustryAttributionBO;
 import com.awe.apex.quant.domain.dto.ApexAiAnalysisResp;
 import com.awe.apex.quant.domain.dto.ApexAiAnalyzeReq;
@@ -15,10 +17,22 @@ import com.awe.apex.quant.domain.dto.ApexAiEnhanceReq;
 import com.awe.apex.quant.domain.dto.ApexAiMetric;
 import com.awe.apex.quant.domain.dto.ApexAiPortfolioOption;
 import com.awe.apex.quant.domain.dto.ApexAiStrategyOption;
+import com.awe.apex.quant.domain.dto.BotHoldingRiskItem;
+import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
+import com.awe.apex.quant.domain.dto.CapitalFlowOverviewResp;
+import com.awe.apex.quant.domain.dto.DecisionAdviceActionResp;
+import com.awe.apex.quant.domain.dto.DecisionAdviceResp;
 import com.awe.apex.quant.domain.dto.DecisionAttrBucket;
 import com.awe.apex.quant.domain.dto.DecisionAttributionResp;
 import com.awe.apex.quant.domain.dto.DecisionStrategyPerformance;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
+import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketFactorItem;
+import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
+import com.awe.apex.quant.domain.dto.NewsPulseResp;
+import com.awe.apex.quant.domain.dto.StockAnalysisResp;
+import com.awe.apex.quant.domain.dto.StockAnalysisFreshnessResp;
+import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.domain.enums.ApexAiAnalysisTypeEnum;
 import com.awe.apex.quant.mapper.ApexAiQueryMapper;
@@ -26,7 +40,12 @@ import com.awe.apex.quant.service.ApexAiConversationService;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IApexAiAnalystService;
 import com.awe.apex.quant.service.IDecisionService;
+import com.awe.apex.quant.service.ICapitalFlowService;
+import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.INewsPulseService;
 import com.awe.apex.quant.service.IPortfolioService;
+import com.awe.apex.quant.service.IStockAnalysisService;
+import com.awe.apex.quant.service.IStockService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -53,6 +72,7 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
 
     private static final String DISCLAIMER = "以上基于 Apex 当前数据生成，仅供研究，不构成投资建议。";
     private static final Pattern NUMBER_PATTERN = Pattern.compile("[+-]?\\d+(?:\\.\\d+)?");
+    private static final Pattern STOCK_CODE_PATTERN = Pattern.compile("(?<!\\d)(\\d{6})(?!\\d)");
 
     @Resource
     private IPortfolioService portfolioService;
@@ -75,6 +95,24 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
     @Resource
     private ApexAiConversationService conversationService;
 
+    @Resource
+    private IMarketBriefingService marketBriefingService;
+
+    @Resource
+    private IBotHoldingRiskService botHoldingRiskService;
+
+    @Resource
+    private IStockService stockService;
+
+    @Resource
+    private IStockAnalysisService stockAnalysisService;
+
+    @Resource
+    private ICapitalFlowService capitalFlowService;
+
+    @Resource
+    private INewsPulseService newsPulseService;
+
     /**
      * 查询工作台可用分析上下文
      *
@@ -96,8 +134,11 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 .portfolios(portfolioOptions)
                 .strategies(strategyOptions)
                 .recommendedQuestions(List.of(
+                        "今天大盘怎么样？",
+                        "今天应该买什么？",
+                        "我的持仓风险怎么样？",
                         "为什么今天收益下跌？",
-                        "今天哪些板块拖累了组合？",
+                        "资金面有什么变化？",
                         "这个策略最近为什么失效？",
                         "非共振信号是否应该降低权重？"))
                 .build();
@@ -119,15 +160,35 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
         Long conversationId = conversationService.openConversation(request.getConversationId(), question);
         ApexAiAnalysisTypeEnum analysisType = ApexAiAnalysisTypeEnum.of(request.getAnalysisType());
         if (analysisType == ApexAiAnalysisTypeEnum.AUTO) {
-            if (containsAny(question, "策略", "失效", "胜率", "样本", "共振", "超额")) {
+            if (containsAny(question, "北向", "主力资金", "资金面", "龙虎榜", "净流入")) {
+                analysisType = ApexAiAnalysisTypeEnum.CAPITAL_FLOW;
+            } else if (containsAny(question, "新闻", "消息面", "利好", "利空", "资讯")) {
+                analysisType = ApexAiAnalysisTypeEnum.NEWS_PULSE;
+            } else if (containsAny(question, "今天买什么", "今天卖什么", "今日决策", "今天策略", "今日策略",
+                    "怎么操作", "应该买什么", "应该卖什么")
+                    || (containsAny(question, "今天", "今日") && containsAny(question, "策略", "意见", "建议"))) {
+                analysisType = ApexAiAnalysisTypeEnum.DECISION;
+            } else if (containsAny(question, "我的持仓", "持仓风险", "组合风险", "总体风险", "仓位", "浮亏", "浮盈")) {
+                analysisType = ApexAiAnalysisTypeEnum.RISK;
+            } else if (containsAny(question, "大盘", "市场", "指数", "热点", "赚钱效应", "成交量")) {
+                analysisType = ApexAiAnalysisTypeEnum.MARKET;
+            } else if (containsAny(question, "策略", "失效", "胜率", "样本", "共振", "超额")) {
                 analysisType = ApexAiAnalysisTypeEnum.STRATEGY;
             } else if (containsAny(question, "组合", "收益", "盈亏", "亏", "赚", "板块", "持仓")) {
                 analysisType = ApexAiAnalysisTypeEnum.PORTFOLIO;
+            } else if (isStockQuestion(question)) {
+                analysisType = ApexAiAnalysisTypeEnum.STOCK;
             } else {
                 analysisType = ApexAiAnalysisTypeEnum.GENERAL;
             }
         }
         ApexAiAnalysisResp analysis = switch (analysisType) {
+            case MARKET -> answerMarket();
+            case DECISION -> answerDecision();
+            case RISK -> answerHoldingRisk();
+            case STOCK -> answerStock(question);
+            case CAPITAL_FLOW -> answerCapitalFlow();
+            case NEWS_PULSE -> answerNewsPulse();
             case PORTFOLIO -> analyzePortfolio(request, question);
             case STRATEGY -> analyzeStrategy(request, question);
             case GENERAL, AUTO -> answerGeneral(question);
@@ -347,7 +408,7 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
         }
         if (containsAny(question, "先处理", "处理哪些", "优先处理", "持仓风险", "风险怎么样", "该卖", "止损")) {
             return analyzePortfolioReviewPriority(detail, totalTodayPnl, previousMarketValue, residualValue,
-                    dataLevel, metrics);
+                    dataLevel, metrics, containsAny(question, "决策", "操作", "买", "卖"));
         }
         boolean currentDayMoveQuestion = containsAny(question, "今天", "当日")
                 && containsAny(question, "下跌", "上涨", "跌", "涨", "表现");
@@ -524,7 +585,9 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
 
     private ApexAiAnalysisResp analyzePortfolioReviewPriority(PortfolioSummaryResp detail, BigDecimal totalTodayPnl,
                                                                BigDecimal previousMarketValue, BigDecimal residualValue,
-                                                               String dataLevel, List<ApexAiMetric> metrics) {
+                                                               String dataLevel, List<ApexAiMetric> metrics,
+                                                               boolean includeDecision) {
+        DecisionAdviceResp decisionAdvice = includeDecision ? decisionService.advice(null) : null;
         List<PortfolioHolding> holdings = new ArrayList<>();
         if (CollUtil.isNotEmpty(detail.getHoldings())) {
             for (PortfolioHolding holding : detail.getHoldings()) {
@@ -538,12 +601,24 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
         int stockLimit = Math.min(3, holdings.size());
         for (int index = 0; index < stockLimit; index++) {
             PortfolioHolding holding = holdings.get(index);
+            DecisionAdviceActionResp decisionAction = null;
+            if (Objects.nonNull(decisionAdvice) && CollUtil.isNotEmpty(decisionAdvice.getActions())) {
+                for (DecisionAdviceActionResp candidate : decisionAdvice.getActions()) {
+                    if (StringUtils.isNotBlank(candidate.getCode()) && candidate.getCode().equals(holding.getCode())) {
+                        decisionAction = candidate;
+                        break;
+                    }
+                }
+            }
             boolean stopLossTriggered = Objects.nonNull(holding.getMarketPrice()) && Objects.nonNull(holding.getStopLoss())
                     && holding.getMarketPrice().compareTo(holding.getStopLoss()) <= 0;
             BigDecimal contributionPct = previousMarketValue.abs().compareTo(BigDecimal.ONE) >= 0
                     ? holding.getTodayPnl().multiply(BigDecimal.valueOf(100))
                     .divide(previousMarketValue, 4, RoundingMode.HALF_UP) : null;
-            String riskDetail = stopLossTriggered
+            String riskDetail = Objects.nonNull(decisionAction)
+                    ? "今日决策 " + decisionAction.getAction() + " · "
+                    + (StringUtils.isNotBlank(decisionAction.getReason()) ? decisionAction.getReason() : "请按决策规则复核")
+                    : stopLossTriggered
                     ? "现价 " + amount(holding.getMarketPrice()) + " 元已不高于止损价 " + amount(holding.getStopLoss()) + " 元"
                     : "当日浮盈 " + signed(holding.getTodayPnl(), 2) + " 元，需按既定风控规则复核";
             contributors.add(ApexAiContributor.builder()
@@ -553,7 +628,9 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                     .value(holding.getTodayPnl().setScale(2, RoundingMode.HALF_UP))
                     .contributionPct(contributionPct)
                     .sampleCount(1)
-                    .direction(stopLossTriggered || holding.getTodayPnl().signum() < 0 ? "NEGATIVE" : "NEUTRAL")
+                    .displayValue(Objects.nonNull(decisionAction) ? decisionAction.getAction() : null)
+                    .direction(Objects.nonNull(decisionAction) && containsAny(decisionAction.getAction(), "SELL", "REDUCE")
+                            || stopLossTriggered || holding.getTodayPnl().signum() < 0 ? "NEGATIVE" : "NEUTRAL")
                     .build());
         }
         String summary = CollUtil.isEmpty(contributors)
@@ -570,15 +647,307 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 .residualValue(residualValue)
                 .dataLevel(dataLevel)
                 .dataAsOf(detail.getQuoteTime())
-                .dataNote("优先级按当日盈亏绝对值排序；止损状态仅使用已录入的止损价与当前行情。")
+                .dataNote(includeDecision
+                        ? "优先级按当日影响、已录入止损价和今日决策匹配生成；未匹配到的持仓仍需人工复核。"
+                        : "优先级按当日盈亏绝对值排序；止损状态仅使用已录入的止损价与当前行情。")
                 .aiEnhanced(false)
                 .generatedAt(LocalDateTime.now())
                 .metrics(metrics)
                 .contributors(contributors)
                 .suggestions(List.of("先核对首位持仓的止损、止盈、仓位上限与原始买入逻辑是否仍成立",
                         "不要仅因单日涨跌改动规则；结合当日决策和行业暴露后再执行交易"))
+                .actions(List.of(action("查看今日决策", "/decision", "PRIMARY"),
+                        action("查看组合", "/portfolio", "DEFAULT")))
                 .followUpQuestions(List.of("哪只股票对今天收益影响最大？", "当前组合行业集中度是否过高？",
                         "今天哪些板块拖累了组合？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp answerMarket() {
+        MarketBriefingResp briefing = marketBriefingService.briefing(false);
+        if (Objects.isNull(briefing)) {
+            return unavailableAnalysis(ApexAiAnalysisTypeEnum.MARKET, "市场研判", "当前没有可用市场简报，请先同步行情后重试。",
+                    List.of(action("查看同步中心", "/sync", "PRIMARY")));
+        }
+        List<ApexAiContributor> contributors = new ArrayList<>();
+        if (CollUtil.isNotEmpty(briefing.getFactors())) {
+            int factorLimit = Math.min(4, briefing.getFactors().size());
+            for (int index = 0; index < factorLimit; index++) {
+                MarketFactorItem factor = briefing.getFactors().get(index);
+                contributors.add(ApexAiContributor.builder()
+                        .rank(index + 1)
+                        .name(factor.getName())
+                        .detail(StringUtils.isNotBlank(factor.getNote()) ? factor.getNote() : "市场简报因子")
+                        .displayValue(factor.getValue())
+                        .direction("偏多".equals(factor.getSignal()) ? "POSITIVE"
+                                : "偏空".equals(factor.getSignal()) ? "NEGATIVE" : "NEUTRAL")
+                        .build());
+            }
+        }
+        String stance = StringUtils.isNotBlank(briefing.getStance()) ? briefing.getStance() : "暂无明确立场";
+        String summary = "当前市场立场为" + stance + "。"
+                + (StringUtils.isNotBlank(briefing.getStanceReason()) ? briefing.getStanceReason() : "市场说明暂未生成")
+                + (StringUtils.isNotBlank(briefing.getPositionAdvice()) ? " 建议仓位：" + briefing.getPositionAdvice() + "。" : "");
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.MARKET.getCode())
+                .title("今日市场研判")
+                .summary(summary)
+                .dataLevel(StringUtils.isNotBlank(briefing.getDataLevel()) ? briefing.getDataLevel() : "YELLOW")
+                .dataAsOf(Objects.nonNull(briefing.getAsOf()) ? briefing.getAsOf().atStartOfDay() : null)
+                .dataNote(StringUtils.isNotBlank(briefing.getMessage()) ? briefing.getMessage() : "市场简报由指数、量能、广度与情绪数据生成。")
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .metrics(List.of(metric("市场立场", stance, Objects.nonNull(briefing.getStanceScore())
+                                ? BigDecimal.valueOf(briefing.getStanceScore()) : null, "", "NEUTRAL", "基于当前市场简报"),
+                        metric("建议仓位", defaultText(briefing.getPositionAdvice(), "--"), null, "", "NEUTRAL", "以最新市场简报为准")))
+                .contributors(contributors)
+                .suggestions(List.of("先按建议仓位控制总风险，再查看今日决策中的候选标的"))
+                .actions(List.of(action("查看今日决策", "/decision", "PRIMARY"), action("查看完整行情", "/market", "DEFAULT")))
+                .followUpQuestions(List.of("今天应该买什么？", "资金面有什么变化？", "我的持仓风险怎么样？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp answerDecision() {
+        DecisionAdviceResp advice = decisionService.advice(null);
+        if (Objects.isNull(advice)) {
+            return unavailableAnalysis(ApexAiAnalysisTypeEnum.DECISION, "今日决策", "当前没有可用的今日决策，请先生成决策后重试。",
+                    List.of(action("生成今日决策", "/decision", "PRIMARY")));
+        }
+        List<ApexAiContributor> contributors = new ArrayList<>();
+        if (CollUtil.isNotEmpty(advice.getActions())) {
+            int actionLimit = Math.min(5, advice.getActions().size());
+            for (int index = 0; index < actionLimit; index++) {
+                DecisionAdviceActionResp decisionAction = advice.getActions().get(index);
+                contributors.add(ApexAiContributor.builder()
+                        .rank(Objects.nonNull(decisionAction.getPriority()) ? decisionAction.getPriority() : index + 1)
+                        .name(defaultText(decisionAction.getName(), decisionAction.getCode()))
+                        .detail(defaultText(decisionAction.getReason(), "请在决策页核对完整依据与风险提示"))
+                        .displayValue(defaultText(decisionAction.getAction(), "WATCH"))
+                        .direction(containsAny(decisionAction.getAction(), "BUY", "ADD") ? "POSITIVE"
+                                : containsAny(decisionAction.getAction(), "SELL", "REDUCE") ? "NEGATIVE" : "NEUTRAL")
+                        .build());
+            }
+        }
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.DECISION.getCode())
+                .title("今日操作决策")
+                .summary(defaultText(advice.getSummary(), "当前没有可执行的决策动作，请先核对数据新鲜度与市场状态。"))
+                .dataLevel(Objects.nonNull(advice.getActionDate()) ? "GREEN" : "YELLOW")
+                .dataAsOf(Objects.nonNull(advice.getGeneratedAt()) ? advice.getGeneratedAt()
+                        : Objects.nonNull(advice.getActionDate()) ? advice.getActionDate().atStartOfDay() : null)
+                .dataNote("决策动作仅供研究与复核，执行前应在决策页查看完整风险约束。")
+                .aiEnhanced(Boolean.TRUE.equals(advice.getAiEnhanced()))
+                .generatedAt(LocalDateTime.now())
+                .metrics(List.of(metric("目标仓位", percent(advice.getTargetExposure()), advice.getTargetExposure(), "%", "NEUTRAL", "本轮决策后的目标总仓位"),
+                        metric("可执行动作", String.valueOf(CollUtil.isEmpty(advice.getActions()) ? 0 : advice.getActions().size()),
+                                BigDecimal.valueOf(CollUtil.isEmpty(advice.getActions()) ? 0 : advice.getActions().size()), "项", "NEUTRAL", "展示优先级最高的动作")))
+                .contributors(contributors)
+                .suggestions(List.of("先检查持仓风险与行情截至时间，再决定是否执行具体动作"))
+                .actions(List.of(action("查看完整决策", "/decision", "PRIMARY"), action("查看模拟盘", "/paper", "DEFAULT")))
+                .followUpQuestions(List.of("我的持仓风险怎么样？", "结合今天的决策，我应该先处理哪些持仓？", "今天大盘怎么样？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp answerHoldingRisk() {
+        BotHoldingRiskResp risk = botHoldingRiskService.analyze();
+        if (Objects.isNull(risk)) {
+            return unavailableAnalysis(ApexAiAnalysisTypeEnum.RISK, "持仓风险", "当前没有可用于风险复核的持仓数据。",
+                    List.of(action("查看组合", "/portfolio", "PRIMARY")));
+        }
+        List<ApexAiContributor> contributors = new ArrayList<>();
+        if (CollUtil.isNotEmpty(risk.getAlerts())) {
+            int alertLimit = Math.min(5, risk.getAlerts().size());
+            for (int index = 0; index < alertLimit; index++) {
+                BotHoldingRiskItem alert = risk.getAlerts().get(index);
+                contributors.add(ApexAiContributor.builder()
+                        .rank(index + 1)
+                        .name(defaultText(alert.getName(), alert.getCode()))
+                        .detail(defaultText(alert.getMessage(), "风险服务未返回具体说明"))
+                        .displayValue(defaultText(alert.getLevel(), "WARN"))
+                        .direction("CRITICAL".equals(alert.getLevel()) ? "NEGATIVE" : "NEUTRAL")
+                        .build());
+            }
+        }
+        int criticalCount = zero(risk.getCriticalCount());
+        int warnCount = zero(risk.getWarnCount());
+        String summary = criticalCount > 0 ? "当前有 " + criticalCount + " 项严重风险，需要优先按既定风控规则复核。"
+                : warnCount > 0 ? "当前有 " + warnCount + " 项风险提示，建议在交易前完成复核。"
+                : "当前没有触发持仓风险告警，仍应结合今日决策和行情时效复核。";
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.RISK.getCode())
+                .title("持仓风险复核")
+                .summary(summary)
+                .dataLevel(criticalCount > 0 ? "RED" : warnCount > 0 ? "YELLOW" : "GREEN")
+                .dataAsOf(null)
+                .dataNote("风险项基于当前持仓、行情与已录入风控阈值生成；行情截至 "
+                        + defaultText(risk.getDataAsOf(), "未知") + "。")
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .metrics(List.of(metric("持仓", String.valueOf(zero(risk.getHoldingCount())), BigDecimal.valueOf(zero(risk.getHoldingCount())), "只", "NEUTRAL", "当前组合持仓数量"),
+                        metric("严重风险", String.valueOf(criticalCount), BigDecimal.valueOf(criticalCount), "项", criticalCount > 0 ? "WARNING" : "NEUTRAL", "需优先复核的风险项")))
+                .contributors(contributors)
+                .suggestions(List.of("先查看严重风险对应持仓，再结合今日决策核对止损、仓位与原始逻辑"))
+                .actions(List.of(action("查看组合", "/portfolio", "PRIMARY"), action("查看今日决策", "/decision", "DEFAULT")))
+                .followUpQuestions(List.of("结合今天的决策，我应该先处理哪些持仓？", "为什么今天收益下跌？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp answerStock(String question) {
+        String code = resolveStockCode(question);
+        String name = null;
+        if (StringUtils.isBlank(code)) {
+            String keyword = extractStockKeyword(question);
+            if (StringUtils.isNotBlank(keyword)) {
+                List<StockSearchItem> stocks = stockService.search(keyword, 5);
+                if (CollUtil.isNotEmpty(stocks)) {
+                    code = stocks.get(0).getCode();
+                    name = stocks.get(0).getName();
+                }
+            }
+        }
+        if (StringUtils.isBlank(code)) {
+            return unavailableAnalysis(ApexAiAnalysisTypeEnum.STOCK, "个股研判", "没有识别到明确标的，请提供六位代码或完整股票名称。",
+                    List.of(action("查看股票筛选", "/screener", "PRIMARY")));
+        }
+        StockAnalysisResp analysis = stockAnalysisService.analyze(code, "BUY", 120, false, false);
+        if (Objects.isNull(analysis)) {
+            return unavailableAnalysis(ApexAiAnalysisTypeEnum.STOCK, "个股研判", "当前没有可用的个股分析数据，请先同步行情后重试。",
+                    List.of(action("查看同步中心", "/sync", "PRIMARY")));
+        }
+        String stockName = defaultText(analysis.getName(), defaultText(name, code));
+        StockAnalysisFreshnessResp freshness = analysis.getFreshness();
+        String dataNote = defaultText(analysis.getDataNote(), "个股结论基于本地行情、技术面、估值与策略数据。");
+        if (Objects.nonNull(freshness) && StringUtils.isNotBlank(freshness.getNote())) {
+            dataNote = dataNote + " " + freshness.getNote();
+        }
+        String dataLevel = Objects.nonNull(freshness) && !Boolean.TRUE.equals(freshness.getBarsStale())
+                ? "GREEN" : "YELLOW";
+        List<ApexAiContributor> contributors = List.of(ApexAiContributor.builder()
+                .rank(1)
+                .name(stockName)
+                .detail(defaultText(analysis.getActionHint(), defaultText(analysis.getSummary(), "暂无可验证的个股结论")))
+                .displayValue(defaultText(analysis.getStance(), "观望"))
+                .direction("回避".equals(analysis.getStance()) || "谨慎".equals(analysis.getStance()) ? "NEGATIVE" : "NEUTRAL")
+                .build());
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.STOCK.getCode())
+                .title(stockName + " · 个股研判")
+                .summary(defaultText(analysis.getSummary(), "当前缺少可验证的个股摘要，请查看完整个股页。"))
+                .dataLevel(dataLevel)
+                .dataAsOf(Objects.nonNull(freshness) && Objects.nonNull(freshness.getLastBarDate())
+                        ? freshness.getLastBarDate().atStartOfDay() : null)
+                .dataNote(dataNote)
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .metrics(List.of(metric("最新价", amount(analysis.getLatestPrice()), analysis.getLatestPrice(), "元", "NEUTRAL", "以个股页行情时点为准"),
+                        metric("当日涨跌", signed(analysis.getPctChg(), 2) + "%", analysis.getPctChg(), "%", tone(analysis.getPctChg()), "最新行情涨跌幅")))
+                .contributors(contributors)
+                .suggestions(List.of("查看完整个股研判后，再结合市场立场和组合仓位决定是否纳入计划"))
+                .actions(List.of(action("查看个股", "/stock/" + code, "PRIMARY"), action("查看今日决策", "/decision", "DEFAULT")))
+                .followUpQuestions(List.of("今天大盘怎么样？", "今天应该买什么？", "我的持仓风险怎么样？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp answerCapitalFlow() {
+        CapitalFlowOverviewResp overview = capitalFlowService.overview(5);
+        if (Objects.isNull(overview) || Objects.isNull(overview.getNorthboundFlow())) {
+            return unavailableAnalysis(ApexAiAnalysisTypeEnum.CAPITAL_FLOW, "资金面", "当前没有可用资金面快照，请先同步资金数据后重试。",
+                    List.of(action("查看资金面", "/market?tab=capital-flow", "PRIMARY"), action("查看同步中心", "/sync", "DEFAULT")));
+        }
+        BigDecimal netBuyAmount = overview.getNorthboundFlow().getNetBuyAmount();
+        String dataStatus = overview.getNorthboundFlow().getDataStatus();
+        boolean published = "PUBLISHED".equalsIgnoreCase(dataStatus);
+        boolean availableAmount = Objects.nonNull(netBuyAmount);
+        String summary = published && availableAmount
+                ? "北向资金当日净" + (netBuyAmount.signum() >= 0 ? "买入 " : "卖出 ")
+                + amount(netBuyAmount.abs()) + " 元。资金面仅反映已同步数据，需结合市场立场和个股信号复核。"
+                : "北向资金当日数据尚未披露，不能据此判断资金净流入方向。";
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.CAPITAL_FLOW.getCode())
+                .title("资金面变化")
+                .summary(summary)
+                .dataLevel(published && availableAmount && Objects.nonNull(overview.getNorthboundFlow().getSyncedAt())
+                        ? "GREEN" : "YELLOW")
+                .dataAsOf(overview.getNorthboundFlow().getSyncedAt())
+                .dataNote("北向与主力资金以最近一次同步快照为准。")
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .metrics(List.of(metric("北向净额", availableAmount ? amount(netBuyAmount) : "未披露", netBuyAmount,
+                        "元", availableAmount ? tone(netBuyAmount) : "NEUTRAL", "最近交易日北向资金净买入额")))
+                .suggestions(List.of("先确认资金数据截至时间，再查看资金面榜单与市场立场是否一致"))
+                .actions(List.of(action("查看资金面", "/market?tab=capital-flow", "PRIMARY"), action("查看完整行情", "/market", "DEFAULT")))
+                .followUpQuestions(List.of("今天大盘怎么样？", "今天应该买什么？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp answerNewsPulse() {
+        NewsPulseResp pulse = newsPulseService.pulse(5, false);
+        if (Objects.isNull(pulse)) {
+            return unavailableAnalysis(ApexAiAnalysisTypeEnum.NEWS_PULSE, "消息面", "当前没有可用消息面数据，请先同步资讯后重试。",
+                    List.of(action("查看财经资讯", "/news", "PRIMARY")));
+        }
+        List<ApexAiContributor> contributors = new ArrayList<>();
+        if (CollUtil.isNotEmpty(pulse.getCards())) {
+            int cardLimit = Math.min(4, pulse.getCards().size());
+            for (int index = 0; index < cardLimit; index++) {
+                NewsPulseCardResp card = pulse.getCards().get(index);
+                contributors.add(ApexAiContributor.builder()
+                        .rank(index + 1)
+                        .name(defaultText(card.getTitle(), "未命名资讯"))
+                        .detail(defaultText(card.getSummary(), "请到资讯页查看原文与来源"))
+                        .displayValue(defaultText(card.getSentiment(), "中性"))
+                        .direction("利好".equals(card.getSentiment()) ? "POSITIVE"
+                                : "利空".equals(card.getSentiment()) ? "NEGATIVE" : "NEUTRAL")
+                        .build());
+            }
+        }
+        boolean hasNews = CollUtil.isNotEmpty(pulse.getCards());
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(ApexAiAnalysisTypeEnum.NEWS_PULSE.getCode())
+                .title("今日消息面")
+                .summary(hasNews ? defaultText(pulse.getExecutiveSummary(), "消息面摘要尚未生成，请结合原始资讯判断影响。")
+                        : "当前没有可用消息面数据，请先同步资讯后重试。")
+                .dataLevel(hasNews ? "YELLOW" : "RED")
+                .dataAsOf(pulse.getSummarizedAt())
+                .dataNote(hasNews ? defaultText(pulse.getMessage(), "消息面为资讯聚合，不替代公司公告与交易决策。")
+                        : "当前数据不可用，未使用模型补造结论。")
+                .aiEnhanced("llm".equalsIgnoreCase(pulse.getSummarySource()))
+                .generatedAt(LocalDateTime.now())
+                .metrics(List.of(metric("利好", String.valueOf(zero(pulse.getBullCount())), BigDecimal.valueOf(zero(pulse.getBullCount())), "条", "UP", "当前消息面统计"),
+                        metric("利空", String.valueOf(zero(pulse.getBearCount())), BigDecimal.valueOf(zero(pulse.getBearCount())), "条", "WARNING", "当前消息面统计")))
+                .contributors(contributors)
+                .suggestions(List.of("查看原始资讯与公告，避免仅凭标题或情绪标签调整持仓"))
+                .actions(List.of(action("查看财经资讯", "/news", "PRIMARY"), action("查看今日决策", "/decision", "DEFAULT")))
+                .followUpQuestions(List.of("今天大盘怎么样？", "资金面有什么变化？"))
+                .disclaimer(DISCLAIMER)
+                .build();
+    }
+
+    private ApexAiAnalysisResp unavailableAnalysis(ApexAiAnalysisTypeEnum analysisType, String title,
+                                                    String summary, List<ApexAiAction> actions) {
+        return ApexAiAnalysisResp.builder()
+                .requestId(UUID.randomUUID().toString())
+                .analysisType(analysisType.getCode())
+                .title(title)
+                .summary(summary)
+                .dataLevel("RED")
+                .dataNote("当前数据不可用，未使用模型补造结论。")
+                .aiEnhanced(false)
+                .generatedAt(LocalDateTime.now())
+                .suggestions(List.of("完成数据同步后重新提问"))
+                .actions(actions)
                 .disclaimer(DISCLAIMER)
                 .build();
     }
@@ -869,6 +1238,44 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 .tone(tone)
                 .detail(detail)
                 .build();
+    }
+
+    private ApexAiAction action(String label, String route, String tone) {
+        return ApexAiAction.builder()
+                .label(label)
+                .route(route)
+                .tone(tone)
+                .build();
+    }
+
+    private String defaultText(String value, String defaultValue) {
+        return StringUtils.isNotBlank(value) ? value : defaultValue;
+    }
+
+    private String percent(BigDecimal value) {
+        return Objects.nonNull(value) ? value.multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP).toPlainString() + "%" : "--";
+    }
+
+    private boolean isStockQuestion(String question) {
+        return STOCK_CODE_PATTERN.matcher(question).find()
+                || containsAny(question, "买", "卖", "持有", "个股", "股票", "分析一下");
+    }
+
+    private String resolveStockCode(String question) {
+        Matcher matcher = STOCK_CODE_PATTERN.matcher(question);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private String extractStockKeyword(String question) {
+        String keyword = question;
+        String[] stopWords = {"请问", "帮我", "看一下", "分析一下", "今天", "现在", "目前", "股票", "个股",
+                "还能买吗", "能买吗", "买不买", "该买吗", "能卖吗", "持有吗", "怎么样", "怎么办", "看看", "分析",
+                "是否", "可以", "值得", "适合", "能不能", "应该", "买吗", "卖吗", "如何", "为什么", "还能", "？", "?", "。", "，", ","};
+        for (String stopWord : stopWords) {
+            keyword = keyword.replace(stopWord, "");
+        }
+        keyword = keyword.trim();
+        return keyword.length() >= 2 && keyword.length() <= 20 ? keyword : null;
     }
 
     private DecisionAttrBucket findBucket(List<DecisionAttrBucket> buckets, String key) {

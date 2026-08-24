@@ -11,6 +11,8 @@ test('Apex AI is a real analyst workspace with context and structured evidence',
   assert.match(source, /analysis\.contributors/)
   assert.match(source, /analysis\.metrics/)
   assert.match(source, /analysis\.suggestions/)
+  assert.match(source, /analysis\.actions/)
+  assert.match(source, /runAnalysisAction/)
   assert.match(source, /dataLevel/)
   assert.match(source, /askSuggested\(prompt, message\.analysis\.analysisType\)/)
   assert.match(source, /portfolioId:\s*analysisMode\.value === 'PORTFOLIO' \? selectedPortfolioId\.value : null/)
@@ -22,7 +24,16 @@ test('Apex AI exposes portfolio and strategy analysis without a marketing hero',
   assert.match(source, /STRATEGY/)
   assert.match(source, /为什么今天收益/)
   assert.match(source, /策略最近为什么失效/)
+  assert.match(source, /今天应该买什么？/)
+  assert.match(source, /我的持仓风险怎么样？/)
   assert.doesNotMatch(source, /class="hero/)
+})
+
+test('Apex AI offers next actions and respects backend display values', () => {
+  assert.match(source, /useRouter/)
+  assert.match(source, /router\.push\(action\.route\)/)
+  assert.match(source, /contributor\.displayValue/)
+  assert.match(source, /analysis-actions/)
 })
 
 test('Apex AI has stable desktop and mobile workbench geometry', () => {
