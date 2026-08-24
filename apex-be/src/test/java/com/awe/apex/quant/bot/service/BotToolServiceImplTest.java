@@ -224,6 +224,71 @@ class BotToolServiceImplTest {
     }
 
     @Test
+    void botBuyResolvesOwnerLabelAliasToBoundUsersDefaultPortfolio() {
+        Portfolio defaultPortfolio = Portfolio.builder()
+                .id(7L).userId(7L).name("我的组合").ownerLabel("Awe").isDefault(1).status("ACTIVE").build();
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(), List.of(defaultPortfolio));
+
+        BotToolReq request = tradeRequest("HOLDING_BUY", "Awe", "req-buy-alias");
+
+        service.execute(request);
+
+        verify(portfolioService).tradeHolding(eq(7L), any(HoldingTradeReq.class),
+                eq(PortfolioTradeSourceEnum.WECHAT_BOT), eq("req-buy-alias:600547"));
+        ArgumentCaptor<Wrapper<Portfolio>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(portfolioMapper, org.mockito.Mockito.times(2)).selectList(queryCaptor.capture());
+        List<Wrapper<Portfolio>> queries = queryCaptor.getAllValues();
+        assertFalse(((AbstractWrapper<?, ?, ?>) queries.get(0)).getSqlSegment().contains("user_id"));
+        assertTrue(((AbstractWrapper<?, ?, ?>) queries.get(1)).getSqlSegment().contains("user_id"));
+        assertTrue(((AbstractWrapper<?, ?, ?>) queries.get(1)).getSqlSegment().contains("is_default"));
+    }
+
+    @Test
+    void botBuyUsesBoundUsersUniqueDefaultPortfolioWhenPortfolioNameIsBlank() {
+        Portfolio defaultPortfolio = Portfolio.builder()
+                .id(7L).userId(7L).name("我的组合").ownerLabel("Awe").isDefault(1).status("ACTIVE").build();
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(defaultPortfolio));
+
+        service.execute(tradeRequest("HOLDING_BUY", null, "req-buy-default"));
+
+        verify(portfolioService).tradeHolding(eq(7L), any(HoldingTradeReq.class),
+                eq(PortfolioTradeSourceEnum.WECHAT_BOT), eq("req-buy-default:600547"));
+        ArgumentCaptor<Wrapper<Portfolio>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(portfolioMapper).selectList(queryCaptor.capture());
+        String sqlSegment = ((AbstractWrapper<?, ?, ?>) queryCaptor.getValue()).getSqlSegment();
+        assertTrue(sqlSegment.contains("user_id"));
+        assertTrue(sqlSegment.contains("is_default"));
+    }
+
+    @Test
+    void botBuyDoesNotMutateWhenPortfolioAliasDoesNotMatchBoundUsersDefaultPortfolio() {
+        Portfolio defaultPortfolio = Portfolio.builder()
+                .id(7L).userId(7L).name("我的组合").ownerLabel("浩总").isDefault(1).status("ACTIVE").build();
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(), List.of(defaultPortfolio));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.execute(tradeRequest("HOLDING_BUY", "Awe", "req-buy-missing")));
+
+        assertEquals("未找到当前用户的默认组合: Awe", exception.getMessage());
+        verify(portfolioService, org.mockito.Mockito.never()).tradeHolding(anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void botBuyDoesNotMutateWhenDefaultPortfolioAliasIsAmbiguous() {
+        Portfolio firstPortfolio = Portfolio.builder()
+                .id(7L).userId(7L).name("我的组合").ownerLabel("Awe").isDefault(1).status("ACTIVE").build();
+        Portfolio secondPortfolio = Portfolio.builder()
+                .id(9L).userId(7L).name("实盘组合").ownerLabel("AWE").isDefault(1).status("ACTIVE").build();
+        when(portfolioMapper.selectList(any())).thenReturn(List.of(), List.of(firstPortfolio, secondPortfolio));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.execute(tradeRequest("HOLDING_BUY", "Awe", "req-buy-ambiguous")));
+
+        assertEquals("当前用户的默认组合不唯一: Awe", exception.getMessage());
+        verify(portfolioService, org.mockito.Mockito.never()).tradeHolding(anyLong(), any(), any(), any());
+    }
+
+    @Test
     void fullImportRequiresExplicitReplaceConfirmation() {
         BotToolReq request = new BotToolReq();
         request.setOperation("HOLDING_IMPORT");
@@ -235,5 +300,21 @@ class BotToolServiceImplTest {
 
         assertEquals("全量更新必须明确确认 fullReplace=true；买入或加仓请使用 HOLDING_BUY", exception.getMessage());
         verify(portfolioService, org.mockito.Mockito.never()).removeHolding(anyLong(), anyLong(), any(), any());
+    }
+
+    private BotToolReq tradeRequest(String operation, String portfolioName, String requestId) {
+        BotTradeInput trade = new BotTradeInput();
+        trade.setCode("600547");
+        trade.setName("山东黄金");
+        trade.setQuantity(200);
+        trade.setTradePrice(new BigDecimal("36.35"));
+        BotToolReq request = new BotToolReq();
+        request.setOperation(operation);
+        request.setUserId("wechat-user");
+        request.setConversationId("wechat-conversation");
+        request.setRequestId(requestId);
+        request.setPortfolioName(portfolioName);
+        request.setTrades(List.of(trade));
+        return request;
     }
 }

@@ -1,6 +1,6 @@
 ---
 name: apex-stock-assistant
-description: Query Apex for A-share analysis, market summaries, portfolio status, observation-pool additions, and controlled named-portfolio holding imports. MUST use for questions about a named portfolio or its holdings; confirm writes only from Apex's matching success intent.
+description: Query Apex for A-share analysis, market summaries, portfolio status, observation-pool additions, and controlled portfolio holding updates. MUST use for questions about a named portfolio or its holdings; confirm writes only from Apex's matching success intent.
 ---
 
 # Apex Stock Assistant
@@ -25,14 +25,14 @@ The addition is confirmed only when the successful Apex response has `data.inten
 
 ## Structured Tools
 
-For explicitly named portfolios and all holding-update workflows, run `scripts/apex_tool.sh` with a JSON request. Copy `portfolioName` exactly from the user's current message or attachment context. If the current request does not contain an explicit portfolio name, use Ask Apex instead. Always pass the exact WeClaw sender ID as `userId` and WeClaw conversation ID as `conversationId`; never normalize, lowercase, shorten, or invent either value.
+For explicitly named portfolio advice/status and all holding-update workflows, run `scripts/apex_tool.sh` with a JSON request. Portfolio advice and status require the exact portfolio name from the user's current message. For holding updates, `portfolioName` is optional: when the user does not name a portfolio, omit it so Apex updates the bound user's unique active default portfolio. When the user uses an owner/default alias such as `Awe`、`我的组合`、`我的持仓` or `默认组合`, pass that value exactly and let Apex resolve it only within the bound user's active default portfolios. Always pass the exact WeClaw sender ID as `userId` and WeClaw conversation ID as `conversationId`; never normalize, lowercase, shorten, or invent either value.
 
 - Portfolio advice: `{"operation":"PORTFOLIO_ADVICE","userId":"<sender>","conversationId":"<conversation>","portfolioName":"<name-exactly-as-user-supplied>"}`
 - Portfolio status: `{"operation":"PORTFOLIO_STATUS","userId":"<sender>","conversationId":"<conversation>","portfolioName":"<name-exactly-as-user-supplied>"}`
 
 For a WeClaw image attachment or a text table that represents the complete account state, extract JSON with `code`, `name`, `quantity`, `costPrice`, and visible `marketValue` for each holding plus optional `totalMarketValue`. When the message explicitly provides them, also pass `tradePrice` and ISO-8601 `tradeTime`; otherwise leave them absent. Every row needs a positive quantity and a positive cost price. When a code is missing, pass the exact recognized stock name and leave `code` empty: Apex resolves it only by an exact, unique `stock_basic.name` match. Do not infer a code, trade price, or trade time yourself. If Apex cannot resolve the name or finds more than one match, state that the portfolio was not changed and return its error.
 
-When the user explicitly says `买入`、`加仓` or `新增买入`, use `HOLDING_BUY`, never `HOLDING_IMPORT`. Treat the stated quantity as this transaction's quantity and the stated price as its actual trade price. This operation changes only the named securities and never deletes other holdings:
+When the user explicitly says `买入`、`加仓` or `新增买入`, or sends a single broker `成交详情` image, use `HOLDING_BUY`, never `HOLDING_IMPORT`. Treat the stated quantity as this transaction's quantity and the stated price as its actual trade price. This operation changes only the named securities and never deletes other holdings. Omit `portfolioName` when this is the sender's own default portfolio:
 
 ```json
 {
@@ -46,7 +46,7 @@ When the user explicitly says `买入`、`加仓` or `新增买入`, use `HOLDIN
 }
 ```
 
-When the user explicitly says `卖出`、`减仓` or `清仓`, use `HOLDING_SELL`, never `HOLDING_IMPORT`. Treat the stated quantity as this transaction's quantity and the stated price as its actual trade price. This operation changes only the named securities; a full sell removes only that stock:
+When the user explicitly says `卖出`、`减仓` or `清仓`, use `HOLDING_SELL`, never `HOLDING_IMPORT`. Treat the stated quantity as this transaction's quantity and the stated price as its actual trade price. This operation changes only the named securities; a full sell removes only that stock. Omit `portfolioName` when this is the sender's own default portfolio:
 
 ```json
 {
@@ -60,7 +60,7 @@ When the user explicitly says `卖出`、`减仓` or `清仓`, use `HOLDING_SELL
 }
 ```
 
-Use `HOLDING_IMPORT` only when the user explicitly provides a complete brokerage screenshot or a complete text table and asks to `全量更新`、`同步全部持仓` or `按截图覆盖`. Set `fullReplace` to `true` only for that explicit confirmation. It is the only operation that can remove holdings absent from the submitted list:
+Use `HOLDING_IMPORT` only when the user explicitly provides a complete brokerage screenshot or a complete text table and asks to `全量更新`、`同步全部持仓` or `按截图覆盖`. A single transaction/成交详情 image is not a complete brokerage screenshot. Set `fullReplace` to `true` only for that explicit confirmation. It is the only operation that can remove holdings absent from the submitted list. Omit `portfolioName` when synchronizing the sender's own default portfolio:
 
 ```json
 {

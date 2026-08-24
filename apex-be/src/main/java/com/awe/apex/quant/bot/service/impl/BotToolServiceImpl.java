@@ -52,6 +52,7 @@ import java.util.UUID;
 public class BotToolServiceImpl implements IBotToolService {
 
     private static final String DISCLAIMER = "以上基于 Apex 当前数据生成，仅供研究，不构成投资建议。";
+    private static final Set<String> DEFAULT_PORTFOLIO_ALIASES = Set.of("我的组合", "我的持仓", "默认组合");
     @Resource
     private ApexBotProperties properties;
 
@@ -356,13 +357,47 @@ public class BotToolServiceImpl implements IBotToolService {
     }
 
     private Portfolio activePortfolioByName(String name) {
-        if (StringUtils.isBlank(name)) {
-            throw new BusinessException("请指定组合名称");
+        if (StringUtils.isNotBlank(name)) {
+            List<Portfolio> namedPortfolios = portfolioMapper.selectList(Wrappers.<Portfolio>lambdaQuery()
+                    .eq(Portfolio::getName, name.trim())
+                    .eq(Portfolio::getStatus, "ACTIVE"));
+            if (CollUtil.isNotEmpty(namedPortfolios)) {
+                return requireUniquePortfolio(name, namedPortfolios);
+            }
         }
-        List<Portfolio> portfolios = portfolioMapper.selectList(Wrappers.<Portfolio>lambdaQuery()
-                .eq(Portfolio::getName, name.trim())
+
+        List<Portfolio> defaultPortfolios = portfolioMapper.selectList(Wrappers.<Portfolio>lambdaQuery()
+                .eq(Portfolio::getUserId, userContext.currentUserId())
+                .eq(Portfolio::getIsDefault, 1)
                 .eq(Portfolio::getStatus, "ACTIVE"));
-        return requireUniquePortfolio(name, portfolios);
+        if (StringUtils.isBlank(name) || DEFAULT_PORTFOLIO_ALIASES.contains(name.trim())) {
+            return requireUniqueDefaultPortfolio(name, defaultPortfolios);
+        }
+
+        List<Portfolio> aliasMatchedPortfolios = new ArrayList<>();
+        for (Portfolio portfolio : defaultPortfolios) {
+            if (StringUtils.isNotBlank(portfolio.getOwnerLabel())
+                    && portfolio.getOwnerLabel().trim().equalsIgnoreCase(name.trim())) {
+                aliasMatchedPortfolios.add(portfolio);
+            }
+        }
+        return requireUniqueDefaultPortfolio(name, aliasMatchedPortfolios);
+    }
+
+    private Portfolio requireUniqueDefaultPortfolio(String alias, List<Portfolio> portfolios) {
+        if (CollUtil.isEmpty(portfolios)) {
+            if (StringUtils.isBlank(alias)) {
+                throw new BusinessException("当前用户未配置默认组合");
+            }
+            throw new BusinessException("未找到当前用户的默认组合: " + alias);
+        }
+        if (portfolios.size() > 1) {
+            if (StringUtils.isBlank(alias)) {
+                throw new BusinessException("当前用户的默认组合不唯一");
+            }
+            throw new BusinessException("当前用户的默认组合不唯一: " + alias);
+        }
+        return portfolios.get(0);
     }
 
     private Portfolio requireUniquePortfolio(String name, List<Portfolio> portfolios) {
