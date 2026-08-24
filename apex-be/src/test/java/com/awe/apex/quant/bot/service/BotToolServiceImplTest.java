@@ -26,11 +26,14 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,6 +59,10 @@ class BotToolServiceImplTest {
         stockBasicMapper = mock(StockBasicMapper.class);
         userContext = mock(ApexUserContext.class);
         when(userContext.currentUserId()).thenReturn(7L);
+        when(userContext.runAsUser(anyLong(), any(Supplier.class))).thenAnswer(invocation -> {
+            Supplier<?> task = invocation.getArgument(1);
+            return task.get();
+        });
         ReflectionTestUtils.setField(service, "portfolioService", portfolioService);
         ReflectionTestUtils.setField(service, "portfolioMapper", portfolioMapper);
         ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
@@ -65,9 +72,9 @@ class BotToolServiceImplTest {
     }
 
     @Test
-    void importsHoldingResolvedByExactStockName() {
+    void importsHoldingForPortfolioOwnedByOtherUser() {
         when(portfolioMapper.selectList(any())).thenReturn(List.of(Portfolio.builder()
-                .id(8L).name("来哥").status("ACTIVE").build()));
+                .id(8L).userId(18L).name("来哥").status("ACTIVE").build()));
         when(stockBasicMapper.selectList(any())).thenReturn(List.of(StockBasic.builder()
                 .code("603456").name("九洲药业").build()));
         when(portfolioService.detail(8L)).thenReturn(PortfolioSummaryResp.builder().holdings(List.of()).build());
@@ -96,13 +103,13 @@ class BotToolServiceImplTest {
         ArgumentCaptor<Wrapper<Portfolio>> portfolioQueryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(portfolioMapper).selectList(portfolioQueryCaptor.capture());
         AbstractWrapper<?, ?, ?> portfolioQuery = (AbstractWrapper<?, ?, ?>) portfolioQueryCaptor.getValue();
-        assertTrue(portfolioQuery.getSqlSegment().contains("user_id"));
-        assertTrue(portfolioQuery.getParamNameValuePairs().containsValue(7L));
+        assertFalse(portfolioQuery.getSqlSegment().contains("user_id"));
+        verify(userContext).runAsUser(eq(18L), any(Supplier.class));
     }
 
     @Test
     void botImportUpdatesByDifferenceWithoutReplacingUnchangedHolding() {
-        Portfolio portfolio = Portfolio.builder().id(8L).name("来哥").status("ACTIVE").build();
+        Portfolio portfolio = Portfolio.builder().id(8L).userId(18L).name("来哥").status("ACTIVE").build();
         when(portfolioMapper.selectList(any())).thenReturn(List.of(portfolio));
         PortfolioHolding unchanged = PortfolioHolding.builder()
                 .id(1L).portfolioId(8L).code("600519").name("贵州茅台")

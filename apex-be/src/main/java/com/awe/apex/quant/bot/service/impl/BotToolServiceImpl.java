@@ -216,7 +216,11 @@ public class BotToolServiceImpl implements IBotToolService {
     }
 
     private BotToolResp holdingImport(BotToolReq request, String requestId) {
-        Portfolio portfolio = portfolioByName(request.getPortfolioName());
+        Portfolio portfolio = activePortfolioByName(request.getPortfolioName());
+        return userContext.runAsUser(portfolio.getUserId(), () -> importHoldings(portfolio, request, requestId));
+    }
+
+    private BotToolResp importHoldings(Portfolio portfolio, BotToolReq request, String requestId) {
         resolveHoldingCodes(request.getHoldings());
         validateHoldingInputs(request.getHoldings(), request.getTotalMarketValue());
         List<PortfolioHolding> existing = portfolioService.detail(portfolio.getId()).getHoldings();
@@ -297,6 +301,20 @@ public class BotToolServiceImpl implements IBotToolService {
                 .eq(Portfolio::getUserId, userContext.currentUserId())
                 .eq(Portfolio::getName, name.trim())
                 .eq(Portfolio::getStatus, "ACTIVE"));
+        return requireUniquePortfolio(name, portfolios);
+    }
+
+    private Portfolio activePortfolioByName(String name) {
+        if (StringUtils.isBlank(name)) {
+            throw new BusinessException("请指定组合名称");
+        }
+        List<Portfolio> portfolios = portfolioMapper.selectList(Wrappers.<Portfolio>lambdaQuery()
+                .eq(Portfolio::getName, name.trim())
+                .eq(Portfolio::getStatus, "ACTIVE"));
+        return requireUniquePortfolio(name, portfolios);
+    }
+
+    private Portfolio requireUniquePortfolio(String name, List<Portfolio> portfolios) {
         if (CollUtil.isEmpty(portfolios)) {
             throw new BusinessException("未找到组合: " + name);
         }
