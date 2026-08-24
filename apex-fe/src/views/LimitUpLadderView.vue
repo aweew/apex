@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 import { fetchLimitUpLadder, refreshLimitUpLadder } from '../api/limitUp'
 import { saveObserve } from '../api/observe'
 import { getSyncJob, startSyncJob } from '../api/sync'
@@ -118,10 +119,10 @@ function clearTheme() {
 function goSector(theme, e) {
   e?.stopPropagation?.()
   if (!theme) {
-    router.push('/sector')
+    router.push({ path: '/market', query: { tab: 'sector' } })
     return
   }
-  router.push({ path: '/sector', query: { q: theme } })
+  router.push({ path: '/market', query: { tab: 'sector', q: theme } })
 }
 
 async function addObserve(stock, e) {
@@ -430,9 +431,13 @@ onBeforeUnmount(() => {
           :clearable="false"
           :disabled-date="disableUnavailableDate"
         />
-        <el-button type="primary" :loading="refreshing" @click="onRefresh">刷新</el-button>
-        <el-button plain @click="router.push('/sector')">板块</el-button>
-        <el-button plain @click="router.push('/hot')">热点</el-button>
+        <el-tooltip content="刷新涨停池" placement="top">
+          <el-button circle plain :icon="Refresh" :loading="refreshing" aria-label="刷新涨停池" @click="onRefresh" />
+        </el-tooltip>
+        <el-button-group>
+          <el-button plain @click="router.push({ path: '/market', query: { tab: 'sector' } })">板块</el-button>
+          <el-button plain @click="router.push('/hot')">热点</el-button>
+        </el-button-group>
       </div>
     </header>
 
@@ -1220,6 +1225,14 @@ onBeforeUnmount(() => {
   .actions {
     flex-wrap: wrap;
   }
+
+  .lu-page .actions :deep(.el-button.is-circle) {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+  }
+
 }
 </style>
 

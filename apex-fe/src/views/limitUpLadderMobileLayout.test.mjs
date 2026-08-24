@@ -21,3 +21,14 @@ test('mobile ladder gives concepts more room beside percentage changes', () => {
   assert.match(mobileStyles, /\.card-sub\s*\{[\s\S]*?gap:\s*2px;/)
   assert.match(mobileStyles, /\.card-pct\s*\{[\s\S]*?font-size:\s*9px;/)
 })
+
+test('ladder header keeps direct market shortcuts beside the compact refresh control', () => {
+  assert.match(ladderSource, /import \{ Refresh \} from '@element-plus\/icons-vue'/)
+  assert.match(ladderSource, /<el-tooltip content="刷新涨停池" placement="top">/)
+  assert.match(ladderSource, /<el-button circle plain :icon="Refresh" :loading="refreshing" aria-label="刷新涨停池" @click="onRefresh" \/>/)
+  assert.match(ladderSource, /<el-button-group>/)
+  assert.match(ladderSource, /<el-button plain @click="router\.push\(\{ path: '\/market', query: \{ tab: 'sector' \} \}\)">板块<\/el-button>/)
+  assert.match(ladderSource, /<el-button plain @click="router\.push\('\/hot'\)">热点<\/el-button>/)
+  assert.doesNotMatch(ladderSource, /<el-dropdown @command="openRelatedView">/)
+  assert.doesNotMatch(ladderSource, /<el-button type="primary" :loading="refreshing" @click="onRefresh">刷新<\/el-button>/)
+})
