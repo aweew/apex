@@ -593,14 +593,16 @@ onMounted(() => {
                 : '暂无全市场涨跌家数'"
             >
               <em>涨跌</em>
-              <template v-if="breadth">
-                <b class="up">{{ breadth.up }}</b>
-                <span class="slash">/</span>
-                <b class="flat">{{ breadth.hasFlat ? breadth.flat : '--' }}</b>
-                <span class="slash">/</span>
-                <b class="down">{{ breadth.down }}</b>
-              </template>
-              <b v-else class="miss">--</b>
+              <span class="stat-value">
+                <template v-if="breadth">
+                  <b class="up">{{ breadth.up }}</b>
+                  <span class="slash">/</span>
+                  <b class="flat">{{ breadth.hasFlat ? breadth.flat : '--' }}</b>
+                  <span class="slash">/</span>
+                  <b class="down">{{ breadth.down }}</b>
+                </template>
+                <b v-else class="miss">--</b>
+              </span>
             </span>
             <span class="dot" aria-hidden="true" />
             <span
@@ -610,9 +612,11 @@ onMounted(() => {
                 : '暂无涨跌停家数'"
             >
               <em>涨跌停</em>
-              <b class="up">{{ market?.limitUpCount ?? '--' }}</b>
-              <span class="slash">/</span>
-              <b class="down">{{ market?.limitDownCount ?? '--' }}</b>
+              <span class="stat-value">
+                <b class="up">{{ market?.limitUpCount ?? '--' }}</b>
+                <span class="slash">/</span>
+                <b class="down">{{ market?.limitDownCount ?? '--' }}</b>
+              </span>
             </span>
           </div>
           <div v-if="breadth" class="breadth-track" aria-hidden="true">
@@ -2010,6 +2014,12 @@ onMounted(() => {
   align-items: baseline;
   gap: 4px;
   color: var(--ink-soft);
+}
+
+.stat-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
 }
 
 .stat em {
@@ -3704,6 +3714,26 @@ onMounted(() => {
     grid-template-columns: 1fr 1fr;
   }
 
+  .effect-cell {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    box-sizing: border-box;
+    min-height: 64px;
+    padding: 10px 12px;
+  }
+
+  .effect-cell b {
+    flex: 0 0 auto;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .effect-cell:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
   .command-directions {
     grid-template-columns: 1fr;
   }
@@ -4647,7 +4677,30 @@ onMounted(() => {
   }
 
   .index-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-items: baseline;
+    column-gap: 8px;
+    row-gap: 2px;
     padding: 7px 9px;
+  }
+
+  .index-line .n {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .index-line .c {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .index-line .p {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    text-align: right;
   }
 
   .stat-line {
@@ -4673,6 +4726,23 @@ onMounted(() => {
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.72);
     line-height: 1.25;
+  }
+
+  .stat-line .stat:not(.volume-stat) {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .stat-line .stat:not(.volume-stat) > em {
+    margin-bottom: 0;
+  }
+
+  .stat-line .stat-value {
+    justify-self: end;
+    text-align: right;
+    white-space: nowrap;
   }
 
   .stat-line .stat > em {

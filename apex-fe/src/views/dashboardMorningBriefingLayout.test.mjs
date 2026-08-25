@@ -254,6 +254,48 @@ test('dashboard keeps dense briefing copy readable across desktop and mobile', (
   )
 })
 
+test('mobile market overview balances labels and values across each card', () => {
+  const compactMarketStart = dashboardSource.indexOf(
+    '@media (max-width: 560px), (min-width: 561px) and (max-width: 900px) and (orientation: landscape)',
+  )
+  const compactMarketEnd = dashboardSource.indexOf('@media (max-width: 560px) {', compactMarketStart)
+  const compactMarketStyles = dashboardSource.slice(compactMarketStart, compactMarketEnd)
+
+  assert.equal(dashboardSource.match(/class="stat-value"/g)?.length, 2)
+  assert.match(
+    compactMarketStyles,
+    /\.index-line\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/s,
+  )
+  assert.match(
+    compactMarketStyles,
+    /\.index-line \.p\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1 \/ span 2;[^}]*text-align:\s*right;/s,
+  )
+  assert.match(
+    compactMarketStyles,
+    /\.stat-line \.stat:not\(\.volume-stat\)\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\);/s,
+  )
+  assert.match(
+    compactMarketStyles,
+    /\.stat-line \.stat-value\s*\{[^}]*justify-self:\s*end;[^}]*text-align:\s*right;/s,
+  )
+})
+
+test('mobile money effect cards place values on the right and fill the last row', () => {
+  const phoneStylesStart = dashboardSource.indexOf('@media (max-width: 560px) {')
+  const phoneStylesEnd = dashboardSource.indexOf('@media (max-width: 900px) {', phoneStylesStart)
+  const phoneStyles = dashboardSource.slice(phoneStylesStart, phoneStylesEnd)
+
+  assert.match(
+    phoneStyles,
+    /\.effect-cell\s*\{[^}]*flex-direction:\s*row;[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between;/s,
+  )
+  assert.match(phoneStyles, /\.effect-cell b\s*\{[^}]*text-align:\s*right;[^}]*white-space:\s*nowrap;/s)
+  assert.match(
+    phoneStyles,
+    /\.effect-cell:last-child:nth-child\(odd\)\s*\{[^}]*grid-column:\s*1 \/ -1;/s,
+  )
+})
+
 test('dashboard morning context leads with a conclusion and keeps supporting evidence quiet', () => {
   assert.match(dashboardSource, /class="morning-context-time-label">更新<\/span>/)
   assert.match(dashboardSource, /class="morning-news-lead"/)
