@@ -23,6 +23,11 @@ const MARKET_SESSION_CONFIG = {
 
 export const MARKET_PRIORITY = ['cn', 'hk', 'jp', 'kr', 'us']
 
+export function resolveMarketTab(market) {
+  if (market === 'jp' || market === 'kr') return 'asia'
+  return market
+}
+
 function localMarketClock(time, timeZone) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone,

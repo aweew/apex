@@ -29,7 +29,7 @@ import SectorBoardView from './SectorBoardView.vue'
 import { isConceptBoard, normalizeHotThemes } from '../utils/hotTheme.js'
 import { formatVolumeChangeText } from '../utils/marketVolume.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
-import { resolveActiveMarket } from '../utils/marketTradingSession.js'
+import { resolveActiveMarket, resolveMarketTab } from '../utils/marketTradingSession.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import { useSessionViewState } from '../utils/viewState.js'
 import worldMarketMapUrl from '../assets/world-market-map.svg'
@@ -43,8 +43,7 @@ const marketTabs = [
   { key: 'global', label: '全球' },
   { key: 'cn', label: '沪深A股' },
   { key: 'hk', label: '港股' },
-  { key: 'jp', label: '日本' },
-  { key: 'kr', label: '韩国' },
+  { key: 'asia', label: '日韩' },
   { key: 'us', label: '美国' },
 ]
 const indexMarketKeys = marketTabs.filter((item) => item.key !== 'global').map((item) => item.key)
@@ -55,7 +54,7 @@ const loading = ref(false)
 const quoteRefreshing = ref(false)
 const indexSyncing = ref(false)
 const activeMarketKey = ref(resolveActiveMarket())
-const marketTab = ref(activeMarketKey.value || 'global')
+const marketTab = ref(resolveMarketTab(activeMarketKey.value) || 'global')
 const indexData = ref(null)
 const briefing = ref(null)
 const marketBoard = ref(null)
@@ -72,7 +71,7 @@ let marketSessionTimer
 
 useSessionViewState('market', { marketTab })
 if (!['global', ...indexMarketKeys, 'capital-flow', 'sector'].includes(marketTab.value)) {
-  marketTab.value = activeMarketKey.value || 'global'
+  marketTab.value = resolveMarketTab(activeMarketKey.value) || 'global'
 }
 if (['global', 'capital-flow', 'sector'].includes(route.query.tab)) marketTab.value = route.query.tab
 
@@ -84,20 +83,27 @@ const downloading = ref(false)
 let sharePreviewObjectUrl = ''
 
 const cnIndexes = computed(() => indexData.value?.cn || [])
-const marketIndexes = computed(() => ({
+const regionalMarketIndexes = computed(() => ({
   cn: cnIndexes.value,
   hk: indexData.value?.hk || [],
   jp: (indexData.value?.asia || []).filter((item) => item.code === 'JP_N225'),
   kr: (indexData.value?.asia || []).filter((item) => item.code === 'KR_KOSPI'),
   us: indexData.value?.us || [],
 }))
-const globalMarketHubs = computed(() => buildGlobalMarketHubs(marketIndexes.value))
-const globalMarketSummary = computed(() => summarizeGlobalMarkets(marketIndexes.value))
+const marketIndexes = computed(() => ({
+  cn: regionalMarketIndexes.value.cn,
+  hk: regionalMarketIndexes.value.hk,
+  asia: regionalMarketIndexes.value.jp.concat(regionalMarketIndexes.value.kr),
+  us: regionalMarketIndexes.value.us,
+}))
+const globalMarketHubs = computed(() => buildGlobalMarketHubs(regionalMarketIndexes.value))
+const globalMarketSummary = computed(() => summarizeGlobalMarkets(regionalMarketIndexes.value))
 const isIndexMarketTab = computed(() => indexMarketKeys.includes(marketTab.value))
 const isQuoteMarketTab = computed(() => marketTab.value === 'global' || isIndexMarketTab.value)
 const activeMarketItems = computed(() => marketIndexes.value[marketTab.value] || [])
 const activeMarketTitle = computed(() => marketTabs.find((item) => item.key === marketTab.value)?.label || '')
-const allIndexItems = computed(() => Object.values(marketIndexes.value).flat())
+const activeMarketTabKey = computed(() => resolveMarketTab(activeMarketKey.value))
+const allIndexItems = computed(() => Object.values(regionalMarketIndexes.value).flat())
 const marketPageSubtitle = computed(() => {
   if (marketTab.value === 'global') {
     return '全球市场 · 指数分布与区域走势'
@@ -274,19 +280,20 @@ function openSectorConstituents(row, type) {
 }
 
 function setMarketTab(tab) {
-  marketTab.value = tab
+  const nextTab = resolveMarketTab(tab)
+  marketTab.value = nextTab
   const query = { ...route.query }
-  if (tab === 'global') {
+  if (nextTab === 'global') {
     query.tab = 'global'
     delete query.type
     delete query.code
     delete query.q
-  } else if (tab === 'capital-flow') {
+  } else if (nextTab === 'capital-flow') {
     query.tab = 'capital-flow'
     delete query.type
     delete query.code
     delete query.q
-  } else if (tab === 'sector') {
+  } else if (nextTab === 'sector') {
     query.tab = 'sector'
   } else {
     delete query.tab
@@ -295,10 +302,10 @@ function setMarketTab(tab) {
     delete query.q
   }
   router.replace({ query })
-  if (tab === 'global') {
+  if (nextTab === 'global') {
     activateGlobalMarket()
-  } else if (indexMarketKeys.includes(tab)) {
-    activateIndexMarket(tab)
+  } else if (indexMarketKeys.includes(nextTab)) {
+    activateIndexMarket(nextTab, tab)
   }
 }
 
@@ -315,8 +322,11 @@ function selectGlobalHub(hub) {
   if (hub?.primary?.code) selectIndex(hub.primary.code)
 }
 
-async function activateIndexMarket(market) {
-  const firstIndex = marketIndexes.value[market]?.find((item) => item.code)
+async function activateIndexMarket(market, preferredMarket = activeMarketKey.value) {
+  const preferredIndex = resolveMarketTab(preferredMarket) === market
+    ? regionalMarketIndexes.value[preferredMarket]?.find((item) => item.code)
+    : null
+  const firstIndex = preferredIndex || marketIndexes.value[market]?.find((item) => item.code)
   if (firstIndex?.code && firstIndex.code !== activeCode.value) {
     await selectIndex(firstIndex.code)
   }
@@ -328,11 +338,12 @@ async function syncActiveMarket() {
     activeMarketKey.value = null
     return
   }
+  const nextMarketTab = resolveMarketTab(nextMarket)
   const marketChanged = nextMarket !== activeMarketKey.value
   activeMarketKey.value = nextMarket
-  if (isIndexMarketTab.value && (marketChanged || marketTab.value !== nextMarket)) {
-    marketTab.value = nextMarket
-    await activateIndexMarket(nextMarket)
+  if (isIndexMarketTab.value && (marketChanged || marketTab.value !== nextMarketTab)) {
+    marketTab.value = nextMarketTab
+    await activateIndexMarket(nextMarketTab, nextMarket)
   }
 }
 
@@ -358,7 +369,7 @@ async function load(forceBriefing = false, showLoading = true) {
 
     const currentMarket = resolveActiveMarket()
     if (currentMarket) activeMarketKey.value = currentMarket
-    if (isIndexMarketTab.value && currentMarket) marketTab.value = currentMarket
+    if (isIndexMarketTab.value && currentMarket) marketTab.value = resolveMarketTab(currentMarket)
     if (!activeCode.value) {
       if (marketTab.value === 'global') await activateGlobalMarket()
       else await activateIndexMarket(marketTab.value)
@@ -503,7 +514,7 @@ watch(
       marketTab.value = tab
       if (tab === 'global') activateGlobalMarket()
     } else if (marketTab.value === 'global' || marketTab.value === 'capital-flow' || marketTab.value === 'sector') {
-      marketTab.value = activeMarketKey.value || 'cn'
+      marketTab.value = resolveMarketTab(activeMarketKey.value) || 'cn'
       activateIndexMarket(marketTab.value)
     }
   },
@@ -1059,7 +1070,7 @@ onBeforeUnmount(() => {
       <section class="market-sec">
         <div class="market-sec-head">
           <h2>{{ activeMarketTitle }}</h2>
-          <span v-if="marketTab === activeMarketKey" class="active-market-tag">当前激活</span>
+          <span v-if="marketTab === activeMarketTabKey" class="active-market-tag">当前激活</span>
         </div>
         <div v-if="activeMarketItems.length" class="cards">
           <button

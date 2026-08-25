@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { isMarketOpen, resolveActiveMarket } from './marketTradingSession.js'
+import { isMarketOpen, resolveActiveMarket, resolveMarketTab } from './marketTradingSession.js'
+
+test('Japan and Korea share the Asia market tab', () => {
+  assert.equal(resolveMarketTab('jp'), 'asia')
+  assert.equal(resolveMarketTab('kr'), 'asia')
+  assert.equal(resolveMarketTab('cn'), 'cn')
+  assert.equal(resolveMarketTab(null), null)
+})
 
 test('active market prioritizes A shares during overlapping Asian trading hours', () => {
   assert.equal(resolveActiveMarket(new Date('2026-08-24T01:40:00Z')), 'cn')
