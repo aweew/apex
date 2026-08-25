@@ -81,7 +81,8 @@ public class SyncJobLeaseService {
             throw new BusinessException("同步任务租约续期参数不完整");
         }
         try {
-            Long renewed = stringRedisTemplate.execute(RENEW_SCRIPT, List.of(leaseKey), owner, ttl.toMillis());
+            Long renewed = stringRedisTemplate.execute(
+                    RENEW_SCRIPT, List.of(leaseKey), owner, String.valueOf(ttl.toMillis()));
             return Long.valueOf(1L).equals(renewed);
         } catch (Exception ex) {
             log.warn("同步任务租约续期失败，租约键={}，原因={}", leaseKey, ex.getMessage());
