@@ -45,6 +45,7 @@ public class RequestLogFilter extends OncePerRequestFilter {
     private static final int MAX_BODY_BYTES = 65_536;
     private static final int MAX_PARAMETER_TEXT_LENGTH = 8_192;
     private static final String HEALTH_ENDPOINT = "/api/health";
+    private static final String READINESS_ENDPOINT = HEALTH_ENDPOINT + "/ready";
     private static final String MASKED_VALUE = "[已脱敏]";
     private static final String REQUEST_START = "====================[请求开始]====================";
     private static final String REQUEST_END = "====================[请求结束]====================";
@@ -66,7 +67,7 @@ public class RequestLogFilter extends OncePerRequestFilter {
         if (StringUtils.isNotBlank(contextPath) && requestPath.startsWith(contextPath)) {
             requestPath = requestPath.substring(contextPath.length());
         }
-        return HEALTH_ENDPOINT.equals(requestPath);
+        return HEALTH_ENDPOINT.equals(requestPath) || READINESS_ENDPOINT.equals(requestPath);
     }
 
     /**

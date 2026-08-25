@@ -211,6 +211,24 @@ class RequestLogFilterTest {
         assertFalse(filter.shouldNotFilter(businessHealthRequest));
     }
 
+    @Test
+    void skipsRequestLogsForApplicationReadinessEndpoint() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/apex/api/health/ready");
+        request.setContextPath("/apex");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean chainCalled = new AtomicBoolean(false);
+
+        filter.doFilter(request, response, (wrappedRequest, wrappedResponse) -> chainCalled.set(true));
+
+        assertTrue(chainCalled.get());
+        assertTrue(appender.list.isEmpty());
+        assertNull(response.getHeader(Constants.TRACE_ID));
+        verifyNoInteractions(userService);
+
+        MockHttpServletRequest localReadinessRequest = new MockHttpServletRequest("GET", "/api/health/ready");
+        assertTrue(filter.shouldNotFilter(localReadinessRequest));
+    }
+
     private String messages(List<ILoggingEvent> events) {
         StringBuilder messages = new StringBuilder();
         for (ILoggingEvent event : events) {
