@@ -11,6 +11,10 @@ const mobileStrategySelectorSource = screenerSource.slice(
   screenerSource.indexOf('<div v-else class="strategy-selector">'),
   screenerSource.indexOf('<div class="strategy-actions">'),
 )
+const mobileFreeFilterSource = screenerSource.slice(
+  screenerSource.indexOf('<section v-else class="mobile-filter-surface"'),
+  screenerSource.indexOf('<section v-else class="strategy-panel"'),
+)
 
 test('stock screener uses a dedicated mobile filter surface with progressive disclosure', () => {
   assert.match(screenerSource, /isMobileViewport = computed\(\(\) => viewportWidth\.value <= 820\)/)
@@ -19,6 +23,17 @@ test('stock screener uses a dedicated mobile filter surface with progressive dis
   assert.match(screenerSource, /class="advanced-filter-toggle"/)
   assert.match(screenerSource, /v-show="mobileAdvancedOpen"[\s\S]*?class="mobile-advanced-filters"/)
   assert.match(screenerSource, /mobileAdvancedFilterCount/)
+})
+
+test('mobile screener flattens primary filtering into search scope conditions and one submit action', () => {
+  assert.doesNotMatch(mobileFreeFilterSource, /class="mobile-filter-heading"|<h2>筛选条件<\/h2>/)
+  assert.match(mobileFreeFilterSource, /class="mobile-filter-controls"/)
+  assert.match(mobileFreeFilterSource, /class="mobile-segmented"[\s\S]*?>全市场<[\s\S]*?>自选</)
+  assert.match(mobileFreeFilterSource, /class="advanced-filter-toggle"[\s\S]*?<Filter \/>[\s\S]*?<span>条件<\/span>/)
+  assert.match(mobileFreeFilterSource, /class="mobile-filter-reset"[\s\S]*?:icon="RefreshRight"[\s\S]*?aria-label="重置筛选条件"/)
+  assert.match(screenerSource, /\.mobile-filter-controls\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 92px;/)
+  assert.match(screenerSource, /\.mobile-filter-actions\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 44px;/)
+  assert.match(screenerSource, /\.mobile-filter-surface\s*\{[\s\S]*?box-shadow:\s*none;/)
 })
 
 test('desktop form and table remain separate from mobile controls and results', () => {
@@ -44,7 +59,8 @@ test('mobile screener uses compact actions and pagination', () => {
   assert.match(screenerSource, /class="mobile-batch-results"/)
   assert.match(screenerSource, /\.mobile-filter-actions :deep\(\.el-button\)[\s\S]*?min-height:\s*44px;/)
   assert.match(screenerSource, /\.mobile-pager-button\s*\{[\s\S]*?min-height:\s*44px;/)
-  assert.match(screenerSource, /\.advanced-filter-toggle\s*\{[\s\S]*?min-height:\s*44px;/)
+  assert.match(screenerSource, /\.advanced-filter-toggle\s*\{[\s\S]*?min-height:\s*48px;/)
+  assert.match(screenerSource, /\.mobile-segmented button\s*\{[\s\S]*?min-height:\s*44px;/)
 })
 
 test('mobile stock cards keep key metrics in stable responsive tracks', () => {
@@ -100,12 +116,12 @@ test('mobile strategy header removes desktop title decoration', () => {
   assert.match(screenerSource, /\.screener-page \.screener-header > \.header-refresh-actions > :deep\(\.mobile-refresh-button\)\s*\{[\s\S]*?width:\s*44px !important;[\s\S]*?min-width:\s*44px;/)
 })
 
-test('mobile strategy selector stays full width without opening a search keyboard', () => {
+test('mobile strategy selector stays full width without opening a search keyboard or zooming the viewport', () => {
   assert.doesNotMatch(mobileStrategySelectorSource, /\bfilterable\b/)
   assert.match(mobileStrategySelectorSource, /class="mobile-strategy-select"/)
   assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.strategy-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?justify-content:\s*stretch;/)
   assert.match(screenerSource, /\.strategy-toolbar > \*\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?width:\s*100%;/)
-  assert.match(screenerSource, /\.mobile-strategy-select :deep\(\.el-select__wrapper\)\s*\{[\s\S]*?min-height:\s*44px;/)
+  assert.match(screenerSource, /\.mobile-strategy-select :deep\(\.el-select__wrapper\)\s*\{[\s\S]*?min-height:\s*44px;[\s\S]*?font-size:\s*16px;/)
 })
 
 test('strategy maintenance supports copy edit toggle delete and ordering', () => {

@@ -8,6 +8,7 @@ import {
   CopyDocument,
   Delete,
   EditPen,
+  Filter,
   MoreFilled,
   Plus,
   Rank,
@@ -932,68 +933,55 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else class="mobile-filter-surface" aria-label="股票筛选条件">
-      <div class="mobile-filter-heading">
-        <div>
-          <h2>筛选条件</h2>
-          <span>{{ screeningActive ? '当前为条件筛选结果' : '默认浏览全部市场' }}</span>
-        </div>
-        <span v-if="mobileAdvancedFilterCount" class="mobile-filter-count">
-          {{ mobileAdvancedFilterCount }} 项已设置
-        </span>
-      </div>
-
       <form class="mobile-filter-form" @submit.prevent="onQuery">
         <label class="mobile-field mobile-keyword-field">
-          <span>代码或名称</span>
+          <span class="mobile-control-label">代码或名称</span>
           <el-input
             v-model="marketKeyword"
             clearable
             :prefix-icon="Search"
-            placeholder="输入代码或股票名称"
+            placeholder="搜索代码或股票名称"
             inputmode="search"
           />
         </label>
 
-        <fieldset class="mobile-scope-field">
-          <legend>筛选范围</legend>
-          <div class="mobile-segmented" role="group" aria-label="筛选范围">
-            <button
-              type="button"
-              :class="{ 'is-active': form.scope === '__MARKET__' }"
-              :aria-pressed="form.scope === '__MARKET__'"
-              @click="form.scope = '__MARKET__'"
-            >
-              全部市场
-            </button>
-            <button
-              type="button"
-              :class="{ 'is-active': form.scope === '__WATCH__' }"
-              :aria-pressed="form.scope === '__WATCH__'"
-              @click="form.scope = '__WATCH__'"
-            >
-              自选分组
-            </button>
-          </div>
-        </fieldset>
+        <div class="mobile-filter-controls">
+          <fieldset class="mobile-scope-field">
+            <legend class="mobile-control-label">筛选范围</legend>
+            <div class="mobile-segmented" role="group" aria-label="筛选范围">
+              <button
+                type="button"
+                :class="{ 'is-active': form.scope === '__MARKET__' }"
+                :aria-pressed="form.scope === '__MARKET__'"
+                @click="form.scope = '__MARKET__'"
+              >全市场</button>
+              <button
+                type="button"
+                :class="{ 'is-active': form.scope === '__WATCH__' }"
+                :aria-pressed="form.scope === '__WATCH__'"
+                @click="form.scope = '__WATCH__'"
+              >自选</button>
+            </div>
+          </fieldset>
+
+          <button
+            type="button"
+            class="advanced-filter-toggle"
+            :class="{ 'is-active': mobileAdvancedOpen || mobileAdvancedFilterCount }"
+            :aria-expanded="mobileAdvancedOpen"
+            aria-controls="mobile-screener-advanced"
+            @click="mobileAdvancedOpen = !mobileAdvancedOpen"
+          >
+            <el-icon><Filter /></el-icon>
+            <span>条件</span>
+            <small v-if="mobileAdvancedFilterCount">{{ mobileAdvancedFilterCount }}</small>
+          </button>
+        </div>
 
         <label v-if="form.scope === '__WATCH__'" class="mobile-field">
           <span>自选分组</span>
           <el-input v-model="form.groupName" clearable placeholder="我的自选" />
         </label>
-
-        <button
-          type="button"
-          class="advanced-filter-toggle"
-          :aria-expanded="mobileAdvancedOpen"
-          aria-controls="mobile-screener-advanced"
-          @click="mobileAdvancedOpen = !mobileAdvancedOpen"
-        >
-          <span>
-            更多条件
-            <small v-if="mobileAdvancedFilterCount">{{ mobileAdvancedFilterCount }}</small>
-          </span>
-          <el-icon :class="{ 'is-open': mobileAdvancedOpen }"><ArrowDown /></el-icon>
-        </button>
 
         <div v-show="mobileAdvancedOpen" id="mobile-screener-advanced" class="mobile-advanced-filters">
           <section class="mobile-filter-group">
@@ -1100,7 +1088,13 @@ onBeforeUnmount(() => {
           <el-button type="primary" native-type="submit" :icon="Search" :loading="loading || marketLoading">
             查询股票
           </el-button>
-          <el-button :icon="RefreshRight" @click="onReset">重置</el-button>
+          <el-button
+            class="mobile-filter-reset"
+            :icon="RefreshRight"
+            aria-label="重置筛选条件"
+            title="重置筛选条件"
+            @click="onReset"
+          />
         </div>
       </form>
     </section>
@@ -2501,15 +2495,13 @@ onBeforeUnmount(() => {
 
   .mobile-filter-surface {
     display: block;
-    margin: 0 -2px 14px;
-    padding: 12px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--glass-strong);
-    box-shadow: var(--shadow-soft);
+    margin: 0 0 14px;
+    padding: 2px 0 14px;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    box-shadow: none;
   }
 
-  .mobile-filter-heading,
   .mobile-results-heading {
     display: flex;
     align-items: flex-start;
@@ -2517,11 +2509,6 @@ onBeforeUnmount(() => {
     gap: 10px;
   }
 
-  .mobile-filter-heading {
-    margin-bottom: 12px;
-  }
-
-  .mobile-filter-heading h2,
   .mobile-results-heading h2 {
     margin: 0 0 2px;
     color: var(--ink);
@@ -2532,21 +2519,10 @@ onBeforeUnmount(() => {
     letter-spacing: 0;
   }
 
-  .mobile-filter-heading > div > span,
   .mobile-results-heading > div > span {
     color: var(--muted);
     font-size: 11px;
     line-height: 1.35;
-  }
-
-  .mobile-filter-count {
-    flex: 0 0 auto;
-    padding: 3px 7px;
-    border-radius: 5px;
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-    color: var(--accent);
-    font-size: 11px;
-    font-weight: 650;
   }
 
   .mobile-filter-form,
@@ -2557,7 +2533,7 @@ onBeforeUnmount(() => {
   }
 
   .mobile-filter-form {
-    gap: 10px;
+    gap: 8px;
   }
 
   .mobile-field {
@@ -2585,6 +2561,29 @@ onBeforeUnmount(() => {
     box-shadow: 0 0 0 1px var(--accent) inset;
   }
 
+  .mobile-field :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+
+  .mobile-control-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .mobile-filter-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 92px;
+    gap: 8px;
+    min-width: 0;
+  }
+
   .mobile-scope-field {
     min-width: 0;
     margin: 0;
@@ -2592,19 +2591,11 @@ onBeforeUnmount(() => {
     border: 0;
   }
 
-  .mobile-scope-field legend {
-    margin-bottom: 5px;
-    padding: 0;
-    color: var(--slate);
-    font-size: 12px;
-    font-weight: 600;
-  }
-
   .mobile-segmented {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 3px;
-    padding: 3px;
+    gap: 2px;
+    padding: 2px;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--paper-deep);
@@ -2628,20 +2619,21 @@ onBeforeUnmount(() => {
   .mobile-segmented button.is-active {
     background: var(--glass-strong);
     color: var(--accent);
-    box-shadow: 0 1px 4px rgba(20, 32, 51, 0.1);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, var(--line)) inset;
   }
 
   .advanced-filter-toggle {
-    display: flex;
+    display: inline-grid;
+    grid-template-columns: 18px auto minmax(0, auto);
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
+    gap: 5px;
     width: 100%;
-    min-height: 44px;
-    padding: 0 2px;
-    border: 0;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-    background: transparent;
+    min-height: 48px;
+    padding: 0 9px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--paper);
     color: var(--ink-soft);
     font: inherit;
     font-size: 13px;
@@ -2650,13 +2642,18 @@ onBeforeUnmount(() => {
     touch-action: manipulation;
   }
 
+  .advanced-filter-toggle.is-active {
+    border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+    background: color-mix(in srgb, var(--accent) 7%, var(--paper));
+    color: var(--accent);
+  }
+
   .advanced-filter-toggle small {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 18px;
     height: 18px;
-    margin-left: 4px;
     padding: 0 5px;
     border-radius: 9px;
     background: var(--accent);
@@ -2664,17 +2661,11 @@ onBeforeUnmount(() => {
     font-size: 10px;
   }
 
-  .advanced-filter-toggle .el-icon {
-    transition: transform 0.2s ease;
-  }
-
-  .advanced-filter-toggle .el-icon.is-open {
-    transform: rotate(180deg);
-  }
-
   .mobile-advanced-filters {
     gap: 14px;
-    padding: 4px 0 2px;
+    margin-top: 4px;
+    padding: 12px 0 2px;
+    border-top: 1px solid var(--line);
   }
 
   .mobile-filter-group {
@@ -2738,7 +2729,7 @@ onBeforeUnmount(() => {
 
   .mobile-filter-actions {
     display: grid;
-    grid-template-columns: minmax(0, 1.55fr) minmax(96px, 0.8fr);
+    grid-template-columns: minmax(0, 1fr) 44px;
     gap: 8px;
   }
 
@@ -2747,6 +2738,11 @@ onBeforeUnmount(() => {
     min-height: 44px;
     margin: 0;
     border-radius: 8px;
+  }
+
+  .mobile-filter-actions :deep(.mobile-filter-reset) {
+    min-width: 44px;
+    padding: 0;
   }
 
   .mobile-results-section {
@@ -3089,6 +3085,7 @@ onBeforeUnmount(() => {
   .mobile-strategy-select :deep(.el-select__wrapper) {
     min-height: 44px;
     border-radius: 8px;
+    font-size: 16px;
   }
 
   .strategy-actions {
@@ -3239,7 +3236,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 360px) {
   .mobile-filter-surface {
-    padding: 10px;
+    padding-bottom: 12px;
   }
 
   .mobile-risk-options :deep(.el-checkbox__label) {
