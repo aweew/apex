@@ -1,8 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Download, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, Download, MoreFilled, Refresh } from '@element-plus/icons-vue'
 import {
   fetchWatchlist,
   fillQuotes,
@@ -14,6 +14,7 @@ import {
 import { fillWatchlistBars, syncBars, syncBarsGroup, syncStaleBars } from '../api/bars'
 import { saveObserve } from '../api/observe'
 import { buildApiUrl } from '../api/baseUrl'
+import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
@@ -33,6 +34,10 @@ const filePath = ref('mx_zixuan_我的自选股列表.csv')
 const groupName = ref('我的自选')
 const movers = ref(null)
 const corr = ref(null)
+const viewportWidth = ref(typeof window === 'undefined' ? 1024 : window.innerWidth)
+
+const isMobileViewport = computed(() => viewportWidth.value <= 820)
+const showActionColumn = computed(() => resolveActionColumnVisible(viewportWidth.value))
 
 useSessionViewState('watchlist', {
   keyword,
@@ -250,6 +255,20 @@ async function onSyncCommand(command) {
   }
 }
 
+async function handleWatchlistRowAction(command, row) {
+  if (command === 'detail') {
+    await router.push(`/stock/${row.code}`)
+    return
+  }
+  if (command === 'observe') {
+    await addObserve(row)
+    return
+  }
+  if (command === 'backtest') {
+    await router.push({ path: '/backtest', query: { code: row.code } })
+  }
+}
+
 function statusTag(status) {
   if (status === 'OK') return 'success'
   if (status === 'STALE') return 'warning'
@@ -260,7 +279,19 @@ function formatPct(value) {
   return value != null ? `${Number(value).toFixed(2)}%` : '--'
 }
 
-onMounted(loadList)
+function syncViewportWidth() {
+  viewportWidth.value = window.innerWidth
+}
+
+onMounted(() => {
+  syncViewportWidth()
+  window.addEventListener('resize', syncViewportWidth)
+  loadList()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncViewportWidth)
+})
 </script>
 
 <template>
@@ -299,7 +330,15 @@ onMounted(loadList)
             </template>
           </el-dropdown>
           <el-tooltip content="重新加载列表" placement="top">
-            <el-button circle plain :icon="Refresh" :loading="loading" aria-label="重新加载列表" @click="loadList" />
+            <el-button
+              class="watchlist-reload-action"
+              circle
+              plain
+              :icon="Refresh"
+              :loading="loading"
+              aria-label="重新加载列表"
+              @click="loadList"
+            />
           </el-tooltip>
         </div>
       </div>
@@ -339,20 +378,20 @@ onMounted(loadList)
         <div class="mover-groups">
           <div class="mover-group gainers">
             <span>涨幅较大</span>
-            <template v-if="movers.gainers?.length">
+            <div v-if="movers.gainers?.length" class="mover-items">
               <button v-for="row in movers.gainers" :key="row.code" type="button" @click="router.push(`/stock/${row.code}`)">
                 {{ row.name || row.code }} <small>{{ formatPct(row.pctChg) }}</small>
               </button>
-            </template>
+            </div>
             <em v-else>暂无</em>
           </div>
           <div class="mover-group losers">
             <span>跌幅较大</span>
-            <template v-if="movers.losers?.length">
+            <div v-if="movers.losers?.length" class="mover-items">
               <button v-for="row in movers.losers" :key="row.code" type="button" @click="router.push(`/stock/${row.code}`)">
                 {{ row.name || row.code }} <small>{{ formatPct(row.pctChg) }}</small>
               </button>
-            </template>
+            </div>
             <em v-else>暂无</em>
           </div>
         </div>
@@ -423,7 +462,24 @@ onMounted(loadList)
       <el-table-column type="selection" width="48" />
       <el-table-column prop="name" label="股票" min-width="140" sortable>
         <template #default="{ row }">
-          <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+          <div class="watchlist-stock-cell">
+            <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+            <el-dropdown
+              v-if="isMobileViewport"
+              class="watchlist-row-actions-trigger"
+              trigger="click"
+              @command="handleWatchlistRowAction($event, row)"
+            >
+              <el-button text circle :icon="MoreFilled" aria-label="更多股票操作" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="detail">K 线</el-dropdown-item>
+                  <el-dropdown-item command="observe">加入观察</el-dropdown-item>
+                  <el-dropdown-item command="backtest">回测</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
       <el-table-column prop="latestPrice" label="最新价" width="100" sortable />
@@ -490,11 +546,13 @@ onMounted(loadList)
           <el-tag size="small" :type="statusTag(row.syncStatus)">{{ row.syncStatus }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column v-if="showActionColumn" label="操作" width="200" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">K线</el-button>
-          <el-button link type="warning" @click="addObserve(row)">观察</el-button>
-          <el-button link @click="router.push({ path: '/backtest', query: { code: row.code } })">回测</el-button>
+          <div class="watchlist-desktop-row-actions">
+            <el-button link type="primary" @click="router.push(`/stock/${row.code}`)">K线</el-button>
+            <el-button link type="warning" @click="addObserve(row)">观察</el-button>
+            <el-button link @click="router.push({ path: '/backtest', query: { code: row.code } })">回测</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -594,16 +652,24 @@ onMounted(loadList)
 }
 
 .mover-group {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
   gap: 6px;
   min-width: 0;
+}
+
+.mover-items {
+  display: flex;
   flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
 }
 
 .mover-group > span {
   color: var(--muted);
   font-size: 12px;
+  line-height: 26px;
   white-space: nowrap;
 }
 
@@ -734,6 +800,51 @@ onMounted(loadList)
   flex: 0 0 24px;
 }
 
+.watchlist-stock-cell,
+.watchlist-desktop-row-actions {
+  display: flex;
+  align-items: center;
+}
+
+.watchlist-stock-cell {
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+}
+
+.watchlist-stock-cell > :first-child {
+  min-width: 0;
+}
+
+.watchlist-row-actions-trigger {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+}
+
+.watchlist-row-actions-trigger :deep(.el-button) {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  border: 0;
+}
+
+.watchlist-desktop-row-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.watchlist-desktop-row-actions :deep(.el-button) {
+  min-width: auto;
+  margin-left: 12px;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.watchlist-desktop-row-actions :deep(.el-button:first-child) {
+  margin-left: 0;
+}
+
 @media (max-width: 720px) {
   .watchlist-action-panel,
   .watchlist-insights,
@@ -750,13 +861,20 @@ onMounted(loadList)
   }
 
   .watchlist-daily-actions {
+    position: relative;
     align-items: stretch;
+  }
+
+  .watchlist-daily-actions > div:first-child {
+    padding-right: 52px;
   }
 
   .watchlist-action-buttons {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
     width: 100%;
+    max-width: 360px;
+    gap: 6px;
   }
 
   .watchlist-action-buttons :deep(.el-button),
@@ -765,10 +883,24 @@ onMounted(loadList)
     margin: 0;
   }
 
-  .watchlist-action-buttons :deep(.el-button.is-circle) {
-    grid-column: 2;
-    justify-self: end;
-    width: 40px;
+  .watchlist-action-buttons :deep(.el-button) {
+    min-height: 44px;
+    padding-right: 6px;
+    padding-left: 6px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .watchlist-reload-action {
+    position: absolute;
+    top: 14px;
+    right: 12px;
+  }
+
+  .watchlist-action-buttons :deep(.watchlist-reload-action) {
+    width: 44px;
+    height: 44px;
+    padding: 0;
   }
 
   .mover-summary,

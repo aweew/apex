@@ -3,6 +3,10 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const source = await readFile(new URL('./WatchlistView.vue', import.meta.url), 'utf8')
+const operationColumnSource = source.slice(
+  source.indexOf('<el-table-column v-if="showActionColumn" label="操作"'),
+  source.indexOf('</el-table-column>\n    </el-table>'),
+)
 
 test('watchlist keeps daily actions clear and moves low-frequency sync tasks into a menu', () => {
   assert.match(source, /class="watchlist-action-panel"/)
@@ -40,6 +44,34 @@ test('watchlist provides a compact layout for actions and filters', () => {
   assert.doesNotMatch(source, /sortByPct/)
 })
 
+test('mobile daily actions stay compact and use consistent touch targets', () => {
+  assert.match(
+    source,
+    /\.watchlist-action-buttons\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1\.2fr\) repeat\(2, minmax\(0, 1fr\)\);[^}]*max-width:\s*360px;/,
+  )
+  assert.match(
+    source,
+    /\.watchlist-action-buttons :deep\(\.el-button\),[\s\S]*?\.watchlist-action-buttons :deep\(\.el-dropdown\)\s*\{[^}]*width:\s*100%;/,
+  )
+  assert.match(
+    source,
+    /\.watchlist-action-buttons :deep\(\.el-button\)\s*\{[^}]*min-height:\s*44px;/,
+  )
+  assert.match(
+    source,
+    /\.watchlist-action-buttons :deep\(\.watchlist-reload-action\)\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/,
+  )
+})
+
+test('wrapped mover names stay aligned after their group label', () => {
+  assert.match(source, /class="mover-items"/)
+  assert.match(
+    source,
+    /\.mover-group\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\);/,
+  )
+  assert.match(source, /\.mover-items\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/)
+})
+
 test('watchlist keeps enough desktop height for scanning more rows', () => {
   assert.match(source, /class="watchlist-table"[\s\S]*height="calc\(100vh - 300px\)"/)
 })
@@ -54,4 +86,16 @@ test('watchlist keeps the circulating market-value header and sort control on on
     source,
     /\.watchlist-table :deep\(th\.watchlist-circ-mv-header \.caret-wrapper\)\s*\{[^}]*flex:\s*0 0 24px;/,
   )
+})
+
+test('mobile watchlist replaces the fixed action column with one compact row menu', () => {
+  assert.match(source, /import \{ resolveActionColumnVisible \} from '\.\.\/utils\/responsiveTable\.js'/)
+  assert.match(source, /const isMobileViewport = computed\(\(\) => viewportWidth\.value <= 820\)/)
+  assert.match(source, /const showActionColumn = computed\(\(\) => resolveActionColumnVisible\(viewportWidth\.value\)\)/)
+  assert.match(operationColumnSource, /v-if="showActionColumn"[\s\S]*fixed="right"/)
+  assert.match(source, /v-if="isMobileViewport"[\s\S]*class="watchlist-row-actions-trigger"[\s\S]*@command="handleWatchlistRowAction\(\$event, row\)"/)
+  assert.match(source, /command="detail"[\s\S]*K 线[\s\S]*command="observe"[\s\S]*加入观察[\s\S]*command="backtest"[\s\S]*回测/)
+  assert.match(source, /\.watchlist-row-actions-trigger\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/)
+  assert.match(source, /window\.addEventListener\('resize', syncViewportWidth\)/)
+  assert.match(source, /window\.removeEventListener\('resize', syncViewportWidth\)/)
 })
