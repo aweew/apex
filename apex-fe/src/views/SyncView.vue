@@ -113,7 +113,6 @@ function fmtTime(t) {
 }
 
 function defaultLimit(taskType) {
-  if (taskType === 'A_SHARE_BARS') return 20
   if (taskType === 'FUNDAMENTALS') return 20
   if (taskType === 'COMPANY_PROFILE') return 50
   if (taskType === 'TURNOVER') return 50

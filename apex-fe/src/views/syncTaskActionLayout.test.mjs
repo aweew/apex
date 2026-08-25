@@ -57,3 +57,8 @@ test('recent sync start times keep date and time on stable separate lines', () =
     /\.job-start-time\s*\{[\s\S]*?display:\s*grid;[\s\S]*?white-space:\s*nowrap;[\s\S]*?font-variant-numeric:\s*tabular-nums;/,
   )
 })
+
+test('full A-share daily-bar action does not silently limit synchronization to 20 stocks', () => {
+  assert.doesNotMatch(syncSource, /taskType === 'A_SHARE_BARS'\) return 20/)
+  assert.match(syncSource, /if \(task\.taskType === 'A_SHARE_BARS'\) body\.start = '20240101'/)
+})
