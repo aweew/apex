@@ -141,6 +141,118 @@ onMounted(loadOverview)
       </div>
     </section>
 
+    <section class="flow-section dragon-tiger-section" aria-labelledby="dragon-tiger-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="dragon-tiger-title">龙虎榜</h2>
+          <p>{{ snapshotMeta(overview.dragonTigerTradeDate, overview.dragonTigerSyncedAt) }}</p>
+        </div>
+        <span class="row-count">{{ dragonTigerItems.length }} 只</span>
+      </div>
+      <el-table v-if="dragonTigerItems.length" class="desktop-flow-table" :data="dragonTigerItems" stripe>
+        <el-table-column label="股票" min-width="150">
+          <template #default="{ row }"><StockIdentity :security="row" :interactive="true" @select="openStock" /></template>
+        </el-table-column>
+        <el-table-column label="收盘价" width="84" align="right"><template #default="{ row }">{{ formatCapitalPrice(row.closePrice) }}</template></el-table-column>
+        <el-table-column label="涨跌幅" width="92" align="right"><template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template></el-table-column>
+        <el-table-column label="换手率" width="88" align="right"><template #default="{ row }">{{ formatCapitalPercent(row.turnoverRate) }}</template></el-table-column>
+        <el-table-column label="净买额" min-width="108" align="right"><template #default="{ row }"><span :class="resolveCapitalClass(row.netBuyAmount)">{{ formatCapitalAmount(row.netBuyAmount) }}</span></template></el-table-column>
+        <el-table-column label="买入额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.buyAmount) }}</template></el-table-column>
+        <el-table-column label="卖出额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.sellAmount) }}</template></el-table-column>
+        <el-table-column label="成交额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.amount) }}</template></el-table-column>
+        <el-table-column prop="reason" label="上榜原因" min-width="220" show-overflow-tooltip />
+      </el-table>
+      <div v-if="dragonTigerItems.length" class="mobile-flow-list">
+        <article
+          v-for="row in dragonTigerItems"
+          :key="`${row.code}-${row.tradeDate}-${row.reason}`"
+          class="flow-card dragon-tiger-card"
+          :class="`dragon-${resolveCapitalClass(row.netBuyAmount)}`"
+        >
+          <div class="flow-card-head dragon-card-head">
+            <StockIdentity :security="row" :interactive="true" @select="openStock" />
+            <span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span>
+          </div>
+          <div class="dragon-card-primary">
+            <span>龙虎榜净买额</span>
+            <strong :class="resolveCapitalClass(row.netBuyAmount)">{{ formatCapitalAmount(row.netBuyAmount) }}</strong>
+          </div>
+          <div class="dragon-card-market">
+            <span><small>收盘价</small><b>{{ formatCapitalPrice(row.closePrice) }}</b></span>
+            <span><small>换手率</small><b>{{ formatCapitalPercent(row.turnoverRate) }}</b></span>
+            <span><small>成交额</small><b>{{ formatCapitalAmount(row.amount) }}</b></span>
+          </div>
+          <div class="dragon-card-flow">
+            <span><small>买入额</small><b>{{ formatCapitalAmount(row.buyAmount) }}</b></span>
+            <span><small>卖出额</small><b>{{ formatCapitalAmount(row.sellAmount) }}</b></span>
+          </div>
+          <div class="dragon-reason">
+            <span class="dragon-reason-label">上榜原因</span>
+            <p>{{ row.reason || '暂无上榜原因' }}</p>
+          </div>
+        </article>
+      </div>
+      <el-empty v-if="!dragonTigerItems.length" :image-size="64" description="暂无龙虎榜快照" />
+    </section>
+
+    <section class="flow-section sector-flow-section" aria-labelledby="sector-flow-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="sector-flow-title">板块净流入</h2>
+          <p>行业与概念排名分开展示</p>
+        </div>
+      </div>
+      <div class="sector-flow-grid">
+        <div class="sector-column">
+          <div class="subsection-heading">
+            <h3>行业</h3>
+            <span>{{ snapshotMeta(overview.industryFlows?.tradeDate, overview.industryFlows?.syncedAt) }}</span>
+          </div>
+          <el-table v-if="industryFlows.length" class="desktop-flow-table" :data="industryFlows" stripe>
+            <el-table-column type="index" label="#" width="52" />
+            <el-table-column prop="name" label="板块" min-width="124" show-overflow-tooltip />
+            <el-table-column label="涨跌幅" width="92" align="right">
+              <template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template>
+            </el-table-column>
+            <el-table-column label="净流入" min-width="106" align="right">
+              <template #default="{ row }"><span :class="resolveCapitalClass(row.netInflow)">{{ formatCapitalAmount(row.netInflow) }}</span></template>
+            </el-table-column>
+          </el-table>
+          <div v-if="industryFlows.length" class="mobile-flow-list">
+            <article v-for="(row, index) in industryFlows" :key="row.code || row.name" class="flow-card sector-flow-card">
+              <div class="flow-card-head"><strong>{{ index + 1 }}. {{ row.name }}</strong><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></div>
+              <div class="sector-net"><small>净流入</small><b class="flow-card-value" :class="resolveCapitalClass(row.netInflow)">{{ formatCapitalAmount(row.netInflow) }}</b></div>
+            </article>
+          </div>
+          <el-empty v-if="!industryFlows.length" :image-size="56" description="暂无行业资金流" />
+        </div>
+
+        <div class="sector-column">
+          <div class="subsection-heading">
+            <h3>概念</h3>
+            <span>{{ snapshotMeta(overview.conceptFlows?.tradeDate, overview.conceptFlows?.syncedAt) }}</span>
+          </div>
+          <el-table v-if="conceptFlows.length" class="desktop-flow-table" :data="conceptFlows" stripe>
+            <el-table-column type="index" label="#" width="52" />
+            <el-table-column prop="name" label="板块" min-width="124" show-overflow-tooltip />
+            <el-table-column label="涨跌幅" width="92" align="right">
+              <template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template>
+            </el-table-column>
+            <el-table-column label="净流入" min-width="106" align="right">
+              <template #default="{ row }"><span :class="resolveCapitalClass(row.netInflow)">{{ formatCapitalAmount(row.netInflow) }}</span></template>
+            </el-table-column>
+          </el-table>
+          <div v-if="conceptFlows.length" class="mobile-flow-list">
+            <article v-for="(row, index) in conceptFlows" :key="row.code || row.name" class="flow-card sector-flow-card">
+              <div class="flow-card-head"><strong>{{ index + 1 }}. {{ row.name }}</strong><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></div>
+              <div class="sector-net"><small>净流入</small><b class="flow-card-value" :class="resolveCapitalClass(row.netInflow)">{{ formatCapitalAmount(row.netInflow) }}</b></div>
+            </article>
+          </div>
+          <el-empty v-if="!conceptFlows.length" :image-size="56" description="暂无概念资金流" />
+        </div>
+      </div>
+    </section>
+
     <section class="northbound-summary" aria-labelledby="northbound-title">
       <div class="section-heading">
         <div>
@@ -225,105 +337,6 @@ onMounted(loadOverview)
         </article>
       </div>
       <el-empty v-if="!stockFlows.length" :image-size="64" description="暂无个股资金流快照" />
-    </section>
-
-    <section class="flow-section sector-flow-section" aria-labelledby="sector-flow-title">
-      <div class="section-heading">
-        <div>
-          <h2 id="sector-flow-title">板块净流入</h2>
-          <p>行业与概念排名分开展示</p>
-        </div>
-      </div>
-      <div class="sector-flow-grid">
-        <div class="sector-column">
-          <div class="subsection-heading">
-            <h3>行业</h3>
-            <span>{{ snapshotMeta(overview.industryFlows?.tradeDate, overview.industryFlows?.syncedAt) }}</span>
-          </div>
-          <el-table v-if="industryFlows.length" class="desktop-flow-table" :data="industryFlows" stripe>
-            <el-table-column type="index" label="#" width="52" />
-            <el-table-column prop="name" label="板块" min-width="124" show-overflow-tooltip />
-            <el-table-column label="涨跌幅" width="92" align="right">
-              <template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template>
-            </el-table-column>
-            <el-table-column label="净流入" min-width="106" align="right">
-              <template #default="{ row }"><span :class="resolveCapitalClass(row.netInflow)">{{ formatCapitalAmount(row.netInflow) }}</span></template>
-            </el-table-column>
-          </el-table>
-          <div v-if="industryFlows.length" class="mobile-flow-list">
-            <article v-for="(row, index) in industryFlows" :key="row.code || row.name" class="flow-card sector-flow-card">
-              <div class="flow-card-head"><strong>{{ index + 1 }}. {{ row.name }}</strong><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></div>
-              <div class="sector-net"><small>净流入</small><b class="flow-card-value" :class="resolveCapitalClass(row.netInflow)">{{ formatCapitalAmount(row.netInflow) }}</b></div>
-            </article>
-          </div>
-          <el-empty v-if="!industryFlows.length" :image-size="56" description="暂无行业资金流" />
-        </div>
-
-        <div class="sector-column">
-          <div class="subsection-heading">
-            <h3>概念</h3>
-            <span>{{ snapshotMeta(overview.conceptFlows?.tradeDate, overview.conceptFlows?.syncedAt) }}</span>
-          </div>
-          <el-table v-if="conceptFlows.length" class="desktop-flow-table" :data="conceptFlows" stripe>
-            <el-table-column type="index" label="#" width="52" />
-            <el-table-column prop="name" label="板块" min-width="124" show-overflow-tooltip />
-            <el-table-column label="涨跌幅" width="92" align="right">
-              <template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template>
-            </el-table-column>
-            <el-table-column label="净流入" min-width="106" align="right">
-              <template #default="{ row }"><span :class="resolveCapitalClass(row.netInflow)">{{ formatCapitalAmount(row.netInflow) }}</span></template>
-            </el-table-column>
-          </el-table>
-          <div v-if="conceptFlows.length" class="mobile-flow-list">
-            <article v-for="(row, index) in conceptFlows" :key="row.code || row.name" class="flow-card sector-flow-card">
-              <div class="flow-card-head"><strong>{{ index + 1 }}. {{ row.name }}</strong><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></div>
-              <div class="sector-net"><small>净流入</small><b class="flow-card-value" :class="resolveCapitalClass(row.netInflow)">{{ formatCapitalAmount(row.netInflow) }}</b></div>
-            </article>
-          </div>
-          <el-empty v-if="!conceptFlows.length" :image-size="56" description="暂无概念资金流" />
-        </div>
-      </div>
-    </section>
-
-    <section class="flow-section dragon-tiger-section" aria-labelledby="dragon-tiger-title">
-      <div class="section-heading">
-        <div>
-          <h2 id="dragon-tiger-title">龙虎榜</h2>
-          <p>{{ snapshotMeta(overview.dragonTigerTradeDate, overview.dragonTigerSyncedAt) }}</p>
-        </div>
-        <span class="row-count">{{ dragonTigerItems.length }} 只</span>
-      </div>
-      <el-table v-if="dragonTigerItems.length" class="desktop-flow-table" :data="dragonTigerItems" stripe>
-        <el-table-column label="股票" min-width="150">
-          <template #default="{ row }"><StockIdentity :security="row" :interactive="true" @select="openStock" /></template>
-        </el-table-column>
-        <el-table-column label="收盘价" width="84" align="right"><template #default="{ row }">{{ formatCapitalPrice(row.closePrice) }}</template></el-table-column>
-        <el-table-column label="涨跌幅" width="92" align="right"><template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template></el-table-column>
-        <el-table-column label="换手率" width="88" align="right"><template #default="{ row }">{{ formatCapitalPercent(row.turnoverRate) }}</template></el-table-column>
-        <el-table-column label="净买额" min-width="108" align="right"><template #default="{ row }"><span :class="resolveCapitalClass(row.netBuyAmount)">{{ formatCapitalAmount(row.netBuyAmount) }}</span></template></el-table-column>
-        <el-table-column label="买入额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.buyAmount) }}</template></el-table-column>
-        <el-table-column label="卖出额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.sellAmount) }}</template></el-table-column>
-        <el-table-column label="成交额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.amount) }}</template></el-table-column>
-        <el-table-column prop="reason" label="上榜原因" min-width="220" show-overflow-tooltip />
-      </el-table>
-      <div v-if="dragonTigerItems.length" class="mobile-flow-list">
-        <article v-for="row in dragonTigerItems" :key="`${row.code}-${row.tradeDate}-${row.reason}`" class="flow-card dragon-tiger-card">
-          <div class="flow-card-head">
-            <StockIdentity :security="row" :interactive="true" @select="openStock" />
-            <span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span>
-          </div>
-          <div class="flow-card-metrics">
-            <span><small>净买额</small><b class="flow-card-value" :class="resolveCapitalClass(row.netBuyAmount)">{{ formatCapitalAmount(row.netBuyAmount) }}</b></span>
-            <span><small>换手率</small><b class="flow-card-value">{{ formatCapitalPercent(row.turnoverRate) }}</b></span>
-            <span><small>收盘价</small><b class="flow-card-value">{{ formatCapitalPrice(row.closePrice) }}</b></span>
-            <span><small>成交额</small><b class="flow-card-value">{{ formatCapitalAmount(row.amount) }}</b></span>
-            <span><small>买入额</small><b class="flow-card-value">{{ formatCapitalAmount(row.buyAmount) }}</b></span>
-            <span><small>卖出额</small><b class="flow-card-value">{{ formatCapitalAmount(row.sellAmount) }}</b></span>
-          </div>
-          <p class="dragon-reason">{{ row.reason || '暂无上榜原因' }}</p>
-        </article>
-      </div>
-      <el-empty v-if="!dragonTigerItems.length" :image-size="64" description="暂无龙虎榜快照" />
     </section>
   </div>
 </template>
@@ -522,6 +535,10 @@ onMounted(loadOverview)
     gap: 8px;
   }
 
+  .sector-column .mobile-flow-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .flow-card {
     min-width: 0;
     padding: 12px;
@@ -529,6 +546,112 @@ onMounted(loadOverview)
     border-radius: var(--radius-sm);
     background: #fff;
     box-shadow: var(--shadow-soft);
+  }
+
+  .sector-flow-card {
+    padding: 10px;
+  }
+
+  .sector-flow-card .flow-card-head {
+    gap: 6px;
+  }
+
+  .dragon-tiger-section .mobile-flow-list {
+    gap: 12px;
+  }
+
+  .dragon-tiger-card {
+    overflow: hidden;
+    padding: 0;
+    border-top: 3px solid #94a3b8;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  }
+
+  .dragon-tiger-card.dragon-up {
+    border-top-color: var(--up, #c45656);
+  }
+
+  .dragon-tiger-card.dragon-down {
+    border-top-color: var(--down, #1f7a4d);
+  }
+
+  .dragon-card-head {
+    padding: 12px 14px 10px;
+  }
+
+  .dragon-card-primary {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 14px;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .dragon-card-primary > span {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .dragon-card-primary > strong {
+    min-width: 0;
+    font-size: 21px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+
+  .dragon-card-market {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0 14px;
+    padding: 11px 0;
+  }
+
+  .dragon-card-market > span,
+  .dragon-card-flow > span {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .dragon-card-market > span + span {
+    padding-left: 10px;
+    border-left: 1px solid var(--line);
+  }
+
+  .dragon-card-market small,
+  .dragon-card-flow small {
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .dragon-card-market b,
+  .dragon-card-flow b {
+    min-width: 0;
+    color: var(--ink);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .dragon-card-flow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0 14px 12px;
+  }
+
+  .dragon-card-flow > span {
+    padding: 9px 10px;
+    border-radius: 6px;
+    background: #f3f6f8;
   }
 
   .flow-card-head > span:last-child {
@@ -583,9 +706,21 @@ onMounted(loadOverview)
   }
 
   .dragon-reason {
-    margin: 10px 0 0;
-    padding-top: 9px;
+    margin: 0;
+    padding: 10px 14px 12px;
     border-top: 1px solid var(--line);
+    background: #f8fafc;
+  }
+
+  .dragon-reason-label {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .dragon-reason p {
+    margin: 4px 0 0;
     color: var(--slate);
     font-size: 12px;
     line-height: 1.5;

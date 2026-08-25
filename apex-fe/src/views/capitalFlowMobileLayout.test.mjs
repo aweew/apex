@@ -13,6 +13,17 @@ const dragonTigerMobileSource = viewSource.slice(
   viewSource.indexOf('<el-empty v-if="!dragonTigerItems.length"'),
 )
 
+test('capital flow sections prioritize the dragon tiger list and leave northbound and stocks last', () => {
+  const dragonTigerIndex = viewSource.indexOf('class="flow-section dragon-tiger-section"')
+  const sectorFlowIndex = viewSource.indexOf('class="flow-section sector-flow-section"')
+  const northboundIndex = viewSource.indexOf('class="northbound-summary"')
+  const stockFlowIndex = viewSource.indexOf('class="flow-section stock-flow-section"')
+
+  assert.ok(dragonTigerIndex < sectorFlowIndex)
+  assert.ok(sectorFlowIndex < northboundIndex)
+  assert.ok(northboundIndex < stockFlowIndex)
+})
+
 test('capital flow page keeps all four datasets identifiable on mobile', () => {
   assert.match(viewSource, /class="northbound-summary"/)
   assert.match(viewSource, /class="flow-section stock-flow-section"/)
@@ -44,6 +55,12 @@ test('mobile tables become vertical cards without horizontal overlap', () => {
   assert.match(mobileStyles, /\.flow-card-value\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/)
 })
 
+test('mobile sector flow rankings use two compact cards per row', () => {
+  assert.match(mobileStyles, /\.sector-flow-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+  assert.match(mobileStyles, /\.sector-column \.mobile-flow-list\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+  assert.match(mobileStyles, /\.sector-flow-card\s*\{[\s\S]*?padding:\s*10px;/)
+})
+
 test('mobile stock flow cards retain medium and small order flows', () => {
   assert.match(stockMobileSource, /formatCapitalAmount\(row\.mediumNetInflow\)/)
   assert.match(stockMobileSource, /formatCapitalAmount\(row\.smallNetInflow\)/)
@@ -51,8 +68,15 @@ test('mobile stock flow cards retain medium and small order flows', () => {
 
 test('mobile dragon tiger cards keep distinct reasons and complete buy-sell amounts', () => {
   assert.match(dragonTigerMobileSource, /:key="`\$\{row\.code\}-\$\{row\.tradeDate\}-\$\{row\.reason\}`"/)
+  assert.match(dragonTigerMobileSource, /class="dragon-card-primary"[\s\S]*?formatCapitalAmount\(row\.netBuyAmount\)/)
+  assert.match(dragonTigerMobileSource, /class="dragon-card-market"[\s\S]*?formatCapitalPrice\(row\.closePrice\)[\s\S]*?formatCapitalPercent\(row\.turnoverRate\)[\s\S]*?formatCapitalAmount\(row\.amount\)/)
+  assert.match(dragonTigerMobileSource, /class="dragon-card-flow"/)
   assert.match(dragonTigerMobileSource, /formatCapitalAmount\(row\.buyAmount\)/)
   assert.match(dragonTigerMobileSource, /formatCapitalAmount\(row\.sellAmount\)/)
+  assert.match(dragonTigerMobileSource, /class="dragon-reason-label">上榜原因/)
+  assert.match(mobileStyles, /\.dragon-tiger-card\s*\{[\s\S]*?border-top:\s*3px solid #94a3b8;/)
+  assert.match(mobileStyles, /\.dragon-card-market\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/)
+  assert.match(mobileStyles, /\.dragon-card-flow\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
 })
 
 test('mobile refresh control has a stable touch target', () => {
