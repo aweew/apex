@@ -8,7 +8,7 @@ import java.sql.Statement;
 /**
  * 增加市场主体白名单与席位映射证据。
  */
-public class V52__Add_market_actor_provenance extends BaseJavaMigration {
+public class V54__Add_market_actor_provenance extends BaseJavaMigration {
 
     /**
      * 创建市场主体与席位映射审计表。
