@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -93,5 +94,41 @@ class DailyBarClientTest {
         assertEquals(DailyBarClient.SOURCE_SINA, bars.get(0).getSource());
         assertEquals(1, sinaRequests.get());
         assertEquals(0, eastMoneyRequests.get());
+    }
+
+    @Test
+    void fastDailyBarsShouldTryEastMoneyWhileBatchCircuitIsOpen() throws Exception {
+        AtomicInteger eastMoneyRequests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/eastmoney", exchange -> {
+            eastMoneyRequests.incrementAndGet();
+            byte[] response = ("{\"data\":{\"klines\":["
+                    + "\"2026-08-25,10.00,10.20,10.50,9.80,1000,10000,0,2.00,0,1.50\""
+                    + "]}}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/sina", exchange -> {
+            exchange.sendResponseHeaders(502, -1);
+            exchange.close();
+        });
+        server.start();
+
+        DailyBarClient dailyBarClient = new DailyBarClient();
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        ReflectionTestUtils.setField(dailyBarClient, "eastMoneyUrl", baseUrl + "/eastmoney");
+        ReflectionTestUtils.setField(dailyBarClient, "sinaUrl", baseUrl + "/sina");
+        AtomicLong cooldownUntil = (AtomicLong) ReflectionTestUtils.getField(
+                dailyBarClient, "eastMoneyCooldownUntil");
+        cooldownUntil.set(System.currentTimeMillis() + 60_000L);
+
+        List<BarDaily> bars = dailyBarClient.fetchDailyBarsFast(
+                "920176", "2026-08-25", "2026-08-25");
+
+        assertEquals(1, bars.size());
+        assertEquals(DailyBarClient.SOURCE_EASTMONEY, bars.get(0).getSource());
+        assertEquals(1, eastMoneyRequests.get());
     }
 }

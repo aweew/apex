@@ -226,7 +226,19 @@ def has_http_proxy() -> bool:
 
 def is_proxy_failure(error: Exception) -> bool:
     message = str(error).lower()
-    return "proxyerror" in message or "unable to connect to proxy" in message
+    connection_errors = (
+        "proxyerror",
+        "unable to connect to proxy",
+        "remote end closed connection",
+        "connection aborted",
+        "connection reset",
+        "connection refused",
+        "name resolution",
+        "temporary failure in name resolution",
+        "timed out",
+        "timeout",
+    )
+    return any(error_text in message for error_text in connection_errors)
 
 
 @contextmanager

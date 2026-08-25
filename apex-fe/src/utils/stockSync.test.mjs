@@ -30,7 +30,13 @@ test('stock detail starts bars and quote sync in parallel before refreshing deta
     },
     fetchDetail: () => {
       calls.push('detail')
-      return Promise.resolve({ data: { basic: { code: '605358' } } })
+      return Promise.resolve({
+        data: {
+          basic: { code: '605358' },
+          barCount: 500,
+          bars: [{ tradeDate: '2026-08-22' }, { tradeDate: '2026-08-25' }],
+        },
+      })
     },
     onProgress: (state) => progress.push(state),
   })
@@ -50,7 +56,7 @@ test('stock detail starts bars and quote sync in parallel before refreshing deta
   assert.equal(result.detail.ok, true)
   assert.deepEqual(stockSyncSummary(result), {
     type: 'success',
-    text: '日线 277 根 · 行情已更新',
+    text: '日线已同步至 2026-08-25（本地 500 根） · 行情已更新',
   })
 })
 

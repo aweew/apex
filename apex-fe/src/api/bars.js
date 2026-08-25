@@ -5,7 +5,7 @@ export function syncBars(payload) {
 }
 
 export function syncBarsFast(payload) {
-  return http.post('/api/data/bars/sync-fast', payload, { timeout: 10000 })
+  return http.post('/api/data/bars/sync-fast', payload, { timeout: 15000 })
 }
 
 export function syncBarsGroup(groupName, beginDate, endDate) {

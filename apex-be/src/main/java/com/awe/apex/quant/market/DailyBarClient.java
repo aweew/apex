@@ -38,7 +38,7 @@ public class DailyBarClient {
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter COMPACT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(10);
-    private static final Duration FAST_REQUEST_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration FAST_REQUEST_TIMEOUT = Duration.ofSeconds(5);
     private static final int EAST_MONEY_FAIL_THRESHOLD = 2;
     private static final long EAST_MONEY_COOLDOWN_MS = 10 * 60 * 1000L;
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
@@ -118,19 +118,17 @@ public class DailyBarClient {
             sinaError = ex;
             log.warn("新浪快速日线失败，尝试东财兜底，证券代码={}，异常={}", pureCode, ex.getMessage());
         }
-        Exception eastMoneyError = null;
-        if (System.currentTimeMillis() >= eastMoneyCooldownUntil.get()) {
-            try {
-                List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate, FAST_REQUEST_TIMEOUT);
-                eastMoneyFailCount.set(0);
-                eastMoneyCooldownUntil.set(0);
-                return eastMoneyBars;
-            } catch (Exception ex) {
-                eastMoneyError = ex;
-                markEastMoneyFailure(pureCode, ex);
-            }
-        } else {
-            eastMoneyError = new BusinessException("东财日线接口熔断中");
+        // 用户主动同步仍保留一次东财兜底，避免被批量任务的全局熔断状态直接短路。
+        Exception eastMoneyError;
+        try {
+            List<BarDaily> eastMoneyBars = fetchFromEastMoney(
+                    pureCode, beginDate, endDate, FAST_REQUEST_TIMEOUT);
+            eastMoneyFailCount.set(0);
+            eastMoneyCooldownUntil.set(0);
+            return eastMoneyBars;
+        } catch (Exception ex) {
+            eastMoneyError = ex;
+            markEastMoneyFailure(pureCode, ex);
         }
         throw new BusinessException("拉取快速日线失败: " + pureCode + ", sina: "
                 + messageOf(sinaError) + " | eastmoney: " + messageOf(eastMoneyError));

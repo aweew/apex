@@ -70,15 +70,28 @@ export async function synchronizeStockData(options) {
  * @return {{type: string, text: string}} 提示级别和文案
  */
 export function stockSyncSummary(result) {
-  const barCount = Number(result?.bars?.value?.barCount)
+  const fetchedBarCount = Number(result?.bars?.value?.barCount)
+  const stockDetail = result?.detail?.value?.data
+  const localBarCount = stockDetail?.barCount == null ? Number.NaN : Number(stockDetail.barCount)
+  const localBars = Array.isArray(stockDetail?.bars) ? stockDetail.bars : []
+  let latestTradeDate = ''
+  for (const bar of localBars) {
+    const tradeDate = String(bar?.tradeDate || '')
+    if (tradeDate > latestTradeDate) latestTradeDate = tradeDate
+  }
   const barSyncing = result?.bars?.ok
     && Array.isArray(result?.bars?.value?.details)
     && result.bars.value.details.some((item) => /\bSYNCING\b/.test(String(item)))
-  const barText = barSyncing
-    ? '日线同步中'
-    : result?.bars?.ok
-    ? `日线 ${Number.isFinite(barCount) ? barCount : 0} 根`
-    : '日线失败'
+  let barText = '日线失败'
+  if (barSyncing) {
+    barText = '日线同步中'
+  } else if (result?.bars?.ok && result?.detail?.ok && Number.isFinite(localBarCount)) {
+    barText = latestTradeDate
+      ? `日线已同步至 ${latestTradeDate}（本地 ${localBarCount} 根）`
+      : `本地日线 ${localBarCount} 根`
+  } else if (result?.bars?.ok) {
+    barText = `本次日线 ${Number.isFinite(fetchedBarCount) ? fetchedBarCount : 0} 根`
+  }
   const quoteText = result?.quote?.ok ? '行情已更新' : '行情失败'
   const detailText = result?.detail?.ok ? '' : '，页面刷新失败'
   const successCount = Number(result?.bars?.ok) + Number(result?.quote?.ok)
