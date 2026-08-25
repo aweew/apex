@@ -28,6 +28,11 @@ public class DashboardCommandResp {
     private LocalDate marketDataAsOf;
 
     /**
+     * 最近一次成功取得实时行情的时间。
+     */
+    private LocalDateTime marketDataUpdatedAt;
+
+    /**
      * 个股决策实际使用的市场数据截至日。
      */
     private LocalDate decisionDataAsOf;

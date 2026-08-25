@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -22,6 +23,11 @@ public class MarketBriefingResp {
      * 数据截至日
      */
     private LocalDate asOf;
+
+    /**
+     * 最近一次成功取得实时指数行情的时间。
+     */
+    private LocalDateTime marketDataUpdatedAt;
 
     /**
      * 操作立场：进攻 / 均衡 / 防守

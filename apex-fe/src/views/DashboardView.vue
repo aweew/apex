@@ -36,6 +36,7 @@ function writeHomeCache(data) {
 
 const market = computed(() => home.value?.market || null)
 const command = computed(() => home.value?.command || null)
+const isIntradayCommand = computed(() => command.value?.phase === 'IN_SESSION' && command.value?.marketDataUpdatedAt)
 const commandOperationItems = computed(() => (command.value?.operationGuide?.items || []).slice(0, 3))
 const hasExecutableNewPosition = computed(() => commandOperationItems.value.some(
   (item) => item.code === 'BUY_CONDITIONALLY' && item.status === 'READY',
@@ -46,7 +47,9 @@ const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
 const preMarketEventImpacts = computed(() => newsPulse.value?.eventImpacts || [])
 const marketOpinion = computed(() => morningBriefing.value?.marketOpinion || null)
 const institutionViews = computed(() => marketOpinion.value?.institutionViews || [])
-const activeSeats = computed(() => marketOpinion.value?.activeSeats || [])
+const traderSeatViews = computed(() => marketOpinion.value?.traderSeatViews || [])
+const kolViews = computed(() => marketOpinion.value?.kolViews || [])
+const kolSources = computed(() => marketOpinion.value?.kolSources || [])
 const legacyIndexSymbols = new Set(['usIXIC', 'usDJI', 'usINX'])
 const overnightIndexes = computed(() => {
   const indexQuotes = morningBriefing.value?.indexQuotes
@@ -176,6 +179,10 @@ function formatOpinionAmount(value) {
   return `${sign}${(amount / 100000000).toFixed(2)} 亿`
 }
 
+function opinionSourceStatusLabel(status) {
+  return status === 'READY' ? '已核验' : '待核验'
+}
+
 function openOpinionPreview(item) {
   if (!item?.url) return
   opinionPreview.value = item
@@ -300,12 +307,14 @@ function publishDashboardDataFreshness(homeData) {
   if (!commandData) return
   const level = homeData?.dataHealth?.level
     || (commandData.status === 'READY' ? 'GREEN' : commandData.status === 'STALE' || commandData.status === 'BLOCKED' ? 'RED' : 'YELLOW')
-  const marketDataAsOf = commandData.marketDataAsOf || '-'
+  const marketDataAsOf = commandData.marketDataUpdatedAt
+    ? fmtCommandTime(commandData.marketDataUpdatedAt)
+    : commandData.marketDataAsOf || '-'
   const decisionDataAsOf = fmtCommandTime(commandData.decisionDataAsOf)
   publishDataFreshness({
     level,
     label: `看板数据${dataLevelLabel(level)}`,
-    detail: `行情截至 ${marketDataAsOf} · 决策数据 ${decisionDataAsOf}`,
+    detail: `行情刷新 ${marketDataAsOf} · 决策数据 ${decisionDataAsOf}`,
     route: '/dashboard',
   })
 }
@@ -696,6 +705,7 @@ onMounted(() => {
 
       <div class="command-meta" aria-label="开盘准备数据时间">
         <span>行情截至 <b>{{ command.marketDataAsOf || '-' }}</b></span>
+        <span>行情刷新 <b>{{ fmtCommandTime(command.marketDataUpdatedAt) }}</b></span>
         <span>决策数据 <b>{{ fmtCommandTime(command.decisionDataAsOf) }}</b></span>
         <span>生成于 <b>{{ fmtCommandTime(command.generatedAt) }}</b></span>
       </div>
@@ -708,7 +718,7 @@ onMounted(() => {
           <p class="command-headline">{{ command.preMarketSummary?.headline || '盘前结论待生成' }}</p>
 
           <div v-if="command.preMarketSummary?.forecast?.marketOutlook" class="command-forecast">
-            <span class="command-forecast-label">今日预测</span>
+            <span class="command-forecast-label">{{ isIntradayCommand ? '盘中判断' : '今日预测' }}</span>
             <p>{{ command.preMarketSummary.forecast.marketOutlook }}</p>
 
             <div
@@ -1054,6 +1064,31 @@ onMounted(() => {
               <p><span>共识</span>{{ marketOpinion.consensus || '暂未形成有效共识' }}</p>
               <p><span>分歧</span>{{ marketOpinion.divergence || '暂未发现明确分歧' }}</p>
             </div>
+            <div v-if="traderSeatViews.length" class="opinion-group">
+              <div class="opinion-group-head"><h6>游资席位行为</h6><span>公开龙虎榜</span></div>
+              <article v-for="item in traderSeatViews" :key="item.url + item.subjectName" class="opinion-item">
+                <span class="opinion-direction seat">席位</span>
+                <a v-if="item.actorEvidenceUrl" :href="item.actorEvidenceUrl" target="_blank" rel="noopener noreferrer">{{ item.actorName }}</a>
+                <span v-else class="opinion-item-title">{{ item.actorName }}</span>
+                <small>{{ item.subjectName }} · {{ item.summary || formatOpinionAmount(item.netAmount) || '金额未披露' }}</small>
+              </article>
+            </div>
+            <div v-if="kolViews.length || kolSources.length" class="opinion-group">
+              <div class="opinion-group-head"><h6>公开账号观点</h6><span>原帖可追溯</span></div>
+              <article v-for="item in kolViews" :key="item.url || item.title" class="opinion-item">
+                <span class="opinion-direction seat">原帖</span>
+                <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+                <span v-else class="opinion-item-title">{{ item.title }}</span>
+                <small>{{ item.actorName || item.subjectName }} · {{ opinionTime(item.publishedAt) }}</small>
+              </article>
+              <div v-if="kolSources.length" class="opinion-source-list">
+                <span v-for="source in kolSources" :key="source.actorName" :title="source.sourceNote">
+                  <a v-if="source.accountUrl" :href="source.accountUrl" target="_blank" rel="noopener noreferrer">{{ source.actorName }}</a>
+                  <b v-else>{{ source.actorName }}</b>
+                  <i>{{ source.platform || '公开源' }} · {{ opinionSourceStatusLabel(source.sourceStatus) }}</i>
+                </span>
+              </div>
+            </div>
             <div v-if="institutionViews.length" class="opinion-group">
               <div class="opinion-group-head"><h6>机构观点</h6><span>公开研报</span></div>
               <article v-for="item in institutionViews" :key="item.url || item.title" class="opinion-item">
@@ -1061,15 +1096,6 @@ onMounted(() => {
                 <button v-if="item.url" type="button" class="opinion-item-link" @click="openOpinionPreview(item)">{{ item.title }}</button>
                 <span v-else class="opinion-item-title">{{ item.title }}</span>
                 <small>{{ item.subjectName }} · {{ item.relatedName || item.topic || opinionTime(item.publishedAt) }}</small>
-              </article>
-            </div>
-            <div v-if="activeSeats.length" class="opinion-group">
-              <div class="opinion-group-head"><h6>活跃席位</h6><span>龙虎榜行为</span></div>
-              <article v-for="item in activeSeats" :key="item.url + item.subjectName" class="opinion-item">
-                <span class="opinion-direction seat">席位</span>
-                <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.subjectName }}</a>
-                <span v-else class="opinion-item-title">{{ item.subjectName }}</span>
-                <small>{{ item.summary || formatOpinionAmount(item.netAmount) || '金额未披露' }} · {{ opinionTime(item.publishedAt) }}</small>
               </article>
             </div>
             <p class="opinion-kol-status">{{ marketOpinion.kolSourceStatus }}</p>
@@ -3488,6 +3514,45 @@ onMounted(() => {
 
 .opinion-kol-status {
   margin: 9px 0 0;
+}
+
+.opinion-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  margin-top: 6px;
+}
+
+.opinion-source-list span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.opinion-source-list a,
+.opinion-source-list b {
+  max-width: 88px;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opinion-source-list a:hover {
+  color: var(--accent);
+}
+
+.opinion-source-list i {
+  color: var(--muted);
+  font-style: normal;
+  white-space: nowrap;
 }
 
 .morning-context-empty {

@@ -701,6 +701,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (CollUtil.isNotEmpty(indexes)) {
             resp.setIndexLines(indexLines);
             resp.setIndexes(indexes);
+            if (resolveSessionDay().equals(LocalDate.now())) {
+                resp.setAsOf(LocalDate.now());
+                resp.setMarketDataUpdatedAt(LocalDateTime.now());
+            }
         }
         return resp;
     }

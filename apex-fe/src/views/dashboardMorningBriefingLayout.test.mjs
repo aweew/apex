@@ -74,9 +74,12 @@ test('dashboard places the command band after market effect and before pre-marke
   assert.match(dashboardSource, /<section\s+v-if="command"[^>]+class="command-band[^>]+aria-label="开盘准备"/s)
   assert.match(dashboardSource, /command\.tradeDate/)
   assert.match(dashboardSource, /command\.marketDataAsOf/)
+  assert.match(dashboardSource, /command\.marketDataUpdatedAt/)
   assert.match(dashboardSource, /command\.decisionDataAsOf/)
   assert.match(dashboardSource, /command\.generatedAt/)
   assert.match(dashboardSource, /commandStatusLabel\(command\.status\)/)
+  assert.match(dashboardSource, /command\.value\?\.phase === 'IN_SESSION'/)
+  assert.match(dashboardSource, /盘中判断/)
 })
 
 test('dashboard renders position controls and at most three command actions in backend order', () => {
@@ -154,9 +157,12 @@ test('dashboard morning context has a compact responsive layout', () => {
   )
   assert.match(dashboardSource, /v-for="item in morningNewsCards"/)
   assert.match(dashboardSource, /const marketOpinion = computed\(\(\) => morningBriefing\.value\?\.marketOpinion \|\| null\)/)
+  assert.match(dashboardSource, /const traderSeatViews = computed\(\(\) => marketOpinion\.value\?\.traderSeatViews \|\| \[\]\)/)
+  assert.match(dashboardSource, /const kolSources = computed\(\(\) => marketOpinion\.value\?\.kolSources \|\| \[\]\)/)
   assert.match(dashboardSource, /<h5>观点雷达<\/h5>/)
   assert.match(dashboardSource, /<h6>机构观点<\/h6>/)
-  assert.match(dashboardSource, /<h6>活跃席位<\/h6>/)
+  assert.match(dashboardSource, /<h6>游资席位行为<\/h6>/)
+  assert.match(dashboardSource, /<h6>公开账号观点<\/h6>/)
   assert.match(dashboardSource, /marketOpinion\.kolSourceStatus/)
 })
 

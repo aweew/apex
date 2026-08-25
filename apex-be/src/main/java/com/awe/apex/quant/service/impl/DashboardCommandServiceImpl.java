@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -44,6 +45,8 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
 
     private static final LocalTime SESSION_START = LocalTime.of(9, 30);
     private static final LocalTime SESSION_END = LocalTime.of(15, 0);
+    private static final long INTRADAY_MARKET_DATA_MAX_AGE_MINUTES = 5L;
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
     private static final BigDecimal ASIA_WEAK_THRESHOLD = new BigDecimal("-1.00");
     private static final BigDecimal OVERNIGHT_WEAK_THRESHOLD = new BigDecimal("-0.50");
     private static final BigDecimal OVERNIGHT_STRONG_THRESHOLD = new BigDecimal("0.50");
@@ -68,15 +71,17 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         LocalDate expectedMarketDate = TradingCalendar.prevTradingDay(tradeDate);
         DashboardCommandPhaseEnum phase = resolvePhase(generatedAt, tradingDay);
         DashboardCommandStatusEnum status = resolveStatus(commandContext, tradeDate,
-                expectedMarketDate, phase);
+                expectedMarketDate, phase, generatedAt);
         MarketBriefingResp marketBriefing = commandContext.getMarketBriefing();
         LocalDate marketDataAsOf = Objects.nonNull(marketBriefing) ? marketBriefing.getAsOf() : null;
         DecisionTodayResp decision = commandContext.getDecision();
         LocalDate decisionDataAsOf = Objects.nonNull(decision) ? decision.getDataAsOf() : null;
+        LocalDateTime marketDataUpdatedAt = Objects.nonNull(marketBriefing)
+                ? marketBriefing.getMarketDataUpdatedAt() : null;
 
         // 2. 按数据与决策状态生成结论，再按风险、新仓、失效条件生成用户动作
         PreMarketSummaryResp preMarketSummary = buildPreMarketSummary(commandContext, status,
-                tradeDate, expectedMarketDate);
+                tradeDate, expectedMarketDate, phase, generatedAt);
         TodayOperationGuideResp operationGuide = buildOperationGuide(commandContext, tradeDate,
                 expectedMarketDate, phase, status);
 
@@ -84,6 +89,7 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         return DashboardCommandResp.builder()
                 .tradeDate(tradeDate)
                 .marketDataAsOf(marketDataAsOf)
+                .marketDataUpdatedAt(marketDataUpdatedAt)
                 .decisionDataAsOf(decisionDataAsOf)
                 .generatedAt(generatedAt)
                 .phase(phase.getCode())
@@ -111,7 +117,8 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
     private DashboardCommandStatusEnum resolveStatus(DashboardCommandContextBO context,
                                                      LocalDate tradeDate,
                                                      LocalDate expectedMarketDate,
-                                                     DashboardCommandPhaseEnum phase) {
+                                                     DashboardCommandPhaseEnum phase,
+                                                     LocalDateTime generatedAt) {
         MarketBriefingResp marketBriefing = context.getMarketBriefing();
         if (Objects.isNull(marketBriefing)
                 || Objects.isNull(marketBriefing.getAsOf())
@@ -145,7 +152,7 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             partial = true;
         }
         if (DashboardCommandPhaseEnum.IN_SESSION.equals(phase)
-                && marketBriefing.getAsOf().isBefore(tradeDate)) {
+                && !hasFreshIntradayMarketData(marketBriefing, tradeDate, generatedAt)) {
             partial = true;
         }
         return partial ? DashboardCommandStatusEnum.PARTIAL : DashboardCommandStatusEnum.READY;
@@ -154,11 +161,14 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
     private PreMarketSummaryResp buildPreMarketSummary(DashboardCommandContextBO context,
                                                        DashboardCommandStatusEnum status,
                                                        LocalDate tradeDate,
-                                                       LocalDate expectedMarketDate) {
+                                                       LocalDate expectedMarketDate,
+                                                       DashboardCommandPhaseEnum phase,
+                                                       LocalDateTime generatedAt) {
         DecisionTodayResp decision = context.getDecision();
         boolean decisionFresh = isDecisionFresh(decision, tradeDate, expectedMarketDate);
         String headline = buildHeadline(context, status, tradeDate, expectedMarketDate, decisionFresh);
-        MarketForecastResp forecast = buildForecast(context, status, decisionFresh);
+        MarketForecastResp forecast = buildForecast(context, status, decisionFresh, tradeDate,
+                phase, generatedAt);
 
         // 机会只来自当日可执行决策，不再把宽泛市场主题包装成用户机会。
         List<CommandDirectionItemResp> opportunityItems = new ArrayList<>();
@@ -252,9 +262,14 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                     .condition("新一轮决策完成并发布前，不执行旧候选")
                     .build());
         } else if (DashboardCommandStatusEnum.PARTIAL.equals(status)) {
+            String condition = "补齐盘前数据并重新生成 " + tradeDate + " 决策后再下单";
+            if (DashboardCommandPhaseEnum.IN_SESSION.equals(phase)
+                    && !hasFreshIntradayMarketData(context.getMarketBriefing(), tradeDate, generatedAt)) {
+                condition = "刷新盘中行情并重新生成 " + tradeDate + " 决策后再下单";
+            }
             watchConditions.add(CommandWatchConditionResp.builder()
                     .title("恢复执行")
-                    .condition("补齐盘前数据并重新生成 " + tradeDate + " 决策后再下单")
+                    .condition(condition)
                     .build());
         } else if (!decisionFresh) {
             watchConditions.add(CommandWatchConditionResp.builder()
@@ -295,7 +310,10 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
 
     private MarketForecastResp buildForecast(DashboardCommandContextBO context,
                                              DashboardCommandStatusEnum status,
-                                             boolean decisionFresh) {
+                                             boolean decisionFresh,
+                                             LocalDate tradeDate,
+                                             DashboardCommandPhaseEnum phase,
+                                             LocalDateTime generatedAt) {
         if (DashboardCommandStatusEnum.BLOCKED.equals(status)
                 || DashboardCommandStatusEnum.STALE.equals(status)) {
             return MarketForecastResp.builder()
@@ -310,6 +328,21 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         }
 
         MarketBriefingResp marketBriefing = context.getMarketBriefing();
+        boolean freshIntradayMarketData = hasFreshIntradayMarketData(marketBriefing, tradeDate, generatedAt);
+        boolean useFreshIntradayMarketData = DashboardCommandPhaseEnum.IN_SESSION.equals(phase)
+                && freshIntradayMarketData;
+        if (DashboardCommandPhaseEnum.IN_SESSION.equals(phase) && !freshIntradayMarketData) {
+            return MarketForecastResp.builder()
+                    .marketOutlook("盘中行情未在 " + INTRADAY_MARKET_DATA_MAX_AGE_MINUTES
+                            + " 分钟内刷新，暂不按昨日收盘结构推演。")
+                    .focusItems(List.of())
+                    .riskItems(List.of())
+                    .watchConditions(List.of(CommandWatchConditionResp.builder()
+                            .title("刷新行情")
+                            .condition("补齐最新盘中行情后重新判断方向和市场广度")
+                            .build()))
+                    .build();
+        }
         MorningBriefingResp morningBriefing = context.getMorningBriefing();
         List<OvernightMarketQuote> overnightIndexes = Objects.nonNull(morningBriefing)
                 ? morningBriefing.getIndexQuotes() : List.of();
@@ -324,14 +357,23 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 && overnightAverage.compareTo(OVERNIGHT_STRONG_THRESHOLD) >= 0;
         boolean technologyPressure = asiaWeak || hasWeakTechnologyTheme(morningBriefing);
         List<MarketForecastDirectionResp> focusItems = buildForecastFocusItems(marketBriefing,
-                context.getDecision(), decisionFresh, technologyPressure);
+                context.getDecision(), decisionFresh, technologyPressure, useFreshIntradayMarketData);
         List<MarketForecastDirectionResp> riskItems = buildForecastRiskItems(marketBriefing,
-                morningBriefing, asiaWeak, technologyPressure);
+                morningBriefing, asiaWeak, technologyPressure, useFreshIntradayMarketData);
         List<CommandWatchConditionResp> watchConditions = buildForecastWatchConditions(marketBriefing,
-                asiaWeak, overnightWeak);
+                asiaWeak, overnightWeak, useFreshIntradayMarketData);
 
         String marketOutlook;
-        if (asiaWeak) {
+        if (useFreshIntradayMarketData) {
+            marketOutlook = "盘中截至 " + formatMarketDataTime(marketBriefing.getMarketDataUpdatedAt())
+                    + "，A 股当前处于" + marketBriefing.getStance() + "基线";
+            if (Objects.nonNull(marketBriefing.getBreadthUp()) && Objects.nonNull(marketBriefing.getBreadthDown())) {
+                marketOutlook += "；上涨 " + marketBriefing.getBreadthUp() + " 家、下跌 "
+                        + marketBriefing.getBreadthDown() + " 家。";
+            } else {
+                marketOutlook += "，继续观察市场广度。";
+            }
+        } else if (asiaWeak) {
             marketOutlook = "预计开盘承压后分化，A 股" + marketBriefing.getStance()
                     + "基线不变；亚太均值" + formatPercent(asiaAverage) + "限制科技开盘节奏。";
         } else if (overnightWeak) {
@@ -345,7 +387,9 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                     + "基线不变，优先验证昨日强势方向的承接。";
         }
         if (Objects.isNull(morningBriefing) || CollUtil.isEmpty(asiaIndexes)) {
-            marketOutlook += " 亚太行情缺失，预测仅基于隔夜与 A 股收盘结构。";
+            marketOutlook += useFreshIntradayMarketData
+                    ? " 亚太行情缺失，盘中判断以当前 A 股行情为准。"
+                    : " 亚太行情缺失，预测仅基于隔夜与 A 股收盘结构。";
         }
 
         return MarketForecastResp.builder()
@@ -359,7 +403,8 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
     private List<MarketForecastDirectionResp> buildForecastFocusItems(MarketBriefingResp marketBriefing,
                                                                         DecisionTodayResp decision,
                                                                         boolean decisionFresh,
-                                                                        boolean technologyPressure) {
+                                                                        boolean technologyPressure,
+                                                                        boolean freshIntradayMarketData) {
         List<MarketForecastDirectionResp> focusItems = new ArrayList<>();
         List<MarketHotThemeItem> hotThemeItems = marketBriefing.getHotThemeItems();
         if (CollUtil.isEmpty(hotThemeItems)) {
@@ -373,7 +418,10 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             }
             String themeName = hotThemeItem.getName().trim();
             List<String> watchStocks = findMatchingStocks(decision, decisionFresh, themeName);
-            String reason = Objects.nonNull(hotThemeItem.getPctChg())
+            String reason = freshIntradayMarketData && Objects.nonNull(hotThemeItem.getPctChg())
+                    ? "盘中截至 " + formatMarketDataTime(marketBriefing.getMarketDataUpdatedAt())
+                    + " 涨幅 " + formatPercent(hotThemeItem.getPctChg()) + "，为当前相对强势方向"
+                    : Objects.nonNull(hotThemeItem.getPctChg())
                     ? "昨日收盘 " + formatPercent(hotThemeItem.getPctChg()) + "，位于 "
                     + marketBriefing.getStance() + " 基线下的相对强势方向"
                     : "昨日收盘热点，需由开盘承接确认强度";
@@ -393,7 +441,8 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
     private List<MarketForecastDirectionResp> buildForecastRiskItems(MarketBriefingResp marketBriefing,
                                                                        MorningBriefingResp morningBriefing,
                                                                        boolean asiaWeak,
-                                                                       boolean technologyPressure) {
+                                                                       boolean technologyPressure,
+                                                                       boolean freshIntradayMarketData) {
         List<MarketForecastDirectionResp> riskItems = new ArrayList<>();
         if (technologyPressure) {
             BigDecimal asiaAverage = Objects.nonNull(morningBriefing)
@@ -413,7 +462,8 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 && marketBriefing.getBreadthDown() > marketBriefing.getBreadthUp()) {
             riskItems.add(MarketForecastDirectionResp.builder()
                     .name("弱势跟风题材")
-                    .reason("昨日下跌家数 " + marketBriefing.getBreadthDown() + " 高于上涨家数 "
+                    .reason((freshIntradayMarketData ? "盘中当前下跌家数 " : "昨日下跌家数 ")
+                            + marketBriefing.getBreadthDown() + " 高于上涨家数 "
                             + marketBriefing.getBreadthUp())
                     .watchStocks(List.of())
                     .action("不因盘中瞬时拉升追入")
@@ -424,13 +474,21 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
 
     private List<CommandWatchConditionResp> buildForecastWatchConditions(MarketBriefingResp marketBriefing,
                                                                             boolean asiaWeak,
-                                                                            boolean overnightWeak) {
+                                                                            boolean overnightWeak,
+                                                                            boolean freshIntradayMarketData) {
         List<CommandWatchConditionResp> watchConditions = new ArrayList<>();
         if (Objects.nonNull(marketBriefing.getBreadthUp()) && Objects.nonNull(marketBriefing.getBreadthDown())) {
             int requiredUpCount = (int) Math.ceil(marketBriefing.getBreadthDown() * 0.8D);
-            String condition = marketBriefing.getBreadthDown() > marketBriefing.getBreadthUp()
-                    ? "上涨家数需回到 " + requiredUpCount + " 家以上，才确认昨日弱广度开始修复"
-                    : "上涨家数继续高于下跌家数，才保留开盘后的进攻节奏";
+            String condition;
+            if (marketBriefing.getBreadthDown() > marketBriefing.getBreadthUp()) {
+                condition = freshIntradayMarketData
+                        ? "后续上涨家数需回到 " + requiredUpCount + " 家以上，才确认盘中广度修复"
+                        : "上涨家数需回到 " + requiredUpCount + " 家以上，才确认昨日弱广度开始修复";
+            } else {
+                condition = freshIntradayMarketData
+                        ? "上涨家数持续高于下跌家数，才保留盘中进攻节奏"
+                        : "上涨家数继续高于下跌家数，才保留开盘后的进攻节奏";
+            }
             watchConditions.add(CommandWatchConditionResp.builder()
                     .title("市场广度")
                     .condition(condition)
@@ -509,6 +567,23 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             return "--";
         }
         return (value.signum() > 0 ? "+" : "") + value.setScale(2, java.math.RoundingMode.HALF_UP) + "%";
+    }
+
+    private boolean hasFreshIntradayMarketData(MarketBriefingResp marketBriefing,
+                                                LocalDate tradeDate,
+                                                LocalDateTime generatedAt) {
+        if (Objects.isNull(marketBriefing)
+                || !tradeDate.equals(marketBriefing.getAsOf())
+                || Objects.isNull(marketBriefing.getMarketDataUpdatedAt())) {
+            return false;
+        }
+        LocalDateTime marketDataUpdatedAt = marketBriefing.getMarketDataUpdatedAt();
+        return !marketDataUpdatedAt.isAfter(generatedAt)
+                && !marketDataUpdatedAt.isBefore(generatedAt.minusMinutes(INTRADAY_MARKET_DATA_MAX_AGE_MINUTES));
+    }
+
+    private String formatMarketDataTime(LocalDateTime marketDataUpdatedAt) {
+        return Objects.nonNull(marketDataUpdatedAt) ? marketDataUpdatedAt.format(TIME_FORMATTER) : "--";
     }
 
     private String buildHeadline(DashboardCommandContextBO context,

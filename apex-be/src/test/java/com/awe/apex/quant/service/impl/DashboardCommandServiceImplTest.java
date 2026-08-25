@@ -130,6 +130,63 @@ class DashboardCommandServiceImplTest {
     }
 
     @Test
+    void shouldUseFreshIntradayMarketDataInsteadOfPreviousCloseForecast() {
+        MarketBriefingResp marketBriefing = market(TRADE_DATE, "GREEN", List.of("液冷服务器"));
+        marketBriefing.setMarketDataUpdatedAt(TRADE_DATE.atTime(13, 42));
+        marketBriefing.setHotThemeItems(List.of(
+                MarketHotThemeItem.builder().name("液冷服务器").pctChg(new BigDecimal("2.23")).build()
+        ));
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(13, 44))
+                .marketBriefing(marketBriefing)
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DecisionTodayResp.builder()
+                        .actionDate(TRADE_DATE)
+                        .dataAsOf(PREVIOUS_TRADE_DATE)
+                        .generated(true)
+                        .build())
+                .build());
+
+        assertEquals(DashboardCommandStatusEnum.READY.getCode(), command.getStatus());
+        assertEquals(TRADE_DATE.atTime(13, 42), command.getMarketDataUpdatedAt());
+        assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("盘中截至 13:42"));
+        assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("当前 A 股行情为准"));
+        assertFalse(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("收盘结构"));
+        assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
+                .getReason().contains("盘中截至 13:42 涨幅 +2.23%"));
+        assertFalse(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
+                .getReason().contains("昨日收盘"));
+    }
+
+    @Test
+    void shouldWaitForRefreshWhenIntradayMarketDataIsExpired() {
+        MarketBriefingResp marketBriefing = market(TRADE_DATE, "GREEN", List.of("液冷服务器"));
+        marketBriefing.setMarketDataUpdatedAt(TRADE_DATE.atTime(13, 30));
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(13, 44))
+                .marketBriefing(marketBriefing)
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DecisionTodayResp.builder()
+                        .actionDate(TRADE_DATE)
+                        .dataAsOf(PREVIOUS_TRADE_DATE)
+                        .generated(true)
+                        .build())
+                .build());
+
+        assertEquals(DashboardCommandStatusEnum.PARTIAL.getCode(), command.getStatus());
+        assertTrue(command.getPreMarketSummary().getWatchConditions().get(0)
+                .getCondition().contains("刷新盘中行情"));
+    }
+
+    @Test
     void shouldPrioritizeBlockedOverStaleAndGenerating() {
         DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
                 .currentTime(TRADE_DATE.atTime(8, 10))
