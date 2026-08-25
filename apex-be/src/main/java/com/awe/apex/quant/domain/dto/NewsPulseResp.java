@@ -68,6 +68,11 @@ public class NewsPulseResp {
     private List<NewsPulseCardResp> cards;
 
     /**
+     * 盘前结构化事件影响。
+     */
+    private List<PreMarketEventImpactResp> eventImpacts;
+
+    /**
      * 说明
      */
     private String message;

@@ -58,6 +58,8 @@ class MarketOpinionSyncTest(unittest.TestCase):
         self.assertEqual("ACTIVE_SEAT", rows[0]["opinion_type"])
         self.assertEqual("活跃席位", rows[0]["direction"])
         self.assertEqual("涉及：示例股份", rows[0]["summary"])
+        _, request_params = request_json.call_args.args
+        self.assertEqual("(ONLIST_DATE>='2026-08-20')(ONLIST_DATE<='2026-08-25')", request_params["filter"])
 
 
 if __name__ == "__main__":

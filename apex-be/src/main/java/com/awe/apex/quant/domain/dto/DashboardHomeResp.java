@@ -29,6 +29,16 @@ public class DashboardHomeResp {
     private MorningBriefingResp morningBriefing;
 
     /**
+     * 盘前涨跌比预测与收盘回测。
+     */
+    private MarketBreadthForecastResp breadthForecast;
+
+    /**
+     * 集合竞价实时确认。
+     */
+    private OpeningAuctionResp openingAuction;
+
+    /**
      * 盘前总结与今日操作指引
      */
     private DashboardCommandResp command;

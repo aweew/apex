@@ -354,6 +354,49 @@ class DataSyncSchedulerTest {
     }
 
     @Test
+    void schedulesAsiaPacificIndexSyncAfterJapanAndKoreaOpen() throws Exception {
+        Scheduled scheduled = DataSyncScheduler.class.getMethod("syncAsiaPacificMorning")
+                .getAnnotation(Scheduled.class);
+
+        assertEquals("0 5 8 * * MON-FRI", scheduled.cron());
+        assertEquals("Asia/Shanghai", scheduled.zone());
+    }
+
+    @Test
+    void syncsOnlyJapanAndKoreaIndexesInTheMorning() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.isTaskRunning("INDEX")).thenReturn(false);
+        when(dataSyncJobService.startSystemTask(org.mockito.ArgumentMatchers.any())).thenReturn(
+                SyncJobResp.builder().id(305L).status("PENDING").build());
+
+        scheduler.syncAsiaPacificMorning();
+
+        verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
+                "INDEX".equals(request.getTaskType())
+                        && "JP_N225,KR_KOSPI".equals(request.getCodes())));
+    }
+
+    @Test
+    void skipsAsiaPacificIndexSyncWhenIndexJobIsRunning() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(dataSyncJobService.isTaskRunning("INDEX")).thenReturn(true);
+
+        scheduler.syncAsiaPacificMorning();
+
+        verify(dataSyncJobService, never()).startSystemTask(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void intradayHotRefreshUsesTrackedSyncJob() {
         IConfigService configService = mock(IConfigService.class);
         IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);

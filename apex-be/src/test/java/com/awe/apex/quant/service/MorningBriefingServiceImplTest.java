@@ -3,10 +3,14 @@ package com.awe.apex.quant.service;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
+import com.awe.apex.quant.domain.dto.ExternalMarketItemResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.market.TradingCalendar;
+import com.awe.apex.quant.market.GlobalFuturesQuoteClient;
+import com.awe.apex.quant.market.ExternalMarketIndicatorEnum;
+import com.awe.apex.quant.market.ExternalMarketQuoteClient;
 import com.awe.apex.quant.market.UsMarketQuoteClient;
 import com.awe.apex.quant.service.impl.MorningBriefingServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,6 +39,8 @@ class MorningBriefingServiceImplTest {
 
     private MorningBriefingServiceImpl service;
     private UsMarketQuoteClient usMarketQuoteClient;
+    private GlobalFuturesQuoteClient globalFuturesQuoteClient;
+    private ExternalMarketQuoteClient externalMarketQuoteClient;
     private INewsPulseService newsPulseService;
     private IMarketOpinionService marketOpinionService;
     private RedisCacheService redisCacheService;
@@ -43,15 +50,20 @@ class MorningBriefingServiceImplTest {
     void setUp() {
         service = new MorningBriefingServiceImpl();
         usMarketQuoteClient = mock(UsMarketQuoteClient.class);
+        globalFuturesQuoteClient = mock(GlobalFuturesQuoteClient.class);
+        externalMarketQuoteClient = mock(ExternalMarketQuoteClient.class);
         newsPulseService = mock(INewsPulseService.class);
         marketOpinionService = mock(IMarketOpinionService.class);
         redisCacheService = mock(RedisCacheService.class);
         properties = new ApexBotProperties();
         ReflectionTestUtils.setField(service, "properties", properties);
         ReflectionTestUtils.setField(service, "marketQuoteClient", usMarketQuoteClient);
+        ReflectionTestUtils.setField(service, "globalFuturesQuoteClient", globalFuturesQuoteClient);
+        ReflectionTestUtils.setField(service, "externalMarketQuoteClient", externalMarketQuoteClient);
         ReflectionTestUtils.setField(service, "newsPulseService", newsPulseService);
         ReflectionTestUtils.setField(service, "marketOpinionService", marketOpinionService);
         ReflectionTestUtils.setField(service, "redisCacheService", redisCacheService);
+        when(externalMarketQuoteClient.fetch()).thenReturn(completeExternalMarketItems());
     }
 
     @Test
@@ -125,7 +137,7 @@ class MorningBriefingServiceImplTest {
         assertTrue(response.getSummary().contains("AI"));
         assertEquals(List.of("美联储公布最新经济数据"), response.getNewsTitles());
         assertSame(newsPulse, response.getNewsPulse());
-        verify(redisCacheService).put(eq("apex:morning-briefing:latest"), eq(response), any());
+        verify(redisCacheService).put(eq("apex:morning-briefing:latest:v2"), eq(response), any());
     }
 
     @Test
@@ -174,6 +186,54 @@ class MorningBriefingServiceImplTest {
                 .map(OvernightMarketQuote::getSymbol)
                 .toList());
         assertTrue(response.getSummary().contains("亚太市场：恒生指数 -1.20%"));
+    }
+
+    @Test
+    void includesExternalMarketEnvironmentAndMarksMissingItemsAsIncomplete() {
+        when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of(quote("usIXIC", "纳斯达克", "0.81")));
+        when(externalMarketQuoteClient.fetch()).thenReturn(List.of(
+                externalItem(ExternalMarketIndicatorEnum.GOLD, "0.60"),
+                externalItem(ExternalMarketIndicatorEnum.CRUDE_OIL, "1.20")
+        ));
+
+        MorningBriefingResp response = service.generate();
+
+        assertEquals(5, response.getExternalMarketItems().size());
+        assertTrue(response.getExternalMarketItems().get(0).isAvailable());
+        assertFalse(response.getExternalMarketItems().get(2).isAvailable());
+        assertTrue(response.getSummary().contains("外围环境：黄金 +0.60%；原油 +1.20%；其余指标暂未获取。"));
+        assertEquals("YELLOW", response.getDataLevel());
+    }
+
+    @Test
+    void returnsLastBriefingAsRefreshingAfterCacheInvalidation() {
+        MorningBriefingResp cached = MorningBriefingResp.builder()
+                .generatedAt(LocalDateTime.of(2026, 8, 18, 6, 35))
+                .dataLevel("GREEN")
+                .build();
+        ReflectionTestUtils.setField(service, "cachedBriefing", cached);
+        ReflectionTestUtils.setField(service, "cachedAtMs", System.currentTimeMillis());
+
+        service.invalidateCache();
+        MorningBriefingResp response = service.latest();
+
+        assertTrue(response.isStale());
+        assertTrue(response.isRefreshing());
+        assertEquals("YELLOW", response.getDataLevel());
+        assertSame(cached.getGeneratedAt(), response.getGeneratedAt());
+    }
+
+    @Test
+    void includesFtseA50FutureAsAnAsharesPreMarketReference() {
+        properties.getMorningBriefing().setFtseA50FutureSymbol("hf_FTSE");
+        when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of());
+        when(globalFuturesQuoteClient.fetch("hf_FTSE"))
+                .thenReturn(quote("hf_FTSE", "富时 A50 期指连续", "0.65"));
+
+        MorningBriefingResp response = service.generate();
+
+        assertEquals("hf_FTSE", response.getFtseA50Future().getSymbol());
+        assertTrue(response.getSummary().contains("A股盘前：富时 A50 期指连续 +0.65%"));
     }
 
     @Test
@@ -324,7 +384,7 @@ class MorningBriefingServiceImplTest {
                 .generatedAt(LocalDateTime.of(2026, 8, 18, 6, 35))
                 .dataLevel("GREEN")
                 .build();
-        when(redisCacheService.get("apex:morning-briefing:latest", MorningBriefingResp.class))
+        when(redisCacheService.get("apex:morning-briefing:latest:v2", MorningBriefingResp.class))
                 .thenReturn(cached);
 
         MorningBriefingResp response = service.latest();
@@ -340,6 +400,24 @@ class MorningBriefingServiceImplTest {
                 .name(name)
                 .pctChg(new BigDecimal(pctChg))
                 .quoteTime(LocalDateTime.of(2026, 8, 18, 4, 0))
+                .build();
+    }
+
+    private List<ExternalMarketItemResp> completeExternalMarketItems() {
+        List<ExternalMarketItemResp> items = new ArrayList<>();
+        for (ExternalMarketIndicatorEnum indicator : ExternalMarketIndicatorEnum.values()) {
+            items.add(externalItem(indicator, "0.10"));
+        }
+        return items;
+    }
+
+    private ExternalMarketItemResp externalItem(ExternalMarketIndicatorEnum indicator, String pctChg) {
+        return ExternalMarketItemResp.builder()
+                .code(indicator.getCode())
+                .name(indicator.getDesc())
+                .pctChg(new BigDecimal(pctChg))
+                .available(true)
+                .aShareImpact(indicator.getAShareImpact())
                 .build();
     }
 }

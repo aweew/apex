@@ -22,6 +22,7 @@ import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IFactorResearchSnapshotService;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IMarketBreadthForecastService;
 import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
 import com.awe.apex.quant.service.IPortfolioService;
@@ -104,6 +105,9 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
     @Resource
     private IMarketBriefingService marketBriefingService;
+
+    @Resource
+    private IMarketBreadthForecastService marketBreadthForecastService;
 
     @Resource
     private IMorningBriefingService morningBriefingService;
@@ -956,6 +960,13 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         }
 
         ensurePostProcessingActive(cancelled);
+        if (Objects.nonNull(marketBreadthForecastService)) {
+            String settlementMessage = marketBreadthForecastService.settleAfterClose(LocalDate.now());
+            if (StringUtils.isNotBlank(settlementMessage)) {
+                appendLog(job, "[警告] " + settlementMessage + "\n");
+                log.warn("收盘任务盘前涨跌比回测未结算，任务编号={}，原因={}", job.getId(), settlementMessage);
+            }
+        }
         String group = "我的自选";
         try {
             if (Objects.nonNull(configService)) {

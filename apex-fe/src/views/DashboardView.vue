@@ -7,12 +7,14 @@ import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 import { publishDataFreshness } from '../utils/dataFreshness.js'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v17'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v19'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
 const loadError = ref('')
 const marketDetailOpen = ref(false)
+const opinionPreviewOpen = ref(false)
+const opinionPreview = ref(null)
 
 function readHomeCache() {
   try {
@@ -39,7 +41,9 @@ const hasExecutableNewPosition = computed(() => commandOperationItems.value.some
   (item) => item.code === 'BUY_CONDITIONALLY' && item.status === 'READY',
 ))
 const morningBriefing = computed(() => home.value?.morningBriefing || null)
+const breadthForecast = computed(() => home.value?.breadthForecast || null)
 const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
+const preMarketEventImpacts = computed(() => newsPulse.value?.eventImpacts || [])
 const marketOpinion = computed(() => morningBriefing.value?.marketOpinion || null)
 const institutionViews = computed(() => marketOpinion.value?.institutionViews || [])
 const activeSeats = computed(() => marketOpinion.value?.activeSeats || [])
@@ -52,6 +56,12 @@ const overnightIndexes = computed(() => {
 })
 const overnightThemes = computed(() => morningBriefing.value?.marketThemes || [])
 const asiaIndexes = computed(() => morningBriefing.value?.asiaQuotes || [])
+const openingAuction = computed(() => home.value?.openingAuction || null)
+const externalMarketItems = computed(() => morningBriefing.value?.externalMarketItems || [])
+const externalMarketAvailableCount = computed(
+  () => externalMarketItems.value.filter((item) => item.available).length,
+)
+const ftseA50Future = computed(() => morningBriefing.value?.ftseA50Future || null)
 const overnightStars = computed(() => {
   const starQuotes = morningBriefing.value?.starQuotes
   if (Array.isArray(starQuotes)) return starQuotes
@@ -124,6 +134,18 @@ function fmtBriefingTime(v) {
   return String(v).replace('T', ' ').slice(5, 16)
 }
 
+function fmtForecastRatio(value) {
+  const ratio = Number(value)
+  if (Number.isNaN(ratio)) return '--'
+  return `${Math.max(0, Math.min(100, ratio)).toFixed(0)}%`
+}
+
+function forecastRatio(value) {
+  const ratio = Number(value)
+  if (Number.isNaN(ratio)) return 50
+  return Math.max(0, Math.min(100, ratio))
+}
+
 function newsSourceLabel(source) {
   const labels = {
     eastmoney: '东财',
@@ -152,6 +174,17 @@ function formatOpinionAmount(value) {
   if (Number.isNaN(amount)) return ''
   const sign = amount > 0 ? '+' : ''
   return `${sign}${(amount / 100000000).toFixed(2)} 亿`
+}
+
+function openOpinionPreview(item) {
+  if (!item?.url) return
+  opinionPreview.value = item
+  opinionPreviewOpen.value = true
+}
+
+function openOpinionInNewTab() {
+  if (!opinionPreview.value?.url) return
+  window.open(opinionPreview.value.url, '_blank', 'noopener,noreferrer')
 }
 
 function pctDir(v) {
@@ -573,6 +606,53 @@ onMounted(() => {
       </div>
     </section>
 
+    <section v-if="breadthForecast" class="breadth-forecast enter delay-1" aria-label="盘前涨跌比预测">
+      <div v-if="breadthForecast.available" class="breadth-forecast-main">
+        <div class="breadth-forecast-head">
+          <div>
+            <h3>盘前涨跌比预测</h3>
+            <p>平盘剔除 · {{ fmtBriefingTime(breadthForecast.generatedAt) }} 固化</p>
+          </div>
+          <span class="breadth-forecast-confidence">{{ breadthForecast.confidence || '低' }}置信度</span>
+        </div>
+        <div class="breadth-forecast-tug" :aria-label="`预测上涨 ${fmtForecastRatio(breadthForecast.predictedUpRatio)}，预测下跌 ${fmtForecastRatio(breadthForecast.predictedDownRatio)}`">
+          <div class="breadth-forecast-side up">
+            <span>预测上涨</span>
+            <strong>{{ fmtForecastRatio(breadthForecast.predictedUpRatio) }}</strong>
+          </div>
+          <div class="breadth-forecast-track" aria-hidden="true">
+            <i class="breadth-forecast-up" :style="{ width: `${forecastRatio(breadthForecast.predictedUpRatio)}%` }" />
+            <i class="breadth-forecast-down" :style="{ width: `${forecastRatio(breadthForecast.predictedDownRatio)}%` }" />
+          </div>
+          <div class="breadth-forecast-side down">
+            <span>预测下跌</span>
+            <strong>{{ fmtForecastRatio(breadthForecast.predictedDownRatio) }}</strong>
+          </div>
+        </div>
+        <div class="breadth-forecast-evidence">
+          <span v-for="reason in breadthForecast.reasons || []" :key="reason">{{ reason }}</span>
+        </div>
+      </div>
+      <div v-else class="breadth-forecast-empty">
+        <h3>盘前涨跌比预测</h3>
+        <p>{{ breadthForecast.message || '盘前数据尚未齐全' }}</p>
+      </div>
+      <div v-if="breadthForecast.available" class="breadth-forecast-backtest">
+        <template v-if="breadthForecast.settled">
+          <span class="breadth-forecast-backtest-title">收盘回测</span>
+          <span>实际上涨 {{ fmtForecastRatio(breadthForecast.actualUpRatio) }}</span>
+          <span>实际下跌 {{ fmtForecastRatio(breadthForecast.actualDownRatio) }}</span>
+          <span :class="breadthForecast.directionHit ? 'is-hit' : 'is-miss'">
+            {{ breadthForecast.directionHit ? '方向命中' : '方向未命中' }}
+          </span>
+          <span>偏差 {{ Number(breadthForecast.absoluteError || 0).toFixed(2) }} 个百分点</span>
+        </template>
+        <span v-else class="breadth-forecast-pending">{{ breadthForecast.message }}</span>
+        <p v-if="breadthForecast.analysisSummary">{{ breadthForecast.analysisSummary }}</p>
+        <p class="breadth-forecast-rolling">{{ breadthForecast.rollingBacktestSummary }}</p>
+      </div>
+    </section>
+
     <section v-if="effect" class="effect-strip enter delay-1" aria-label="赚钱效应">
       <div class="effect-head">
         <span class="effect-title"><TermTip term="money_effect">赚钱效应</TermTip></span>
@@ -667,24 +747,6 @@ onMounted(() => {
             </div>
           </div>
 
-          <div
-            v-if="command.preMarketSummary?.opportunityItems?.length || command.preMarketSummary?.riskItems?.length"
-            class="command-directions"
-          >
-            <div v-if="command.preMarketSummary?.opportunityItems?.length" class="command-direction opportunity">
-              <strong>可买</strong>
-              <span v-for="item in command.preMarketSummary.opportunityItems" :key="`${item.name}-${item.reason}`">
-                <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
-              </span>
-            </div>
-            <div v-if="command.preMarketSummary?.riskItems?.length" class="command-direction risk">
-              <strong>先处理</strong>
-              <span v-for="item in command.preMarketSummary.riskItems" :key="`${item.name}-${item.reason}`">
-                <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
-              </span>
-            </div>
-          </div>
-
           <div v-if="command.preMarketSummary?.watchConditions?.length" class="command-watch">
             <span>{{ command.status === 'READY' ? '取消条件' : '恢复条件' }}</span>
             <p v-for="item in command.preMarketSummary.watchConditions" :key="`${item.title}-${item.condition}`">
@@ -763,6 +825,9 @@ onMounted(() => {
               <span class="morning-context-time-label">更新</span>
               <time>{{ fmtBriefingTime(morningBriefing?.generatedAt) }}</time>
             </span>
+            <span v-if="morningBriefing?.refreshing" class="morning-context-refreshing">
+              正在刷新，显示上一份晨报
+            </span>
           </div>
           <el-button class="morning-context-link" link type="primary" @click="router.push('/news')">
             消息面
@@ -774,8 +839,43 @@ onMounted(() => {
       <div class="morning-context-grid">
         <div class="morning-context-block overnight-block">
           <div class="morning-block-head">
-            <h4>隔夜市场</h4>
-            <span>美股收盘快照</span>
+            <h4>开盘影响</h4>
+            <span>竞价确认与外盘锚</span>
+          </div>
+
+          <div class="overnight-layer">
+            <div class="overnight-layer-head">
+              <h5>集合竞价确认</h5>
+              <span>{{ openingAuction?.stateDesc || '等待竞价状态' }}</span>
+            </div>
+            <div v-if="openingAuction?.available" class="opening-auction-grid">
+              <div v-for="item in openingAuction.indexes" :key="item.code" class="overnight-quote">
+                <div class="overnight-quote-name">
+                  <strong>{{ item.name || item.code }}</strong>
+                  <small v-if="fmtQuotePrice(item.latestPrice)">{{ fmtQuotePrice(item.latestPrice) }}</small>
+                </div>
+                <b :class="pctDir(item.pctChg)">{{ fmtIndexPct(item.pctChg) }}</b>
+              </div>
+            </div>
+            <p v-else class="morning-context-empty">{{ openingAuction?.stateDesc || '集合竞价状态暂未获取' }}</p>
+            <p class="opening-auction-note">集合竞价是开盘前最后确认，不以外盘信号替代。</p>
+          </div>
+
+          <div class="overnight-layer">
+            <div class="overnight-layer-head">
+              <h5>A股盘前</h5>
+              <span>夜盘开盘参考</span>
+            </div>
+            <div v-if="ftseA50Future" class="overnight-index-grid a50-future-grid">
+              <div class="overnight-quote">
+                <div class="overnight-quote-name">
+                  <strong>富时 A50 期指连续</strong>
+                  <small v-if="fmtQuotePrice(ftseA50Future.latestPrice)">{{ fmtQuotePrice(ftseA50Future.latestPrice) }}</small>
+                </div>
+                <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
+              </div>
+            </div>
+            <p v-else class="morning-context-empty">富时 A50 期指连续暂未获取</p>
           </div>
 
           <div class="overnight-layer">
@@ -812,6 +912,30 @@ onMounted(() => {
               </div>
             </div>
             <p v-else class="morning-context-empty">亚太指数暂未获取</p>
+          </div>
+
+          <div class="overnight-layer">
+            <div class="overnight-layer-head">
+              <h5>外围环境</h5>
+              <span>外盘锚与行业映射</span>
+            </div>
+            <div v-if="externalMarketItems.length" class="external-market-grid">
+              <article v-for="item in externalMarketItems" :key="item.code" class="external-market-card">
+                <div class="external-market-quote">
+                  <strong>{{ item.name }}</strong>
+                  <b v-if="item.available" :class="pctDir(item.pctChg)">{{ fmtIndexPct(item.pctChg) }}</b>
+                  <span v-else>暂未获取</span>
+                </div>
+                <span v-if="item.available && fmtQuotePrice(item.latestPrice)" class="external-market-price">
+                  {{ fmtQuotePrice(item.latestPrice) }}
+                </span>
+                <p>对 A 股：{{ item.aShareImpact }}</p>
+              </article>
+            </div>
+            <p v-else class="morning-context-empty">外围环境指标暂未获取</p>
+            <p class="external-market-note">
+              已获取 {{ externalMarketAvailableCount }}/5 项。它们是影响 A 股开盘情绪的外部线索，并非单独买卖信号。
+            </p>
           </div>
 
           <div class="overnight-layer">
@@ -884,6 +1008,29 @@ onMounted(() => {
               }}
             </p>
           </div>
+          <section v-if="preMarketEventImpacts.length" class="pre-market-event-impact" aria-label="盘前事件影响">
+            <div class="pre-market-event-head">
+              <h5>盘前事件影响</h5>
+              <span>按重要度排序</span>
+            </div>
+            <article v-for="item in preMarketEventImpacts" :key="`${item.eventType}-${item.title}`" class="pre-market-event-item">
+              <div class="pre-market-event-meta">
+                <span class="pre-market-event-type">{{ item.eventTypeName }}</span>
+                <span>{{ item.impactScopeName || item.impactScope }}</span>
+                <span :class="item.direction === '利好' ? 'bull' : item.direction === '利空' ? 'bear' : ''">
+                  {{ item.direction }}
+                </span>
+                <span>{{ item.verificationStatus }}</span>
+              </div>
+              <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+              <strong v-else>{{ item.title }}</strong>
+              <p>{{ item.impactExplanation }}</p>
+              <div v-if="item.relatedCodes?.length || item.themes?.length" class="pre-market-event-targets">
+                <span v-for="code in item.relatedCodes || []" :key="code">{{ code }}</span>
+                <span v-for="theme in item.themes || []" :key="theme">{{ theme }}</span>
+              </div>
+            </article>
+          </section>
           <div v-if="morningNewsCards.length" class="morning-news-list">
             <article v-for="item in morningNewsCards" :key="item.id || item.title" class="morning-news-item">
               <span
@@ -911,7 +1058,7 @@ onMounted(() => {
               <div class="opinion-group-head"><h6>机构观点</h6><span>公开研报</span></div>
               <article v-for="item in institutionViews" :key="item.url || item.title" class="opinion-item">
                 <span class="opinion-direction" :class="opinionTone(item.direction)">{{ item.direction || '未评级' }}</span>
-                <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+                <button v-if="item.url" type="button" class="opinion-item-link" @click="openOpinionPreview(item)">{{ item.title }}</button>
                 <span v-else class="opinion-item-title">{{ item.title }}</span>
                 <small>{{ item.subjectName }} · {{ item.relatedName || item.topic || opinionTime(item.publishedAt) }}</small>
               </article>
@@ -922,7 +1069,7 @@ onMounted(() => {
                 <span class="opinion-direction seat">席位</span>
                 <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.subjectName }}</a>
                 <span v-else class="opinion-item-title">{{ item.subjectName }}</span>
-                <small>{{ formatOpinionAmount(item.netAmount) || '金额未披露' }} · {{ opinionTime(item.publishedAt) }}</small>
+                <small>{{ item.summary || formatOpinionAmount(item.netAmount) || '金额未披露' }} · {{ opinionTime(item.publishedAt) }}</small>
               </article>
             </div>
             <p class="opinion-kol-status">{{ marketOpinion.kolSourceStatus }}</p>
@@ -930,6 +1077,17 @@ onMounted(() => {
         </div>
       </div>
     </section>
+
+    <el-dialog v-model="opinionPreviewOpen" title="研报预览" class="opinion-preview-dialog" width="960px" destroy-on-close>
+      <div v-if="opinionPreview" class="opinion-preview-body">
+        <p>{{ opinionPreview.subjectName }} · {{ opinionPreview.title }}</p>
+        <iframe :src="opinionPreview.url" :title="opinionPreview.title" class="opinion-preview-frame" />
+      </div>
+      <template #footer>
+        <el-button @click="opinionPreviewOpen = false">关闭</el-button>
+        <el-button type="primary" @click="openOpinionInNewTab">在新标签打开</el-button>
+      </template>
+    </el-dialog>
 
     <section v-if="observeAlerts.length" class="panel observe-strip enter delay-1">
       <div class="panel-head">
@@ -1881,6 +2039,177 @@ onMounted(() => {
   letter-spacing: -0.01em;
 }
 
+.breadth-forecast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+  gap: 18px;
+  align-items: stretch;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--glass-border, var(--line));
+  border-radius: var(--radius, 10px);
+  background: var(--glass, rgba(255, 255, 255, 0.9));
+  box-shadow: var(--shadow-soft, none);
+}
+
+.breadth-forecast-main,
+.breadth-forecast-empty {
+  min-width: 0;
+}
+
+.breadth-forecast-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.breadth-forecast-head h3,
+.breadth-forecast-empty h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.breadth-forecast-head p,
+.breadth-forecast-empty p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.breadth-forecast-confidence {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 4px;
+  color: var(--slate);
+  background: rgba(15, 23, 42, 0.04);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.breadth-forecast-tug {
+  display: grid;
+  grid-template-columns: minmax(70px, auto) minmax(110px, 1fr) minmax(70px, auto);
+  align-items: center;
+  gap: 10px;
+  margin-top: 13px;
+}
+
+.breadth-forecast-side {
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.breadth-forecast-side span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.breadth-forecast-side strong {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.breadth-forecast-side.up {
+  text-align: left;
+}
+
+.breadth-forecast-side.down {
+  text-align: right;
+}
+
+.breadth-forecast-side.up strong,
+.breadth-forecast-backtest .is-miss {
+  color: var(--up);
+}
+
+.breadth-forecast-side.down strong,
+.breadth-forecast-backtest .is-hit {
+  color: var(--down);
+}
+
+.breadth-forecast-track {
+  display: flex;
+  height: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.breadth-forecast-track i {
+  display: block;
+  min-width: 0;
+  height: 100%;
+}
+
+.breadth-forecast-up {
+  background: rgba(255, 59, 48, 0.8);
+}
+
+.breadth-forecast-down {
+  background: rgba(52, 199, 89, 0.8);
+}
+
+.breadth-forecast-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.breadth-forecast-evidence span {
+  max-width: 100%;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--slate);
+  background: rgba(255, 255, 255, 0.56);
+  font-size: 10px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.breadth-forecast-backtest {
+  display: flex;
+  align-content: flex-start;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 2px 0 2px 18px;
+  border-left: 1px solid var(--line);
+  color: var(--slate);
+  font-size: 11px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.breadth-forecast-backtest-title {
+  color: var(--ink-soft);
+  font-weight: 650;
+}
+
+.breadth-forecast-pending {
+  color: var(--muted);
+}
+
+.breadth-forecast-backtest p {
+  width: 100%;
+  margin: 5px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.breadth-forecast-backtest .breadth-forecast-rolling {
+  color: var(--ink-soft);
+}
+
 .effect-strip {
   margin: 0 0 14px;
   padding: 14px 16px 12px;
@@ -2360,7 +2689,7 @@ onMounted(() => {
 
 .morning-context {
   margin: 0 0 14px;
-  padding: 0 2px 20px;
+  padding: 0 18px 20px 2px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   letter-spacing: 0;
@@ -2434,6 +2763,12 @@ onMounted(() => {
 
 .morning-context-time time {
   color: var(--slate);
+}
+
+.morning-context-refreshing {
+  color: var(--warning);
+  font-size: 10px;
+  white-space: normal;
 }
 
 .morning-context-link {
@@ -2534,6 +2869,107 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.42);
 }
 
+.a50-future-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.opening-auction-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.opening-auction-grid .overnight-quote {
+  min-height: 44px;
+  padding: 0 10px;
+  border-right: 1px solid rgba(15, 23, 42, 0.07);
+  border-bottom: 0;
+}
+
+.opening-auction-grid .overnight-quote:last-child {
+  border-right: 0;
+}
+
+.opening-auction-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.external-market-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.external-market-card {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.external-market-quote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.external-market-quote strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.external-market-quote b {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.external-market-quote span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.external-market-price {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.external-market-card p,
+.external-market-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.external-market-card p {
+  overflow-wrap: anywhere;
+}
+
+.external-market-note {
+  padding-left: 8px;
+  border-left: 2px solid rgba(0, 113, 227, 0.45);
+}
+
 .overnight-theme-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2616,8 +3052,9 @@ onMounted(() => {
 
 .overnight-theme {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) minmax(82px, auto);
+  grid-template-columns: 24px fit-content(180px) minmax(82px, max-content);
   align-items: center;
+  justify-content: start;
   gap: 8px;
   min-width: 0;
   min-height: 52px;
@@ -2768,6 +3205,81 @@ onMounted(() => {
   border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
+.pre-market-event-impact {
+  margin: 10px 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.pre-market-event-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 0 6px;
+}
+
+.pre-market-event-head h5 {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pre-market-event-head > span,
+.pre-market-event-meta {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.pre-market-event-item {
+  padding: 8px 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.pre-market-event-meta,
+.pre-market-event-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  align-items: center;
+}
+
+.pre-market-event-type {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.pre-market-event-item a,
+.pre-market-event-item strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.pre-market-event-item a:hover {
+  color: var(--accent);
+}
+
+.pre-market-event-item p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.pre-market-event-targets {
+  margin-top: 5px;
+}
+
+.pre-market-event-targets span {
+  padding: 1px 5px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  color: var(--slate);
+  font-size: 10px;
+}
+
 .morning-news-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2902,6 +3414,7 @@ onMounted(() => {
 .opinion-direction.seat { color: var(--accent); }
 
 .opinion-item a,
+.opinion-item-link,
 .opinion-item-title {
   min-width: 0;
   overflow: hidden;
@@ -2912,7 +3425,22 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.opinion-item a:hover { color: var(--accent); }
+.opinion-item-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.opinion-item a:hover,
+.opinion-item-link:hover { color: var(--accent); }
+
+.opinion-item-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .opinion-item small {
   min-width: 0;
@@ -2923,6 +3451,39 @@ onMounted(() => {
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+:global(.opinion-preview-dialog) {
+  width: min(960px, calc(100vw - 24px)) !important;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+:global(.opinion-preview-dialog .el-dialog__body) {
+  padding-top: 4px;
+  padding-bottom: 8px;
+}
+
+.opinion-preview-body {
+  min-height: 0;
+}
+
+.opinion-preview-body p {
+  margin: 0 0 10px;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opinion-preview-frame {
+  display: block;
+  width: 100%;
+  height: min(70dvh, 720px);
+  border: 1px solid var(--line);
+  border-radius: 4px;
 }
 
 .opinion-kol-status {
@@ -3002,12 +3563,12 @@ onMounted(() => {
     column-gap: 12px;
   }
 
-  .overnight-theme-grid {
+  .external-market-grid {
     grid-template-columns: 1fr;
   }
 
-  .overnight-theme {
-    grid-template-columns: 24px minmax(0, 1fr) minmax(82px, auto);
+  .overnight-theme-grid {
+    grid-template-columns: 1fr;
   }
 
   .overnight-theme:nth-last-child(-n + 2) {
@@ -3058,6 +3619,7 @@ onMounted(() => {
   }
 
   .opinion-item a,
+  .opinion-item-link,
   .opinion-item-title {
     display: -webkit-box;
     white-space: normal;
@@ -3093,7 +3655,7 @@ onMounted(() => {
   }
 
   .morning-context {
-    padding-right: 0;
+    padding-right: 14px;
     padding-left: 0;
   }
 
@@ -3103,7 +3665,7 @@ onMounted(() => {
 
 }
 
-@media (max-width: 640px) {
+@media (max-width: 480px) {
   .morning-context-grid {
     grid-template-columns: 1fr;
   }
@@ -3897,7 +4459,7 @@ onMounted(() => {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
-    gap: 6px;
+    gap: 8px;
     padding-top: 0;
     border-top: 0;
   }
@@ -3909,17 +4471,21 @@ onMounted(() => {
   .stat-line .stat {
     display: block;
     min-width: 0;
-    padding: 8px 9px;
+    min-height: 58px;
+    box-sizing: border-box;
+    padding: 9px 10px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.54);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
     line-height: 1.25;
   }
 
   .stat-line .stat > em {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
     font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
   }
 
   .stat-line .volume-stat {
@@ -3927,6 +4493,9 @@ onMounted(() => {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
+    min-height: 48px;
+    padding-top: 8px;
+    padding-bottom: 8px;
     gap: 4px 5px;
   }
 
@@ -3942,6 +4511,20 @@ onMounted(() => {
     font-size: 11px;
   }
 
+  .stat-line .stat > b,
+  .stat-line .stat > .slash {
+    font-size: 14px;
+  }
+
+  .stat-line .volume-stat > b {
+    font-size: 15px;
+    color: var(--ink);
+  }
+
+  .stat-line .stat > .slash {
+    margin: 0 1px;
+  }
+
   .breadth-track {
     height: 4px;
     margin-top: 8px;
@@ -3954,6 +4537,34 @@ onMounted(() => {
 
   .kpi-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .breadth-forecast {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 13px 12px;
+  }
+
+  .breadth-forecast-main {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .breadth-forecast-tug {
+    grid-template-columns: minmax(64px, auto) minmax(80px, 1fr) minmax(64px, auto);
+    gap: 7px;
+  }
+
+  .breadth-forecast-side strong {
+    font-size: 18px;
+  }
+
+  .breadth-forecast-backtest {
+    padding: 10px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 }
 

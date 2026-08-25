@@ -134,12 +134,13 @@ def fetch_institution_reports(limit: int, snapshot_time: datetime) -> List[Dict[
 
 
 def fetch_active_seats(limit: int, snapshot_time: datetime) -> List[Dict[str, Any]]:
-    target_day = snapshot_time.date().isoformat()
+    start_day = (snapshot_time.date() - timedelta(days=5)).isoformat()
+    end_day = snapshot_time.date().isoformat()
     payload = request_json(ACTIVE_SEAT_URL, {
         "sortColumns": "TOTAL_NETAMT,ONLIST_DATE,OPERATEDEPT_CODE",
         "sortTypes": "-1,-1,1", "pageSize": min(max(limit, 20), 100), "pageNumber": 1,
         "reportName": "RPT_OPERATEDEPT_ACTIVE", "columns": "ALL", "source": "WEB", "client": "WEB",
-        "filter": f"(ONLIST_DATE>='{target_day}')(ONLIST_DATE<='{target_day}')",
+        "filter": f"(ONLIST_DATE>='{start_day}')(ONLIST_DATE<='{end_day}')",
     })
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
     records = result.get("data") if isinstance(result.get("data"), list) else []

@@ -15,8 +15,10 @@ import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.EquityPointResp;
 import com.awe.apex.quant.domain.dto.IndustryPnlResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketBreadthForecastResp;
 import com.awe.apex.quant.domain.dto.MarketTipItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
+import com.awe.apex.quant.domain.dto.OpeningAuctionResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.PaperMetricsResp;
 import com.awe.apex.quant.domain.dto.RiskOverviewResp;
@@ -40,10 +42,12 @@ import com.awe.apex.quant.service.IDashboardCommandService;
 import com.awe.apex.quant.service.IDashboardService;
 import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.service.IMarketBreadthForecastService;
 import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPaperService;
 import com.awe.apex.quant.service.IRiskService;
+import com.awe.apex.quant.market.OpeningAuctionQuoteClient;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -99,6 +103,12 @@ public class DashboardServiceImpl implements IDashboardService {
 
     @Resource
     private IMorningBriefingService morningBriefingService;
+
+    @Resource
+    private IMarketBreadthForecastService marketBreadthForecastService;
+
+    @Resource
+    private OpeningAuctionQuoteClient openingAuctionQuoteClient;
 
     @Resource
     private IDashboardCommandService dashboardCommandService;
@@ -204,6 +214,19 @@ public class DashboardServiceImpl implements IDashboardService {
                         return morningBriefingService.latest();
                     } catch (Exception ex) {
                         log.warn("看板盘前晨报加载失败，原因={}", ex.getMessage());
+                        return null;
+                    }
+                }, HOME_POOL)
+                .completeOnTimeout(null, 2, TimeUnit.SECONDS);
+        CompletableFuture<OpeningAuctionResp> openingAuctionFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    if (Objects.isNull(openingAuctionQuoteClient)) {
+                        return null;
+                    }
+                    try {
+                        return openingAuctionQuoteClient.fetch();
+                    } catch (Exception ex) {
+                        log.warn("看板集合竞价加载失败，原因={}", ex.getMessage());
                         return null;
                     }
                 }, HOME_POOL)
@@ -333,6 +356,15 @@ public class DashboardServiceImpl implements IDashboardService {
         }
 
         MorningBriefingResp morningBriefing = morningBriefingFuture.join();
+        OpeningAuctionResp openingAuction = openingAuctionFuture.join();
+        MarketBreadthForecastResp breadthForecast = null;
+        if (Objects.nonNull(marketBreadthForecastService)) {
+            try {
+                breadthForecast = marketBreadthForecastService.loadForDashboard(morningBriefing, briefing);
+            } catch (Exception ex) {
+                log.warn("看板盘前涨跌比预测加载失败，原因={}", ex.getMessage());
+            }
+        }
         boolean decisionRunning = false;
         try {
             decisionRunning = dataSyncJobService.isCurrentUserDecisionRunning();
@@ -371,6 +403,8 @@ public class DashboardServiceImpl implements IDashboardService {
         DashboardHomeResp response = DashboardHomeResp.builder()
                 .market(market)
                 .morningBriefing(morningBriefing)
+                .breadthForecast(breadthForecast)
+                .openingAuction(openingAuction)
                 .command(command)
                 .decision(decision)
                 .observeAlerts(observeAlerts)

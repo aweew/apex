@@ -5,11 +5,15 @@ import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
+import com.awe.apex.quant.domain.dto.ExternalMarketItemResp;
 import com.awe.apex.quant.domain.dto.MarketOpinionRadarResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.OvernightMarketTheme;
+import com.awe.apex.quant.market.GlobalFuturesQuoteClient;
+import com.awe.apex.quant.market.ExternalMarketIndicatorEnum;
+import com.awe.apex.quant.market.ExternalMarketQuoteClient;
 import com.awe.apex.quant.market.MarketBriefingMath;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.market.UsMarketQuoteClient;
@@ -28,6 +32,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 盘前晨报服务实现。
@@ -36,10 +43,16 @@ import java.util.Objects;
 @Service
 public class MorningBriefingServiceImpl implements IMorningBriefingService {
 
-    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest";
+    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest:v2";
     private static final Duration BRIEFING_CACHE_TTL = Duration.ofHours(30);
+    private static final ExecutorService MORNING_BRIEFING_REFRESH_POOL = Executors.newSingleThreadExecutor(runnable -> {
+        Thread refreshThread = new Thread(runnable, "morning-briefing-refresh");
+        refreshThread.setDaemon(true);
+        return refreshThread;
+    });
 
     private final Object cacheLock = new Object();
+    private final AtomicBoolean refreshRunning = new AtomicBoolean(false);
     private MorningBriefingResp cachedBriefing;
     private long cachedAtMs;
 
@@ -48,6 +61,12 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
 
     @Resource
     private UsMarketQuoteClient marketQuoteClient;
+
+    @Resource
+    private GlobalFuturesQuoteClient globalFuturesQuoteClient;
+
+    @Resource
+    private ExternalMarketQuoteClient externalMarketQuoteClient;
 
     @Resource
     private INewsPulseService newsPulseService;
@@ -101,6 +120,13 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 parseSymbols(properties.getMorningBriefing().getIndexSymbols()));
         List<OvernightMarketQuote> asiaQuotes = selectQuotes(marketQuotes,
                 parseSymbols(properties.getMorningBriefing().getAsiaIndexSymbols()));
+        OvernightMarketQuote ftseA50Future = globalFuturesQuoteClient.fetch(
+                properties.getMorningBriefing().getFtseA50FutureSymbol());
+        List<ExternalMarketItemResp> externalMarketItems = externalMarketQuoteClient.fetch();
+        if (Objects.isNull(externalMarketItems)) {
+            externalMarketItems = List.of();
+        }
+        externalMarketItems = normalizeExternalMarketItems(externalMarketItems);
         List<OvernightMarketTheme> marketThemes = buildMarketThemes(marketQuotes);
         List<OvernightMarketQuote> starQuotes = buildStarQuotes(marketQuotes);
 
@@ -120,7 +146,8 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
         }
 
         // 3. 输出市场温度、主题强弱和明星异动三层结果
-        String summary = buildSummary(indexQuotes, asiaQuotes, marketThemes, starQuotes, newsPulse);
+        String summary = buildSummary(ftseA50Future, indexQuotes, asiaQuotes, externalMarketItems,
+                marketThemes, starQuotes, newsPulse);
         List<String> validQuoteSymbols = new ArrayList<>();
         for (OvernightMarketQuote marketQuote : marketQuotes) {
             if (StringUtils.isNotBlank(marketQuote.getSymbol())
@@ -129,13 +156,18 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 validQuoteSymbols.add(marketQuote.getSymbol());
             }
         }
-        boolean quoteDataIncomplete = CollUtil.isEmpty(symbols) || validQuoteSymbols.size() < symbols.size();
+        boolean quoteDataIncomplete = CollUtil.isEmpty(symbols) || validQuoteSymbols.size() < symbols.size()
+                || (StringUtils.isNotBlank(properties.getMorningBriefing().getFtseA50FutureSymbol())
+                && Objects.isNull(ftseA50Future))
+                || countAvailableExternalMarketItems(externalMarketItems) < ExternalMarketIndicatorEnum.values().length;
         MorningBriefingResp briefing = MorningBriefingResp.builder()
                 .tradeDate(tradeDate)
                 .generatedAt(generatedAt)
                 .marketQuotes(marketQuotes)
                 .indexQuotes(indexQuotes)
                 .asiaQuotes(asiaQuotes)
+                .externalMarketItems(externalMarketItems)
+                .ftseA50Future(ftseA50Future)
                 .starQuotes(starQuotes)
                 .marketThemes(marketThemes)
                 .newsTitles(newsTitles)
@@ -179,6 +211,14 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                     && System.currentTimeMillis() - cachedAtMs < BRIEFING_CACHE_TTL.toMillis()) {
                 return cachedBriefing;
             }
+            if (Objects.nonNull(cachedBriefing)) {
+                refreshAsync();
+                return cachedBriefing.toBuilder()
+                        .stale(true)
+                        .refreshing(true)
+                        .dataLevel("YELLOW")
+                        .build();
+            }
             return generate();
         }
     }
@@ -189,10 +229,61 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
     @Override
     public void invalidateCache() {
         synchronized (cacheLock) {
-            cachedBriefing = null;
             cachedAtMs = 0L;
         }
         redisCacheService.evict(BRIEFING_CACHE_KEY);
+    }
+
+    private void refreshAsync() {
+        if (!refreshRunning.compareAndSet(false, true)) {
+            return;
+        }
+        MORNING_BRIEFING_REFRESH_POOL.execute(() -> {
+            try {
+                generate();
+            } catch (Exception ex) {
+                log.error("盘前晨报后台刷新失败", ex);
+            } finally {
+                refreshRunning.set(false);
+            }
+        });
+    }
+
+    private int countAvailableExternalMarketItems(List<ExternalMarketItemResp> externalMarketItems) {
+        int availableCount = 0;
+        if (CollUtil.isEmpty(externalMarketItems)) {
+            return availableCount;
+        }
+        for (ExternalMarketItemResp item : externalMarketItems) {
+            if (Objects.nonNull(item) && item.isAvailable()) {
+                availableCount++;
+            }
+        }
+        return availableCount;
+    }
+
+    private List<ExternalMarketItemResp> normalizeExternalMarketItems(List<ExternalMarketItemResp> externalMarketItems) {
+        List<ExternalMarketItemResp> normalizedItems = new ArrayList<>();
+        for (ExternalMarketIndicatorEnum indicator : ExternalMarketIndicatorEnum.values()) {
+            ExternalMarketItemResp matchedItem = null;
+            for (ExternalMarketItemResp item : externalMarketItems) {
+                if (Objects.nonNull(item) && indicator.getCode().equals(item.getCode())) {
+                    matchedItem = item;
+                    break;
+                }
+            }
+            if (Objects.nonNull(matchedItem)) {
+                normalizedItems.add(matchedItem);
+            } else {
+                normalizedItems.add(ExternalMarketItemResp.builder()
+                        .code(indicator.getCode())
+                        .name(indicator.getDesc())
+                        .available(false)
+                        .aShareImpact("当前未获取报价，暂不据此判断 A 股影响。")
+                        .build());
+            }
+        }
+        return normalizedItems;
     }
 
     private List<String> parseSymbols(String configuredSymbols) {
@@ -318,12 +409,22 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
         return new ArrayList<>(sortedStarQuotes.subList(0, starQuoteLimit));
     }
 
-    private String buildSummary(List<OvernightMarketQuote> indexQuotes,
+    private String buildSummary(OvernightMarketQuote ftseA50Future,
+                                List<OvernightMarketQuote> indexQuotes,
                                 List<OvernightMarketQuote> asiaQuotes,
+                                List<ExternalMarketItemResp> externalMarketItems,
                                 List<OvernightMarketTheme> marketThemes,
                                 List<OvernightMarketQuote> starQuotes,
                                 NewsPulseResp newsPulse) {
-        StringBuilder summary = new StringBuilder("隔夜美股：");
+        StringBuilder summary = new StringBuilder("A股盘前：");
+        if (Objects.isNull(ftseA50Future)) {
+            summary.append("富时 A50 期指连续暂未获取。\n");
+        } else {
+            summary.append("富时 A50 期指连续 ")
+                    .append(formatPercent(ftseA50Future.getPctChg())).append("。\n");
+        }
+
+        summary.append("隔夜美股：");
         if (CollUtil.isEmpty(indexQuotes)) {
             summary.append("美股行情暂未获取。");
         } else {
@@ -336,6 +437,31 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
             summary.append("亚太指数暂未获取。");
         } else {
             appendQuotes(summary, asiaQuotes, asiaQuotes.size());
+            summary.append("。");
+        }
+
+        summary.append("\n外围环境：");
+        if (CollUtil.isEmpty(externalMarketItems)) {
+            summary.append("黄金、原油、美元、离岸人民币和美债暂未完整获取。");
+        } else {
+            boolean hasAvailableItem = false;
+            for (int index = 0; index < externalMarketItems.size(); index++) {
+                ExternalMarketItemResp item = externalMarketItems.get(index);
+                if (Objects.isNull(item) || !item.isAvailable()) {
+                    continue;
+                }
+                if (hasAvailableItem) {
+                    summary.append("；");
+                }
+                summary.append(item.getName()).append(" ").append(formatPercent(item.getPctChg()));
+                hasAvailableItem = true;
+            }
+            if (!hasAvailableItem) {
+                summary.append("指标暂未获取");
+            }
+            if (countAvailableExternalMarketItems(externalMarketItems) < ExternalMarketIndicatorEnum.values().length) {
+                summary.append(hasAvailableItem ? "；其余指标暂未获取" : "，暂不据此判断 A 股影响");
+            }
             summary.append("。");
         }
 

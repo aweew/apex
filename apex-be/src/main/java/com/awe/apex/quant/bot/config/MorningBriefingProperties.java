@@ -36,6 +36,11 @@ public class MorningBriefingProperties {
     private String asiaIndexSymbols = DEFAULT_ASIA_INDEX_SYMBOLS;
 
     /**
+     * 富时 A50 期指连续合约代码。
+     */
+    private String ftseA50FutureSymbol = "";
+
+    /**
      * 明星股观察池符号，逗号分隔。
      */
     private String starSymbols = DEFAULT_STAR_SYMBOLS;

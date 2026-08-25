@@ -15,7 +15,7 @@ test('dashboard places overnight market and news before action panels', () => {
 })
 
 test('dashboard uses command headline with legacy advice fallback and a new cache version', () => {
-  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v17'/)
+  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v19'/)
   assert.match(dashboardSource, /const command\s*=\s*computed\(\(\)\s*=>\s*home\.value\?\.command\s*\|\|\s*null\)/)
   assert.match(
     dashboardSource,
@@ -32,6 +32,35 @@ test('dashboard renders the structured today forecast and Asia-Pacific basis', (
   assert.match(dashboardSource, /morningBriefing\.value\?\.asiaQuotes/)
   assert.match(dashboardSource, /<h5>亚太情绪<\/h5>/)
   assert.match(dashboardSource, /class="asia-index-grid"/)
+  assert.match(dashboardSource, /morningBriefing\.value\?\.ftseA50Future/)
+  assert.match(dashboardSource, /<h5>A股盘前<\/h5>/)
+  assert.match(dashboardSource, /富时 A50 期指连续暂未获取/)
+  assert.match(dashboardSource, /const openingAuction\s*=\s*computed\(/)
+  assert.match(dashboardSource, /<h5>集合竞价确认<\/h5>/)
+  assert.match(dashboardSource, /v-for="item in openingAuction\.indexes"/)
+  assert.match(dashboardSource, /集合竞价是开盘前最后确认，不以外盘信号替代/)
+})
+
+test('dashboard separates external environment signals and explains their A-share impact', () => {
+  assert.match(dashboardSource, /const externalMarketItems\s*=\s*computed\(/)
+  assert.match(dashboardSource, /<h5>外围环境<\/h5>/)
+  assert.match(dashboardSource, /v-for="item in externalMarketItems"/)
+  assert.match(dashboardSource, /class="external-market-grid"/)
+  assert.match(dashboardSource, /item\.aShareImpact/)
+  assert.match(dashboardSource, /const externalMarketAvailableCount\s*=\s*computed\(/)
+  assert.match(dashboardSource, /v-if="item\.available"/)
+  assert.match(dashboardSource, /v-else>暂未获取<\/span>/)
+  assert.match(dashboardSource, /影响 A 股开盘情绪的外部线索，并非单独买卖信号/)
+  assert.match(dashboardSource, /已获取 \{\{ externalMarketAvailableCount \}\}\/5 项/)
+})
+
+test('dashboard presents structured pre-market event impacts with evidence labels', () => {
+  assert.match(dashboardSource, /const preMarketEventImpacts\s*=\s*computed\(/)
+  assert.match(dashboardSource, /<h5>盘前事件影响<\/h5>/)
+  assert.match(dashboardSource, /v-for="item in preMarketEventImpacts"/)
+  assert.match(dashboardSource, /item\.impactScope/)
+  assert.match(dashboardSource, /item\.verificationStatus/)
+  assert.match(dashboardSource, /item\.impactExplanation/)
 })
 
 test('dashboard places the command band after market effect and before pre-market context', () => {
@@ -76,8 +105,9 @@ test('dashboard renders position controls and at most three command actions in b
 
 test('dashboard labels focus and actions without filler wording', () => {
   assert.match(dashboardSource, /<h4>今日重点<\/h4>/)
-  assert.match(dashboardSource, /<strong>可买<\/strong>/)
-  assert.match(dashboardSource, /<strong>先处理<\/strong>/)
+  assert.doesNotMatch(dashboardSource, /class="command-directions"/)
+  assert.doesNotMatch(dashboardSource, /preMarketSummary\.opportunityItems/)
+  assert.doesNotMatch(dashboardSource, /preMarketSummary\.riskItems/)
   assert.match(dashboardSource, /command\.status === 'READY' \? '取消条件' : '恢复条件'/)
   assert.match(dashboardSource, /<h4>执行清单<\/h4>/)
 })
@@ -109,10 +139,18 @@ test('dashboard command band is two-column on desktop and safe on phone layouts'
 })
 
 test('dashboard morning context has a compact responsive layout', () => {
+  assert.match(
+    dashboardSource,
+    /\.morning-context\s*\{[^}]*padding:\s*0 18px 20px 2px;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /@media \(max-width: 900px\)[\s\S]*?\.morning-context\s*\{[^}]*padding-right:\s*14px;[^}]*padding-left:\s*0;/s,
+  )
   assert.match(dashboardSource, /\.morning-news-block\s*\{[^}]*padding-left:\s*28px;[^}]*border-left:\s*1px solid var\(--line\);/s)
   assert.match(
     dashboardSource,
-    /@media \(max-width: 640px\)[\s\S]*\.morning-context-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+    /@media \(max-width: 480px\)[\s\S]*\.morning-context-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
   )
   assert.match(dashboardSource, /v-for="item in morningNewsCards"/)
   assert.match(dashboardSource, /const marketOpinion = computed\(\(\) => morningBriefing\.value\?\.marketOpinion \|\| null\)/)
@@ -120,6 +158,16 @@ test('dashboard morning context has a compact responsive layout', () => {
   assert.match(dashboardSource, /<h6>机构观点<\/h6>/)
   assert.match(dashboardSource, /<h6>活跃席位<\/h6>/)
   assert.match(dashboardSource, /marketOpinion\.kolSourceStatus/)
+})
+
+test('dashboard keeps report reading inside a closable preview and exposes active-seat context', () => {
+  assert.match(dashboardSource, /const opinionPreviewOpen = ref\(false\)/)
+  assert.match(dashboardSource, /function openOpinionPreview\(item\)/)
+  assert.match(dashboardSource, /@click="openOpinionPreview\(item\)"/)
+  assert.match(dashboardSource, /<el-dialog[^>]+v-model="opinionPreviewOpen"[^>]+title="研报预览"/)
+  assert.match(dashboardSource, /<iframe[^>]+:src="opinionPreview\.url"/)
+  assert.match(dashboardSource, /在新标签打开/)
+  assert.match(dashboardSource, /item\.summary \|\| formatOpinionAmount\(item\.netAmount\)/)
 })
 
 test('dashboard constrains overnight grids and quote prices within their desktop column', () => {
@@ -153,7 +201,7 @@ test('dashboard morning context leads with a conclusion and keeps supporting evi
   assert.match(dashboardSource, /\.morning-context-block\s*\{[^}]*align-self:\s*start;/s)
   assert.match(
     dashboardSource,
-    /@media \(max-width: 640px\)[\s\S]*?\.morning-news-block\s*\{[^}]*order:\s*-1;[^}]*border-bottom:\s*1px solid/s,
+    /@media \(max-width: 480px\)[\s\S]*?\.morning-news-block\s*\{[^}]*order:\s*-1;[^}]*border-bottom:\s*1px solid/s,
   )
   assert.match(
     dashboardSource,
@@ -194,6 +242,14 @@ test('dashboard keeps overnight layers stable across desktop and phone layouts',
     dashboardSource,
     /\.overnight-star-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
   )
+  const themeColumnRules = [...dashboardSource.matchAll(
+    /\.overnight-theme\s*\{[^}]*grid-template-columns:\s*([^;]+);/gs,
+  )].map((match) => match[1])
+  assert.deepEqual(themeColumnRules, ['24px fit-content(180px) minmax(82px, max-content)'])
+  assert.match(
+    dashboardSource,
+    /\.overnight-theme\s*\{[^}]*justify-content:\s*start;/s,
+  )
 })
 
 test('dashboard pre-market summary has a compact hierarchy and accessible action', () => {
@@ -220,6 +276,19 @@ test('dashboard theme ranking exposes breadth without relying on color alone', (
   assert.match(dashboardSource, /\{\{ theme\.upCount \?\? 0 \}\}\/\{\{ theme\.quoteCount \?\? 0 \}\} 上涨/)
   assert.match(
     dashboardSource,
-    /\.overnight-theme\s*\{[^}]*grid-template-columns:\s*24px minmax\(0,\s*1fr\) minmax\(82px,\s*auto\);/s,
+    /\.overnight-theme\s*\{[^}]*grid-template-columns:\s*24px fit-content\(180px\) minmax\(82px,\s*max-content\);/s,
   )
+})
+
+test('dashboard renders the pre-market breadth forecast as a red-green tug of war with backtest truth', () => {
+  assert.match(dashboardSource, /const breadthForecast\s*=\s*computed\(/)
+  assert.match(dashboardSource, /class="breadth-forecast\s+enter\s+delay-1"/)
+  assert.match(dashboardSource, /预测上涨/)
+  assert.match(dashboardSource, /预测下跌/)
+  assert.match(dashboardSource, /class="breadth-forecast-track"/)
+  assert.match(dashboardSource, /class="breadth-forecast-up"/)
+  assert.match(dashboardSource, /class="breadth-forecast-down"/)
+  assert.match(dashboardSource, /breadthForecast\.actualUpRatio/)
+  assert.match(dashboardSource, /breadthForecast\.rollingBacktestSummary/)
+  assert.match(dashboardSource, /@media \(max-width: 560px\)[\s\S]*?\.breadth-forecast-main\s*\{[^}]*grid-template-columns:\s*1fr;/s)
 })

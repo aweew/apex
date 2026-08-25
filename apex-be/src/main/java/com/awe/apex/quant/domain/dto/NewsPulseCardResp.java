@@ -48,6 +48,11 @@ public class NewsPulseCardResp {
     private List<String> themes;
 
     /**
+     * 资讯关联的证券代码。
+     */
+    private List<String> relatedCodes;
+
+    /**
      * 发布时间
      */
     private LocalDateTime publishedAt;

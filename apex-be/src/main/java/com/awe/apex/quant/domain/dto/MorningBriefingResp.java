@@ -13,7 +13,7 @@ import java.util.List;
  * 盘前晨报。
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class MorningBriefingResp {
@@ -42,6 +42,16 @@ public class MorningBriefingResp {
      * 亚太市场指数报价。
      */
     private List<OvernightMarketQuote> asiaQuotes;
+
+    /**
+     * 黄金、原油、美元、汇率和美债等外围环境指标。
+     */
+    private List<ExternalMarketItemResp> externalMarketItems;
+
+    /**
+     * 富时 A50 期指连续报价。
+     */
+    private OvernightMarketQuote ftseA50Future;
 
     /**
      * 明星异动报价。
@@ -77,4 +87,14 @@ public class MorningBriefingResp {
      * 数据等级 GREEN/YELLOW。
      */
     private String dataLevel;
+
+    /**
+     * 当前展示的是等待刷新完成的上一份晨报。
+     */
+    private boolean stale;
+
+    /**
+     * 后台正在刷新晨报。
+     */
+    private boolean refreshing;
 }

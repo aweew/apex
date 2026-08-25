@@ -1,5 +1,6 @@
 package com.awe.apex.quant.job;
 
+import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.SyncJobResp;
 import com.awe.apex.quant.domain.dto.SyncStartReq;
@@ -10,6 +11,7 @@ import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IMyHoldingService;
+import com.awe.apex.quant.service.IMarketBreadthForecastService;
 import com.awe.apex.quant.service.IObservePoolService;
 import com.awe.apex.quant.service.IPortfolioIntradayService;
 import com.awe.apex.quant.service.IPortfolioService;
@@ -73,6 +75,9 @@ public class DataSyncScheduler {
 
     @Resource
     private IMyHoldingService myHoldingService;
+
+    @Resource
+    private IMarketBreadthForecastService marketBreadthForecastService;
 
     @Resource
     private ApexUserAuthService userAuthService;
@@ -267,6 +272,20 @@ public class DataSyncScheduler {
     }
 
     /**
+     * 交易日开盘前固化一次涨跌比预测。
+     */
+    @Scheduled(cron = "0 20 9 * * MON-FRI", zone = "Asia/Shanghai")
+    public void generateBreadthForecastBeforeOpen() {
+        if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+            return;
+        }
+        String message = marketBreadthForecastService.generateBeforeOpen();
+        if (StringUtils.isNotBlank(message)) {
+            log.warn("盘前涨跌比预测未生成，原因={}", message);
+        }
+    }
+
+    /**
      * 收盘同步包：INDEX → SECTOR → LIMIT_UP → HOT → NEWS（16:35）
      */
     @Scheduled(cron = "0 35 16 * * MON-FRI")
@@ -286,6 +305,31 @@ public class DataSyncScheduler {
             log.info("收盘包已提交统一任务，任务编号={}，状态={}", job.getId(), job.getStatus());
         } catch (Exception ex) {
             log.warn("收盘包提交失败，原因={}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 日经225和韩国综合指数开盘后同步亚太早盘行情。
+     */
+    @Scheduled(cron = "0 5 8 * * MON-FRI", zone = "Asia/Shanghai")
+    public void syncAsiaPacificMorning() {
+        if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
+            return;
+        }
+        if (dataSyncJobService.isTaskRunning("INDEX")) {
+            log.info("亚太早盘指数同步跳过：指数任务正在运行，指数代码=JP_N225,KR_KOSPI");
+            return;
+        }
+
+        SyncStartReq request = new SyncStartReq();
+        request.setTaskType("INDEX");
+        request.setCodes("JP_N225,KR_KOSPI");
+        try {
+            SyncJobResp job = dataSyncJobService.startSystemTask(request);
+            log.info("亚太早盘指数同步已提交，任务编号={}，指数代码={}，状态={}",
+                    job.getId(), request.getCodes(), job.getStatus());
+        } catch (Exception ex) {
+            log.warn("亚太早盘指数同步提交失败，指数代码={}，原因={}", request.getCodes(), ex.getMessage());
         }
     }
 

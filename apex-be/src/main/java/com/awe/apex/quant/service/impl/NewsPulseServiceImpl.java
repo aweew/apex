@@ -9,9 +9,11 @@ import com.awe.apex.quant.domain.dto.HotOverviewResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
+import com.awe.apex.quant.domain.dto.PreMarketEventImpactResp;
 import com.awe.apex.quant.domain.entity.MarketHot;
 import com.awe.apex.quant.domain.entity.MarketNews;
 import com.awe.apex.quant.holding.NewsPulseHeuristics;
+import com.awe.apex.quant.holding.PreMarketEventHeuristics;
 import com.awe.apex.quant.mapper.MarketNewsMapper;
 import com.awe.apex.quant.service.IHotService;
 import com.awe.apex.quant.service.IMarketBriefingService;
@@ -105,6 +107,7 @@ public class NewsPulseServiceImpl implements INewsPulseService {
                     .title(row.getTitle())
                     .summary(summaryText)
                     .themes(themes)
+                    .relatedCodes(parseRelatedCodes(row.getRelatedCodes()))
                     .publishedAt(row.getPublishedAt())
                     .source(row.getSource())
                     .url(row.getUrl())
@@ -117,6 +120,7 @@ public class NewsPulseServiceImpl implements INewsPulseService {
                 .reversed()
                 .thenComparing(NewsPulseCardResp::getPublishedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         List<NewsPulseCardResp> cards = scored.size() > limit ? scored.subList(0, limit) : scored;
+        List<PreMarketEventImpactResp> eventImpacts = buildPreMarketEventImpacts(scored);
 
         MarketBriefingResp briefing = null;
         try {
@@ -184,11 +188,43 @@ public class NewsPulseServiceImpl implements INewsPulseService {
                 .summarySource(summarySource)
                 .hotThemes(hotThemes)
                 .cards(new ArrayList<>(cards))
+                .eventImpacts(eventImpacts)
                 .message("今日消息面 · 利好 " + bull + " / 利空 " + bear
                         + (StringUtils.isNotBlank(biasLabel) ? " · " + biasLabel : ""))
                 .summarizedAt(LocalDateTime.now())
                 .llmConfigured(llmOk)
                 .build();
+    }
+
+    private List<String> parseRelatedCodes(String relatedCodes) {
+        List<String> codes = new ArrayList<>();
+        if (StringUtils.isBlank(relatedCodes)) {
+            return codes;
+        }
+        for (String code : relatedCodes.split("[,，\\s]+")) {
+            if (StringUtils.isNotBlank(code)) {
+                codes.add(code.trim());
+            }
+        }
+        return codes;
+    }
+
+    private List<PreMarketEventImpactResp> buildPreMarketEventImpacts(List<NewsPulseCardResp> cards) {
+        List<PreMarketEventImpactResp> impacts = new ArrayList<>();
+        for (NewsPulseCardResp card : cards) {
+            PreMarketEventImpactResp impact = PreMarketEventHeuristics.toImpact(card);
+            if (Objects.nonNull(impact)) {
+                impacts.add(impact);
+            }
+        }
+        impacts.sort(Comparator
+                .comparing(PreMarketEventImpactResp::getPriority, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(PreMarketEventImpactResp::getPublishedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())));
+        if (impacts.size() > 5) {
+            return new ArrayList<>(impacts.subList(0, 5));
+        }
+        return impacts;
     }
 
     private String resolveLlmSummary(boolean force,
