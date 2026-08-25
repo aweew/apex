@@ -1,0 +1,71 @@
+{
+  "actors": [
+    {
+      "actor_code": "NINGBO_SANGTIANLU",
+      "actor_name": "宁波桑田路",
+      "actor_type": "SEAT",
+      "source_status": "READY",
+      "source_note": "按公开营业部标签识别，只表示席位行为，不等同于自然人身份。"
+    },
+    {
+      "actor_code": "HANGZHOU_SHANGTANGLU",
+      "actor_name": "上塘路",
+      "actor_type": "SEAT",
+      "source_status": "READY",
+      "source_note": "按公开营业部标签识别，只表示席位行为，不等同于自然人身份。"
+    },
+    {
+      "actor_code": "CHEN_XIAOQUN",
+      "actor_name": "陈小群",
+      "actor_type": "SEAT",
+      "source_status": "PENDING_VERIFICATION",
+      "source_note": "尚未录入可公开复核的席位映射证据，不展示关联行为。"
+    },
+    {
+      "actor_code": "ZHANG_MENGZHU",
+      "actor_name": "章盟主",
+      "actor_type": "SEAT",
+      "source_status": "PENDING_VERIFICATION",
+      "source_note": "尚未录入可公开复核的席位映射证据，不展示关联行为。"
+    },
+    {
+      "actor_code": "BEIJING_CHAOJIA",
+      "actor_name": "北京炒家",
+      "actor_type": "KOL",
+      "source_status": "PENDING_VERIFICATION",
+      "source_note": "待核验持续公开的官方账号和允许订阅的原帖源。"
+    },
+    {
+      "actor_code": "BIAN_FENGWEI",
+      "actor_name": "边风炜",
+      "actor_type": "KOL",
+      "source_status": "PENDING_VERIFICATION",
+      "source_note": "待核验持续公开的官方账号和允许订阅的原帖源。"
+    },
+    {
+      "actor_code": "YAOGE_CAIJING",
+      "actor_name": "妖哥财经",
+      "actor_type": "KOL",
+      "source_status": "PENDING_VERIFICATION",
+      "source_note": "待核验持续公开的官方账号和允许订阅的原帖源。"
+    }
+  ],
+  "seat_mappings": [
+    {
+      "actor_code": "NINGBO_SANGTIANLU",
+      "actor_name": "宁波桑田路",
+      "seat_keyword": "宁波桑田路",
+      "confidence": "SEAT_LABEL",
+      "evidence_url": "https://data.eastmoney.com/stock/hyyyb.html",
+      "source_note": "按营业部名称标签匹配，不能推断实际下单自然人。"
+    },
+    {
+      "actor_code": "HANGZHOU_SHANGTANGLU",
+      "actor_name": "上塘路",
+      "seat_keyword": "上塘路",
+      "confidence": "SEAT_LABEL",
+      "evidence_url": "https://data.eastmoney.com/stock/hyyyb.html",
+      "source_note": "按营业部名称标签匹配，不能推断实际下单自然人。"
+    }
+  ]
+}

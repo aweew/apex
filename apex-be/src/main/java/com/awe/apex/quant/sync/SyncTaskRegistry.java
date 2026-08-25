@@ -135,9 +135,9 @@ public class SyncTaskRegistry {
                 .build());
         register(SyncTaskSpec.builder()
                 .taskType("MARKET_OPINION")
-                .name("机构观点与活跃席位")
+                .name("游资席位、公开账号与机构观点")
                 .groupName("市场看板")
-                .description("同步公开机构研报与龙虎榜活跃营业部，不抓取未授权大V内容")
+                .description("同步公开机构研报、可审计游资席位与已核验公开账号原帖")
                 .scriptFile("sync_market_opinions.py")
                 .defaultParamsHint("limit=80")
                 .timeoutSec(180)

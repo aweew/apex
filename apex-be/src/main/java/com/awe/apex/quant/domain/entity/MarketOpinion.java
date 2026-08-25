@@ -38,6 +38,18 @@ public class MarketOpinion {
     /** 观点主体 */
     private String subjectName;
 
+    /** 关联市场主体名称 */
+    private String actorName;
+
+    /** 关联市场主体类型 */
+    private String actorType;
+
+    /** 主体关联置信度 */
+    private String actorConfidence;
+
+    /** 主体关联证据链接 */
+    private String actorEvidenceUrl;
+
     /** 原始标题 */
     private String title;
 

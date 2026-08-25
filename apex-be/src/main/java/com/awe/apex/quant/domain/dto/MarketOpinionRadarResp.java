@@ -23,6 +23,9 @@ public class MarketOpinionRadarResp {
     /** 龙虎榜活跃席位 */
     private List<MarketOpinionItemResp> activeSeats;
 
+    /** 已映射的游资席位行为 */
+    private List<MarketOpinionItemResp> traderSeatViews;
+
     /** 已授权大V公开观点 */
     private List<MarketOpinionItemResp> kolViews;
 
@@ -34,6 +37,9 @@ public class MarketOpinionRadarResp {
 
     /** 大V数据源状态 */
     private String kolSourceStatus;
+
+    /** 公开账号白名单与核验状态 */
+    private List<MarketOpinionSourceResp> kolSources;
 
     /** 最近同步时间 */
     private LocalDateTime snapshotTime;

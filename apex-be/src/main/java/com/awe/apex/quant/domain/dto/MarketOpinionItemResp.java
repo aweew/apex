@@ -23,6 +23,15 @@ public class MarketOpinionItemResp {
     /** 来源主体 */
     private String subjectName;
 
+    /** 关联市场主体名称 */
+    private String actorName;
+
+    /** 主体关联置信度 */
+    private String actorConfidence;
+
+    /** 主体关联证据链接 */
+    private String actorEvidenceUrl;
+
     /** 原始来源 */
     private String source;
 

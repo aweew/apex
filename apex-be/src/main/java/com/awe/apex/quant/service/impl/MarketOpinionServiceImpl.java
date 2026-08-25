@@ -6,7 +6,10 @@ import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.config.ScriptDatabaseEnvironment;
 import com.awe.apex.quant.domain.dto.MarketOpinionItemResp;
 import com.awe.apex.quant.domain.dto.MarketOpinionRadarResp;
+import com.awe.apex.quant.domain.dto.MarketOpinionSourceResp;
+import com.awe.apex.quant.domain.entity.MarketActor;
 import com.awe.apex.quant.domain.entity.MarketOpinion;
+import com.awe.apex.quant.mapper.MarketActorMapper;
 import com.awe.apex.quant.mapper.MarketOpinionMapper;
 import com.awe.apex.quant.service.IMarketOpinionService;
 import com.awe.apex.quant.util.PythonCommandResolver;
@@ -45,6 +48,9 @@ public class MarketOpinionServiceImpl implements IMarketOpinionService {
     private MarketOpinionMapper marketOpinionMapper;
 
     @Resource
+    private MarketActorMapper marketActorMapper;
+
+    @Resource
     private ScriptDatabaseEnvironment scriptDatabaseEnvironment;
 
     @Value("${apex.market-opinion.python-cmd:${apex.news.python-cmd:python}}")
@@ -70,6 +76,7 @@ public class MarketOpinionServiceImpl implements IMarketOpinionService {
         }
         List<MarketOpinionItemResp> institutionViews = new ArrayList<>();
         List<MarketOpinionItemResp> activeSeats = new ArrayList<>();
+        List<MarketOpinionItemResp> traderSeatViews = new ArrayList<>();
         List<MarketOpinionItemResp> kolViews = new ArrayList<>();
         LocalDateTime snapshotTime = null;
         for (MarketOpinion opinionRow : opinionRows) {
@@ -79,19 +86,27 @@ public class MarketOpinionServiceImpl implements IMarketOpinionService {
             }
             if ("INSTITUTION".equals(opinionRow.getOpinionType()) && institutionViews.size() < 4) {
                 institutionViews.add(toItem(opinionRow));
-            } else if ("ACTIVE_SEAT".equals(opinionRow.getOpinionType()) && activeSeats.size() < 3) {
-                activeSeats.add(toItem(opinionRow));
+            } else if ("ACTIVE_SEAT".equals(opinionRow.getOpinionType())) {
+                if (activeSeats.size() < 3) {
+                    activeSeats.add(toItem(opinionRow));
+                }
+                if (StringUtils.isNotBlank(opinionRow.getActorName()) && traderSeatViews.size() < 3) {
+                    traderSeatViews.add(toItem(opinionRow));
+                }
             } else if ("KOL".equals(opinionRow.getOpinionType()) && kolViews.size() < 3) {
                 kolViews.add(toItem(opinionRow));
             }
         }
+        List<MarketOpinionSourceResp> kolSources = loadKolSources();
         return MarketOpinionRadarResp.builder()
                 .institutionViews(institutionViews)
                 .activeSeats(activeSeats)
+                .traderSeatViews(traderSeatViews)
                 .kolViews(kolViews)
                 .consensus(buildConsensus(opinionRows))
                 .divergence(buildDivergence(opinionRows))
-                .kolSourceStatus(CollUtil.isEmpty(kolViews) ? "大V公开授权源未接入" : "仅展示已授权公开原帖")
+                .kolSourceStatus(buildKolSourceStatus(kolViews, kolSources))
+                .kolSources(kolSources)
                 .snapshotTime(snapshotTime)
                 .build();
     }
@@ -144,6 +159,9 @@ public class MarketOpinionServiceImpl implements IMarketOpinionService {
         return MarketOpinionItemResp.builder()
                 .opinionType(opinionRow.getOpinionType())
                 .subjectName(opinionRow.getSubjectName())
+                .actorName(opinionRow.getActorName())
+                .actorConfidence(opinionRow.getActorConfidence())
+                .actorEvidenceUrl(opinionRow.getActorEvidenceUrl())
                 .source(opinionRow.getSource())
                 .title(opinionRow.getTitle())
                 .summary(opinionRow.getSummary())
@@ -155,6 +173,49 @@ public class MarketOpinionServiceImpl implements IMarketOpinionService {
                 .publishedAt(opinionRow.getPublishedAt())
                 .url(opinionRow.getUrl())
                 .build();
+    }
+
+    private List<MarketOpinionSourceResp> loadKolSources() {
+        if (Objects.isNull(marketActorMapper)) {
+            return List.of();
+        }
+        List<MarketActor> actorRows = marketActorMapper.selectList(Wrappers.<MarketActor>lambdaQuery()
+                .eq(MarketActor::getActorType, "KOL")
+                .orderByAsc(MarketActor::getActorName));
+        if (CollUtil.isEmpty(actorRows)) {
+            return List.of();
+        }
+        List<MarketOpinionSourceResp> sources = new ArrayList<>();
+        for (MarketActor actorRow : actorRows) {
+            sources.add(MarketOpinionSourceResp.builder()
+                    .actorName(actorRow.getActorName())
+                    .platform(actorRow.getPlatform())
+                    .accountUrl(actorRow.getAccountUrl())
+                    .sourceStatus(actorRow.getSourceStatus())
+                    .sourceNote(actorRow.getSourceNote())
+                    .build());
+        }
+        return sources;
+    }
+
+    private String buildKolSourceStatus(List<MarketOpinionItemResp> kolViews,
+                                        List<MarketOpinionSourceResp> kolSources) {
+        if (CollUtil.isNotEmpty(kolViews)) {
+            return "仅展示已核验公开账号原帖";
+        }
+        if (CollUtil.isEmpty(kolSources)) {
+            return "大V公开账号白名单未配置";
+        }
+        int readyCount = 0;
+        for (MarketOpinionSourceResp kolSource : kolSources) {
+            if ("READY".equals(kolSource.getSourceStatus())) {
+                readyCount++;
+            }
+        }
+        if (readyCount > 0) {
+            return "已核验 " + readyCount + " 个公开账号，近5日暂未抓到原帖";
+        }
+        return "已列出 " + kolSources.size() + " 个候选账号，均待核验官方公开源";
     }
 
     private String buildConsensus(List<MarketOpinion> opinionRows) {
