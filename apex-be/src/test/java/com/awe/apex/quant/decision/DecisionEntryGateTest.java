@@ -78,6 +78,20 @@ class DecisionEntryGateTest {
     }
 
     @Test
+    void shouldPassQualifiedGrowthLaneEvenWhenIndustryIsOffMainline() {
+        DecisionEntryGateResp result = gate.evaluate(DecisionEntryGateReq.builder()
+                .dataSufficient(true)
+                .breadthUp(2500)
+                .mainlineMatch(false)
+                .offMainline(true)
+                .growthLane(true)
+                .hotSourceCount(2)
+                .build());
+
+        assertTrue(result.isPassed());
+    }
+
+    @Test
     void shouldFailClosedWhenMarketDataIsUnavailable() {
         DecisionEntryGateResp result = gate.evaluate(DecisionEntryGateReq.builder()
                 .dataSufficient(false)

@@ -49,6 +49,7 @@ public class DecisionScorer {
         List<String> riskFlags = new ArrayList<>();
         String linkHint = null;
         boolean blockExecutable = false;
+        boolean growthLane = req.isGrowthLane();
 
         int minCf = strategyParams.decisionConfluenceMinStrategies();
         if (req.getConfluenceCount() >= minCf) {
@@ -81,36 +82,43 @@ public class DecisionScorer {
             BigDecimal boost = strategyParams.decisionScoreMainline();
             score = score.add(boost);
             explain.append(" · 主线+").append(plain(boost));
-        } else if (req.isOffMainline()) {
+        } else if (req.isOffMainline() && !growthLane) {
             BigDecimal penalty = strategyParams.decisionScoreOffMainline();
             score = score.subtract(penalty);
             explain.append(" · 逆主线-").append(plain(penalty));
             riskFlags.add("逆主线");
+        } else if (req.isOffMainline()) {
+            explain.append(" · 成长线非主线受控");
+            riskFlags.add("成长线非主线受控");
         }
 
         ValuationBriefResp val = req.getValuation();
+        String level = Objects.nonNull(val) ? val.getLevel() : null;
+        boolean cheap = "UNDERVALUED".equals(level) || "SLIGHTLY_CHEAP".equals(level);
+        boolean rich = "OVERVALUED".equals(level) || "SLIGHTLY_EXPENSIVE".equals(level);
         if (Objects.nonNull(val) && StringUtils.isNotBlank(val.getLevel()) && !"UNKNOWN".equals(val.getLevel())) {
-            if (val.getScoreDelta() != 0) {
-                score = score.add(BigDecimal.valueOf(val.getScoreDelta()));
+            int valuationScoreDelta = val.getScoreDelta();
+            if (growthLane && rich) {
+                valuationScoreDelta = Math.max(valuationScoreDelta, -4);
+            }
+            if (valuationScoreDelta != 0) {
+                score = score.add(BigDecimal.valueOf(valuationScoreDelta));
                 explain.append(" · 估值").append(val.getLevelLabel())
-                        .append(val.getScoreDelta() > 0 ? "+" : "")
-                        .append(val.getScoreDelta());
+                        .append(valuationScoreDelta > 0 ? "+" : "")
+                        .append(valuationScoreDelta);
             } else if (StringUtils.isNotBlank(val.getLevelLabel())) {
                 explain.append(" · 估值").append(val.getLevelLabel());
             }
         }
 
         // 估值 × 策略联动
-        String level = Objects.nonNull(val) ? val.getLevel() : null;
         String sid = StringUtils.isNotBlank(req.getStrategyId()) ? req.getStrategyId().toUpperCase() : "";
-        boolean cheap = "UNDERVALUED".equals(level) || "SLIGHTLY_CHEAP".equals(level);
-        boolean rich = "OVERVALUED".equals(level) || "SLIGHTLY_EXPENSIVE".equals(level);
         if (cheap && "S2".equals(sid)) {
             BigDecimal link = strategyParams.decisionLinkUndervaluedS2();
             score = score.add(link);
             explain.append(" · 低估回调+").append(plain(link));
             linkHint = "低估回调优先";
-        } else if (rich && "S3".equals(sid)) {
+        } else if (rich && "S3".equals(sid) && !growthLane) {
             BigDecimal link = strategyParams.decisionLinkOvervaluedS3();
             score = score.subtract(link);
             explain.append(" · 高估突破-").append(plain(link));
@@ -118,7 +126,11 @@ public class DecisionScorer {
             riskFlags.add("高估突破降权");
             blockExecutable = true;
         } else if (rich) {
-            riskFlags.add("估值偏高");
+            riskFlags.add(growthLane ? "成长溢价受限" : "估值偏高");
+            if (growthLane && "S3".equals(sid)) {
+                linkHint = "成长突破受限仓位";
+                explain.append(" · 成长突破受限仓位");
+            }
         }
 
         String stance = req.getMarketStance();
@@ -141,6 +153,9 @@ public class DecisionScorer {
 
         BigDecimal singleLimit = Objects.nonNull(req.getSingleLimit())
                 ? req.getSingleLimit() : new BigDecimal("0.15");
+        if (growthLane) {
+            singleLimit = singleLimit.min(strategyParams.decisionGrowthSingleLimit());
+        }
         BigDecimal buyFactor = Objects.nonNull(req.getBuyWeightFactor())
                 ? req.getBuyWeightFactor() : BigDecimal.ONE;
         boolean confluenceOk = req.getConfluenceCount() >= minCf || hotCnt >= 2 || req.isMainlineMatch();
@@ -172,12 +187,13 @@ public class DecisionScorer {
             explain.append(" · ").append(linkHint);
         }
 
-        BigDecimal executableFloor = strategyParams.decisionExecutableScore();
+        BigDecimal executableFloor = growthLane
+                ? strategyParams.decisionGrowthExecutableScore() : strategyParams.decisionExecutableScore();
         boolean executableHint = !blockExecutable
                 && !req.isFundExclude()
                 && !req.isObserveOnly()
                 && score.compareTo(executableFloor) >= 0
-                && !(rich && "S3".equals(sid));
+                && !(rich && "S3".equals(sid) && !growthLane);
 
         String explainText = explain.toString();
         if (explainText.length() > 500) {

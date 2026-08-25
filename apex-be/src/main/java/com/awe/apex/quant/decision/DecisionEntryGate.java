@@ -37,7 +37,7 @@ public class DecisionEntryGate {
         if (Objects.isNull(breadthUp) || breadthUp < strategyParams.decisionGateMinimumBreadthUp()) {
             blockReasons.add("市场广度不足，禁止新开仓");
         }
-        if (req.isOffMainline()) {
+        if (req.isOffMainline() && !req.isGrowthLane()) {
             blockReasons.add("行业逆主线，禁止新开仓");
         } else if (!req.isMainlineMatch()
                 && req.getHotSourceCount() < strategyParams.decisionGateMinimumHotSources()) {

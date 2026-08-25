@@ -36,10 +36,10 @@ test('historical, shadow, and incomplete decision runs cannot be paper ordered',
 test('actionability labels explain data and decision-run blocks', () => {
   assert.equal(buyActionState(executableBuy, liveDecision), '可执行')
   assert.equal(buyActionState(executableBuy, { ...liveDecision, dataLevel: 'YELLOW' }), '可执行：先复核')
-  assert.equal(buyActionState(executableBuy, { ...liveDecision, dataLevel: 'RED' }), '仅观察：数据异常')
+  assert.equal(buyActionState(executableBuy, { ...liveDecision, dataLevel: 'RED' }), '暂不买入：市场数据异常')
   assert.equal(buyActionState(executableBuy, { ...liveDecision, actionDate: '2026-08-22' }), '仅回放：非当日决策')
-  assert.equal(buyActionState(executableBuy, { ...liveDecision, runMode: null }), '仅观察：运行状态不完整')
-  assert.equal(buyActionState({ action: 'BUY', executableHint: false }, liveDecision), '仅观察：风控未通过')
+  assert.equal(buyActionState(executableBuy, { ...liveDecision, runMode: null }), '暂不买入：运行状态不完整')
+  assert.equal(buyActionState({ action: 'BUY', executableHint: false }, liveDecision), '暂不买入：未满足开仓条件')
   assert.equal(paperBuyBlockedReason(executableBuy, { ...liveDecision, runMode: 'REPLAY' }), '当前为历史回放，仅供复盘，不允许模拟买入')
   assert.equal(paperBuyBlockedReason(executableBuy, { ...liveDecision, generated: false }), '决策运行状态不完整，暂不允许模拟买入')
 })

@@ -159,4 +159,31 @@ public class StrategyParams {
     public int decisionGateMinimumHotSources() {
         return getInt("decision.gate.minimum_hot_sources", 2);
     }
+
+    /**
+     * 科技成长线可执行分数门槛
+     *
+     * @return 可执行分数门槛
+     */
+    public BigDecimal decisionGrowthExecutableScore() {
+        return getDecimal("decision.growth.executable.score", new BigDecimal("82"));
+    }
+
+    /**
+     * 科技成长线单票仓位上限
+     *
+     * @return 单票仓位上限
+     */
+    public BigDecimal decisionGrowthSingleLimit() {
+        return getDecimal("decision.growth.single_limit", new BigDecimal("0.08"));
+    }
+
+    /**
+     * 科技成长线单日新增仓位上限
+     *
+     * @return 单日新增仓位上限
+     */
+    public BigDecimal decisionGrowthTotalLimit() {
+        return getDecimal("decision.growth.total_limit", new BigDecimal("0.20"));
+    }
 }

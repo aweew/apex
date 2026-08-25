@@ -236,7 +236,8 @@ public class ValuationServiceImpl implements IValuationService {
         }
 
         // 合理 PE/PB：增长 + ROE + 行业中位锚，避免品牌股被机械压到净资产附近
-        BigDecimal fairPe = calcFairPe(growthPct, roe, netMargin, stats.peMedian);
+        boolean growthQualityVerified = isGrowthQualityVerified(revenueYoy, profitYoy, roe, debt);
+        BigDecimal fairPe = calcFairPe(growthPct, revenueYoy, profitYoy, roe, debt, netMargin, stats.peMedian);
         BigDecimal fairPb = calcFairPb(roe, netMargin, stats.pbMedian);
         BigDecimal fairMid = calcFairPriceMid(price, pe, pb, eps, bps, fairPe, fairPb, stats);
         BigDecimal fairLow = Objects.nonNull(fairMid) ? fairMid.multiply(new BigDecimal("0.85")).setScale(2, RoundingMode.HALF_UP) : null;
@@ -259,7 +260,16 @@ public class ValuationServiceImpl implements IValuationService {
         dims.add(dimPeg(peg, growthPct, pe));
         dims.add(dimDcf(margin, fairMid, price, pe, fairPe));
         dims.add(dimQuality(roe, debt, netMargin));
-        dims.add(dimGrowth(growthPct, profitYoy, revenueYoy));
+        dims.add(dimGrowth(growthPct, profitYoy, revenueYoy, growthQualityVerified));
+        if (growthQualityVerified) {
+            // 成熟同行占多数时，静态 PE/PB 对科技成长股的解释力下降，改由增长兑现和财务质量共同约束。
+            dims.get(0).setWeight(new BigDecimal("0.16"));
+            dims.get(1).setWeight(new BigDecimal("0.08"));
+            dims.get(2).setWeight(new BigDecimal("0.20"));
+            dims.get(3).setWeight(new BigDecimal("0.18"));
+            dims.get(4).setWeight(new BigDecimal("0.18"));
+            dims.get(5).setWeight(new BigDecimal("0.20"));
+        }
 
         BigDecimal score = weightedScore(dims);
         LevelBand band = levelOf(score, pe, pb);
@@ -267,7 +277,7 @@ public class ValuationServiceImpl implements IValuationService {
         String action = actionHint(band);
         List<String> assumptions = List.of(
                 "折现率约 9%，用于简化内在价值区间，非精确 DCF",
-                "增长取净利润同比与营收同比中较稳健者，封顶 25%",
+                "增长取净利润同比与营收同比中较低者；成长修正仅在营收、利润同步增长且质量达标时生效",
                 "行业分位基于本地同行业有效 PE/PB 样本（最多 " + PEER_LIMIT + " 只）",
                 "无一致预期时不做前瞻 PE；结论仅供研究参考"
         );
@@ -275,7 +285,8 @@ public class ValuationServiceImpl implements IValuationService {
 
         List<String> bulls = new ArrayList<>();
         List<String> bears = new ArrayList<>();
-        fillPoints(bulls, bears, pe, pb, pePct, pbPct, peg, margin, fairPe, roe, debt, growthPct, stats);
+        fillPoints(bulls, bears, pe, pb, pePct, pbPct, peg, margin, fairPe, roe, debt, growthPct,
+                growthQualityVerified, stats);
 
         return ValuationResp.builder()
                 .code(code)
@@ -592,15 +603,19 @@ public class ValuationServiceImpl implements IValuationService {
                 .build();
     }
 
-    private ValuationDimensionResp dimGrowth(BigDecimal growthPct, BigDecimal profitYoy, BigDecimal revenueYoy) {
+    private ValuationDimensionResp dimGrowth(BigDecimal growthPct, BigDecimal profitYoy, BigDecimal revenueYoy,
+                                             boolean growthQualityVerified) {
         BigDecimal score;
         String verdict;
         if (Objects.isNull(growthPct)) {
             score = new BigDecimal("45");
             verdict = "增长数据缺失";
+        } else if (growthQualityVerified) {
+            score = new BigDecimal("90");
+            verdict = "高增长已验证";
         } else if (growthPct.compareTo(new BigDecimal("25")) >= 0) {
             score = new BigDecimal("82");
-            verdict = "高增长";
+            verdict = "高增长待验证";
         } else if (growthPct.compareTo(new BigDecimal("12")) >= 0) {
             score = new BigDecimal("68");
             verdict = "稳健增长";
@@ -616,7 +631,8 @@ public class ValuationServiceImpl implements IValuationService {
         }
         String detail = "采用增长 " + fmt(growthPct) + "%"
                 + (Objects.nonNull(profitYoy) ? " · 净利同比 " + fmt(profitYoy) + "%" : "")
-                + (Objects.nonNull(revenueYoy) ? " · 营收同比 " + fmt(revenueYoy) + "%" : "");
+                + (Objects.nonNull(revenueYoy) ? " · 营收同比 " + fmt(revenueYoy) + "%" : "")
+                + (growthQualityVerified ? " · 营收利润同增，成长修正已生效" : "");
         return ValuationDimensionResp.builder()
                 .key("growth")
                 .name("成长性")
@@ -710,7 +726,7 @@ public class ValuationServiceImpl implements IValuationService {
                             BigDecimal pe, BigDecimal pb, BigDecimal pePct, BigDecimal pbPct,
                             BigDecimal peg, BigDecimal margin, BigDecimal fairPe,
                             BigDecimal roe, BigDecimal debt,
-                            BigDecimal growthPct, IndustryStats stats) {
+                            BigDecimal growthPct, boolean growthQualityVerified, IndustryStats stats) {
         if (Objects.nonNull(pePct) && pePct.compareTo(new BigDecimal("30")) <= 0 && stats.peerCount >= 8) {
             bulls.add("PE 处于行业较低分位");
         } else if (Objects.nonNull(pePct) && pePct.compareTo(new BigDecimal("70")) >= 0 && stats.peerCount >= 8) {
@@ -743,13 +759,17 @@ public class ValuationServiceImpl implements IValuationService {
         if (Objects.nonNull(debt) && debt.compareTo(new BigDecimal("70")) >= 0) {
             bears.add("资产负债率偏高，折价需谨慎");
         }
-        if (Objects.nonNull(growthPct) && growthPct.compareTo(new BigDecimal("15")) >= 0) {
-            bulls.add("近期增长较快");
+        if (growthQualityVerified) {
+            bulls.add("营收利润同步增长，成长估值已按质量修正");
+        } else if (Objects.nonNull(growthPct) && growthPct.compareTo(new BigDecimal("15")) >= 0) {
+            bulls.add("近期增长较快，仍待利润与质量持续验证");
         } else if (Objects.nonNull(growthPct) && growthPct.compareTo(BigDecimal.ZERO) < 0) {
             bears.add("盈利同比下滑");
         }
         if (Objects.nonNull(pe) && pe.compareTo(new BigDecimal("60")) > 0) {
-            bears.add("绝对 PE 很高，预期已充分");
+            bears.add(growthQualityVerified
+                    ? "绝对 PE 仍高，需持续兑现营收与利润增长"
+                    : "绝对 PE 很高，预期已充分");
         }
         if (bulls.isEmpty()) {
             bulls.add("暂无突出估值优势，需看技术与事件催化");
@@ -773,12 +793,19 @@ public class ValuationServiceImpl implements IValuationService {
         return peGap.compareTo(new BigDecimal("0.35")) <= 0;
     }
 
-    private BigDecimal calcFairPe(BigDecimal growthPct, BigDecimal roe, BigDecimal netMargin, BigDecimal industryPeMedian) {
+    private BigDecimal calcFairPe(BigDecimal growthPct, BigDecimal revenueYoy, BigDecimal profitYoy,
+                                  BigDecimal roe, BigDecimal debt, BigDecimal netMargin, BigDecimal industryPeMedian) {
+        boolean growthQualityVerified = isGrowthQualityVerified(revenueYoy, profitYoy, roe, debt);
+        BigDecimal growthCap = growthQualityVerified ? new BigDecimal("45") : new BigDecimal("25");
+        BigDecimal growthFactor = growthQualityVerified ? new BigDecimal("0.85") : new BigDecimal("0.70");
         BigDecimal g = Objects.nonNull(growthPct)
-                ? growthPct.max(BigDecimal.ZERO).min(new BigDecimal("25"))
+                ? growthPct.max(BigDecimal.ZERO).min(growthCap)
                 : new BigDecimal("8");
-        // 基准 12 + 增长×0.7，ROE/净利率微调
-        BigDecimal fair = new BigDecimal("12").add(g.multiply(new BigDecimal("0.70")));
+        // 已验证的成长股可获得合理溢价，但不使用单一季度或低质量增长抬高估值。
+        BigDecimal fair = new BigDecimal("12").add(g.multiply(growthFactor));
+        if (growthQualityVerified) {
+            fair = fair.add(new BigDecimal("6"));
+        }
         if (Objects.nonNull(roe)) {
             if (roe.compareTo(new BigDecimal("18")) >= 0) {
                 fair = fair.add(new BigDecimal("4"));
@@ -791,12 +818,14 @@ public class ValuationServiceImpl implements IValuationService {
         } else if (Objects.nonNull(netMargin) && netMargin.compareTo(new BigDecimal("15")) >= 0) {
             fair = fair.add(new BigDecimal("3"));
         }
-        // 与行业中位折中，避免孤立绝对带
+        // 已验证成长股降低行业中位数锚定，避免成熟公司占多数时机械压低合理 PE。
         if (Objects.nonNull(industryPeMedian) && industryPeMedian.compareTo(BigDecimal.ZERO) > 0) {
-            fair = fair.multiply(new BigDecimal("0.55"))
-                    .add(industryPeMedian.multiply(new BigDecimal("0.45")));
+            BigDecimal fairWeight = growthQualityVerified ? new BigDecimal("0.70") : new BigDecimal("0.55");
+            fair = fair.multiply(fairWeight)
+                    .add(industryPeMedian.multiply(BigDecimal.ONE.subtract(fairWeight)));
         }
-        return fair.max(new BigDecimal("8")).min(new BigDecimal("55")).setScale(1, RoundingMode.HALF_UP);
+        BigDecimal fairCap = growthQualityVerified ? new BigDecimal("75") : new BigDecimal("55");
+        return fair.max(new BigDecimal("8")).min(fairCap).setScale(1, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calcFairPb(BigDecimal roe, BigDecimal netMargin, BigDecimal industryPbMedian) {
@@ -878,6 +907,14 @@ public class ValuationServiceImpl implements IValuationService {
             return profitYoy.min(revenueYoy);
         }
         return profitYoy.min(revenueYoy);
+    }
+
+    private boolean isGrowthQualityVerified(BigDecimal revenueYoy, BigDecimal profitYoy,
+                                            BigDecimal roe, BigDecimal debt) {
+        return Objects.nonNull(revenueYoy) && revenueYoy.compareTo(new BigDecimal("15")) >= 0
+                && Objects.nonNull(profitYoy) && profitYoy.compareTo(new BigDecimal("15")) >= 0
+                && Objects.nonNull(roe) && roe.compareTo(new BigDecimal("8")) >= 0
+                && (Objects.isNull(debt) || debt.compareTo(new BigDecimal("70")) < 0);
     }
 
     private IndustryStats industryStats(String industry, Map<String, IndustryStats> cache) {
@@ -1087,6 +1124,8 @@ public class ValuationServiceImpl implements IValuationService {
                 .marginOfSafety(full.getMarginOfSafety())
                 .summary(full.getSummary())
                 .scoreDelta(delta)
+                .growthQualityVerified(isGrowthQualityVerified(full.getRevenueYoy(), full.getNetProfitYoy(),
+                        full.getRoe(), full.getDebtRatio()))
                 .build();
     }
 

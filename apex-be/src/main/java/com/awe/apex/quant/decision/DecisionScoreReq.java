@@ -57,6 +57,9 @@ public class DecisionScoreReq {
      */
     private boolean offMainline;
 
+    /** 是否进入科技成长线 */
+    private boolean growthLane;
+
     /**
      * 估值摘要
      */

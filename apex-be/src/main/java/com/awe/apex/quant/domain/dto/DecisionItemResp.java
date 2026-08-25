@@ -163,6 +163,12 @@ public class DecisionItemResp {
      */
     private String linkHint;
 
+    /** 决策通道 CORE核心防守线或GROWTH科技成长线 */
+    private String decisionLane;
+
+    /** 科技候选未进入成长线的原因 */
+    private String growthLaneRejectReason;
+
     /**
      * 规则和基本面提炼的个股亮点
      */

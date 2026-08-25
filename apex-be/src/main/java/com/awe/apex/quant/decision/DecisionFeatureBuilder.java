@@ -61,6 +61,7 @@ public class DecisionFeatureBuilder {
                 text(item.getConfluenceCount()),
                 String.valueOf(hotSourceCount),
                 text(item.getMainlineMatch()),
+                text(item.getDecisionLane()),
                 text(item.getValuationLevel()),
                 number(item.getValuationScore()),
                 text(briefing.getStance()),
@@ -69,6 +70,7 @@ public class DecisionFeatureBuilder {
                 String.valueOf(input.isFundExclude()),
                 String.valueOf(input.isFundWeak()),
                 String.valueOf(input.isOffMainline()),
+                String.valueOf(input.isGrowthLane()),
                 text(input.getValuationScoreDelta()),
                 number(input.getBuyWeightFactor()),
                 number(input.getSingleLimit()),
@@ -88,6 +90,7 @@ public class DecisionFeatureBuilder {
                 .confluenceCount(item.getConfluenceCount())
                 .hotSourceCount(hotSourceCount)
                 .mainlineMatch(item.getMainlineMatch())
+                .decisionLane(item.getDecisionLane())
                 .valuationLevel(item.getValuationLevel())
                 .valuationScore(item.getValuationScore())
                 .marketStance(briefing.getStance())
@@ -96,6 +99,7 @@ public class DecisionFeatureBuilder {
                 .fundExclude(input.isFundExclude())
                 .fundWeak(input.isFundWeak())
                 .offMainline(input.isOffMainline())
+                .growthLane(input.isGrowthLane())
                 .valuationScoreDelta(input.getValuationScoreDelta())
                 .buyWeightFactor(input.getBuyWeightFactor())
                 .singleLimit(input.getSingleLimit())

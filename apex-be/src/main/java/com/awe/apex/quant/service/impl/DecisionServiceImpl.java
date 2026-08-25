@@ -18,6 +18,10 @@ import com.awe.apex.quant.decision.DecisionFeatureSource;
 import com.awe.apex.quant.decision.DecisionEntryGate;
 import com.awe.apex.quant.decision.DecisionEntryGateReq;
 import com.awe.apex.quant.decision.DecisionEntryGateResp;
+import com.awe.apex.quant.decision.DecisionGrowthLaneEvalReq;
+import com.awe.apex.quant.decision.DecisionGrowthLaneEvalResp;
+import com.awe.apex.quant.decision.DecisionGrowthLaneEvaluator;
+import com.awe.apex.quant.decision.DecisionLaneEnum;
 import com.awe.apex.quant.decision.DecisionMode;
 import com.awe.apex.quant.decision.DecisionPerformanceCalibrator;
 import com.awe.apex.quant.decision.DecisionPortfolioSnapshotManager;
@@ -187,6 +191,9 @@ public class DecisionServiceImpl implements IDecisionService {
 
     @Resource
     private StrategyParams strategyParams;
+
+    @Resource
+    private DecisionGrowthLaneEvaluator decisionGrowthLaneEvaluator;
 
     @Resource
     private IObservePoolService observePoolService;
@@ -690,8 +697,6 @@ public class DecisionServiceImpl implements IDecisionService {
             }
             if (mainHit.match) {
                 reason = trimReason(reason + " · 主线「" + mainHit.name + "」同向");
-            } else if (offMainline) {
-                reason = trimReason(reason + " · 逆主线降权");
             }
             if (buyFactor.compareTo(BigDecimal.ONE) != 0) {
                 reason = trimReason(reason + " · 市场" + briefing.getStance()
@@ -699,9 +704,30 @@ public class DecisionServiceImpl implements IDecisionService {
             }
 
             ValuationBriefResp valBrief = valuationMap.get(code);
+            DecisionGrowthLaneEvalResp growthLaneEval = (Objects.nonNull(decisionGrowthLaneEvaluator)
+                    ? decisionGrowthLaneEvaluator : new DecisionGrowthLaneEvaluator()).evaluate(DecisionGrowthLaneEvalReq.builder()
+                    .briefing(briefing)
+                    .industry(industry)
+                    .strategyId(signal.getStrategyId())
+                    .confluenceCount(cfCount)
+                    .hotSourceCount(hotCnt)
+                    .valuation(valBrief)
+                    .build());
+            boolean growthLane = growthLaneEval.isQualified();
+            String decisionLane = growthLane ? DecisionLaneEnum.GROWTH.getCode() : DecisionLaneEnum.CORE.getCode();
+            String growthLaneRejectReason = growthLaneEval.isTechnologyIndustry() && !growthLane
+                    ? String.join("、", growthLaneEval.getRejectReasons()) : null;
+            if (offMainline) {
+                reason = trimReason(reason + (growthLane ? " · 成长线非主线受控" : " · 逆主线降权"));
+            }
             if (Objects.nonNull(valBrief) && StringUtils.isNotBlank(valBrief.getLevelLabel())
                     && !"UNKNOWN".equals(valBrief.getLevel())) {
                 reason = trimReason(reason + " · 估值" + valBrief.getLevelLabel());
+            }
+            if (growthLane) {
+                reason = trimReason(reason + " · 科技成长线（受限仓位）");
+            } else if (StringUtils.isNotBlank(growthLaneRejectReason)) {
+                reason = trimReason(reason + " · 成长线观察：" + growthLaneRejectReason);
             }
 
             int minCf = strategyParams.decisionConfluenceMinStrategies();
@@ -714,6 +740,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .fundWeak(gate.weak)
                     .mainlineMatch(mainHit.match)
                     .offMainline(offMainline)
+                    .growthLane(growthLane)
                     .valuation(valBrief)
                     .marketStance(briefing.getStance())
                     .buyWeightFactor(buyFactor)
@@ -729,7 +756,9 @@ public class DecisionServiceImpl implements IDecisionService {
                 scored.setScoreExplain(trimReason(scored.getScoreExplain()
                         + " · 成熟样本校准" + (performanceAdjustment.signum() > 0 ? "+" : "")
                         + performanceAdjustment.toPlainString()));
-                if (scored.getFinalScore().compareTo(strategyParams.decisionExecutableScore()) < 0) {
+                BigDecimal executableScore = growthLane
+                        ? strategyParams.decisionGrowthExecutableScore() : strategyParams.decisionExecutableScore();
+                if (scored.getFinalScore().compareTo(executableScore) < 0) {
                     scored.setExecutableHint(false);
                 }
             }
@@ -738,6 +767,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .breadthUp(briefing.getBreadthUp())
                     .mainlineMatch(mainHit.match)
                     .offMainline(offMainline)
+                    .growthLane(growthLane)
                     .hotSourceCount(hotCnt)
                     .build());
             if (!entryGate.isPassed()) {
@@ -753,6 +783,7 @@ public class DecisionServiceImpl implements IDecisionService {
                     .fundExclude(scoreReq.isFundExclude())
                     .fundWeak(scoreReq.isFundWeak())
                     .offMainline(scoreReq.isOffMainline())
+                    .growthLane(scoreReq.isGrowthLane())
                     .valuationScoreDelta(Objects.nonNull(valBrief) ? valBrief.getScoreDelta() : null)
                     .buyWeightFactor(scoreReq.getBuyWeightFactor())
                     .singleLimit(scoreReq.getSingleLimit())
@@ -786,6 +817,8 @@ public class DecisionServiceImpl implements IDecisionService {
                         .signalId(signal.getId())
                         .mainlineMatch(mainHit.match)
                         .mainlineName(mainHit.name)
+                        .decisionLane(decisionLane)
+                        .growthLaneRejectReason(growthLaneRejectReason)
                         .scoreExplain(scored.getScoreExplain())
                         .valuationLevel(Objects.nonNull(valBrief) ? valBrief.getLevel() : null)
                         .valuationLabel(Objects.nonNull(valBrief) ? valBrief.getLevelLabel() : null)
@@ -821,6 +854,8 @@ public class DecisionServiceImpl implements IDecisionService {
                     .signalId(signal.getId())
                     .mainlineMatch(mainHit.match)
                     .mainlineName(mainHit.name)
+                    .decisionLane(decisionLane)
+                    .growthLaneRejectReason(growthLaneRejectReason)
                     .scoreExplain(scored.getScoreExplain())
                     .valuationLevel(Objects.nonNull(valBrief) ? valBrief.getLevel() : null)
                     .valuationLabel(Objects.nonNull(valBrief) ? valBrief.getLevelLabel() : null)
@@ -1429,6 +1464,7 @@ public class DecisionServiceImpl implements IDecisionService {
 
         BigDecimal availableCash = portfolioSnapshot.getCash();
         BigDecimal exposure = portfolioSnapshot.getExposureRatio();
+        BigDecimal growthLaneAddedWeight = BigDecimal.ZERO;
         Map<String, BigDecimal> industryWeight = new HashMap<>(portfolioSnapshot.getIndustryExposure());
         Map<String, BigDecimal> codeWeight = new HashMap<>();
         if (CollUtil.isNotEmpty(portfolioSnapshot.getHoldings())) {
@@ -1500,12 +1536,24 @@ public class DecisionServiceImpl implements IDecisionService {
             }
 
             BigDecimal incrementalWeight = positionRisk.getIncrementalWeight();
+            if (DecisionLaneEnum.GROWTH.getCode().equals(item.getDecisionLane())) {
+                BigDecimal growthCapacity = strategyParams.decisionGrowthTotalLimit()
+                        .subtract(growthLaneAddedWeight).max(BigDecimal.ZERO);
+                if (growthCapacity.signum() <= 0) {
+                    rejectRiskCandidate(item, "科技成长线当日新增仓位已达上限",
+                            featureSelectionStatus, featureRejectReason);
+                    continue;
+                }
+                incrementalWeight = incrementalWeight.min(growthCapacity);
+                growthLaneAddedWeight = growthLaneAddedWeight.add(incrementalWeight);
+            }
             BigDecimal incrementalAmount = incrementalWeight.multiply(equity);
             availableCash = availableCash.subtract(incrementalAmount).max(BigDecimal.ZERO);
             exposure = exposure.add(incrementalWeight).min(BigDecimal.ONE);
-            codeWeight.put(item.getCode(), positionRisk.getTargetWeight());
+            BigDecimal targetWeight = currentWeight.add(incrementalWeight).setScale(4, RoundingMode.HALF_UP);
+            codeWeight.put(item.getCode(), targetWeight);
             industryWeight.put(industry, currentIndustryWeight.add(incrementalWeight));
-            item.setSuggestedWeight(positionRisk.getTargetWeight().setScale(4, RoundingMode.HALF_UP));
+            item.setSuggestedWeight(targetWeight);
             item.setScoreExplain(trimReason(nullToEmpty(item.getScoreExplain())
                     + " · 风险预算通过，新增 " + pctText(incrementalWeight)));
             featureSelectionStatus.put(featureKey, "SELECTED");
@@ -1640,6 +1688,8 @@ public class DecisionServiceImpl implements IDecisionService {
                     .signalId(row.getSignalId())
                     .mainlineMatch(mainlineMatch)
                     .mainlineName(mainlineName)
+                    .decisionLane(row.getDecisionLane())
+                    .growthLaneRejectReason(row.getGrowthLaneRejectReason())
                     .scoreExplain(row.getScoreExplain())
                     .valuationLevel(row.getValuationLevel())
                     .valuationLabel(row.getValuationLabel())
@@ -1659,7 +1709,13 @@ public class DecisionServiceImpl implements IDecisionService {
                 holds.add(item);
             }
         }
-        populateStockInsights(all);
+        List<DecisionItemResp> executableBuys = new ArrayList<>();
+        for (DecisionItemResp item : buys) {
+            if (Boolean.TRUE.equals(item.getExecutableHint())) {
+                executableBuys.add(item);
+            }
+        }
+        populateStockInsights(executableBuys);
         int executableCount = 0;
         int mainlineMatchCount = 0;
         int valuationCheapCount = 0;
@@ -2738,7 +2794,8 @@ public class DecisionServiceImpl implements IDecisionService {
         // 高估 + S3：禁止可执行
         boolean rich = "OVERVALUED".equals(item.getValuationLevel())
                 || "SLIGHTLY_EXPENSIVE".equals(item.getValuationLevel());
-        if (rich && "S3".equalsIgnoreCase(item.getStrategyId())) {
+        if (rich && "S3".equalsIgnoreCase(item.getStrategyId())
+                && !DecisionLaneEnum.GROWTH.getCode().equals(item.getDecisionLane())) {
             executableHint = false;
             if (!riskFlags.contains("高估突破降权")) {
                 riskFlags.add("高估突破降权");
@@ -2761,6 +2818,8 @@ public class DecisionServiceImpl implements IDecisionService {
                 .signalId(item.getSignalId())
                 .mainlineMatch(item.getMainlineMatch())
                 .mainlineName(item.getMainlineName())
+                .decisionLane(item.getDecisionLane())
+                .growthLaneRejectReason(item.getGrowthLaneRejectReason())
                 .scoreExplain(explain)
                 .valuationLevel(item.getValuationLevel())
                 .valuationLabel(item.getValuationLabel())
@@ -3038,12 +3097,15 @@ public class DecisionServiceImpl implements IDecisionService {
     private String humanReason(StrategySignalEntity signal, SignalConfluenceItem cf, FundGate gate,
                                String actionLabel, HotConfluenceItem hot) {
         String rule = extractRule(signal.getReasonJson());
+        boolean s3HoldingSell = "持仓卖出".equals(actionLabel) && "S3".equals(signal.getStrategyId());
         StringBuilder sb = new StringBuilder();
         sb.append(actionLabel).append("：");
-        if (StringUtils.isNotBlank(signal.getStrategyId())) {
+        if (s3HoldingSell) {
+            sb.append("S3突破失败（跌破突破日低点）");
+        } else if (StringUtils.isNotBlank(signal.getStrategyId())) {
             sb.append(strategyName(signal.getStrategyId()));
         }
-        if (StringUtils.isNotBlank(rule)) {
+        if (StringUtils.isNotBlank(rule) && !s3HoldingSell) {
             sb.append(" · ").append(rule);
         }
         if (Objects.nonNull(cf) && Objects.nonNull(cf.getStrategyCount()) && cf.getStrategyCount() >= 2) {

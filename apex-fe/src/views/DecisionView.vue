@@ -50,6 +50,7 @@ const attribution = ref(null)
 const decisionAdvice = ref(null)
 const adviceLoading = ref(false)
 const morePanels = ref([])
+const trackingOpen = ref(false)
 const FILTER_PREF_KEY = 'apex.decision.buyFilters'
 const savedFilters = (() => {
   try {
@@ -129,6 +130,8 @@ const filteredBuys = computed(() => {
     return true
   })
 })
+const executableBuys = computed(() => filteredBuys.value.filter((row) => canExecutePaperBuy(row)))
+const trackingBuys = computed(() => filteredBuys.value.filter((row) => !canExecutePaperBuy(row)))
 const briefing = computed(() => data.value?.marketBriefing || null)
 const decisionDataLevel = computed(() => briefing.value?.dataLevel || 'RED')
 const factors = computed(() => briefing.value?.factors || [])
@@ -193,7 +196,7 @@ function decisionDataStatus() {
     return '历史回放或未发布结果仅供复盘，不能按该清单执行'
   }
   if (decisionDataLevel.value === 'GREEN') return '数据完整，可按行动计划执行'
-  if (decisionDataLevel.value === 'RED') return '数据异常，买入建议仅供观察'
+  if (decisionDataLevel.value === 'RED') return '数据未就绪，已暂停新开仓'
   return '数据存在预警，执行前请复核行情和风险边界'
 }
 
@@ -296,9 +299,11 @@ async function load() {
       loadPlaybook(),
     ])
     data.value = res.data
+    trackingOpen.value = false
     publishDecisionDataFreshness()
     pickDefaultTab()
-    await Promise.all([loadHistory(), loadAttribution()])
+    loading.value = false
+    void Promise.all([loadHistory(), loadAttribution()])
     loadDecisionAdvice(data.value?.actionDate)
     loadBuyAi(false)
   } catch (e) {
@@ -314,6 +319,7 @@ async function openHistoryDay(row) {
   try {
     const res = await fetchDecisionToday(row.actionDate, DEFAULT_GROUP)
     data.value = res.data
+    trackingOpen.value = false
     publishDecisionDataFreshness()
     pickDefaultTab()
     loadDecisionAdvice(data.value?.actionDate)
@@ -389,7 +395,7 @@ function adviceActionType(action) {
 }
 
 async function loadBuyAi(force = false) {
-  if (!buys.value.length) {
+  if (!executableBuys.value.length) {
     buyAi.value = null
     return
   }
@@ -827,8 +833,8 @@ onBeforeUnmount(() => {
       </div>
 
       <el-tabs v-model="activeTab" class="tabs">
-        <el-tab-pane :label="`建议买入 (${buys.length})`" name="buys">
-          <div v-if="buys.length" class="buy-ai-panel" v-loading="buyAiLoading">
+        <el-tab-pane :label="`可执行买入 (${executableBuys.length})`" name="buys">
+          <div v-if="executableBuys.length" class="buy-ai-panel" v-loading="buyAiLoading">
             <div class="buy-ai-head">
               <div>
                 <h3>AI 详细总结</h3>
@@ -890,11 +896,18 @@ onBeforeUnmount(() => {
             <el-checkbox v-model="buyExecutableOnly" @change="persistBuyFilters">仅可执行</el-checkbox>
             <el-checkbox v-model="buyCheapOnly" @change="persistBuyFilters">仅低估</el-checkbox>
             <el-checkbox v-model="includeBj" @change="persistBuyFilters">含京市</el-checkbox>
-            <span class="muted">显示 {{ filteredBuys.length }} / {{ buys.length }}</span>
+            <span class="muted">可执行 {{ executableBuys.length }} · 待跟踪 {{ trackingBuys.length }}</span>
           </div>
           <div v-if="buys.length" class="decision-data-status" :class="`is-${decisionDataLevel.toLowerCase()}`">
             <span><b>市场数据 {{ dataLevelLabel(decisionDataLevel) }}</b> · {{ decisionDataStatus() }}</span>
             <span>{{ decisionDataTime() }}</span>
+          </div>
+          <div v-if="buys.length && decisionDataLevel === 'RED' && trackingBuys.length" class="decision-data-shortage">
+            <div>
+              <b>数据未就绪，已暂缓 {{ trackingBuys.length }} 条候选</b>
+              <span>补齐市场行情后再评估，当前不展示为买入建议。</span>
+            </div>
+            <el-button link type="primary" @click="router.push('/sync')">去同步</el-button>
           </div>
           <div v-if="!buys.length" class="page-empty">
             <h3>暂无买入机会</h3>
@@ -904,10 +917,14 @@ onBeforeUnmount(() => {
               <el-icon><ArrowRight /></el-icon>
             </el-button>
           </div>
+          <div v-else-if="!executableBuys.length" class="page-empty">
+            <h3>当前无可执行买入</h3>
+            <p>候选已转为待跟踪，满足市场和风控条件后才会进入此处。</p>
+          </div>
           <el-table
             v-else
             class="decision-desktop-table"
-            :data="filteredBuys"
+            :data="executableBuys"
             size="small"
             stripe
             empty-text="当前筛选下无买入标的"
@@ -952,6 +969,12 @@ onBeforeUnmount(() => {
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
+            <el-table-column label="通道" width="112">
+              <template #default="{ row }">
+                <el-tag v-if="row.decisionLane === 'GROWTH'" size="small" type="success" effect="plain">科技成长</el-tag>
+                <el-tag v-else size="small" type="info" effect="plain">核心</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="估值" width="88">
               <template #default="{ row }">
                 <el-button
@@ -982,7 +1005,7 @@ onBeforeUnmount(() => {
             />
             <el-table-column label="风险" width="120">
               <template #default="{ row }">
-                <template v-if="row.riskFlags?.length">
+                <template v-if="row.riskFlags?.length || row.growthLaneRejectReason">
                   <el-tag
                     v-for="(rf, idx) in row.riskFlags.slice(0, 2)"
                     :key="idx"
@@ -991,6 +1014,9 @@ onBeforeUnmount(() => {
                     effect="plain"
                     class="risk-tag"
                   >{{ rf }}</el-tag>
+                  <el-tooltip v-if="row.growthLaneRejectReason" :content="`成长线未启用：${row.growthLaneRejectReason}`">
+                    <el-tag size="small" type="warning" effect="plain">成长线观察</el-tag>
+                  </el-tooltip>
                 </template>
                 <span v-else class="muted">-</span>
               </template>
@@ -1040,24 +1066,24 @@ onBeforeUnmount(() => {
                       :loading="ordering"
                       :disabled="!canExecutePaperBuy(row)"
                       @click="onPaperOrder(row)"
-                    >{{ canExecutePaperBuy(row) ? '模拟买' : '仅观察' }}</el-button>
+                    >{{ canExecutePaperBuy(row) ? '模拟买' : '暂不买入' }}</el-button>
                   </span>
                 </el-tooltip>
                 <el-button
                   link
                   type="warning"
                   @click="router.push({ path: '/observe', query: { code: row.code, name: row.name || '' } })"
-                >观察</el-button>
+                >加入观察池</el-button>
               </template>
             </el-table-column>
           </el-table>
           <div
-            v-if="buys.length && filteredBuys.length"
+            v-if="executableBuys.length"
             class="decision-mobile-list decision-mobile-buy-list"
             role="list"
           >
             <article
-              v-for="row in filteredBuys"
+              v-for="row in executableBuys"
               :key="`mobile-buy-${row.code}-${row.strategyId}`"
               class="decision-mobile-item"
               role="listitem"
@@ -1077,7 +1103,7 @@ onBeforeUnmount(() => {
                   size="small"
                   :type="row.entryGatePassed ? 'success' : 'warning'"
                   effect="plain"
-                >{{ row.entryGatePassed ? '通过' : '观察' }}</el-tag>
+                >{{ row.entryGatePassed ? '门禁通过' : '门禁未过' }}</el-tag>
               </div>
               <div class="decision-action-plan">
                 <b :class="{ 'is-observe': !canExecutePaperBuy(row) }">
@@ -1090,12 +1116,14 @@ onBeforeUnmount(() => {
                 <span v-else-if="row.exitRule">失效 {{ row.exitRule }}</span>
               </div>
               <div
-                v-if="row.mainlineMatch || row.valuationLabel || row.linkHint || row.riskFlags?.length"
+                v-if="row.mainlineMatch || row.decisionLane || row.valuationLabel || row.linkHint || row.growthLaneRejectReason || row.riskFlags?.length"
                 class="decision-mobile-flags"
               >
                 <el-tag v-if="row.mainlineMatch" size="small" type="warning" effect="plain">
                   {{ row.mainlineName || '主线匹配' }}
                 </el-tag>
+                <el-tag v-if="row.decisionLane === 'GROWTH'" size="small" type="success" effect="plain">科技成长</el-tag>
+                <el-tag v-else-if="row.decisionLane" size="small" type="info" effect="plain">核心</el-tag>
                 <el-button
                   v-if="row.valuationLabel"
                   link
@@ -1108,6 +1136,9 @@ onBeforeUnmount(() => {
                   effect="plain"
                   :type="row.linkHint.includes('降权') ? 'danger' : 'success'"
                 >{{ row.linkHint }}</el-tag>
+                <el-tooltip v-if="row.growthLaneRejectReason" :content="`成长线未启用：${row.growthLaneRejectReason}`">
+                  <el-tag size="small" type="warning" effect="plain">成长线观察</el-tag>
+                </el-tooltip>
                 <el-tag
                   v-for="(riskFlag, riskIndex) in (row.riskFlags || []).slice(0, 2)"
                   :key="riskIndex"
@@ -1156,21 +1187,41 @@ onBeforeUnmount(() => {
                       :loading="ordering"
                       :disabled="!canExecutePaperBuy(row)"
                       @click="onPaperOrder(row)"
-                    >{{ canExecutePaperBuy(row) ? '模拟买' : '仅观察' }}</el-button>
+                    >{{ canExecutePaperBuy(row) ? '模拟买' : '暂不买入' }}</el-button>
                   </span>
                 </el-tooltip>
                 <el-button
                   type="warning"
                   plain
                   @click="router.push({ path: '/observe', query: { code: row.code, name: row.name || '' } })"
-                >观察</el-button>
+                >加入观察池</el-button>
               </div>
             </article>
           </div>
-          <div v-else-if="buys.length" class="decision-mobile-empty">当前筛选下无买入标的</div>
+          <div v-if="trackingBuys.length" class="decision-tracking-list">
+            <details class="decision-tracking-toggle" :open="trackingOpen" @toggle="trackingOpen = $event.target.open">
+              <summary>
+                <span>待跟踪候选 ({{ trackingBuys.length }})</span>
+                <small>未满足开仓条件，不能下单</small>
+              </summary>
+              <div v-if="trackingOpen" class="decision-tracking-rows">
+                <article v-for="row in trackingBuys" :key="`tracking-${row.code}-${row.strategyId}`" class="decision-tracking-item">
+                  <div>
+                    <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                    <span>{{ buyActionState(row) }}</span>
+                  </div>
+                  <el-button
+                    link
+                    type="warning"
+                    @click="router.push({ path: '/observe', query: { code: row.code, name: row.name || '' } })"
+                  >加入观察池</el-button>
+                </article>
+              </div>
+            </details>
+          </div>
         </el-tab-pane>
 
-        <el-tab-pane :label="`建议卖出 (${sells.length})`" name="sells">
+        <el-tab-pane :label="`持仓卖出 (${sells.length})`" name="sells">
           <el-table class="decision-desktop-table" :data="sells" size="small" stripe empty-text="持仓暂无卖出建议">
             <el-table-column prop="name" label="股票" width="136" fixed>
               <template #default="{ row }">
@@ -2198,6 +2249,85 @@ onBeforeUnmount(() => {
   background: rgba(214, 69, 69, 0.08);
 }
 
+.decision-data-shortage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--down);
+  background: rgba(214, 69, 69, 0.06);
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.decision-data-shortage div {
+  display: grid;
+  gap: 3px;
+}
+
+.decision-data-shortage span {
+  color: var(--muted);
+}
+
+.decision-tracking-list {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.decision-tracking-toggle > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.decision-tracking-toggle > summary small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.decision-tracking-rows {
+  border-top: 1px solid var(--line);
+}
+
+.decision-tracking-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.decision-tracking-item:last-child {
+  border-bottom: 0;
+}
+
+.decision-tracking-item > div {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  gap: 4px 10px;
+}
+
+.decision-tracking-item > div > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .decision-action-plan {
   display: grid;
   gap: 3px;
@@ -2701,6 +2831,39 @@ onBeforeUnmount(() => {
   .decision-mobile-list {
     display: block;
     border-top: 1px solid var(--line);
+  }
+
+  .decision-tracking-list {
+    margin-top: 10px;
+  }
+
+  .decision-tracking-toggle > summary {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 9px 10px;
+  }
+
+  .decision-tracking-item {
+    align-items: flex-start;
+    padding: 9px 10px;
+  }
+
+  .decision-tracking-item > div {
+    display: grid;
+    gap: 3px;
+  }
+
+  .decision-tracking-item :deep(.el-button) {
+    min-height: 32px;
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  .decision-data-shortage {
+    align-items: flex-start;
+    padding: 9px 10px;
   }
 
   .decision-mobile-empty {

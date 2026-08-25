@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -115,6 +116,7 @@ class DecisionTodayServiceTest {
                 .strategiesCsv("S1,S2")
                 .mainlineMatch(1)
                 .mainlineName("半导体")
+                .executableHint(1)
                 .valuationSummary("估值处于行业低位")
                 .fundNote("ROE 12.50%")
                 .scoreExplain("回调缩量，等待确认")
@@ -141,5 +143,32 @@ class DecisionTodayServiceTest {
                 response.getBuys().get(0).getHighlights());
         assertEquals("近7日收录1条，最新：示例股份披露订单进展", response.getBuys().get(0).getNewsSummary());
         assertEquals("示例股份披露订单进展", response.getBuys().get(0).getRecentNews().get(0).getTitle());
+    }
+
+    @Test
+    void skipsNewsEnrichmentWhenNoBuySuggestionCanBeExecuted() {
+        LocalDate actionDate = LocalDate.now();
+        DailyAction action = DailyAction.builder()
+                .id(1L)
+                .actionDate(actionDate)
+                .code("600001")
+                .name("示例股份")
+                .action("BUY")
+                .executableHint(0)
+                .build();
+        when(dailyActionMapper.selectList(any())).thenReturn(List.of(action));
+        when(decisionRunMapper.selectOne(any())).thenReturn(null);
+        when(stockBasicMapper.selectList(any())).thenReturn(List.of());
+        MarketBriefingResp briefing = MarketBriefingResp.builder()
+                .asOf(actionDate)
+                .stance("均衡")
+                .hotThemes(List.of())
+                .build();
+
+        DecisionTodayResp response = service.today(actionDate, "我的自选", briefing);
+
+        assertNull(response.getBuys().get(0).getHighlights());
+        assertNull(response.getBuys().get(0).getRecentNews());
+        assertNull(response.getBuys().get(0).getNewsSummary());
     }
 }

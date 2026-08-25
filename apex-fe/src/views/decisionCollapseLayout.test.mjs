@@ -43,7 +43,7 @@ test('mobile decision results use full-width lists instead of frozen desktop tab
   const mobileStyles = decisionSource.slice(decisionSource.indexOf('@media (max-width: 560px)'))
 
   assert.equal((decisionSource.match(/class="decision-desktop-table"/g) || []).length, 3)
-  assert.match(decisionSource, /class="decision-mobile-list decision-mobile-buy-list"[\s\S]*v-for="row in filteredBuys"/)
+  assert.match(decisionSource, /class="decision-mobile-list decision-mobile-buy-list"[\s\S]*v-for="row in executableBuys"/)
   assert.match(decisionSource, /class="decision-mobile-list decision-mobile-sell-list"[\s\S]*v-for="row in sells"/)
   assert.match(decisionSource, /class="decision-mobile-list decision-mobile-hold-list"[\s\S]*v-for="row in holds"/)
   assert.match(mobileStyles, /\.decision-desktop-table\s*\{[^}]*display:\s*none;/)

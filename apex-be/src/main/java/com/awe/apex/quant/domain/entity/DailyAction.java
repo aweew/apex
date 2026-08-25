@@ -51,6 +51,8 @@ public class DailyAction implements Serializable {
     /** 估值综合分 */ private BigDecimal valuationScore;
     /** 估值一句话 */ private String valuationSummary;
     /** 估值×策略联动提示 */ private String linkHint;
+    /** 决策通道CORE核心防守线或GROWTH科技成长线 */ private String decisionLane;
+    /** 科技候选未进入成长线的原因 */ private String growthLaneRejectReason;
     /** 风险旗标 CSV */ private String riskFlags;
     /** 是否可执行提示 1/0 */ private Integer executableHint;
     /** 决策置信度 */ private BigDecimal confidence;

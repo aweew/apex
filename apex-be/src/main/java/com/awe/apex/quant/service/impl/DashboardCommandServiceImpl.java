@@ -561,28 +561,13 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         int executableCount = Objects.nonNull(decision.getExecutableCount())
                 ? Math.max(0, decision.getExecutableCount()) : 0;
         if (sellCount > 0 && executableCount > 0) {
-            DecisionItemResp firstSell = firstDecisionItem(decision.getSells(), false);
-            DecisionItemResp firstBuy = firstDecisionItem(decision.getBuys(), true);
-            if (Objects.nonNull(firstSell) && Objects.nonNull(firstBuy)) {
-                return "先" + buildNamedSellAction(firstSell)
-                        + "；新仓只做" + decisionItemName(firstBuy) + "。";
-            }
-            return "先处理" + sellCount + "项卖出/减仓；再执行"
-                    + executableCount + "个新仓。";
+            return "今日操作已生成，请按执行清单处理。";
         }
         if (sellCount > 0) {
-            String sellNames = joinDecisionItemNames(decision.getSells(), false, sellCount);
-            if (StringUtils.isNotBlank(sellNames)) {
-                return "先处理" + sellNames + "；今天不开新仓。";
-            }
-            return "先处理" + sellCount + "项卖出/减仓；今天不开新仓。";
+            return "今日操作已生成，今天不开新仓。";
         }
         if (executableCount > 0) {
-            String buyNames = joinDecisionItemNames(decision.getBuys(), true, executableCount);
-            if (StringUtils.isNotBlank(buyNames)) {
-                return "新仓只做" + buyNames + "，按建议仓位并严格止损。";
-            }
-            return "执行" + executableCount + "个新仓候选，按建议仓位和止损价下单。";
+            return "今日操作已生成，候选需满足开仓条件。";
         }
         return "今天无买卖动作，保持现仓。";
     }

@@ -34,6 +34,9 @@ public class DecisionEntryGateReq {
      */
     private boolean offMainline;
 
+    /** 是否进入科技成长线 */
+    private boolean growthLane;
+
     /**
      * 热点来源数量
      */

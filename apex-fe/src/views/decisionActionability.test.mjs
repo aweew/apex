@@ -19,6 +19,27 @@ test('observation-only and red-data buy suggestions cannot open a paper order', 
   assert.match(decisionSource, /orderFromDecision\(/)
 })
 
+test('non-executable candidates stay out of the main buy list and use clear tracking language', () => {
+  assert.match(decisionSource, /const executableBuys = computed/)
+  assert.match(decisionSource, /const trackingBuys = computed/)
+  assert.match(decisionSource, /可执行买入 \(\$\{executableBuys\.length\}\)/)
+  assert.match(decisionSource, /待跟踪候选 \(\{\{ trackingBuys\.length \}\}\)/)
+  assert.match(decisionSource, /加入观察池/g)
+  assert.match(decisionSource, /数据未就绪，已暂缓 \{\{ trackingBuys\.length \}\} 条候选/)
+  assert.match(decisionSource, /v-if="trackingOpen" class="decision-tracking-rows"/)
+})
+
+test('growth lane and its qualification gap are visible in the decision list', () => {
+  assert.match(decisionSource, /row\.decisionLane === 'GROWTH'/)
+  assert.match(decisionSource, /科技成长/)
+  assert.match(decisionSource, /row\.growthLaneRejectReason/)
+  assert.match(decisionSource, /成长线未启用/)
+})
+
+test('decision view releases its page loading mask before secondary panels finish loading', () => {
+  assert.match(decisionSource, /data\.value = res\.data[\s\S]*?loading\.value = false[\s\S]*?loadHistory\(\)/)
+})
+
 test('today action list remains before expandable decision evidence', () => {
   const actionPanel = decisionSource.indexOf('<section class="action-panel">')
   const evidencePanels = decisionSource.indexOf('<details class="decision-evidence-toggle">')

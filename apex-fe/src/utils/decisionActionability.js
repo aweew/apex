@@ -41,15 +41,15 @@ export function canPaperBuy(row, context) {
 
 export function buyActionState(row, context) {
   if (!isCurrentLiveDecision(context)) {
-    if (context?.runMode === 'SHADOW') return '仅观察：影子运行'
+    if (context?.runMode === 'SHADOW') return '暂不买入：影子运行'
     if (isHistoricalDecision(context)) return '仅回放：非当日决策'
-    return '仅观察：运行状态不完整'
+    return '暂不买入：运行状态不完整'
   }
-  if (context?.dataLevel === 'RED') return '仅观察：数据异常'
+  if (context?.dataLevel === 'RED') return '暂不买入：市场数据异常'
   if (row?.executableHint === true) {
     return context?.dataLevel === 'YELLOW' ? '可执行：先复核' : '可执行'
   }
-  return '仅观察：风控未通过'
+  return '暂不买入：未满足开仓条件'
 }
 
 export function paperBuyBlockedReason(row, context) {

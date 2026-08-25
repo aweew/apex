@@ -78,6 +78,35 @@ class DecisionScorerTest {
     }
 
     @Test
+    void qualifiedGrowthLaneAllowsRichS3WithLowerWeightCap() {
+        DecisionScoreResp resp = scorer.scoreBuy(DecisionScoreReq.builder()
+                .signalScore(new BigDecimal("85"))
+                .strategyId("S3")
+                .confluenceCount(2)
+                .hotSourceCount(2)
+                .fundExclude(false)
+                .fundWeak(false)
+                .mainlineMatch(false)
+                .offMainline(true)
+                .growthLane(true)
+                .valuation(ValuationBriefResp.builder()
+                        .level("OVERVALUED")
+                        .levelLabel("高估")
+                        .scoreDelta(-12)
+                        .growthQualityVerified(true)
+                        .build())
+                .marketStance("进攻")
+                .buyWeightFactor(BigDecimal.ONE)
+                .singleLimit(new BigDecimal("0.15"))
+                .observeOnly(false)
+                .build());
+
+        assertTrue(resp.isExecutableHint());
+        assertTrue(resp.getSuggestedWeight().compareTo(new BigDecimal("0.08")) <= 0);
+        assertTrue("成长突破受限仓位".equals(resp.getLinkHint()));
+    }
+
+    @Test
     void fairS1ConfluenceKeepsWeightNearCap() {
         DecisionScoreResp resp = scorer.scoreBuy(DecisionScoreReq.builder()
                 .signalScore(new BigDecimal("80"))

@@ -6,12 +6,14 @@ import com.awe.apex.quant.decision.DecisionMode;
 import com.awe.apex.quant.decision.DecisionRunManager;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.entity.DecisionRun;
+import com.awe.apex.quant.domain.entity.StrategySignalEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -50,5 +52,17 @@ class DecisionServiceModeTest {
 
         verify(runManager).completeUnpublished(run, "RED", response.getMessage());
         verify(publisher, never()).publish(run, List.of(), "RED", response.getMessage());
+    }
+
+    @Test
+    void describesS3HoldingSellAsBreakoutFailure() {
+        StrategySignalEntity signal = StrategySignalEntity.builder()
+                .strategyId("S3")
+                .reasonJson("{\"rule\":\"跌破突破日低点\"}")
+                .build();
+
+        String reason = ReflectionTestUtils.invokeMethod(service, "humanReason", signal, null, null, "持仓卖出", null);
+
+        assertEquals("持仓卖出：S3突破失败（跌破突破日低点）", reason);
     }
 }

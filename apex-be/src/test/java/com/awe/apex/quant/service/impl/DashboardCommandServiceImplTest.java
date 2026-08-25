@@ -72,8 +72,9 @@ class DashboardCommandServiceImplTest {
         assertEquals(TRADE_DATE, command.getTradeDate());
         assertEquals(PREVIOUS_TRADE_DATE, command.getMarketDataAsOf());
         assertEquals(PREVIOUS_TRADE_DATE, command.getDecisionDataAsOf());
-        assertEquals("先处理2项卖出/减仓；再执行3个新仓。",
+        assertEquals("今日操作已生成，请按执行清单处理。",
                 command.getPreMarketSummary().getHeadline());
+        assertFalse(command.getPreMarketSummary().getHeadline().contains("先处理"));
         assertFalse(command.getPreMarketSummary().getHeadline().contains("市场广度"));
         assertTrue(command.getPreMarketSummary().getOpportunityItems().size() <= 2);
         assertTrue(command.getPreMarketSummary().getRiskItems().size() <= 2);
@@ -281,7 +282,7 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.READY.getCode(), command.getStatus());
-        assertEquals("先清仓浦发银行；新仓只做宁德时代。",
+        assertEquals("今日操作已生成，请按执行清单处理。",
                 command.getPreMarketSummary().getHeadline());
         assertFalse(command.getPreMarketSummary().getHeadline().contains("市场广度"));
         assertTrue(command.getPreMarketSummary().getEvidenceItems().isEmpty());
@@ -340,7 +341,7 @@ class DashboardCommandServiceImplTest {
                 .observeAlerts(List.of())
                 .build());
 
-        assertEquals("先处理立昂微、科华数据等3项；今天不开新仓。",
+        assertEquals("今日操作已生成，今天不开新仓。",
                 command.getPreMarketSummary().getHeadline());
         assertTrue(command.getPreMarketSummary().getWatchConditions().isEmpty());
         assertEquals("先处理3项卖出/减仓；今天不开新仓。",

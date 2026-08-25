@@ -44,6 +44,9 @@ public class DecisionFeature {
     /** 是否匹配主线 */
     private Boolean mainlineMatch;
 
+    /** 决策通道 */
+    private String decisionLane;
+
     /** 估值档位 */
     private String valuationLevel;
 
@@ -67,6 +70,9 @@ public class DecisionFeature {
 
     /** 是否逆主线 */
     private boolean offMainline;
+
+    /** 是否进入科技成长线 */
+    private boolean growthLane;
 
     /** 估值调分 */
     private Integer valuationScoreDelta;

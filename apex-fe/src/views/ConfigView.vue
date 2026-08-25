@@ -92,6 +92,9 @@ async function ensureAutoSyncKeys() {
     { configKey: 'decision.confluence.min_strategies', configValue: '2' },
     { configKey: 'decision.gate.minimum_breadth_up', configValue: '2000' },
     { configKey: 'decision.gate.minimum_hot_sources', configValue: '2' },
+    { configKey: 'decision.growth.executable.score', configValue: '82' },
+    { configKey: 'decision.growth.single_limit', configValue: '0.08' },
+    { configKey: 'decision.growth.total_limit', configValue: '0.20' },
   ]
   for (const item of keys) {
     if (!rows.value.find((r) => r.configKey === item.configKey)) {
@@ -222,7 +225,7 @@ onMounted(load)
       :closable="false"
       show-icon
       title="决策评分与估值联动参数"
-      description="系统参数中含 decision.score.* / decision.link.* / decision.executable.score / decision.gate.*：低估+S2 提权，高估+S3 降权；市场广度与主线/热点确认未通过时仅观察。改完后重新「一键生成决策」生效。"
+      description="系统参数中含 decision.score.* / decision.link.* / decision.executable.score / decision.gate.* / decision.growth.*：核心线保留低估+S2提权和高估+S3降权；成长线仅在风格、增长质量、热点和突破条件同时满足时启用，单票与新增总仓独立受限。改完后重新「一键生成决策」生效。"
       style="margin: 16px 0 12px"
     />
 

@@ -104,6 +104,8 @@ public class DecisionActionPublisher {
                 .valuationScore(item.getValuationScore())
                 .valuationSummary(limit(item.getValuationSummary(), 256))
                 .linkHint(limit(item.getLinkHint(), 64))
+                .decisionLane(item.getDecisionLane())
+                .growthLaneRejectReason(limit(item.getGrowthLaneRejectReason(), 256))
                 .riskFlags(csv(item.getRiskFlags(), 256))
                 .executableHint(booleanInt(item.getExecutableHint()))
                 .decisionStatus("PUBLISHED")
