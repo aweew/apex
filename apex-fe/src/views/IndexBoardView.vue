@@ -32,15 +32,22 @@ import { snapshotStamp } from '../utils/snapshotDate.js'
 import { resolveActiveMarket } from '../utils/marketTradingSession.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import { useSessionViewState } from '../utils/viewState.js'
+import worldMarketMapUrl from '../assets/world-market-map.svg'
+import {
+  buildGlobalMarketHubs,
+  derivePointChange,
+  summarizeGlobalMarkets,
+} from '../utils/globalMarketOverview.js'
 
 const marketTabs = [
+  { key: 'global', label: '全球' },
   { key: 'cn', label: '沪深A股' },
   { key: 'hk', label: '港股' },
   { key: 'jp', label: '日本' },
   { key: 'kr', label: '韩国' },
   { key: 'us', label: '美国' },
 ]
-const indexMarketKeys = marketTabs.map((item) => item.key)
+const indexMarketKeys = marketTabs.filter((item) => item.key !== 'global').map((item) => item.key)
 
 const router = useRouter()
 const route = useRoute()
@@ -48,7 +55,7 @@ const loading = ref(false)
 const quoteRefreshing = ref(false)
 const indexSyncing = ref(false)
 const activeMarketKey = ref(resolveActiveMarket())
-const marketTab = ref(activeMarketKey.value || 'cn') // cn | hk | jp | kr | us | capital-flow | sector
+const marketTab = ref(activeMarketKey.value || 'global')
 const indexData = ref(null)
 const briefing = ref(null)
 const marketBoard = ref(null)
@@ -64,10 +71,10 @@ let chart
 let marketSessionTimer
 
 useSessionViewState('market', { marketTab })
-if (![...indexMarketKeys, 'capital-flow', 'sector'].includes(marketTab.value)) {
-  marketTab.value = activeMarketKey.value || 'cn'
+if (!['global', ...indexMarketKeys, 'capital-flow', 'sector'].includes(marketTab.value)) {
+  marketTab.value = activeMarketKey.value || 'global'
 }
-if (['capital-flow', 'sector'].includes(route.query.tab)) marketTab.value = route.query.tab
+if (['global', 'capital-flow', 'sector'].includes(route.query.tab)) marketTab.value = route.query.tab
 
 const sharing = ref(false)
 const shareOpen = ref(false)
@@ -84,11 +91,17 @@ const marketIndexes = computed(() => ({
   kr: (indexData.value?.asia || []).filter((item) => item.code === 'KR_KOSPI'),
   us: indexData.value?.us || [],
 }))
-const isIndexMarketTab = computed(() => marketTabs.some((item) => item.key === marketTab.value))
+const globalMarketHubs = computed(() => buildGlobalMarketHubs(marketIndexes.value))
+const globalMarketSummary = computed(() => summarizeGlobalMarkets(marketIndexes.value))
+const isIndexMarketTab = computed(() => indexMarketKeys.includes(marketTab.value))
+const isQuoteMarketTab = computed(() => marketTab.value === 'global' || isIndexMarketTab.value)
 const activeMarketItems = computed(() => marketIndexes.value[marketTab.value] || [])
 const activeMarketTitle = computed(() => marketTabs.find((item) => item.key === marketTab.value)?.label || '')
 const allIndexItems = computed(() => Object.values(marketIndexes.value).flat())
 const marketPageSubtitle = computed(() => {
+  if (marketTab.value === 'global') {
+    return '全球市场 · 指数分布与区域走势'
+  }
   if (isIndexMarketTab.value && marketTab.value !== 'cn') {
     return `${activeMarketTitle.value}市场 · 指数行情与走势`
   }
@@ -213,6 +226,13 @@ function fmtPct(v) {
   return `${sign}${n.toFixed(2)}%`
 }
 
+function fmtPointChange(item) {
+  const pointChange = derivePointChange(item)
+  if (pointChange == null) return '--'
+  const sign = pointChange > 0 ? '+' : ''
+  return `约 ${sign}${fmtNum(pointChange)}`
+}
+
 function fmtVol(v) {
   if (v == null || v === '' || Number(v) === 0) return '--'
   const n = Number(v)
@@ -256,7 +276,12 @@ function openSectorConstituents(row, type) {
 function setMarketTab(tab) {
   marketTab.value = tab
   const query = { ...route.query }
-  if (tab === 'capital-flow') {
+  if (tab === 'global') {
+    query.tab = 'global'
+    delete query.type
+    delete query.code
+    delete query.q
+  } else if (tab === 'capital-flow') {
     query.tab = 'capital-flow'
     delete query.type
     delete query.code
@@ -270,9 +295,24 @@ function setMarketTab(tab) {
     delete query.q
   }
   router.replace({ query })
-  if (marketTabs.some((item) => item.key === tab)) {
+  if (tab === 'global') {
+    activateGlobalMarket()
+  } else if (indexMarketKeys.includes(tab)) {
     activateIndexMarket(tab)
   }
+}
+
+async function activateGlobalMarket() {
+  const activeHub = globalMarketHubs.value.find((hub) => hub.key === activeMarketKey.value && hub.primary)
+  const firstHub = globalMarketHubs.value.find((hub) => hub.primary)
+  const primaryIndex = activeHub?.primary || firstHub?.primary
+  if (primaryIndex?.code && primaryIndex.code !== activeCode.value) {
+    await selectIndex(primaryIndex.code)
+  }
+}
+
+function selectGlobalHub(hub) {
+  if (hub?.primary?.code) selectIndex(hub.primary.code)
 }
 
 async function activateIndexMarket(market) {
@@ -319,7 +359,10 @@ async function load(forceBriefing = false, showLoading = true) {
     const currentMarket = resolveActiveMarket()
     if (currentMarket) activeMarketKey.value = currentMarket
     if (isIndexMarketTab.value && currentMarket) marketTab.value = currentMarket
-    if (!activeCode.value) await activateIndexMarket(marketTab.value)
+    if (!activeCode.value) {
+      if (marketTab.value === 'global') await activateGlobalMarket()
+      else await activateIndexMarket(marketTab.value)
+    }
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
   } finally {
@@ -456,8 +499,10 @@ watch(detailBars, async () => {
 watch(
   () => route.query.tab,
   (tab) => {
-    if (tab === 'capital-flow' || tab === 'sector') marketTab.value = tab
-    else if (marketTab.value === 'capital-flow' || marketTab.value === 'sector') {
+    if (tab === 'global' || tab === 'capital-flow' || tab === 'sector') {
+      marketTab.value = tab
+      if (tab === 'global') activateGlobalMarket()
+    } else if (marketTab.value === 'global' || marketTab.value === 'capital-flow' || marketTab.value === 'sector') {
       marketTab.value = activeMarketKey.value || 'cn'
       activateIndexMarket(marketTab.value)
     }
@@ -656,17 +701,17 @@ onBeforeUnmount(() => {
             @click="setMarketTab('sector')"
           >板块</button>
         </div>
-        <el-button v-if="isIndexMarketTab" class="market-action" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
+        <el-button v-if="isQuoteMarketTab" class="market-action" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
           <el-icon v-if="!quoteRefreshing"><Refresh /></el-icon>
           <span class="desktop-action-label">刷新行情</span>
           <span class="mobile-action-label">刷新</span>
         </el-button>
-        <el-button v-if="isIndexMarketTab" class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
+        <el-button v-if="isQuoteMarketTab" class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
           <el-icon v-if="!indexSyncing"><Download /></el-icon>
           <span class="desktop-action-label">同步指数</span>
           <span class="mobile-action-label">同步</span>
         </el-button>
-        <el-button v-if="isIndexMarketTab" class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
+        <el-button v-if="isQuoteMarketTab" class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
           <el-icon><Histogram /></el-icon>
           <span class="desktop-action-label">连板天梯</span>
         </el-button>
@@ -689,7 +734,92 @@ onBeforeUnmount(() => {
       :title="cnStaleHint"
     />
 
-    <template v-if="marketTab === 'cn'">
+    <template v-if="marketTab === 'global'">
+      <section class="global-overview" aria-label="全球主要指数分布">
+        <div class="global-overview-head">
+          <div>
+            <p class="section-kicker">World markets</p>
+            <h2>全球主要指数分布</h2>
+          </div>
+          <div class="global-summary" aria-label="全球指数概览">
+            <span class="snapshot">数据截至 <b>{{ globalMarketSummary.latestTradeDate || '--' }}</b></span>
+            <span>覆盖指数 <b>{{ globalMarketSummary.total }}</b></span>
+            <span class="up">上涨 <b>{{ globalMarketSummary.up }}</b></span>
+            <span class="down">下跌 <b>{{ globalMarketSummary.down }}</b></span>
+            <span>平盘 <b>{{ globalMarketSummary.flat }}</b></span>
+          </div>
+        </div>
+
+        <div class="world-market-map">
+          <img :src="worldMarketMapUrl" alt="" aria-hidden="true" />
+          <button
+            v-for="hub in globalMarketHubs"
+            :key="hub.key"
+            type="button"
+            class="global-node"
+            :class="[
+              pctClass(hub.primary?.pctChg),
+              { on: activeCode === hub.primary?.code, empty: !hub.primary },
+            ]"
+            :style="{
+              '--hub-x': `${hub.position.x}%`,
+              '--hub-y': `${hub.position.y}%`,
+              '--hub-mobile-x': `${hub.position.mobileX}%`,
+              '--hub-mobile-y': `${hub.position.mobileY}%`,
+            }"
+            :disabled="!hub.primary"
+            @click="selectGlobalHub(hub)"
+          >
+            <span class="global-node-market">
+              {{ hub.label }}
+              <i v-if="hub.key === activeMarketKey" title="按常规交易时段判断">当前时段</i>
+            </span>
+            <strong class="global-node-name">{{ hub.primary?.name || '暂无指数' }}</strong>
+            <span class="global-node-price">{{ fmtNum(hub.primary?.closePrice) }}</span>
+            <span class="global-node-change" title="涨跌点数由收盘点位与涨跌幅反推">
+              <span>{{ fmtPointChange(hub.primary) }}</span>
+              <b>{{ fmtPct(hub.primary?.pctChg) }}</b>
+            </span>
+            <i class="global-node-marker" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div class="global-region-grid">
+          <section v-for="hub in globalMarketHubs" :key="`region-${hub.key}`" class="global-region">
+            <div class="global-region-head">
+              <div>
+                <strong>{{ hub.label }}</strong>
+                <span>{{ hub.items.length }} 个指数</span>
+              </div>
+              <button type="button" class="link" @click="setMarketTab(hub.key)">区域详情</button>
+            </div>
+            <div v-if="hub.items.length" class="global-quote-list">
+              <button
+                v-for="item in hub.items"
+                :key="item.code"
+                type="button"
+                class="global-quote-row"
+                :class="{ on: activeCode === item.code }"
+                @click="selectIndex(item.code)"
+              >
+                <span>
+                  <strong>{{ item.name }}</strong>
+                  <small>{{ item.tradeDate || '--' }}</small>
+                </span>
+                <b :class="pctClass(item.pctChg)">{{ fmtPct(item.pctChg) }}</b>
+              </button>
+            </div>
+            <p v-else class="side-empty">暂无指数数据</p>
+          </section>
+        </div>
+      </section>
+
+      <section v-if="activeCode" class="chart-panel global-chart">
+        <div ref="chartRef" class="chart" />
+      </section>
+    </template>
+
+    <template v-else-if="marketTab === 'cn'">
       <!-- 指数条 -->
       <section class="hero-indexes" aria-label="主要指数">
         <button
@@ -970,7 +1100,7 @@ onBeforeUnmount(() => {
 
     <SectorBoardView v-else embedded />
 
-    <el-collapse v-if="isIndexMarketTab && lastLog" class="log-box">
+    <el-collapse v-if="isQuoteMarketTab && lastLog" class="log-box">
       <el-collapse-item title="最近指数同步日志" name="log">
         <pre class="log">{{ lastLog }}</pre>
       </el-collapse-item>
@@ -1042,6 +1172,326 @@ onBeforeUnmount(() => {
 .mobile-action-label {
   display: none;
 }
+
+.global-overview {
+  margin-bottom: 16px;
+  border: 1px solid var(--mc-line);
+  background: #fff;
+  overflow: hidden;
+}
+
+.global-overview-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--mc-line);
+}
+
+.section-kicker {
+  margin: 0 0 4px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.global-overview-head h2 {
+  margin: 0;
+  color: var(--mc-ink);
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.global-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  min-width: 0;
+  color: var(--mc-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.global-summary span {
+  white-space: nowrap;
+}
+
+.global-summary b {
+  color: var(--mc-ink);
+  font-size: 13px;
+}
+
+.global-summary .up b { color: var(--mc-up); }
+.global-summary .down b { color: var(--mc-down); }
+
+.global-summary .snapshot {
+  padding-right: 16px;
+  border-right: 1px solid var(--mc-line);
+}
+
+.world-market-map {
+  position: relative;
+  width: 100%;
+  height: clamp(460px, 42vw, 560px);
+  min-height: 460px;
+  overflow: hidden;
+  background: #f6f9f9;
+}
+
+.world-market-map > img {
+  position: absolute;
+  inset: 5% 2%;
+  width: 96%;
+  height: 90%;
+  object-fit: contain;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.global-node {
+  position: absolute;
+  z-index: 1;
+  left: var(--hub-x);
+  top: var(--hub-y);
+  display: flex;
+  width: 156px;
+  min-height: 116px;
+  transform: translate(-50%, -50%);
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 9px 10px 10px;
+  border: 1px solid var(--mc-line);
+  border-top: 3px solid #94a3b8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--mc-ink);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.global-node.up { border-top-color: var(--mc-up); }
+.global-node.down { border-top-color: var(--mc-down); }
+
+.global-node:hover,
+.global-node.on {
+  border-color: #0f766e;
+  box-shadow: 0 10px 26px rgba(15, 118, 110, 0.16);
+  transform: translate(-50%, calc(-50% - 2px));
+}
+
+.global-node:focus-visible,
+.global-quote-row:focus-visible {
+  outline: 3px solid rgba(15, 118, 110, 0.2);
+  outline-offset: 2px;
+}
+
+.global-node.empty {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.global-node-market {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 5px;
+  color: var(--mc-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.global-node-market i {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #ccfbf1;
+  color: #0f766e;
+  font-size: 9px;
+  font-style: normal;
+}
+
+.global-node-name {
+  width: 100%;
+  overflow: hidden;
+  margin-bottom: 2px;
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-node-price {
+  font-size: 17px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.global-node-change {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--mc-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.global-node-change b {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: var(--mc-muted);
+  font-size: 12px;
+}
+
+.global-node-change > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-node.up .global-node-price,
+.global-node.up .global-node-change,
+.global-node.up .global-node-change b { color: var(--mc-up); }
+.global-node.up .global-node-change b { background: rgba(225, 29, 72, 0.09); }
+.global-node.down .global-node-price,
+.global-node.down .global-node-change,
+.global-node.down .global-node-change b { color: var(--mc-down); }
+.global-node.down .global-node-change b { background: rgba(5, 150, 105, 0.09); }
+
+.global-node-marker {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 1px;
+  height: 28px;
+  background: #94a3b8;
+  pointer-events: none;
+}
+
+.global-node-marker::after {
+  position: absolute;
+  bottom: -4px;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #f6f9f9;
+  border-radius: 50%;
+  background: #64748b;
+  content: '';
+}
+
+.global-region-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--mc-line);
+}
+
+.global-region {
+  min-width: 0;
+  padding: 14px;
+}
+
+.global-region + .global-region {
+  border-left: 1px solid var(--mc-line);
+}
+
+.global-region-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.global-region-head > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.global-region-head strong {
+  overflow: hidden;
+  color: var(--mc-ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-region-head span {
+  color: var(--mc-muted);
+  font-size: 10px;
+}
+
+.global-quote-list {
+  border-top: 1px solid #f1f5f9;
+}
+
+.global-quote-row {
+  display: grid;
+  width: 100%;
+  min-height: 48px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border: 0;
+  border-bottom: 1px solid #f1f5f9;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.global-quote-row:last-child { border-bottom: 0; }
+.global-quote-row:hover strong,
+.global-quote-row.on strong { color: #0f766e; }
+
+.global-quote-row > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.global-quote-row strong {
+  overflow: hidden;
+  color: var(--mc-ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-quote-row small {
+  color: var(--mc-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.global-quote-row > b {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.global-quote-row > b.up { color: var(--mc-up); }
+.global-quote-row > b.down { color: var(--mc-down); }
 
 .hero-indexes {
   display: grid;
@@ -1720,6 +2170,15 @@ onBeforeUnmount(() => {
   .cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  .global-region-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .global-region:nth-child(4) {
+    border-left: 0;
+  }
+  .global-region:nth-child(n + 4) {
+    border-top: 1px solid var(--mc-line);
+  }
 }
 
 @media (max-width: 980px) {
@@ -1729,6 +2188,78 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 720px) {
+  .global-overview-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .global-summary {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 8px;
+  }
+
+  .global-summary .snapshot {
+    grid-column: 1 / -1;
+    padding: 0 0 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--mc-line);
+  }
+
+  .world-market-map {
+    height: auto;
+    min-height: 640px;
+  }
+
+  .world-market-map > img {
+    inset: 8% -24%;
+    width: 148%;
+    height: 84%;
+    opacity: 0.72;
+  }
+
+  .global-node {
+    left: var(--hub-mobile-x);
+    top: var(--hub-mobile-y);
+    width: 132px;
+    min-height: 112px;
+    padding: 8px 9px;
+  }
+
+  .global-node-name {
+    overflow-wrap: anywhere;
+  }
+
+  .global-node-price {
+    font-size: 15px;
+  }
+
+  .global-region-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .global-region + .global-region,
+  .global-region:nth-child(4) {
+    border-left: 0;
+  }
+
+  .global-region + .global-region {
+    border-top: 1px solid var(--mc-line);
+  }
+
+  .global-region-head strong {
+    font-size: 14px;
+  }
+
+  .global-quote-row strong,
+  .global-quote-row > b {
+    font-size: 13px;
+  }
+
   .header .actions .tabs {
     flex: 1 0 100%;
     max-width: 100%;
