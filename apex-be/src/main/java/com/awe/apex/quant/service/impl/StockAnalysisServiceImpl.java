@@ -21,6 +21,7 @@ import com.awe.apex.quant.domain.dto.BarSyncReq;
 import com.awe.apex.quant.domain.dto.StockAnalysisAiResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisCapitalResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisFreshnessResp;
+import com.awe.apex.quant.domain.dto.StockAnalysisNewsResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisResp;
 import com.awe.apex.quant.domain.dto.StockAnalysisTechResp;
 import com.awe.apex.quant.domain.dto.StockDetailResp;
@@ -35,6 +36,7 @@ import com.awe.apex.quant.indicator.TechRegimeEvaluator;
 import com.awe.apex.quant.indicator.TechSignalEvaluator;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.MarketNewsMapper;
+import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.strategy.BarSeries;
 import com.awe.apex.quant.service.IBarDailyService;
@@ -71,6 +73,8 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
     private static final BigDecimal HUNDRED = new BigDecimal("100");
     private static final String AI_DISCLAIMER = "AI 解读基于本地规则结果与当日快照，非实时全市场资讯；不构成投资建议。";
     private static final String AI_CACHE_PREFIX = "apex:stock-analysis:ai:";
+    private static final int NEWS_DAYS = 7;
+    private static final int NEWS_LIMIT = 5;
 
     @Resource
     private IStockService stockService;
@@ -192,9 +196,14 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         // 6. 今日决策（若有）
         DecisionItemResp decision = findTodayDecision(pure);
 
-        // 7. 综合结论
+        // 7. 近七日消息面（仅返回本地可回溯事实）
+        List<StockAnalysisNewsResp> recentNews = loadRecentNews(pure, basic.getName());
+
+        // 8. 综合结论
         StockAnalysisResp resp = buildConclusion(basic, tech, valuation, capital, signals, decision, detail);
         resp.setFreshness(freshness);
+        resp.setRecentNews(recentNews);
+        resp.setNewsSummary(buildNewsSummary(recentNews));
         String baseNote = resp.getDataNote();
         resp.setDataNote((StringUtils.isBlank(baseNote) ? "" : baseNote + " ")
                 + (StringUtils.isBlank(freshness.getNote()) ? "" : freshness.getNote()));
@@ -768,7 +777,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             }
         }
 
-        List<String> newsLines = loadRelatedNews(resp.getCode(), resp.getName());
+        List<StockAnalysisNewsResp> recentNews = resp.getRecentNews();
         String system = "你是 A 股个股研究助手。只根据给定结构化事实做盘面解读，禁止编造未提供的财报数字、公告或新闻。"
                 + "输出严格 JSON（不要 markdown）："
                 + "{\"stance\":\"积极关注|可跟踪|中性观望|谨慎|回避\","
@@ -828,11 +837,15 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             user.append('\n');
         }
         user.append("相关新闻标题（可能不全/滞后）：\n");
-        if (CollUtil.isEmpty(newsLines)) {
+        if (CollUtil.isEmpty(recentNews)) {
             user.append("- （本地库暂无匹配标题）\n");
         } else {
-            for (String line : newsLines) {
-                user.append("- ").append(line).append('\n');
+            for (StockAnalysisNewsResp news : recentNews) {
+                user.append("- ");
+                if (Objects.nonNull(news.getPublishedAt())) {
+                    user.append(news.getPublishedAt().toLocalDate()).append(' ');
+                }
+                user.append(news.getTitle()).append('\n');
             }
         }
         user.append("请结合以上事实给出 JSON 解读。");
@@ -860,35 +873,83 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
                 + (Objects.nonNull(resp.getTech()) ? resp.getTech().getRegime() : "");
     }
 
-    private List<String> loadRelatedNews(String code, String name) {
-        List<String> lines = new ArrayList<>();
+    private List<StockAnalysisNewsResp> loadRecentNews(String code, String name) {
+        List<StockAnalysisNewsResp> codeMatches = new ArrayList<>();
+        List<StockAnalysisNewsResp> nameMatches = new ArrayList<>();
+        if (Objects.isNull(marketNewsMapper) || StringUtils.isBlank(code)) {
+            return List.of();
+        }
         try {
             List<MarketNews> rows = marketNewsMapper.selectList(Wrappers.<MarketNews>lambdaQuery()
+                    .ge(MarketNews::getPublishedAt, LocalDateTime.now().minusDays(NEWS_DAYS))
                     .and(w -> {
-                        w.like(MarketNews::getTitle, code);
+                        w.like(MarketNews::getRelatedCodes, code)
+                                .or().like(MarketNews::getTitle, code)
+                                .or().like(MarketNews::getSummary, code);
                         if (StringUtils.isNotBlank(name) && name.length() >= 2) {
-                            w.or().like(MarketNews::getTitle, name);
+                            w.or().like(MarketNews::getTitle, name)
+                                    .or().like(MarketNews::getSummary, name);
                         }
                     })
                     .orderByDesc(MarketNews::getPublishedAt)
-                    .last("LIMIT 5"));
+                    .last("LIMIT " + NEWS_LIMIT * 3));
             if (CollUtil.isEmpty(rows)) {
-                return lines;
+                return List.of();
             }
             for (MarketNews row : rows) {
                 if (Objects.isNull(row) || StringUtils.isBlank(row.getTitle())) {
                     continue;
                 }
-                String line = row.getTitle();
-                if (Objects.nonNull(row.getPublishedAt())) {
-                    line = row.getPublishedAt().toLocalDate() + " " + line;
+                if (matchesRelatedCode(row, code)) {
+                    codeMatches.add(toAnalysisNews(row, "代码关联"));
+                } else if (StringUtils.isNotBlank(name) && name.length() >= 2
+                        && (StringUtils.contains(row.getTitle(), name) || StringUtils.contains(row.getSummary(), name))) {
+                    nameMatches.add(toAnalysisNews(row, "名称命中"));
                 }
-                lines.add(line);
             }
         } catch (Exception ex) {
-            log.debug("综合研判加载相关新闻失败: {}", ex.getMessage());
+            log.debug("综合研判加载个股消息失败，证券代码={}，原因={}", code, ex.getMessage());
+            return List.of();
         }
-        return lines;
+        List<StockAnalysisNewsResp> recentNews = new ArrayList<>();
+        recentNews.addAll(codeMatches);
+        for (StockAnalysisNewsResp nameMatch : nameMatches) {
+            if (recentNews.size() >= NEWS_LIMIT) {
+                break;
+            }
+            recentNews.add(nameMatch);
+        }
+        return recentNews.size() > NEWS_LIMIT ? recentNews.subList(0, NEWS_LIMIT) : recentNews;
+    }
+
+    private boolean matchesRelatedCode(MarketNews news, String targetCode) {
+        if (StringUtils.isBlank(targetCode) || StringUtils.isBlank(news.getRelatedCodes())) {
+            return false;
+        }
+        String[] relatedCodes = news.getRelatedCodes().split("[,，\\s]+");
+        for (String relatedCode : relatedCodes) {
+            if (targetCode.equals(MarketCodeUtils.normalizeHoldingCode(relatedCode))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private StockAnalysisNewsResp toAnalysisNews(MarketNews news, String matchType) {
+        return StockAnalysisNewsResp.builder()
+                .source(news.getSource())
+                .publishedAt(news.getPublishedAt())
+                .title(news.getTitle())
+                .url(news.getUrl())
+                .matchType(matchType)
+                .build();
+    }
+
+    private String buildNewsSummary(List<StockAnalysisNewsResp> recentNews) {
+        if (CollUtil.isEmpty(recentNews)) {
+            return "近7日未收录直接相关消息";
+        }
+        return "近7日收录" + recentNews.size() + "条直接相关消息";
     }
 
     private StockAnalysisAiResp parseAiPayload(String raw) {

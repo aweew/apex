@@ -20,6 +20,16 @@ test('stock analysis ignores stale direction responses', () => {
   assert.match(source, /fetchStockAnalysis\(props\.code, requestedSide, 120, true, forceAi\)/)
 })
 
+test('stock analysis shows traceable local news coverage', () => {
+  assert.match(source, /class="card stock-news-card"/)
+  assert.match(source, /data\.newsSummary/)
+  assert.match(source, /data\.recentNews\.slice\(0, 5\)/)
+  assert.match(source, /newsSourceLabel\(news\.source\)/)
+  assert.match(source, /fmtNewsTime\(news\.publishedAt\)/)
+  assert.match(source, /:href="news\.url \|\| undefined"/)
+  assert.match(source, /\.stock-news-item\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/)
+})
+
 test('mobile stock analysis controls keep a stable two-row hierarchy', () => {
   assert.match(source, /class="analysis-mode"/)
   assert.match(source, /class="analysis-actions"/)

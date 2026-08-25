@@ -215,6 +215,21 @@ function fmtMoneyYi(v) {
   return n.toFixed(0)
 }
 
+function fmtNewsTime(value) {
+  if (!value) return ''
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
+function newsSourceLabel(source) {
+  return {
+    eastmoney: '东财',
+    cls: '财联社',
+    ths: '同花顺',
+    sina: '新浪',
+    cctv: '央视',
+  }[source] || source || '资讯'
+}
+
 function periodRet(closes, lookback) {
   if (!Array.isArray(closes) || closes.length <= lookback) return null
   const end = Number(closes[closes.length - 1])
@@ -565,6 +580,29 @@ defineExpose({ reload: () => loadRules() })
           <span v-for="(p, i) in data.ai.watchPoints.slice(0, 4)" :key="'w' + i" class="watch-chip">{{ p }}</span>
         </div>
         <p v-if="data.ai?.riskNote" class="ai-risk">{{ data.ai.riskNote }}</p>
+      </section>
+
+      <section class="card stock-news-card">
+        <header class="card-head stock-news-head">
+          <h3>消息面</h3>
+          <span class="pill quiet">近7日</span>
+        </header>
+        <p class="stock-news-summary">{{ data.newsSummary || '近7日未收录直接相关消息' }}</p>
+        <div v-if="data.recentNews?.length" class="stock-news-list">
+          <a
+            v-for="news in data.recentNews.slice(0, 5)"
+            :key="`${news.publishedAt}-${news.title}`"
+            class="stock-news-item"
+            :class="{ 'is-static': !news.url }"
+            :href="news.url || undefined"
+            :target="news.url ? '_blank' : undefined"
+            :rel="news.url ? 'noopener' : undefined"
+          >
+            <span>{{ newsSourceLabel(news.source) }} {{ fmtNewsTime(news.publishedAt) }}</span>
+            <b>{{ news.title }}</b>
+            <em>{{ news.matchType }}</em>
+          </a>
+        </div>
       </section>
 
       <div class="grid-2 tone-grid">
@@ -1217,6 +1255,67 @@ defineExpose({ reload: () => loadRules() })
   border-radius: 10px;
   background: rgba(255, 159, 10, 0.12);
   color: #9a6700;
+}
+
+.stock-news-card {
+  margin-bottom: 12px;
+  background: linear-gradient(165deg, rgba(0, 113, 227, 0.07), #fff 44%);
+}
+
+.stock-news-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stock-news-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.stock-news-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.stock-news-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.stock-news-item:not(.is-static):hover b {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.stock-news-item span,
+.stock-news-item em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.stock-news-item b {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .grid-2 {

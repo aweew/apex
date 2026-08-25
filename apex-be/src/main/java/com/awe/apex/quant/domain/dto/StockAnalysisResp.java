@@ -123,6 +123,16 @@ public class StockAnalysisResp {
     private DecisionItemResp decision;
 
     /**
+     * 近七日直接相关消息的事实性摘要
+     */
+    private String newsSummary;
+
+    /**
+     * 近七日直接相关消息
+     */
+    private List<StockAnalysisNewsResp> recentNews;
+
+    /**
      * 数据说明
      */
     private String dataNote;
