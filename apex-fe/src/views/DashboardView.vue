@@ -13,6 +13,8 @@ const refreshing = ref(false)
 const home = ref(null)
 const loadError = ref('')
 const marketDetailOpen = ref(false)
+const morningMarketExpanded = ref(false)
+const morningNewsExpanded = ref(false)
 const opinionPreviewOpen = ref(false)
 const opinionPreview = ref(null)
 
@@ -45,6 +47,9 @@ const morningBriefing = computed(() => home.value?.morningBriefing || null)
 const breadthForecast = computed(() => home.value?.breadthForecast || null)
 const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
 const preMarketEventImpacts = computed(() => newsPulse.value?.eventImpacts || [])
+const visiblePreMarketEventImpacts = computed(() => (
+  morningNewsExpanded.value ? preMarketEventImpacts.value : preMarketEventImpacts.value.slice(0, 3)
+))
 const marketOpinion = computed(() => morningBriefing.value?.marketOpinion || null)
 const institutionViews = computed(() => marketOpinion.value?.institutionViews || [])
 const traderSeatViews = computed(() => marketOpinion.value?.traderSeatViews || [])
@@ -79,6 +84,11 @@ const morningNewsCards = computed(() => {
     title,
   }))
 })
+const hasMoreMorningNews = computed(() => (
+  preMarketEventImpacts.value.length > 3
+  || morningNewsCards.value.length > 0
+  || Boolean(marketOpinion.value)
+))
 const decision = computed(() => home.value?.decision || null)
 const observeAlerts = computed(() => home.value?.observeAlerts || [])
 const dataHealth = computed(() => home.value?.dataHealth || null)
@@ -615,7 +625,12 @@ onMounted(() => {
       </div>
     </section>
 
-    <section v-if="breadthForecast" class="breadth-forecast enter delay-1" aria-label="盘前涨跌比预测">
+    <section
+      v-if="breadthForecast"
+      class="breadth-forecast enter delay-1"
+      :class="{ 'is-empty': !breadthForecast.available }"
+      aria-label="盘前涨跌比预测"
+    >
       <div v-if="breadthForecast.available" class="breadth-forecast-main">
         <div class="breadth-forecast-head">
           <div>
@@ -704,10 +719,12 @@ onMounted(() => {
       </div>
 
       <div class="command-meta" aria-label="开盘准备数据时间">
-        <span>行情截至 <b>{{ command.marketDataAsOf || '-' }}</b></span>
-        <span>行情刷新 <b>{{ fmtCommandTime(command.marketDataUpdatedAt) }}</b></span>
-        <span>决策数据 <b>{{ fmtCommandTime(command.decisionDataAsOf) }}</b></span>
-        <span>生成于 <b>{{ fmtCommandTime(command.generatedAt) }}</b></span>
+        <span>
+          行情 <b>{{ command.marketDataAsOf || '-' }}</b>
+          <small>刷新 {{ fmtCommandTime(command.marketDataUpdatedAt) }}</small>
+        </span>
+        <span>决策 <b>{{ fmtCommandTime(command.decisionDataAsOf) }}</b></span>
+        <span>生成 <b>{{ fmtCommandTime(command.generatedAt) }}</b></span>
       </div>
 
       <div class="command-grid">
@@ -867,25 +884,7 @@ onMounted(() => {
                 <b :class="pctDir(item.pctChg)">{{ fmtIndexPct(item.pctChg) }}</b>
               </div>
             </div>
-            <p v-else class="morning-context-empty">{{ openingAuction?.stateDesc || '集合竞价状态暂未获取' }}</p>
             <p class="opening-auction-note">集合竞价是开盘前最后确认，不以外盘信号替代。</p>
-          </div>
-
-          <div class="overnight-layer">
-            <div class="overnight-layer-head">
-              <h5>A股盘前</h5>
-              <span>夜盘开盘参考</span>
-            </div>
-            <div v-if="ftseA50Future" class="overnight-index-grid a50-future-grid">
-              <div class="overnight-quote">
-                <div class="overnight-quote-name">
-                  <strong>富时 A50 期指连续</strong>
-                  <small v-if="fmtQuotePrice(ftseA50Future.latestPrice)">{{ fmtQuotePrice(ftseA50Future.latestPrice) }}</small>
-                </div>
-                <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
-              </div>
-            </div>
-            <p v-else class="morning-context-empty">富时 A50 期指连续暂未获取</p>
           </div>
 
           <div class="overnight-layer">
@@ -907,7 +906,36 @@ onMounted(() => {
             </p>
           </div>
 
-          <div class="overnight-layer">
+          <button
+            type="button"
+            class="morning-disclosure"
+            :aria-expanded="morningMarketExpanded"
+            aria-controls="morning-market-more"
+            @click="morningMarketExpanded = !morningMarketExpanded"
+          >
+            <span>{{ morningMarketExpanded ? '收起次要行情' : '展开更多行情' }}</span>
+            <span class="morning-disclosure-arrow" aria-hidden="true">{{ morningMarketExpanded ? '↑' : '↓' }}</span>
+          </button>
+
+          <div id="morning-market-more" class="morning-context-more" v-show="morningMarketExpanded">
+            <div class="overnight-layer">
+              <div class="overnight-layer-head">
+                <h5>A股盘前</h5>
+                <span>夜盘开盘参考</span>
+              </div>
+              <div v-if="ftseA50Future" class="overnight-index-grid a50-future-grid">
+                <div class="overnight-quote">
+                  <div class="overnight-quote-name">
+                    <strong>富时 A50 期指连续</strong>
+                    <small v-if="fmtQuotePrice(ftseA50Future.latestPrice)">{{ fmtQuotePrice(ftseA50Future.latestPrice) }}</small>
+                  </div>
+                  <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
+                </div>
+              </div>
+              <p v-else class="morning-context-empty">富时 A50 期指连续暂未获取</p>
+            </div>
+
+            <div class="overnight-layer">
             <div class="overnight-layer-head">
               <h5>亚太情绪</h5>
               <span>盘前可用的亚太指数</span>
@@ -996,6 +1024,7 @@ onMounted(() => {
               </div>
             </div>
             <p v-else class="morning-context-empty">明星异动暂未生成</p>
+            </div>
           </div>
         </div>
 
@@ -1023,7 +1052,7 @@ onMounted(() => {
               <h5>盘前事件影响</h5>
               <span>按重要度排序</span>
             </div>
-            <article v-for="item in preMarketEventImpacts" :key="`${item.eventType}-${item.title}`" class="pre-market-event-item">
+            <article v-for="item in visiblePreMarketEventImpacts" :key="`${item.eventType}-${item.title}`" class="pre-market-event-item">
               <div class="pre-market-event-meta">
                 <span class="pre-market-event-type">{{ item.eventTypeName }}</span>
                 <span>{{ item.impactScopeName || item.impactScope }}</span>
@@ -1034,28 +1063,44 @@ onMounted(() => {
               </div>
               <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
               <strong v-else>{{ item.title }}</strong>
-              <p>{{ item.impactExplanation }}</p>
-              <div v-if="item.relatedCodes?.length || item.themes?.length" class="pre-market-event-targets">
+              <p v-if="morningNewsExpanded">{{ item.impactExplanation }}</p>
+              <div
+                v-if="morningNewsExpanded && (item.relatedCodes?.length || item.themes?.length)"
+                class="pre-market-event-targets"
+              >
                 <span v-for="code in item.relatedCodes || []" :key="code">{{ code }}</span>
                 <span v-for="theme in item.themes || []" :key="theme">{{ theme }}</span>
               </div>
             </article>
           </section>
-          <div v-if="morningNewsCards.length" class="morning-news-list">
-            <article v-for="item in morningNewsCards" :key="item.id || item.title" class="morning-news-item">
-              <span
-                class="news-sentiment"
-                :class="item.sentiment === '利好' ? 'bull' : item.sentiment === '利空' ? 'bear' : ''"
-              >
-                {{ item.sentiment || '要闻' }}
-              </span>
-              <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
-              <span v-else class="morning-news-title">{{ item.title }}</span>
-              <small v-if="item.source">{{ newsSourceLabel(item.source) }}</small>
-            </article>
-          </div>
+          <button
+            v-if="hasMoreMorningNews"
+            type="button"
+            class="morning-disclosure"
+            :aria-expanded="morningNewsExpanded"
+            aria-controls="morning-news-more"
+            @click="morningNewsExpanded = !morningNewsExpanded"
+          >
+            <span>{{ morningNewsExpanded ? '收起次要信息' : '展开更多信息' }}</span>
+            <span class="morning-disclosure-arrow" aria-hidden="true">{{ morningNewsExpanded ? '↑' : '↓' }}</span>
+          </button>
 
-          <section v-if="marketOpinion" class="opinion-radar" aria-label="市场观点雷达">
+          <div id="morning-news-more" class="morning-context-more" v-show="morningNewsExpanded">
+            <div v-if="morningNewsCards.length" class="morning-news-list">
+              <article v-for="item in morningNewsCards" :key="item.id || item.title" class="morning-news-item">
+                <span
+                  class="news-sentiment"
+                  :class="item.sentiment === '利好' ? 'bull' : item.sentiment === '利空' ? 'bear' : ''"
+                >
+                  {{ item.sentiment || '要闻' }}
+                </span>
+                <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+                <span v-else class="morning-news-title">{{ item.title }}</span>
+                <small v-if="item.source">{{ newsSourceLabel(item.source) }}</small>
+              </article>
+            </div>
+
+            <section v-if="marketOpinion" class="opinion-radar" aria-label="市场观点雷达">
             <div class="opinion-radar-head">
               <h5>观点雷达</h5>
               <time>{{ fmtBriefingTime(marketOpinion.snapshotTime) }}</time>
@@ -1098,8 +1143,9 @@ onMounted(() => {
                 <small>{{ item.subjectName }} · {{ item.relatedName || item.topic || opinionTime(item.publishedAt) }}</small>
               </article>
             </div>
-            <p class="opinion-kol-status">{{ marketOpinion.kolSourceStatus }}</p>
-          </section>
+              <p class="opinion-kol-status">{{ marketOpinion.kolSourceStatus }}</p>
+            </section>
+          </div>
         </div>
       </div>
     </section>
@@ -1636,7 +1682,7 @@ onMounted(() => {
 }
 
 .observe-chip :deep(.stock-identity__code) {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .observe-chip em {
@@ -1651,7 +1697,7 @@ onMounted(() => {
   border-radius: 4px;
   padding: 4px 6px 4px 8px;
   font-style: normal;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
   line-height: 1;
   white-space: nowrap;
@@ -1796,7 +1842,7 @@ onMounted(() => {
 }
 
 .score-ring-inner small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -1905,9 +1951,9 @@ onMounted(() => {
 .index-line {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 8px 9px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.45);
   border: 1px solid var(--line);
@@ -1922,12 +1968,14 @@ onMounted(() => {
 }
 
 .index-line .n {
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.35;
   color: var(--muted);
 }
 
 .index-line .c {
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.35;
   color: var(--ink-soft);
   order: 1;
 }
@@ -2059,8 +2107,8 @@ onMounted(() => {
 
 .breadth-hint {
   margin: 6px 0 0;
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--muted, #8a8f98);
   letter-spacing: -0.01em;
 }
@@ -2076,6 +2124,29 @@ onMounted(() => {
   border-radius: var(--radius, 10px);
   background: var(--glass, rgba(255, 255, 255, 0.9));
   box-shadow: var(--shadow-soft, none);
+}
+
+.breadth-forecast.is-empty {
+  display: block;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: none;
+}
+
+.breadth-forecast.is-empty .breadth-forecast-empty {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.breadth-forecast.is-empty .breadth-forecast-empty h3 {
+  flex: 0 0 auto;
+}
+
+.breadth-forecast.is-empty .breadth-forecast-empty p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .breadth-forecast-main,
@@ -2100,10 +2171,10 @@ onMounted(() => {
 
 .breadth-forecast-head p,
 .breadth-forecast-empty p {
-  margin: 4px 0 0;
+  margin: 5px 0 0;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .breadth-forecast-confidence {
@@ -2113,8 +2184,8 @@ onMounted(() => {
   border-radius: 4px;
   color: var(--slate);
   background: rgba(15, 23, 42, 0.04);
-  font-size: 10px;
-  line-height: 1.2;
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .breadth-forecast-tug {
@@ -2133,7 +2204,7 @@ onMounted(() => {
 
 .breadth-forecast-side span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .breadth-forecast-side strong {
@@ -2280,9 +2351,9 @@ onMounted(() => {
 .effect-cell {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  padding: 10px 10px;
+  padding: 12px 11px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.03);
   border: 1px solid transparent;
@@ -2290,7 +2361,7 @@ onMounted(() => {
 
 .effect-cell em {
   font-style: normal;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted, #8a8f98);
 }
@@ -2304,14 +2375,10 @@ onMounted(() => {
   letter-spacing: -0.02em;
 }
 
-.effect-cell.up {
-  background: rgba(255, 59, 48, 0.06);
-  border-color: rgba(255, 59, 48, 0.1);
-}
-
+.effect-cell.up,
 .effect-cell.down {
-  background: rgba(52, 199, 89, 0.06);
-  border-color: rgba(52, 199, 89, 0.1);
+  background: rgba(15, 23, 42, 0.03);
+  border-color: rgba(15, 23, 42, 0.06);
 }
 
 .effect-cell.up b { color: var(--up); }
@@ -2321,7 +2388,7 @@ onMounted(() => {
 .command-band {
   min-width: 0;
   margin: 0 0 14px;
-  padding: 15px 2px 16px;
+  padding: 18px 2px 20px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   letter-spacing: 0;
@@ -2347,10 +2414,10 @@ onMounted(() => {
 }
 
 .command-head p {
-  margin: 3px 0 0;
+  margin: 5px 0 0;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .command-status {
@@ -2381,11 +2448,11 @@ onMounted(() => {
 .command-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px 16px;
-  margin: 8px 0 12px;
+  gap: 7px 18px;
+  margin: 10px 0 15px;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: 11px;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2398,6 +2465,12 @@ onMounted(() => {
 .command-meta b {
   color: var(--ink-soft);
   font-weight: 600;
+}
+
+.command-meta small {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: inherit;
 }
 
 .command-grid {
@@ -2421,7 +2494,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 7px;
+  margin-bottom: 9px;
 }
 
 .command-column-head h4 {
@@ -2432,7 +2505,7 @@ onMounted(() => {
 
 .command-column-head span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .command-headline,
@@ -2458,7 +2531,7 @@ onMounted(() => {
 .command-forecast-label,
 .command-forecast-watch > span {
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -2479,18 +2552,18 @@ onMounted(() => {
 
 .command-forecast-direction {
   display: grid;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
 }
 
 .command-forecast-direction > strong {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .command-forecast-direction > span {
   color: var(--slate);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
@@ -2504,7 +2577,7 @@ onMounted(() => {
   display: block;
   margin-top: 2px;
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .command-forecast-direction.focus > strong { color: #248a3d; }
@@ -2519,8 +2592,8 @@ onMounted(() => {
 .command-forecast-watch p {
   margin: 3px 0 0;
   color: var(--slate);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
@@ -2536,19 +2609,19 @@ onMounted(() => {
 .command-direction {
   display: grid;
   align-content: start;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
 }
 
 .command-direction > strong {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .command-direction > span {
   color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
@@ -2575,14 +2648,14 @@ onMounted(() => {
 
 .command-watch > span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .command-watch p {
   margin: 3px 0 0;
   color: var(--slate);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
@@ -2597,7 +2670,7 @@ onMounted(() => {
   gap: 6px 18px;
   margin-top: 9px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .command-position b {
@@ -2611,8 +2684,8 @@ onMounted(() => {
   padding-left: 8px;
   border-left: 2px solid rgba(255, 59, 48, 0.48);
   color: var(--up);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
@@ -2628,9 +2701,9 @@ onMounted(() => {
   gap: 8px;
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  min-height: 48px;
   margin: 0;
-  padding: 7px 2px;
+  padding: 9px 2px;
   border: 0;
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
   background: transparent;
@@ -2673,8 +2746,8 @@ onMounted(() => {
   flex-direction: column;
   min-width: 0;
   color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .command-action-title {
@@ -2692,19 +2765,19 @@ onMounted(() => {
 
 .command-action-title em {
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
   font-style: normal;
 }
 
 .command-target-count {
   color: var(--slate);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .command-action-copy small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -2747,10 +2820,10 @@ onMounted(() => {
 }
 
 .morning-context-head p {
-  margin: 3px 0 0;
+  margin: 5px 0 0;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.5;
   letter-spacing: 0;
 }
 
@@ -2760,7 +2833,7 @@ onMounted(() => {
   gap: 8px;
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -2784,7 +2857,7 @@ onMounted(() => {
 
 .morning-context-time-label {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .morning-context-time time {
@@ -2793,7 +2866,7 @@ onMounted(() => {
 
 .morning-context-refreshing {
   color: var(--warning);
-  font-size: 10px;
+  font-size: 11px;
   white-space: normal;
 }
 
@@ -2816,13 +2889,56 @@ onMounted(() => {
   min-width: 0;
   width: 100%;
   gap: 0;
-  margin-top: 16px;
+  margin-top: 20px;
 }
 
 .morning-context-block {
   align-self: start;
   min-width: 0;
   padding: 0;
+}
+
+.morning-context-more {
+  min-width: 0;
+}
+
+.morning-disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 7px 0 0;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.morning-disclosure:hover {
+  color: var(--accent-hover, #005bb5);
+}
+
+.morning-disclosure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.morning-disclosure-arrow {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.overnight-block {
+  padding-right: 28px;
 }
 
 .morning-news-block {
@@ -2836,7 +2952,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 10px;
   min-height: 24px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .morning-block-head h4 {
@@ -2849,14 +2965,18 @@ onMounted(() => {
 }
 
 .morning-block-head > span {
+  min-width: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.5;
   letter-spacing: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .overnight-layer + .overnight-layer {
-  margin-top: 13px;
-  padding-top: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
@@ -2866,22 +2986,26 @@ onMounted(() => {
   justify-content: space-between;
   gap: 10px;
   min-height: 20px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .overnight-layer-head h5 {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.5;
   letter-spacing: 0;
 }
 
 .overnight-layer-head span {
+  min-width: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.5;
   letter-spacing: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .overnight-index-grid {
@@ -2922,10 +3046,10 @@ onMounted(() => {
 }
 
 .opening-auction-note {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .external-market-grid {
@@ -2937,7 +3061,7 @@ onMounted(() => {
 
 .external-market-card {
   min-width: 0;
-  padding: 9px 10px;
+  padding: 11px 12px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.42);
@@ -2954,7 +3078,7 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2975,16 +3099,16 @@ onMounted(() => {
   display: block;
   margin-top: 2px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .external-market-card p,
 .external-market-note {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .external-market-card p {
@@ -3060,7 +3184,7 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3083,7 +3207,7 @@ onMounted(() => {
   justify-content: start;
   gap: 8px;
   min-width: 0;
-  min-height: 52px;
+  min-height: 56px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
   font-variant-numeric: tabular-nums;
 }
@@ -3094,7 +3218,7 @@ onMounted(() => {
 
 .overnight-theme-rank {
   color: #94a0b1;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   text-align: center;
 }
@@ -3123,7 +3247,7 @@ onMounted(() => {
 .overnight-theme-copy small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3148,7 +3272,7 @@ onMounted(() => {
 
 .overnight-theme-stats span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0;
 }
 
@@ -3180,12 +3304,12 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .news-counts b {
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -3202,8 +3326,8 @@ onMounted(() => {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  margin-bottom: 8px;
-  padding: 10px 12px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
   border-left: 2px solid var(--accent);
   background: rgba(22, 105, 201, 0.045);
 }
@@ -3211,7 +3335,7 @@ onMounted(() => {
 .morning-news-summary-label {
   padding-top: 2px;
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   line-height: 1.45;
   white-space: nowrap;
@@ -3221,9 +3345,9 @@ onMounted(() => {
   max-width: 78ch;
   margin: 0;
   color: var(--ink-soft);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 1.55;
+  line-height: 1.6;
   letter-spacing: 0;
 }
 
@@ -3232,7 +3356,7 @@ onMounted(() => {
 }
 
 .pre-market-event-impact {
-  margin: 10px 0;
+  margin: 12px 0;
   border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
@@ -3241,24 +3365,24 @@ onMounted(() => {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  padding: 9px 0 6px;
+  padding: 11px 0 8px;
 }
 
 .pre-market-event-head h5 {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .pre-market-event-head > span,
 .pre-market-event-meta {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .pre-market-event-item {
-  padding: 8px 0;
+  padding: 10px 0;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
@@ -3280,8 +3404,8 @@ onMounted(() => {
   display: block;
   margin-top: 4px;
   color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .pre-market-event-item a:hover {
@@ -3289,10 +3413,10 @@ onMounted(() => {
 }
 
 .pre-market-event-item p {
-  margin: 3px 0 0;
+  margin: 5px 0 0;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .pre-market-event-targets {
@@ -3303,7 +3427,7 @@ onMounted(() => {
   padding: 1px 5px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   color: var(--slate);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .morning-news-item {
@@ -3311,9 +3435,9 @@ onMounted(() => {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  min-height: 36px;
+  min-height: 42px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .morning-news-item:last-child {
@@ -3323,7 +3447,7 @@ onMounted(() => {
 .news-sentiment {
   min-width: 28px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   text-align: left;
 }
@@ -3336,7 +3460,7 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
   color: var(--ink-soft);
-  line-height: 1.4;
+  line-height: 1.5;
   letter-spacing: 0;
   text-decoration: none;
   text-overflow: ellipsis;
@@ -3350,13 +3474,13 @@ onMounted(() => {
 .morning-news-item small {
   min-width: 26px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   text-align: right;
 }
 
 .opinion-radar {
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
@@ -3372,9 +3496,9 @@ onMounted(() => {
 .opinion-group-head h6 {
   margin: 0;
   color: var(--ink);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.5;
   letter-spacing: 0;
 }
 
@@ -3382,23 +3506,23 @@ onMounted(() => {
 .opinion-group-head span,
 .opinion-kol-status {
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: 11px;
+  line-height: 1.5;
   letter-spacing: 0;
 }
 
 .opinion-summary-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 5px;
-  margin: 8px 0 10px;
+  gap: 7px;
+  margin: 10px 0 12px;
 }
 
 .opinion-summary-grid p {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1.55;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .opinion-summary-grid span {
@@ -3406,16 +3530,16 @@ onMounted(() => {
   min-width: 30px;
   margin-right: 8px;
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
 }
 
 .opinion-group + .opinion-group {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .opinion-group-head {
-  margin-bottom: 3px;
+  margin-bottom: 5px;
 }
 
 .opinion-item {
@@ -3423,15 +3547,15 @@ onMounted(() => {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
-  min-height: 30px;
+  min-height: 36px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .opinion-direction {
   min-width: 28px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -3445,7 +3569,7 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
   color: var(--ink-soft);
-  line-height: 1.4;
+  line-height: 1.5;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3473,7 +3597,7 @@ onMounted(() => {
   max-width: 130px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3529,8 +3653,8 @@ onMounted(() => {
   align-items: baseline;
   gap: 3px;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .opinion-source-list a,
@@ -3556,10 +3680,12 @@ onMounted(() => {
 }
 
 .morning-context-empty {
+  max-width: 100%;
   margin: 12px 0;
   color: var(--muted);
   font-size: 12px;
   letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 560px) {
@@ -3737,6 +3863,10 @@ onMounted(() => {
 
   .morning-context-block {
     width: 100%;
+  }
+
+  .overnight-block {
+    padding-right: 0;
   }
 
   .morning-news-block {
@@ -4241,7 +4371,7 @@ onMounted(() => {
 
   .mobile-strategy-badge {
     display: inline-flex;
-    height: 18px;
+    height: 20px;
     flex: 0 0 auto;
     align-items: center;
     padding: 0 5px;
@@ -4249,9 +4379,9 @@ onMounted(() => {
     border-radius: 4px;
     background: var(--paper-deep);
     color: var(--slate);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 650;
-    line-height: 16px;
+    line-height: 18px;
   }
 
   .mobile-strategy-badge.is-risk {
@@ -4288,7 +4418,7 @@ onMounted(() => {
   .mobile-action-details em,
   .mobile-exit-rule > em {
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     font-style: normal;
     font-weight: 500;
     white-space: nowrap;
@@ -4341,8 +4471,8 @@ onMounted(() => {
     padding: 3px 6px;
     border: 1px solid transparent;
     border-radius: 4px;
-    font-size: 10px;
-    line-height: 1.25;
+    font-size: 11px;
+    line-height: 1.35;
     overflow-wrap: anywhere;
   }
 
@@ -4447,8 +4577,8 @@ onMounted(() => {
   }
 
   .advice {
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   .stance-side {
@@ -4548,7 +4678,7 @@ onMounted(() => {
   .stat-line .stat > em {
     display: block;
     margin-bottom: 6px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0;
   }
@@ -4597,7 +4727,7 @@ onMounted(() => {
 
   .breadth-hint {
     margin-top: 5px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .kpi-row {

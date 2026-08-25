@@ -57,7 +57,7 @@ test('dashboard separates external environment signals and explains their A-shar
 test('dashboard presents structured pre-market event impacts with evidence labels', () => {
   assert.match(dashboardSource, /const preMarketEventImpacts\s*=\s*computed\(/)
   assert.match(dashboardSource, /<h5>盘前事件影响<\/h5>/)
-  assert.match(dashboardSource, /v-for="item in preMarketEventImpacts"/)
+  assert.match(dashboardSource, /v-for="item in visiblePreMarketEventImpacts"/)
   assert.match(dashboardSource, /item\.impactScope/)
   assert.match(dashboardSource, /item\.verificationStatus/)
   assert.match(dashboardSource, /item\.impactExplanation/)
@@ -136,7 +136,7 @@ test('dashboard command band is two-column on desktop and safe on phone layouts'
     dashboardSource,
     /\.morning-context-grid\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*gap:\s*0;/s,
   )
-  assert.match(dashboardSource, /\.command-action\s*\{[^}]*min-height:\s*44px;/s)
+  assert.match(dashboardSource, /\.command-action\s*\{[^}]*min-height:\s*48px;/s)
   assert.match(dashboardSource, /\.command-action[^}]*overflow-wrap:\s*anywhere;/s)
   assert.doesNotMatch(dashboardSource, /\.command-(?:band|grid|column|action)\s*\{[^}]*(?<!-)height:\s*\d+px;/s)
 })
@@ -179,6 +179,26 @@ test('dashboard keeps report reading inside a closable preview and exposes activ
 test('dashboard constrains overnight grids and quote prices within their desktop column', () => {
   assert.match(
     dashboardSource,
+    /\.overnight-block\s*\{[^}]*padding-right:\s*28px;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.morning-block-head > span\s*\{[^}]*min-width:\s*0;[^}]*text-align:\s*right;[^}]*overflow-wrap:\s*anywhere;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.overnight-layer-head span\s*\{[^}]*min-width:\s*0;[^}]*text-align:\s*right;[^}]*overflow-wrap:\s*anywhere;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.morning-context-empty\s*\{[^}]*max-width:\s*100%;[^}]*overflow-wrap:\s*anywhere;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /@media \(max-width: 480px\)[\s\S]*?\.overnight-block\s*\{[^}]*padding-right:\s*0;/s,
+  )
+  assert.match(
+    dashboardSource,
     /\.overnight-index-grid\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s,
   )
   assert.match(
@@ -192,6 +212,45 @@ test('dashboard constrains overnight grids and quote prices within their desktop
   assert.match(
     dashboardSource,
     /\.overnight-quote-name small\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/s,
+  )
+})
+
+test('dashboard keeps dense briefing copy readable across desktop and mobile', () => {
+  assert.match(
+    dashboardSource,
+    /\.index-line \.n\s*\{[^}]*font-size:\s*11px;[^}]*line-height:\s*1\.35;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.command-meta\s*\{[^}]*font-size:\s*11px;[^}]*line-height:\s*1\.5;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.command-action-copy\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.5;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.overnight-layer-head h5\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.5;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.external-market-card p,[\s\S]*?\.external-market-note\s*\{[^}]*font-size:\s*11px;[^}]*line-height:\s*1\.6;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.morning-news-item\s*\{[^}]*min-height:\s*42px;[^}]*font-size:\s*12px;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.opinion-item\s*\{[^}]*min-height:\s*36px;[^}]*font-size:\s*12px;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.mobile-score > em,[\s\S]*?\.mobile-exit-rule > em\s*\{[^}]*font-size:\s*11px;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.mobile-action-tag\s*\{[^}]*font-size:\s*11px;[^}]*line-height:\s*1\.35;/s,
   )
 })
 
@@ -297,4 +356,62 @@ test('dashboard renders the pre-market breadth forecast as a red-green tug of wa
   assert.match(dashboardSource, /breadthForecast\.actualUpRatio/)
   assert.match(dashboardSource, /breadthForecast\.rollingBacktestSummary/)
   assert.match(dashboardSource, /@media \(max-width: 560px\)[\s\S]*?\.breadth-forecast-main\s*\{[^}]*grid-template-columns:\s*1fr;/s)
+})
+
+test('dashboard keeps empty forecasts compact without hiding available forecast detail', () => {
+  assert.match(
+    dashboardSource,
+    /class="breadth-forecast enter delay-1"\s+:class="\{ 'is-empty': !breadthForecast\.available \}"/,
+  )
+  assert.match(
+    dashboardSource,
+    /\.breadth-forecast\.is-empty\s*\{[^}]*display:\s*block;[^}]*padding:\s*9px 14px;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.breadth-forecast\.is-empty \.breadth-forecast-empty\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline;/s,
+  )
+})
+
+test('dashboard progressively discloses secondary pre-market evidence in both columns', () => {
+  assert.match(dashboardSource, /const morningMarketExpanded = ref\(false\)/)
+  assert.match(dashboardSource, /const morningNewsExpanded = ref\(false\)/)
+  assert.match(
+    dashboardSource,
+    /const visiblePreMarketEventImpacts = computed\([\s\S]{0,220}?slice\(0, 3\)/,
+  )
+  assert.match(
+    dashboardSource,
+    /id="morning-market-more"[^>]+class="morning-context-more"[^>]+v-show="morningMarketExpanded"/,
+  )
+  assert.match(
+    dashboardSource,
+    /id="morning-news-more"[^>]+class="morning-context-more"[^>]+v-show="morningNewsExpanded"/,
+  )
+  assert.match(dashboardSource, /aria-controls="morning-market-more"/)
+  assert.match(dashboardSource, /:aria-expanded="morningMarketExpanded"/)
+  assert.match(dashboardSource, /aria-controls="morning-news-more"/)
+  assert.match(dashboardSource, /:aria-expanded="morningNewsExpanded"/)
+  assert.match(dashboardSource, /<p v-if="morningNewsExpanded">\{\{ item\.impactExplanation \}\}<\/p>/)
+  assert.match(
+    dashboardSource,
+    /v-if="morningNewsExpanded && \(item\.relatedCodes\?\.length \|\| item\.themes\?\.length\)"/,
+  )
+  assert.match(
+    dashboardSource,
+    /\.morning-disclosure\s*\{[^}]*min-height:\s*44px;/s,
+  )
+})
+
+test('dashboard avoids repeated auction state copy and keeps directional color on values', () => {
+  assert.doesNotMatch(
+    dashboardSource,
+    /<p v-else class="morning-context-empty">\{\{ openingAuction\?\.stateDesc/,
+  )
+  assert.match(
+    dashboardSource,
+    /\.effect-cell\.up,[\s\S]{0,80}?\.effect-cell\.down\s*\{[^}]*background:\s*rgba\(15, 23, 42, 0\.03\);/s,
+  )
+  assert.match(dashboardSource, /\.effect-cell\.up b \{ color: var\(--up\); \}/)
+  assert.match(dashboardSource, /\.effect-cell\.down b \{ color: var\(--down\); \}/)
 })
