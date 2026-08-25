@@ -1,4 +1,4 @@
-# Apex Backend
+# 灵极 Apex｜洞见·观变 后端
 
 Spring Boot 3.5 / Java 17 后端，启动类为 `com.awe.apex.ApexApplication`。默认端口 `8080`、上下文路径 `/apex`。
 

@@ -1,4 +1,4 @@
-# Apex Frontend
+# 灵极 Apex｜洞见·观变 前端
 
 Vue 3 / Vite / Element Plus 前端。页面按业务模块拆分，数据请求集中于 `src/api`，路由位于 `src/router`，导航分组位于 `src/navigation/menu.js`。
 

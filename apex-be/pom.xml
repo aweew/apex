@@ -13,7 +13,7 @@
     <version>${revision}</version>
 
     <name>apex-be</name>
-    <description>Apex 本地量化平台后端</description>
+    <description>灵极 Apex｜洞见·观变 后端</description>
 
     <properties>
         <java.version>17</java.version>
