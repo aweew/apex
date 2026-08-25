@@ -29,15 +29,26 @@ import SectorBoardView from './SectorBoardView.vue'
 import { isConceptBoard, normalizeHotThemes } from '../utils/hotTheme.js'
 import { formatVolumeChangeText } from '../utils/marketVolume.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
+import { resolveActiveMarket } from '../utils/marketTradingSession.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import { useSessionViewState } from '../utils/viewState.js'
+
+const marketTabs = [
+  { key: 'cn', label: '沪深A股' },
+  { key: 'hk', label: '港股' },
+  { key: 'jp', label: '日本' },
+  { key: 'kr', label: '韩国' },
+  { key: 'us', label: '美国' },
+]
+const indexMarketKeys = marketTabs.map((item) => item.key)
 
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
 const quoteRefreshing = ref(false)
 const indexSyncing = ref(false)
-const marketTab = ref('ab') // ab | global | capital-flow | sector
+const activeMarketKey = ref(resolveActiveMarket())
+const marketTab = ref(activeMarketKey.value || 'cn') // cn | hk | jp | kr | us | capital-flow | sector
 const indexData = ref(null)
 const briefing = ref(null)
 const marketBoard = ref(null)
@@ -50,8 +61,12 @@ const activeCode = ref('')
 const detailBars = ref([])
 const chartRef = ref(null)
 let chart
+let marketSessionTimer
 
 useSessionViewState('market', { marketTab })
+if (![...indexMarketKeys, 'capital-flow', 'sector'].includes(marketTab.value)) {
+  marketTab.value = activeMarketKey.value || 'cn'
+}
 if (['capital-flow', 'sector'].includes(route.query.tab)) marketTab.value = route.query.tab
 
 const sharing = ref(false)
@@ -62,11 +77,23 @@ const downloading = ref(false)
 let sharePreviewObjectUrl = ''
 
 const cnIndexes = computed(() => indexData.value?.cn || [])
-const globalSections = computed(() => [
-  { key: 'hk', title: '港股', items: indexData.value?.hk || [] },
-  { key: 'asia', title: '日韩', items: indexData.value?.asia || [] },
-  { key: 'us', title: '美国', items: indexData.value?.us || [] },
-])
+const marketIndexes = computed(() => ({
+  cn: cnIndexes.value,
+  hk: indexData.value?.hk || [],
+  jp: (indexData.value?.asia || []).filter((item) => item.code === 'JP_N225'),
+  kr: (indexData.value?.asia || []).filter((item) => item.code === 'KR_KOSPI'),
+  us: indexData.value?.us || [],
+}))
+const isIndexMarketTab = computed(() => marketTabs.some((item) => item.key === marketTab.value))
+const activeMarketItems = computed(() => marketIndexes.value[marketTab.value] || [])
+const activeMarketTitle = computed(() => marketTabs.find((item) => item.key === marketTab.value)?.label || '')
+const allIndexItems = computed(() => Object.values(marketIndexes.value).flat())
+const marketPageSubtitle = computed(() => {
+  if (isIndexMarketTab.value && marketTab.value !== 'cn') {
+    return `${activeMarketTitle.value}市场 · 指数行情与走势`
+  }
+  return briefing.value?.message || '沪深市场总览 · 指数 · 涨跌分布 · 板块热力'
+})
 
 const heroIndexes = computed(() => {
   // 优先用简报实时指数，并用本地指数补 spark / code
@@ -243,6 +270,30 @@ function setMarketTab(tab) {
     delete query.q
   }
   router.replace({ query })
+  if (marketTabs.some((item) => item.key === tab)) {
+    activateIndexMarket(tab)
+  }
+}
+
+async function activateIndexMarket(market) {
+  const firstIndex = marketIndexes.value[market]?.find((item) => item.code)
+  if (firstIndex?.code && firstIndex.code !== activeCode.value) {
+    await selectIndex(firstIndex.code)
+  }
+}
+
+async function syncActiveMarket() {
+  const nextMarket = resolveActiveMarket()
+  if (!nextMarket) {
+    activeMarketKey.value = null
+    return
+  }
+  const marketChanged = nextMarket !== activeMarketKey.value
+  activeMarketKey.value = nextMarket
+  if (isIndexMarketTab.value && (marketChanged || marketTab.value !== nextMarket)) {
+    marketTab.value = nextMarket
+    await activateIndexMarket(nextMarket)
+  }
 }
 
 async function load(forceBriefing = false, showLoading = true) {
@@ -265,10 +316,10 @@ async function load(forceBriefing = false, showLoading = true) {
     industryTradeDate.value = snapshotStamp(industry.data)
     conceptTradeDate.value = snapshotStamp(concept.data)
 
-    if (!activeCode.value) {
-      const first = heroIndexes.value.find((i) => i.code) || cnIndexes.value[0]
-      if (first?.code) await selectIndex(first.code)
-    }
+    const currentMarket = resolveActiveMarket()
+    if (currentMarket) activeMarketKey.value = currentMarket
+    if (isIndexMarketTab.value && currentMarket) marketTab.value = currentMarket
+    if (!activeCode.value) await activateIndexMarket(marketTab.value)
   } catch (e) {
     ElMessage.error(e.message || '加载失败')
   } finally {
@@ -306,7 +357,6 @@ async function onSyncIndex(start = '20240101') {
 async function selectIndex(code) {
   if (!code) return
   activeCode.value = code
-  marketTab.value = 'ab'
   try {
     const res = await fetchIndexBars(code, 180)
     detailBars.value = res.data || []
@@ -321,7 +371,7 @@ async function selectIndex(code) {
 function activeIndexMeta() {
   return (
     heroIndexes.value.find((i) => i.code === activeCode.value)
-    || cnIndexes.value.find((i) => i.code === activeCode.value)
+    || allIndexItems.value.find((i) => i.code === activeCode.value)
     || null
   )
 }
@@ -407,7 +457,10 @@ watch(
   () => route.query.tab,
   (tab) => {
     if (tab === 'capital-flow' || tab === 'sector') marketTab.value = tab
-    else if (marketTab.value === 'capital-flow' || marketTab.value === 'sector') marketTab.value = 'ab'
+    else if (marketTab.value === 'capital-flow' || marketTab.value === 'sector') {
+      marketTab.value = activeMarketKey.value || 'cn'
+      activateIndexMarket(marketTab.value)
+    }
   },
 )
 
@@ -555,6 +608,7 @@ function closeShare() {
 onMounted(async () => {
   // 首次进入复用服务端简报快照，避免与首页同时触发全市场截面重建。
   await load()
+  marketSessionTimer = window.setInterval(syncActiveMarket, 30 * 1000)
   window.addEventListener('resize', onResize)
   if (route.hash === '#heatmap') {
     await nextTick()
@@ -563,6 +617,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.clearInterval(marketSessionTimer)
   window.removeEventListener('resize', onResize)
   revokeSharePreview()
   chart?.dispose()
@@ -576,22 +631,18 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">Quotation</p>
         <h1>行情中心</h1>
-        <p>{{ briefing?.message || '沪深市场总览 · 指数 · 涨跌分布 · 板块热力' }}</p>
+        <p>{{ marketPageSubtitle }}</p>
       </div>
       <div class="actions">
         <div class="tabs" role="tablist">
           <button
+            v-for="item in marketTabs"
+            :key="item.key"
             type="button"
             class="tab"
-            :class="{ on: marketTab === 'ab' }"
-            @click="setMarketTab('ab')"
-          >沪深A股</button>
-          <button
-            type="button"
-            class="tab"
-            :class="{ on: marketTab === 'global' }"
-            @click="setMarketTab('global')"
-          >全球指数</button>
+            :class="{ on: marketTab === item.key }"
+            @click="setMarketTab(item.key)"
+          >{{ item.label }}</button>
           <button
             type="button"
             class="tab"
@@ -605,17 +656,17 @@ onBeforeUnmount(() => {
             @click="setMarketTab('sector')"
           >板块</button>
         </div>
-        <el-button v-if="marketTab === 'ab' || marketTab === 'global'" class="market-action" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
+        <el-button v-if="isIndexMarketTab" class="market-action" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
           <el-icon v-if="!quoteRefreshing"><Refresh /></el-icon>
           <span class="desktop-action-label">刷新行情</span>
           <span class="mobile-action-label">刷新</span>
         </el-button>
-        <el-button v-if="marketTab === 'ab' || marketTab === 'global'" class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
+        <el-button v-if="isIndexMarketTab" class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
           <el-icon v-if="!indexSyncing"><Download /></el-icon>
           <span class="desktop-action-label">同步指数</span>
           <span class="mobile-action-label">同步</span>
         </el-button>
-        <el-button v-if="marketTab === 'ab' || marketTab === 'global'" class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
+        <el-button v-if="isIndexMarketTab" class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
           <el-icon><Histogram /></el-icon>
           <span class="desktop-action-label">连板天梯</span>
         </el-button>
@@ -623,14 +674,14 @@ onBeforeUnmount(() => {
     </header>
 
     <FloatingShareButton
-      v-if="(marketTab === 'ab' || marketTab === 'global') && !shareOpen"
+      v-if="marketTab === 'cn' && !shareOpen"
       :loading="sharing"
       label="分享行情截图"
       @click="openShare"
     />
 
     <el-alert
-      v-if="(marketTab === 'ab' || marketTab === 'global') && cnStaleHint"
+      v-if="marketTab === 'cn' && cnStaleHint"
       class="stale-alert"
       type="info"
       show-icon
@@ -638,7 +689,7 @@ onBeforeUnmount(() => {
       :title="cnStaleHint"
     />
 
-    <template v-if="marketTab === 'ab'">
+    <template v-if="marketTab === 'cn'">
       <!-- 指数条 -->
       <section class="hero-indexes" aria-label="主要指数">
         <button
@@ -874,17 +925,15 @@ onBeforeUnmount(() => {
       <HeatmapView embedded />
     </template>
 
-    <template v-else-if="marketTab === 'global'">
-      <section
-        v-for="sec in globalSections"
-        :key="sec.key"
-        class="market-sec"
-        v-show="sec.items.length"
-      >
-        <h2>{{ sec.title }}</h2>
-        <div class="cards">
+    <template v-else-if="isIndexMarketTab">
+      <section class="market-sec">
+        <div class="market-sec-head">
+          <h2>{{ activeMarketTitle }}</h2>
+          <span v-if="marketTab === activeMarketKey" class="active-market-tag">当前激活</span>
+        </div>
+        <div v-if="activeMarketItems.length" class="cards">
           <button
-            v-for="item in sec.items"
+            v-for="item in activeMarketItems"
             :key="item.code"
             type="button"
             class="idx-card"
@@ -910,6 +959,7 @@ onBeforeUnmount(() => {
             </svg>
           </button>
         </div>
+        <p v-else class="side-empty">暂无{{ activeMarketTitle }}指数数据</p>
       </section>
       <section v-if="activeCode" class="chart-panel global-chart">
         <div ref="chartRef" class="chart" />
@@ -920,7 +970,7 @@ onBeforeUnmount(() => {
 
     <SectorBoardView v-else embedded />
 
-    <el-collapse v-if="(marketTab === 'ab' || marketTab === 'global') && lastLog" class="log-box">
+    <el-collapse v-if="isIndexMarketTab && lastLog" class="log-box">
       <el-collapse-item title="最近指数同步日志" name="log">
         <pre class="log">{{ lastLog }}</pre>
       </el-collapse-item>
@@ -1564,9 +1614,25 @@ onBeforeUnmount(() => {
 }
 
 .market-sec h2 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 15px;
   font-weight: 700;
+}
+
+.market-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.active-market-tag {
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .cards {
@@ -1663,6 +1729,18 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 720px) {
+  .header .actions .tabs {
+    flex: 1 0 100%;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .header .actions .tabs > .tab {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+
   .header .actions :deep(.market-action) {
     flex: 0 0 auto;
     width: auto;

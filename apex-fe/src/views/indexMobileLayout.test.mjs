@@ -60,6 +60,19 @@ test('market refresh and index sync expose only the action that is running', () 
   assert.match(indexSource, /:loading="indexSyncing" :disabled="quoteRefreshing"/)
 })
 
+test('market board automatically follows the highest-priority active market', () => {
+  assert.match(indexSource, /import \{ resolveActiveMarket \} from '\.\.\/utils\/marketTradingSession\.js'/)
+  assert.match(indexSource, /const marketTabs = \[[\s\S]*?key: 'cn'[\s\S]*?key: 'hk'[\s\S]*?key: 'jp'[\s\S]*?key: 'kr'[\s\S]*?key: 'us'/)
+  assert.match(indexSource, /async function syncActiveMarket\(\)[\s\S]*?resolveActiveMarket\(\)[\s\S]*?marketTab\.value !== nextMarket/)
+  assert.match(indexSource, /marketSessionTimer = window\.setInterval\(syncActiveMarket, 30 \* 1000\)/)
+  assert.match(indexSource, /window\.clearInterval\(marketSessionTimer\)/)
+  assert.match(indexSource, /class="active-market-tag">当前激活<\/span>/)
+  assert.match(indexSource, /if \(isIndexMarketTab\.value && \(marketChanged \|\| marketTab\.value !== nextMarket\)\)/)
+  assert.match(indexSource, /const marketPageSubtitle = computed\(\(\) => \{[\s\S]*?\$\{activeMarketTitle\.value\}市场 · 指数行情与走势/)
+  assert.match(mobileStyles, /\.header \.actions \.tabs\s*\{[\s\S]*?overflow-x:\s*auto;/)
+  assert.match(mobileStyles, /\.header \.actions \.tabs > \.tab\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?white-space:\s*nowrap;/)
+})
+
 test('market mainlines keep the signed percentage in one aligned value', () => {
   assert.match(indexSource, /class="themes-head"[\s\S]*?市场主线/)
   assert.match(indexSource, /class="theme-pct" :class="t\.pctDir">\{\{ t\.pctText \}\}/)

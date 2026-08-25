@@ -112,7 +112,7 @@ public class SyncTaskRegistry {
                 .groupName("市场看板")
                 .description("同步主流市场指数日线 index_bar")
                 .scriptFile("sync_index.py")
-                .defaultParamsHint("start=20180101")
+                .defaultParamsHint("start=20180101；工作日 08:05 自动同步日经225和韩国综指")
                 .timeoutSec(1800)
                 .build());
         register(SyncTaskSpec.builder()
@@ -298,6 +298,10 @@ public class SyncTaskRegistry {
                 args.add(String.valueOf(Objects.nonNull(safe.getSleep()) ? safe.getSleep() : 0.8));
             }
             case "INDEX" -> {
+                if (StringUtils.isNotBlank(safe.getCodes())) {
+                    args.add("--codes");
+                    args.add(safe.getCodes().trim());
+                }
                 args.add("--start");
                 args.add(StringUtils.isNotBlank(safe.getStart()) ? safe.getStart().trim() : "20180101");
                 args.add("--sleep");
