@@ -36,7 +36,7 @@ import {
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
 import { useSessionViewState } from '../utils/viewState.js'
-import { publishDataFreshness } from '../utils/dataFreshness.js'
+import { publishDataFreshness, staleDataTime } from '../utils/dataFreshness.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -134,6 +134,10 @@ const executableBuys = computed(() => filteredBuys.value.filter((row) => canExec
 const trackingBuys = computed(() => filteredBuys.value.filter((row) => !canExecutePaperBuy(row)))
 const briefing = computed(() => data.value?.marketBriefing || null)
 const decisionDataLevel = computed(() => briefing.value?.dataLevel || 'RED')
+const decisionMarketTime = computed(() => staleDataTime({
+  tradeDate: briefing.value?.asOf,
+  updatedAt: briefing.value?.marketDataUpdatedAt,
+}))
 const factors = computed(() => briefing.value?.factors || [])
 const tips = computed(() => briefing.value?.tips || [])
 const hotThemes = computed(() => normalizeHotThemes(briefing.value))
@@ -201,9 +205,11 @@ function decisionDataStatus() {
 }
 
 function decisionDataTime() {
-  const value = data.value?.asOfTime || data.value?.dataAsOf
-  if (!value) return '截至时间未提供'
-  return `数据截至 ${String(value).replace('T', ' ').slice(0, 16)}`
+  return staleDataTime({
+    tradeDate: data.value?.dataAsOf,
+    updatedAt: data.value?.asOfTime,
+    latest: decisionDataLevel.value === 'RED' ? false : undefined,
+  })
 }
 
 function publishDecisionDataFreshness() {
@@ -211,7 +217,7 @@ function publishDecisionDataFreshness() {
   publishDataFreshness({
     level,
     label: `决策数据${dataLevelLabel(level)}`,
-    detail: `${decisionDataTime()} · ${decisionDataStatus()}`,
+    detail: [decisionDataTime(), decisionDataStatus()].filter(Boolean).join(' · '),
     route: '/decision',
   })
 }
@@ -633,7 +639,7 @@ onBeforeUnmount(() => {
     <details class="decision-evidence-toggle">
       <summary>
         <span>市场依据与数据状态</span>
-        <small>{{ briefing?.asOf ? `截至 ${briefing.asOf}` : '数据加载中' }}</small>
+        <small v-if="decisionMarketTime">{{ decisionMarketTime }}</small>
       </summary>
 
       <!-- ① 市场立场 -->
@@ -644,7 +650,10 @@ onBeforeUnmount(() => {
       >
         <div class="stance-main">
           <div class="kicker">
-            <span>市场简报 · {{ briefing.asOf || '-' }}</span>
+            <span>
+              市场简报
+              <template v-if="decisionMarketTime">· {{ decisionMarketTime }}</template>
+            </span>
             <span class="pill">{{ briefing.stance || '均衡' }}</span>
             <el-tag
               v-if="briefing.dataLevel"

@@ -5,6 +5,7 @@ import { DataAnalysis, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { fetchFactorCenter } from '../api/factor'
 import { searchStock } from '../api/stock'
+import { staleDataTime } from '../utils/dataFreshness.js'
 import StockIdentity from '../components/StockIdentity.vue'
 
 const props = defineProps({
@@ -153,6 +154,11 @@ function formatContribution(value) {
   return `${number > 0 ? '+' : ''}${number.toFixed(1)}`
 }
 
+function factorDataTime(value, missingText = '时点缺失') {
+  if (!value) return missingText
+  return staleDataTime({ tradeDate: value })
+}
+
 function factorTerm(key) {
   return factorTerms[key] || ''
 }
@@ -224,7 +230,7 @@ onMounted(() => loadDetail())
         </div>
         <div class="security-meta">
           <span>现价 {{ formatNumber(detail.latestPrice) }}</span>
-          <span>日线截至 {{ detail.asOf || '-' }}</span>
+          <span v-if="factorDataTime(detail.asOf)">{{ factorDataTime(detail.asOf) }}</span>
           <el-button text @click="goStockDetail">个股详情</el-button>
         </div>
       </section>
@@ -233,7 +239,7 @@ onMounted(() => loadDetail())
         <div class="market-gate" :class="`is-${String(detail.marketGate?.level || 'missing').toLowerCase()}`">
           <span><TermTip term="market_gate">市场门控</TermTip></span>
           <strong>{{ detail.marketGate?.label || '数据不足' }}</strong>
-          <small>{{ detail.marketGate?.asOf ? `截至 ${detail.marketGate.asOf}` : '时点缺失' }}</small>
+          <small v-if="factorDataTime(detail.marketGate?.asOf)">{{ factorDataTime(detail.marketGate?.asOf) }}</small>
         </div>
         <div class="research-score">
           <span><TermTip term="research_score">Research Score</TermTip></span>
@@ -244,7 +250,9 @@ onMounted(() => loadDetail())
         <div class="research-meta">
           <span><TermTip term="factor_coverage">可用权重覆盖</TermTip></span>
           <strong>{{ formatNumber(detail.research?.coverage, 0) }}%</strong>
-          <small>{{ detail.research?.asOf ? `快照 ${detail.research.asOf}` : '尚未发布快照' }}</small>
+          <small v-if="factorDataTime(detail.research?.asOf, '尚未发布快照')">
+            {{ factorDataTime(detail.research?.asOf, '尚未发布快照') }}
+          </small>
         </div>
         <p class="research-reason">{{ detail.research?.reason }}</p>
         <div class="research-components">
@@ -315,8 +323,8 @@ onMounted(() => loadDetail())
               <div class="component-track">
                 <i :style="{ width: `${component.available ? component.score : 0}%` }"></i>
               </div>
-              <small class="component-date">
-                {{ component.asOf ? `截至 ${component.asOf}` : '时点缺失' }}
+              <small v-if="factorDataTime(component.asOf)" class="component-date">
+                {{ factorDataTime(component.asOf) }}
               </small>
               <small class="component-description">{{ component.description }}</small>
             </div>
@@ -349,8 +357,8 @@ onMounted(() => loadDetail())
                   <div class="component-track">
                     <i :style="{ width: `${component.available ? component.score : 0}%` }"></i>
                   </div>
-                  <small class="component-date">
-                    {{ component.asOf ? `截至 ${component.asOf}` : '时点缺失' }}
+                  <small v-if="factorDataTime(component.asOf)" class="component-date">
+                    {{ factorDataTime(component.asOf) }}
                   </small>
                   <small class="component-description">{{ component.description }}</small>
                 </div>
@@ -396,7 +404,7 @@ onMounted(() => loadDetail())
                 </span>
                 <strong>{{ formatFactor(factor) }}</strong>
                 <p class="factor-description">{{ factor.description }}</p>
-                <small>{{ factor.asOf ? `截至 ${factor.asOf}` : '时点缺失' }}</small>
+                <small v-if="factorDataTime(factor.asOf)">{{ factorDataTime(factor.asOf) }}</small>
               </div>
             </div>
           </article>

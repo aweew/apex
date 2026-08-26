@@ -18,6 +18,7 @@ import {
   getApexAiContext,
   getLatestApexAiConversation,
 } from '../api/apexAi'
+import { staleDataTime } from '../utils/dataFreshness.js'
 
 const analysisModes = [
   { label: '自动', value: 'AUTO' },
@@ -201,8 +202,11 @@ function formatSigned(value, suffix = '') {
   return `${Number(value) > 0 ? '+' : ''}${formatNumber(value)}${suffix}`
 }
 
-function formatTime(value) {
-  return value ? String(value).replace('T', ' ').slice(0, 16) : '时间未知'
+function analysisDataTime(analysis) {
+  const value = analysis?.dataAsOf
+  if (!value) return ''
+  const intraday = /T(?!00:00)/.test(String(value))
+  return staleDataTime({ tradeDate: value, updatedAt: value, intraday })
 }
 
 function dataLabel(level) {
@@ -386,7 +390,7 @@ onMounted(() => Promise.allSettled([loadContext(), loadLatestConversation()]))
 
               <footer class="answer-footer">
                 <span>{{ message.analysis.dataNote }}</span>
-                <span>{{ formatTime(message.analysis.dataAsOf || message.analysis.generatedAt) }}</span>
+                <span v-if="analysisDataTime(message.analysis)">{{ analysisDataTime(message.analysis) }}</span>
                 <span v-if="message.enhancing" class="enhancement-state">
                   <el-icon><Refresh /></el-icon>AI 解读中
                 </span>

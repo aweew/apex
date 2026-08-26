@@ -20,6 +20,7 @@ import { buildTradeMarkerSeries } from '../utils/tradeMarkers'
 import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceStructure'
 import { stockSyncSummary, synchronizeStockData } from '../utils/stockSync'
 import { bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
+import { staleDataTime } from '../utils/dataFreshness.js'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
 import ChipDistributionPanel from '../components/ChipDistributionPanel.vue'
 import FactorCenterView from './FactorCenterView.vue'
@@ -56,6 +57,11 @@ const tdTip = ref('')
 const intraday = ref(null)
 const intradayLoading = ref(false)
 const intradayAsOf = ref('')
+const intradayDataTime = computed(() => staleDataTime({
+  tradeDate: intraday.value?.tradeDate,
+  updatedAt: intradayAsOf.value,
+  intraday: true,
+}))
 /** day | week | month | intraday */
 const klinePeriod = ref('day')
 /** 默认仅显示 MA5 / MA20 */
@@ -2062,7 +2068,7 @@ function dash(v) {
               </el-button>
             </div>
             <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
-            <span v-if="isIntraday && intradayAsOf" class="intraday-asof">数据截至 {{ intradayAsOf }}</span>
+            <span v-if="intradayDataTime" class="intraday-asof">{{ intradayDataTime }}</span>
           </div>
           <div v-if="!isIntraday" v-show="!isMobileChart || chartParamsExpanded" class="chart-advanced-controls">
             <el-checkbox-group v-model="selectedMas" size="small" class="ma-checks">

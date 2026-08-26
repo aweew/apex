@@ -15,6 +15,7 @@ import {
 import { saveObserve } from '../api/observe'
 import { getSyncJob, startSyncJob } from '../api/sync'
 import { useTradeDateStore } from '../stores/tradeDate'
+import { staleDataTime } from '../utils/dataFreshness.js'
 import { resolveActionColumnFixed } from '../utils/responsiveTable.js'
 import { snapshotFallbackText, snapshotStamp } from '../utils/snapshotDate'
 import { useSessionViewState } from '../utils/viewState.js'
@@ -53,6 +54,11 @@ const constituents = ref(null)
 const pendingSectorCode = ref('')
 const viewportWidth = ref(window.innerWidth)
 const drawerActionColumnFixed = computed(() => resolveActionColumnFixed(viewportWidth.value))
+const constituentDataTime = computed(() => staleDataTime({
+  tradeDate: constituents.value?.tradeDate,
+  updatedAt: constituents.value?.syncedAt,
+  intraday: true,
+}))
 let constituentLoadSequence = 0
 let constituentRefreshSequence = 0
 
@@ -147,12 +153,6 @@ function disableUnavailableDate(date) {
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
   return !availableDateSet.value.has(`${y}-${m}-${d}`)
-}
-
-function fmtClock(t) {
-  if (!t) return '-'
-  const normalizedTime = String(t).replace('T', ' ')
-  return normalizedTime.length >= 16 ? normalizedTime.slice(11, 16) : normalizedTime
 }
 
 function fmtPct(v) {
@@ -830,9 +830,8 @@ onBeforeUnmount(() => {
       @closed="clearRouteSector"
     >
       <div class="drawer-actions">
-        <div class="drawer-snapshot">
-          <span>交易日 {{ constituents?.tradeDate || '-' }}</span>
-          <span>更新时间 {{ fmtClock(constituents?.syncedAt) }}</span>
+        <div v-if="constituentDataTime" class="drawer-snapshot">
+          <span>{{ constituentDataTime }}</span>
         </div>
         <div class="drawer-controls">
           <el-select

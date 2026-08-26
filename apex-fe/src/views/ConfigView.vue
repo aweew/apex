@@ -11,6 +11,7 @@ import {
 } from '../api/dashboard'
 import http from '../api/http'
 import { buildApiUrl } from '../api/baseUrl'
+import { staleDataTime } from '../utils/dataFreshness.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -23,6 +24,15 @@ function slaLevelLabel(level) {
   if (level === 'YELLOW') return '预警'
   if (level === 'RED') return '异常'
   return level || '-'
+}
+
+function sourceDataTime(row) {
+  return staleDataTime({
+    tradeDate: row?.dataAsOf,
+    updatedAt: row?.syncedAt,
+    intraday: row?.name === '板块行情',
+    latest: row?.level === 'RED' && !row?.dataAsOf ? false : undefined,
+  })
 }
 
 const autoSync = computed(() => rows.value.find((r) => r.configKey === 'auto_sync_enabled'))
@@ -172,7 +182,9 @@ onMounted(load)
           {{ slaLevelLabel(row.level) }}
         </template>
       </el-table-column>
-      <el-table-column prop="dataAsOf" label="数据日" width="110" />
+      <el-table-column label="数据时间" min-width="150">
+        <template #default="{ row }">{{ sourceDataTime(row) }}</template>
+      </el-table-column>
       <el-table-column prop="note" label="说明" min-width="160" show-overflow-tooltip />
     </el-table>
     <el-alert

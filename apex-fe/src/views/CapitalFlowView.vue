@@ -13,6 +13,7 @@ import {
   formatNorthboundAmount,
   resolveCapitalClass,
 } from '../utils/capitalFlow.js'
+import { staleDataTime } from '../utils/dataFreshness.js'
 
 const router = useRouter()
 defineProps({
@@ -33,15 +34,9 @@ const industryFlows = computed(() => overview.value?.industryFlows?.items || [])
 const conceptFlows = computed(() => overview.value?.conceptFlows?.items || [])
 const dragonTigerItems = computed(() => overview.value?.dragonTigerItems || [])
 
-function formatSnapshotTime(value) {
-  if (!value) return '-'
-  return String(value).replace('T', ' ').slice(0, 19)
-}
-
-function snapshotMeta(tradeDate, syncedAt) {
+function snapshotMeta(tradeDate, syncedAt, intraday = false) {
   if (!tradeDate && !syncedAt) return '暂无快照'
-  if (!syncedAt) return String(tradeDate)
-  return `${tradeDate || '未知交易日'} · ${formatSnapshotTime(syncedAt)}`
+  return staleDataTime({ tradeDate, updatedAt: syncedAt, intraday })
 }
 
 function northboundStatus(status) {
@@ -145,7 +140,9 @@ onMounted(loadOverview)
       <div class="section-heading">
         <div>
           <h2 id="dragon-tiger-title">龙虎榜</h2>
-          <p>{{ snapshotMeta(overview.dragonTigerTradeDate, overview.dragonTigerSyncedAt) }}</p>
+          <p v-if="snapshotMeta(overview.dragonTigerTradeDate, overview.dragonTigerSyncedAt)">
+            {{ snapshotMeta(overview.dragonTigerTradeDate, overview.dragonTigerSyncedAt) }}
+          </p>
         </div>
         <span class="row-count">{{ dragonTigerItems.length }} 只</span>
       </div>
@@ -206,7 +203,9 @@ onMounted(loadOverview)
         <div class="sector-column">
           <div class="subsection-heading">
             <h3>行业</h3>
-            <span>{{ snapshotMeta(overview.industryFlows?.tradeDate, overview.industryFlows?.syncedAt) }}</span>
+            <span v-if="snapshotMeta(overview.industryFlows?.tradeDate, overview.industryFlows?.syncedAt, true)">
+              {{ snapshotMeta(overview.industryFlows?.tradeDate, overview.industryFlows?.syncedAt, true) }}
+            </span>
           </div>
           <el-table v-if="industryFlows.length" class="desktop-flow-table" :data="industryFlows" stripe>
             <el-table-column type="index" label="#" width="52" />
@@ -230,7 +229,9 @@ onMounted(loadOverview)
         <div class="sector-column">
           <div class="subsection-heading">
             <h3>概念</h3>
-            <span>{{ snapshotMeta(overview.conceptFlows?.tradeDate, overview.conceptFlows?.syncedAt) }}</span>
+            <span v-if="snapshotMeta(overview.conceptFlows?.tradeDate, overview.conceptFlows?.syncedAt, true)">
+              {{ snapshotMeta(overview.conceptFlows?.tradeDate, overview.conceptFlows?.syncedAt, true) }}
+            </span>
           </div>
           <el-table v-if="conceptFlows.length" class="desktop-flow-table" :data="conceptFlows" stripe>
             <el-table-column type="index" label="#" width="52" />
@@ -257,7 +258,9 @@ onMounted(loadOverview)
       <div class="section-heading">
         <div>
           <h2 id="northbound-title">北向资金</h2>
-          <p>{{ snapshotMeta(northboundFlow?.tradeDate, northboundFlow?.syncedAt) }}</p>
+          <p v-if="snapshotMeta(northboundFlow?.tradeDate, northboundFlow?.syncedAt)">
+            {{ snapshotMeta(northboundFlow?.tradeDate, northboundFlow?.syncedAt) }}
+          </p>
         </div>
         <span v-if="northboundFlow?.dataStatus" class="dataset-status">
           {{ northboundStatus(northboundFlow.dataStatus) }}
@@ -288,7 +291,9 @@ onMounted(loadOverview)
       <div class="section-heading">
         <div>
           <h2 id="stock-flow-title">个股主力流入</h2>
-          <p>{{ snapshotMeta(overview.stockTradeDate, overview.stockSyncedAt) }}</p>
+          <p v-if="snapshotMeta(overview.stockTradeDate, overview.stockSyncedAt, true)">
+            {{ snapshotMeta(overview.stockTradeDate, overview.stockSyncedAt, true) }}
+          </p>
         </div>
         <span class="row-count">{{ stockFlows.length }} 只</span>
       </div>

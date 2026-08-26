@@ -39,8 +39,10 @@ test('factor center keeps missing data visible instead of rendering a fabricated
   assert.match(source, /暂无数据/)
   assert.match(source, /detail\.coverage/)
   assert.match(source, /detail\.value\?\.alphaScore == null/)
-  assert.match(source, /component\.asOf \? `截至 \$\{component\.asOf\}` : '时点缺失'/)
-  assert.match(source, /factor\.asOf \? `截至 \$\{factor\.asOf\}` : '时点缺失'/)
+  assert.match(source, /function factorDataTime\(value, missingText = '时点缺失'\)/)
+  assert.match(source, /staleDataTime\(\{ tradeDate: value \}\)/)
+  assert.match(source, /factorDataTime\(component\.asOf\)/)
+  assert.match(source, /factorDataTime\(factor\.asOf\)/)
 })
 
 test('factor explanations are visible and low-weight alpha components start collapsed', () => {

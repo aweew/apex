@@ -1,7 +1,8 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import TermTip from './TermTip.vue'
+import { staleDataTime } from '../utils/dataFreshness.js'
 
 const props = defineProps({
   analysis: {
@@ -11,6 +12,7 @@ const props = defineProps({
 })
 
 const chartRef = ref(null)
+const priceStructureTime = computed(() => staleDataTime({ tradeDate: props.analysis?.asOfDate }))
 let chart = null
 
 function fmtPrice(value) {
@@ -133,7 +135,10 @@ onBeforeUnmount(() => {
     <div class="structure-head">
       <div>
         <h2 id="price-structure-title"><TermTip term="support_resistance">支撑与压力</TermTip></h2>
-        <p>均线定方向，筹码找位置 · 截至 {{ analysis.asOfDate || '-' }}</p>
+        <p>
+          均线定方向，筹码找位置
+          <template v-if="priceStructureTime">· {{ priceStructureTime }}</template>
+        </p>
       </div>
       <span class="quality-tag">{{ analysis.sampleSize }} 根日线 · 换手覆盖 {{ analysis.quality.actualTurnoverRatioPct }}%</span>
     </div>

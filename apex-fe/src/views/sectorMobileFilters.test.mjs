@@ -72,8 +72,8 @@ test('constituent drawer keeps metadata, controls, and table columns compact', (
   )
 
   assert.match(drawerTemplate, /size="440px"/)
-  assert.match(drawerTemplate, /class="drawer-snapshot"[\s\S]*?交易日[\s\S]*?更新时间/)
-  assert.doesNotMatch(drawerTemplate, /fmtTime\(constituents\?\.syncedAt\)/)
+  assert.match(drawerTemplate, /v-if="constituentDataTime" class="drawer-snapshot"/)
+  assert.doesNotMatch(drawerTemplate, /更新时间/)
   assert.match(drawerTemplate, /:icon="Refresh"[\s\S]*?aria-label="刷新成分股"/)
   assert.match(drawerTemplate, /class="constituent-table"/)
   assert.match(drawerTemplate, /prop="name" label="股票" width="132"/)
