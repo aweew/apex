@@ -2,8 +2,10 @@ package com.awe.apex.quant.job;
 
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.bot.service.IBotNotificationService;
+import com.awe.apex.quant.domain.dto.DailyPreMarketReportResp;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsRefreshResp;
+import com.awe.apex.quant.service.IDailyPreMarketReportService;
 import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IMarketOpinionService;
 import com.awe.apex.quant.service.INewsService;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * 每日盘前晨报任务。
@@ -32,6 +35,9 @@ public class MorningBriefingScheduler {
 
     @Resource
     private IMorningBriefingService morningBriefingService;
+
+    @Resource
+    private IDailyPreMarketReportService dailyPreMarketReportService;
 
     @Resource
     private IMarketOpinionService marketOpinionService;
@@ -61,10 +67,23 @@ public class MorningBriefingScheduler {
                 log.warn("盘前晨报新闻刷新失败，继续使用本地新闻，原因={}", ex.getMessage());
             }
 
-            // 3. 始终生成 Web 晨报，按配置决定是否发送到 Bot
+            // 3. 始终生成全局晨报；存在 Bot 绑定用户时继续生成包含其组合的完整研报
             MorningBriefingResp briefing = morningBriefingService.generate();
+            DailyPreMarketReportResp dailyReport = null;
+            if (Objects.nonNull(properties.getApexUserId())) {
+                try {
+                    dailyReport = dailyPreMarketReportService.generateForUser(properties.getApexUserId());
+                } catch (Exception ex) {
+                    log.warn("完整盘前研报生成失败，用户编号={}，继续使用基础晨报，原因={}",
+                            properties.getApexUserId(), ex.getMessage());
+                }
+            }
             if (properties.getMorningBriefing().isEnabled()) {
-                notificationService.notifyMorningBriefing(briefing);
+                if (Objects.nonNull(dailyReport)) {
+                    notificationService.notifyDailyPreMarketReport(dailyReport);
+                } else {
+                    notificationService.notifyMorningBriefing(briefing);
+                }
             }
             long durationSeconds = Duration.between(startedAt, LocalDateTime.now()).toSeconds();
             log.info("盘前晨报完成，数据等级={}，行情数量={}，新闻数量={}，耗时秒={}",

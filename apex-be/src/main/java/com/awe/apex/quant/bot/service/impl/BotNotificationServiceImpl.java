@@ -8,6 +8,7 @@ import com.awe.apex.quant.bot.service.IBotNotificationService;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskItem;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.DailyPreMarketReportResp;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
@@ -85,6 +86,26 @@ public class BotNotificationServiceImpl implements IBotNotificationService {
             message.append("数据完整性：").append(briefing.getDataLevel()).append("\n");
         }
         sendOnce("MORNING_BRIEFING:" + reportDate, message.toString());
+    }
+
+    /**
+     * 推送完整的每日盘前研报。
+     *
+     * @param report 每日盘前研报
+     */
+    @Override
+    public void notifyDailyPreMarketReport(DailyPreMarketReportResp report) {
+        if (Objects.isNull(report) || StringUtils.isBlank(report.getContent())) {
+            return;
+        }
+        String reportDate = Objects.nonNull(report.getTradeDate())
+                ? report.getTradeDate().toString() : "unknown";
+        StringBuilder message = new StringBuilder("[Apex 每日盘前研报]\n");
+        message.append(report.getContent());
+        if (CollUtil.isNotEmpty(report.getMissingData())) {
+            message.append("\n\n数据缺口：").append(String.join("；", report.getMissingData()));
+        }
+        sendOnce("DAILY_PRE_MARKET_REPORT:" + reportDate, message.toString());
     }
 
     /**

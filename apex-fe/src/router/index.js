@@ -27,6 +27,7 @@ const SyncView = () => import('../views/SyncView.vue')
 const LoginView = () => import('../views/LoginView.vue')
 const RegisterView = () => import('../views/RegisterView.vue')
 const ApexAiView = () => import('../views/ApexAiView.vue')
+const PreMarketReportView = () => import('../views/PreMarketReportView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -42,6 +43,7 @@ const router = createRouter({
     { path: '/register', name: 'register', component: RegisterView, meta: { public: true } },
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'dashboard', component: DashboardView },
+    { path: '/pre-market-report', name: 'preMarketReport', component: PreMarketReportView },
     { path: '/ai-center', name: 'apexAi', component: ApexAiView },
     { path: '/decision', name: 'decision', component: DecisionView },
     { path: '/market', name: 'market', component: IndexBoardView },

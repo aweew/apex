@@ -4,6 +4,7 @@ import com.awe.apex.quant.bot.client.WeClawMessageClient;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.bot.service.impl.BotNotificationServiceImpl;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.DailyPreMarketReportResp;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.WatchlistMoverResp;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -93,6 +95,27 @@ class BotNotificationServiceImplTest {
         service.notifyMorningBriefing(briefing);
 
         verify(messageClient).sendText(org.mockito.ArgumentMatchers.contains("纳斯达克 +0.81%"));
+        verifyNoMoreInteractions(messageClient);
+    }
+
+    @Test
+    void sendsDailyPreMarketReportWithExplicitDataGapsOnlyOnce() {
+        ApexBotProperties properties = new ApexBotProperties();
+        WeClawMessageClient messageClient = mock(WeClawMessageClient.class);
+        when(messageClient.sendText(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        BotNotificationServiceImpl service = new BotNotificationServiceImpl();
+        ReflectionTestUtils.setField(service, "properties", properties);
+        ReflectionTestUtils.setField(service, "messageClient", messageClient);
+        DailyPreMarketReportResp report = DailyPreMarketReportResp.builder()
+                .tradeDate(LocalDate.of(2026, 8, 26))
+                .content("Apex 每日盘前研报\n今日市场判断：中性")
+                .missingData(List.of("两融数据"))
+                .build();
+
+        service.notifyDailyPreMarketReport(report);
+        service.notifyDailyPreMarketReport(report);
+
+        verify(messageClient).sendText(org.mockito.ArgumentMatchers.contains("数据缺口：两融数据"));
         verifyNoMoreInteractions(messageClient);
     }
 }

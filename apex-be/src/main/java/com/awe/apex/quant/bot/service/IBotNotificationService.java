@@ -1,6 +1,7 @@
 package com.awe.apex.quant.bot.service;
 
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.DailyPreMarketReportResp;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.BotHoldingRiskResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
@@ -26,6 +27,13 @@ public interface IBotNotificationService {
      * @param briefing 盘前晨报
      */
     void notifyMorningBriefing(MorningBriefingResp briefing);
+
+    /**
+     * 推送完整的每日盘前研报。
+     *
+     * @param report 每日盘前研报
+     */
+    void notifyDailyPreMarketReport(DailyPreMarketReportResp report);
 
     /**
      * 推送盘中异动汇总。
