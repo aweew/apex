@@ -15,6 +15,7 @@ import {
 import BrandShareLockup from '../components/share/BrandShareLockup.vue'
 import BrandShareFoot from '../components/share/BrandShareFoot.vue'
 import { snapshotStamp } from '../utils/snapshotDate'
+import { staleDataTime } from '../utils/dataFreshness.js'
 import { resolveTreemapLabelFontSize } from '../utils/heatmapLabel'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 
@@ -68,13 +69,18 @@ const SIZE_OPTS = [
 const colorLabel = computed(() => COLOR_OPTS.find((x) => x.value === colorBy.value)?.label || '涨跌幅')
 const typeLabel = computed(() => TYPE_OPTS.find((x) => x.value === boardType.value)?.label || '行业')
 const nodeCount = computed(() => data.value?.nodes?.length || 0)
+const heatmapDataTime = computed(() => staleDataTime({
+  tradeDate: data.value?.tradeDate,
+  updatedAt: data.value?.syncedAt,
+  intraday: true,
+}))
 const mobileNodeLimit = 18
 
 const subtitle = computed(() => {
   const d = data.value
   if (!d) return '参考金融界大盘云图 · 块大小×着色看结构'
   const parts = []
-  if (d.tradeDate) parts.push(`交易日 ${d.tradeDate}`)
+  if (heatmapDataTime.value) parts.push(heatmapDataTime.value)
   parts.push(`${typeLabel.value} ${nodeCount.value} 块`)
   parts.push(`色=${colorLabel.value}`)
   if (d.note) parts.push(d.note)
@@ -194,49 +200,6 @@ function labelInk(bg) {
   return luma > 0.55 ? '#0f1419' : '#f5f7fa'
 }
 
-/** 底部色阶条（仅作图例，着色由 heatColor 直算） */
-function buildVisualMap(colorKey) {
-  const base = {
-    show: true,
-    calculable: false,
-    orient: 'horizontal',
-    left: 'center',
-    bottom: 4,
-    itemWidth: 14,
-    itemHeight: 8,
-    textStyle: { color: 'rgba(230,237,243,.55)', fontSize: 10 },
-    hoverLink: false,
-    seriesIndex: [],
-  }
-  if (colorKey === 'pe') {
-    return {
-      ...base,
-      min: 0,
-      max: 80,
-      text: ['高估值', '低估值'],
-      inRange: { color: ['#1aad5b', '#3a4450', '#e64545'] },
-    }
-  }
-  if (colorKey === 'netInflow') {
-    return {
-      ...base,
-      min: -5e9,
-      max: 5e9,
-      text: ['流入', '流出'],
-      inRange: { color: ['#0f7a45', '#2a3139', '#d63b3b'] },
-      formatter: (v) => fmtYi(v),
-    }
-  }
-  return {
-    ...base,
-    min: -5,
-    max: 5,
-    text: ['涨', '跌'],
-    inRange: { color: ['#1aad5b', '#2a3139', '#f04848'] },
-    formatter: (v) => `${Number(v).toFixed(0)}%`,
-  }
-}
-
 function toTreeData(nodes, colorKey) {
   const sortedNodes = [...(nodes || [])].sort((left, right) => (Number(right.value) || 0) - (Number(left.value) || 0))
   const visibleNodes = props.embedded && window.matchMedia('(max-width: 560px)').matches
@@ -327,7 +290,6 @@ function renderChart() {
           return lines.filter(Boolean).join('')
         },
       },
-      visualMap: buildVisualMap(colorKey),
       series: [
         {
           type: 'treemap',
@@ -336,7 +298,7 @@ function renderChart() {
           top: 4,
           left: 4,
           right: 4,
-          bottom: 28,
+          bottom: 4,
           roam: false,
           nodeClick: false,
           breadcrumb: { show: false },
@@ -668,12 +630,12 @@ onBeforeUnmount(() => {
           <BrandShareLockup subtitle="大盘云图" theme="dark" :size="44" />
           <span class="share-meta">{{ typeLabel }} · {{ colorLabel }} · {{ nodeCount }} 块</span>
         </div>
-        <em v-if="data?.tradeDate">{{ data.tradeDate }}</em>
+        <em v-if="heatmapDataTime">{{ heatmapDataTime }}</em>
       </div>
       <div ref="chartRef" class="chart" />
       <BrandShareFoot
         theme="dark"
-        :note="`${data?.tradeDate || ''} · 仅供研究参考 · 不构成投资建议`"
+        :note="[heatmapDataTime, '仅供研究参考', '不构成投资建议'].filter(Boolean).join(' · ')"
       />
     </div>
 

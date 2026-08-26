@@ -71,6 +71,7 @@ test('market board automatically follows the highest-priority active market', ()
   assert.match(indexSource, /marketTab === activeMarketTabKey" class="active-market-tag">当前激活<\/span>/)
   assert.match(indexSource, /if \(isIndexMarketTab\.value && \(marketChanged \|\| marketTab\.value !== nextMarketTab\)\)/)
   assert.match(indexSource, /const marketPageSubtitle = computed\(\(\) => \{[\s\S]*?\$\{activeMarketTitle\.value\}市场 · 指数行情与走势/)
+  assert.match(mobileStyles, /\.header \.actions \.market-nav\s*\{[\s\S]*?flex:\s*1 0 100%;[\s\S]*?flex-direction:\s*column;/)
   assert.match(mobileStyles, /\.header \.actions \.tabs\s*\{[\s\S]*?overflow-x:\s*auto;/)
   assert.match(mobileStyles, /\.header \.actions \.tabs > \.tab\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?white-space:\s*nowrap;/)
 })
@@ -129,6 +130,13 @@ test('embedded heatmap favors readable mobile blocks over clipped labels', async
   assert.match(heatmapSource, /labelLayout: resizeTreemapLabel/)
   assert.match(heatmapSource, /class="share-card" :class="\{ 'is-embedded': embedded \}"/)
   assert.match(heatmapSource, /\.share-card\.is-embedded \{[\s\S]*?background: #f2f5f7;/)
+})
+
+test('heatmap omits the bottom color legend and uses the full chart height', async () => {
+  const heatmapSource = await readFile(new URL('./HeatmapView.vue', import.meta.url), 'utf8')
+  assert.doesNotMatch(heatmapSource, /visualMap:/)
+  assert.doesNotMatch(heatmapSource, /function buildVisualMap\(/)
+  assert.match(heatmapSource, /type: 'treemap',[\s\S]*?bottom:\s*4,/)
 })
 
 test('heatmap constituent drawer dismisses the chart tooltip and keeps sector context and sorting actionable', async () => {

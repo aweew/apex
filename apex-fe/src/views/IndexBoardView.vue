@@ -30,6 +30,7 @@ import { isConceptBoard, normalizeHotThemes } from '../utils/hotTheme.js'
 import { formatVolumeChangeText } from '../utils/marketVolume.js'
 import { snapshotStamp } from '../utils/snapshotDate.js'
 import { resolveActiveMarket, resolveMarketTab } from '../utils/marketTradingSession.js'
+import { staleDataTime } from '../utils/dataFreshness.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 import { useSessionViewState } from '../utils/viewState.js'
 import worldMarketMapUrl from '../assets/world-market-map.svg'
@@ -44,7 +45,7 @@ const marketTabs = [
   { key: 'cn', label: '沪深A股' },
   { key: 'hk', label: '港股' },
   { key: 'asia', label: '日韩' },
-  { key: 'us', label: '美国' },
+  { key: 'us', label: '美股' },
 ]
 const indexMarketKeys = marketTabs.filter((item) => item.key !== 'global').map((item) => item.key)
 
@@ -98,6 +99,9 @@ const marketIndexes = computed(() => ({
 }))
 const globalMarketHubs = computed(() => buildGlobalMarketHubs(regionalMarketIndexes.value))
 const globalMarketSummary = computed(() => summarizeGlobalMarkets(regionalMarketIndexes.value))
+const globalMarketTime = computed(() => staleDataTime({
+  tradeDate: globalMarketSummary.value.latestTradeDate,
+}))
 const isIndexMarketTab = computed(() => indexMarketKeys.includes(marketTab.value))
 const isQuoteMarketTab = computed(() => marketTab.value === 'global' || isIndexMarketTab.value)
 const activeMarketItems = computed(() => marketIndexes.value[marketTab.value] || [])
@@ -189,18 +193,24 @@ const cnStaleHint = computed(() => {
   const rows = cnIndexes.value
   const dates = rows.map((r) => r.tradeDate).filter(Boolean).sort()
   if (!dates.length) return ''
-  const latest = dates[dates.length - 1]
-  const today = new Date()
-  const todayStr = [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, '0'),
-    String(today.getDate()).padStart(2, '0'),
-  ].join('-')
-  if (latest >= todayStr) return ''
-  const wd = today.getDay()
-  if (wd === 0 || wd === 6) return `指数本地截至 ${latest}（周末休市）`
-  return `指数本地截至 ${latest} · 顶部条优先用实时简报`
+  return staleDataTime({ tradeDate: dates[dates.length - 1] })
 })
+
+function indexItemDataTime(item, regionItems) {
+  if (!item?.tradeDate) return ''
+  if (String(item.code || '').startsWith('CN_')) {
+    return staleDataTime({ tradeDate: item.tradeDate })
+  }
+  const latestRegionDate = (regionItems || [])
+    .map((row) => String(row.tradeDate || '').slice(0, 10))
+    .filter(Boolean)
+    .sort()
+    .at(-1)
+  return staleDataTime({
+    tradeDate: item.tradeDate,
+    latest: String(item.tradeDate).slice(0, 10) === latestRegionDate,
+  })
+}
 
 function matchCnCode(name) {
   const map = {
@@ -690,28 +700,38 @@ onBeforeUnmount(() => {
         <p>{{ marketPageSubtitle }}</p>
       </div>
       <div class="actions">
-        <div class="tabs" role="tablist">
-          <button
-            v-for="item in marketTabs"
-            :key="item.key"
-            type="button"
-            class="tab"
-            :class="{ on: marketTab === item.key }"
-            @click="setMarketTab(item.key)"
-          >{{ item.label }}</button>
-          <button
-            type="button"
-            class="tab"
-            :class="{ on: marketTab === 'capital-flow' }"
-            @click="setMarketTab('capital-flow')"
-          >资金流</button>
-          <button
-            type="button"
-            class="tab"
-            :class="{ on: marketTab === 'sector' }"
-            @click="setMarketTab('sector')"
-          >板块</button>
-        </div>
+        <nav class="market-nav" aria-label="行情中心视图">
+          <div class="market-nav-group index-market-nav">
+            <span class="market-nav-label">指数行情</span>
+            <div class="tabs" role="tablist" aria-label="指数行情">
+              <button
+                v-for="item in marketTabs"
+                :key="item.key"
+                type="button"
+                class="tab"
+                :class="{ on: marketTab === item.key }"
+                @click="setMarketTab(item.key)"
+              >{{ item.label }}</button>
+            </div>
+          </div>
+          <div class="market-nav-group analysis-market-nav">
+            <span class="market-nav-label">A股分析</span>
+            <div class="tabs" role="tablist" aria-label="A股分析">
+              <button
+                type="button"
+                class="tab"
+                :class="{ on: marketTab === 'sector' }"
+                @click="setMarketTab('sector')"
+              >板块</button>
+              <button
+                type="button"
+                class="tab"
+                :class="{ on: marketTab === 'capital-flow' }"
+                @click="setMarketTab('capital-flow')"
+              >资金流</button>
+            </div>
+          </div>
+        </nav>
         <el-button v-if="isQuoteMarketTab" class="market-action" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
           <el-icon v-if="!quoteRefreshing"><Refresh /></el-icon>
           <span class="desktop-action-label">刷新行情</span>
@@ -753,7 +773,7 @@ onBeforeUnmount(() => {
             <h2>全球主要指数分布</h2>
           </div>
           <div class="global-summary" aria-label="全球指数概览">
-            <span class="snapshot">数据截至 <b>{{ globalMarketSummary.latestTradeDate || '--' }}</b></span>
+            <span v-if="globalMarketTime" class="snapshot">{{ globalMarketTime }}</span>
             <span>覆盖指数 <b>{{ globalMarketSummary.total }}</b></span>
             <span class="up">上涨 <b>{{ globalMarketSummary.up }}</b></span>
             <span class="down">下跌 <b>{{ globalMarketSummary.down }}</b></span>
@@ -815,7 +835,7 @@ onBeforeUnmount(() => {
               >
                 <span>
                   <strong>{{ item.name }}</strong>
-                  <small>{{ item.tradeDate || '--' }}</small>
+                  <small v-if="indexItemDataTime(item, hub.items)">{{ indexItemDataTime(item, hub.items) }}</small>
                 </span>
                 <b :class="pctClass(item.pctChg)">{{ fmtPct(item.pctChg) }}</b>
               </button>
@@ -1083,7 +1103,9 @@ onBeforeUnmount(() => {
           >
             <div class="idx-top">
               <strong>{{ item.name }}</strong>
-              <span class="date">{{ item.tradeDate || '-' }}</span>
+              <span v-if="indexItemDataTime(item, activeMarketItems)" class="date">
+                {{ indexItemDataTime(item, activeMarketItems) }}
+              </span>
             </div>
             <div class="idx-price" :class="pctClass(item.pctChg)">
               <b>{{ fmtNum(item.closePrice) }}</b>
@@ -1152,6 +1174,33 @@ onBeforeUnmount(() => {
 
 .stale-alert {
   margin-bottom: 12px;
+}
+
+.market-nav {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.market-nav-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.market-nav-label {
+  padding-left: 4px;
+  color: var(--mc-muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.analysis-market-nav {
+  padding-left: 12px;
+  border-left: 1px solid var(--mc-line);
 }
 
 .tabs {
@@ -2271,8 +2320,26 @@ onBeforeUnmount(() => {
     font-size: 13px;
   }
 
-  .header .actions .tabs {
+  .header .actions .market-nav {
     flex: 1 0 100%;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 100%;
+  }
+
+  .market-nav-group {
+    width: 100%;
+  }
+
+  .analysis-market-nav {
+    padding: 8px 0 0;
+    border-top: 1px solid var(--mc-line);
+    border-left: 0;
+  }
+
+  .header .actions .tabs {
+    width: max-content;
     max-width: 100%;
     overflow-x: auto;
   }

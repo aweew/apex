@@ -7,15 +7,31 @@ const mobileStyles = indexSource.slice(indexSource.indexOf('@media (max-width: 7
 
 test('market navigation exposes a global overview before regional markets', () => {
   assert.match(indexSource, /const marketTabs = \[[\s\S]*?key: 'global', label: '全球'[\s\S]*?key: 'cn'/)
+  assert.match(indexSource, /key: 'us', label: '美股'/)
+  assert.doesNotMatch(indexSource, /key: 'us', label: '美国'/)
   assert.match(indexSource, /marketTab === 'global'/)
   assert.match(indexSource, /全球市场 · 指数分布与区域走势/)
+})
+
+test('market navigation separates index quotes from A-share analysis', () => {
+  assert.match(
+    indexSource,
+    /class="market-nav-group index-market-nav"[\s\S]*?class="market-nav-label">指数行情<[\s\S]*?v-for="item in marketTabs"/,
+  )
+  assert.match(
+    indexSource,
+    /class="market-nav-group analysis-market-nav"[\s\S]*?class="market-nav-label">A股分析<[\s\S]*?>板块<\/button>[\s\S]*?>资金流<\/button>/,
+  )
+  assert.match(mobileStyles, /\.market-nav\s*\{[\s\S]*?flex-direction:\s*column;/)
+  assert.match(mobileStyles, /\.market-nav-group\s*\{[\s\S]*?width:\s*100%;/)
 })
 
 test('global overview maps market hubs and keeps quote freshness visible', () => {
   assert.match(indexSource, /class="global-overview"/)
   assert.match(indexSource, /class="world-market-map"/)
   assert.match(indexSource, /v-for="hub in globalMarketHubs"/)
-  assert.match(indexSource, /数据截至/)
+  assert.match(indexSource, /v-if="globalMarketTime"/)
+  assert.match(indexSource, /staleDataTime/)
   assert.match(indexSource, /覆盖指数/)
   assert.match(indexSource, /function fmtPointChange\(item\)[\s\S]*?derivePointChange\(item\)/)
   assert.match(indexSource, /fmtPointChange\(hub\.primary\)/)
