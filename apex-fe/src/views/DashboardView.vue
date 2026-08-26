@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { dashboardHome } from '../api/dashboard'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
-import { publishDataFreshness } from '../utils/dataFreshness.js'
+import { publishDataFreshness, staleDataTime } from '../utils/dataFreshness.js'
 const router = useRouter()
 const HOME_CACHE_KEY = 'apex.dashboard.home.v19'
 const loading = ref(false)
@@ -39,11 +39,26 @@ function writeHomeCache(data) {
 const market = computed(() => home.value?.market || null)
 const command = computed(() => home.value?.command || null)
 const isIntradayCommand = computed(() => command.value?.phase === 'IN_SESSION' && command.value?.marketDataUpdatedAt)
+const dashboardMarketTime = computed(() => staleDataTime({
+  tradeDate: isIntradayCommand.value ? command.value?.marketDataUpdatedAt : market.value?.asOf,
+  updatedAt: command.value?.marketDataUpdatedAt,
+  intraday: Boolean(isIntradayCommand.value),
+  latest: ['STALE', 'BLOCKED'].includes(command.value?.status) ? false : undefined,
+}))
 const commandOperationItems = computed(() => (command.value?.operationGuide?.items || []).slice(0, 3))
 const hasExecutableNewPosition = computed(() => commandOperationItems.value.some(
   (item) => item.code === 'BUY_CONDITIONALLY' && item.status === 'READY',
 ))
 const morningBriefing = computed(() => home.value?.morningBriefing || null)
+const morningBriefingTime = computed(() => staleDataTime({
+  tradeDate: morningBriefing.value?.tradeDate,
+  updatedAt: morningBriefing.value?.generatedAt,
+  latest: Boolean(
+    morningBriefing.value?.tradeDate
+    && morningBriefing.value.tradeDate === command.value?.tradeDate
+    && !['STALE', 'BLOCKED'].includes(command.value?.status),
+  ) || undefined,
+}))
 const breadthForecast = computed(() => home.value?.breadthForecast || null)
 const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
 const preMarketEventImpacts = computed(() => newsPulse.value?.eventImpacts || [])
@@ -65,6 +80,9 @@ const overnightIndexes = computed(() => {
 const overnightThemes = computed(() => morningBriefing.value?.marketThemes || [])
 const asiaIndexes = computed(() => morningBriefing.value?.asiaQuotes || [])
 const openingAuction = computed(() => home.value?.openingAuction || null)
+const hasOpeningAuction = computed(() => Boolean(
+  openingAuction.value?.available && openingAuction.value?.indexes?.length
+))
 const externalMarketItems = computed(() => morningBriefing.value?.externalMarketItems || [])
 const externalMarketAvailableCount = computed(
   () => externalMarketItems.value.filter((item) => item.available).length,
@@ -131,8 +149,8 @@ function fmtIndexPct(v) {
   if (v == null || v === '') return '-'
   const n = Number(v)
   if (Number.isNaN(n)) return '-'
-  const sign = n > 0 ? '+' : ''
-  return `${sign}${n.toFixed(2)}%`
+  const sign = n > 0 ? '+' : n < 0 ? '−' : ''
+  return `${sign}${Math.abs(n).toFixed(2)}%`
 }
 
 function fmtQuotePrice(v) {
@@ -317,14 +335,22 @@ function publishDashboardDataFreshness(homeData) {
   if (!commandData) return
   const level = homeData?.dataHealth?.level
     || (commandData.status === 'READY' ? 'GREEN' : commandData.status === 'STALE' || commandData.status === 'BLOCKED' ? 'RED' : 'YELLOW')
-  const marketDataAsOf = commandData.marketDataUpdatedAt
-    ? fmtCommandTime(commandData.marketDataUpdatedAt)
-    : commandData.marketDataAsOf || '-'
-  const decisionDataAsOf = fmtCommandTime(commandData.decisionDataAsOf)
+  const staleStatus = ['STALE', 'BLOCKED'].includes(commandData.status)
+  const marketDataTime = staleDataTime({
+    tradeDate: commandData.phase === 'IN_SESSION' && commandData.marketDataUpdatedAt
+      ? commandData.marketDataUpdatedAt : commandData.marketDataAsOf,
+    updatedAt: commandData.marketDataUpdatedAt,
+    intraday: commandData.phase === 'IN_SESSION',
+    latest: staleStatus ? false : undefined,
+  })
+  const decisionDataTime = staleDataTime({
+    tradeDate: commandData.decisionDataAsOf,
+    latest: staleStatus ? false : undefined,
+  })
   publishDataFreshness({
     level,
     label: `看板数据${dataLevelLabel(level)}`,
-    detail: `行情刷新 ${marketDataAsOf} · 决策数据 ${decisionDataAsOf}`,
+    detail: [marketDataTime, decisionDataTime, commandStatusLabel(commandData.status)].filter(Boolean).join(' · '),
     route: '/dashboard',
   })
 }
@@ -458,7 +484,10 @@ onMounted(() => {
       <div class="stance-glow" aria-hidden="true" />
       <div class="stance-main">
         <div class="kicker">
-          <span>市场立场 · {{ market?.asOf || (loading || refreshing ? '加载中' : '待加载') }}</span>
+          <span>
+            市场立场
+            <template v-if="dashboardMarketTime">· {{ dashboardMarketTime }}</template>
+          </span>
           <el-tag
             v-if="market"
             size="small"
@@ -736,7 +765,12 @@ onMounted(() => {
           <div class="command-column-head">
             <h4>今日重点</h4>
           </div>
-          <p class="command-headline">{{ command.preMarketSummary?.headline || '盘前结论待生成' }}</p>
+          <p
+            v-if="command.status !== 'GENERATING' && decision?.hasToday && command.preMarketSummary?.headline"
+            class="command-headline"
+          >
+            {{ command.preMarketSummary.headline }}
+          </p>
 
           <div v-if="command.preMarketSummary?.forecast?.marketOutlook" class="command-forecast">
             <span class="command-forecast-label">{{ isIntradayCommand ? '盘中判断' : '今日预测' }}</span>
@@ -778,7 +812,10 @@ onMounted(() => {
             </div>
           </div>
 
-          <div v-if="command.preMarketSummary?.watchConditions?.length" class="command-watch">
+          <div
+            v-if="command.status !== 'GENERATING' && decision?.hasToday && command.preMarketSummary?.watchConditions?.length"
+            class="command-watch"
+          >
             <span>{{ command.status === 'READY' ? '取消条件' : '恢复条件' }}</span>
             <p v-for="item in command.preMarketSummary.watchConditions" :key="`${item.title}-${item.condition}`">
               <b>{{ item.title }}</b>{{ item.condition ? `：${item.condition}` : '' }}
@@ -852,9 +889,8 @@ onMounted(() => {
             >
               {{ dataLevelLabel(morningBriefing.dataLevel) }}
             </el-tag>
-            <span class="morning-context-time">
-              <span class="morning-context-time-label">更新</span>
-              <time>{{ fmtBriefingTime(morningBriefing?.generatedAt) }}</time>
+            <span v-if="morningBriefingTime" class="morning-context-time">
+              <time>{{ morningBriefingTime }}</time>
             </span>
             <span v-if="morningBriefing?.refreshing" class="morning-context-refreshing">
               正在刷新，显示上一份晨报
@@ -871,15 +907,15 @@ onMounted(() => {
         <div class="morning-context-block overnight-block">
           <div class="morning-block-head">
             <h4>开盘影响</h4>
-            <span>竞价确认与外盘锚</span>
+            <span>{{ hasOpeningAuction ? '竞价确认与外盘锚' : '外盘锚' }}</span>
           </div>
 
-          <div class="overnight-layer">
+          <div v-if="hasOpeningAuction" class="overnight-layer">
             <div class="overnight-layer-head">
               <h5>集合竞价确认</h5>
               <span>{{ openingAuction?.stateDesc || '等待竞价状态' }}</span>
             </div>
-            <div v-if="openingAuction?.available" class="opening-auction-grid">
+            <div class="opening-auction-grid">
               <div v-for="item in openingAuction.indexes" :key="item.code" class="overnight-quote">
                 <div class="overnight-quote-name">
                   <strong>{{ item.name || item.code }}</strong>
@@ -888,7 +924,6 @@ onMounted(() => {
                 <b :class="pctDir(item.pctChg)">{{ fmtIndexPct(item.pctChg) }}</b>
               </div>
             </div>
-            <p class="opening-auction-note">集合竞价是开盘前最后确认，不以外盘信号替代。</p>
           </div>
 
           <div class="overnight-layer">
@@ -3055,13 +3090,6 @@ onMounted(() => {
   border-right: 0;
 }
 
-.opening-auction-note {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.6;
-}
-
 .external-market-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3720,12 +3748,21 @@ onMounted(() => {
     justify-content: space-between;
     gap: 10px;
     box-sizing: border-box;
-    min-height: 64px;
-    padding: 10px 12px;
+    min-height: 48px;
+    padding: 7px 10px;
+  }
+
+  .effect-cell em,
+  .effect-cell b {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    line-height: 20px;
   }
 
   .effect-cell b {
     flex: 0 0 auto;
+    justify-content: flex-end;
     text-align: right;
     white-space: nowrap;
   }

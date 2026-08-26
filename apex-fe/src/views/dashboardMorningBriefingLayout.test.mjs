@@ -23,7 +23,7 @@ test('dashboard uses command headline with legacy advice fallback and a new cach
   )
 })
 
-test('dashboard renders the structured today forecast and Asia-Pacific basis', () => {
+test('dashboard renders the structured forecast and only shows available opening-auction quotes', () => {
   assert.match(dashboardSource, /command\.preMarketSummary\?\.forecast\?\.marketOutlook/)
   assert.match(dashboardSource, /class="command-forecast"/)
   assert.match(dashboardSource, /forecast\.focusItems/)
@@ -36,9 +36,15 @@ test('dashboard renders the structured today forecast and Asia-Pacific basis', (
   assert.match(dashboardSource, /<h5>A股盘前<\/h5>/)
   assert.match(dashboardSource, /富时 A50 期指连续暂未获取/)
   assert.match(dashboardSource, /const openingAuction\s*=\s*computed\(/)
+  assert.match(
+    dashboardSource,
+    /const hasOpeningAuction\s*=\s*computed\(\(\)\s*=>\s*Boolean\([\s\S]{0,120}?openingAuction\.value\?\.available[\s\S]{0,100}?openingAuction\.value\?\.indexes\?\.length/s,
+  )
+  assert.match(dashboardSource, /<div v-if="hasOpeningAuction" class="overnight-layer">/)
   assert.match(dashboardSource, /<h5>集合竞价确认<\/h5>/)
   assert.match(dashboardSource, /v-for="item in openingAuction\.indexes"/)
-  assert.match(dashboardSource, /集合竞价是开盘前最后确认，不以外盘信号替代/)
+  assert.doesNotMatch(dashboardSource, /集合竞价是开盘前最后确认，不以外盘信号替代/)
+  assert.doesNotMatch(dashboardSource, /opening-auction-note/)
 })
 
 test('dashboard separates external environment signals and explains their A-share impact', () => {
@@ -106,11 +112,20 @@ test('dashboard renders position controls and at most three command actions in b
   assert.match(dashboardSource, /v-if="!commandOperationItems\.length" class="command-guide-summary"/)
 })
 
-test('dashboard labels focus and actions without filler wording', () => {
+test('dashboard hides decision placeholders while a new decision is generating', () => {
   assert.match(dashboardSource, /<h4>今日重点<\/h4>/)
   assert.doesNotMatch(dashboardSource, /class="command-directions"/)
   assert.doesNotMatch(dashboardSource, /preMarketSummary\.opportunityItems/)
   assert.doesNotMatch(dashboardSource, /preMarketSummary\.riskItems/)
+  assert.match(
+    dashboardSource,
+    /<p\s+v-if="command\.status !== 'GENERATING' && decision\?\.hasToday && command\.preMarketSummary\?\.headline"\s+class="command-headline"\s*>/s,
+  )
+  assert.match(
+    dashboardSource,
+    /<div\s+v-if="command\.status !== 'GENERATING' && decision\?\.hasToday && command\.preMarketSummary\?\.watchConditions\?\.length"\s+class="command-watch"\s*>/s,
+  )
+  assert.doesNotMatch(dashboardSource, /盘前结论待生成/)
   assert.match(dashboardSource, /command\.status === 'READY' \? '取消条件' : '恢复条件'/)
   assert.match(dashboardSource, /<h4>执行清单<\/h4>/)
 })
@@ -280,24 +295,28 @@ test('mobile market overview balances labels and values across each card', () =>
   )
 })
 
-test('mobile money effect cards place values on the right and fill the last row', () => {
+test('mobile money effect cards stay compact and vertically center signed values', () => {
   const phoneStylesStart = dashboardSource.indexOf('@media (max-width: 560px) {')
   const phoneStylesEnd = dashboardSource.indexOf('@media (max-width: 900px) {', phoneStylesStart)
   const phoneStyles = dashboardSource.slice(phoneStylesStart, phoneStylesEnd)
 
   assert.match(
     phoneStyles,
-    /\.effect-cell\s*\{[^}]*flex-direction:\s*row;[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between;/s,
+    /\.effect-cell\s*\{[^}]*flex-direction:\s*row;[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between;[^}]*min-height:\s*48px;/s,
   )
-  assert.match(phoneStyles, /\.effect-cell b\s*\{[^}]*text-align:\s*right;[^}]*white-space:\s*nowrap;/s)
+  assert.match(phoneStyles, /\.effect-cell em,\s*\.effect-cell b\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*min-height:\s*20px;/s)
+  assert.match(phoneStyles, /\.effect-cell b\s*\{[^}]*justify-content:\s*flex-end;[^}]*text-align:\s*right;[^}]*white-space:\s*nowrap;/s)
   assert.match(
     phoneStyles,
     /\.effect-cell:last-child:nth-child\(odd\)\s*\{[^}]*grid-column:\s*1 \/ -1;/s,
   )
+  assert.match(dashboardSource, /const sign = n > 0 \? '\+' : n < 0 \? '−' : ''/)
+  assert.match(dashboardSource, /`\$\{sign\}\$\{Math\.abs\(n\)\.toFixed\(2\)\}%`/)
 })
 
 test('dashboard morning context leads with a conclusion and keeps supporting evidence quiet', () => {
-  assert.match(dashboardSource, /class="morning-context-time-label">更新<\/span>/)
+  assert.match(dashboardSource, /<span v-if="morningBriefingTime" class="morning-context-time">/)
+  assert.match(dashboardSource, /<time>\{\{ morningBriefingTime \}\}<\/time>/)
   assert.match(dashboardSource, /class="morning-news-lead"/)
   assert.match(dashboardSource, /class="morning-news-summary-label">核心结论<\/span>/)
   assert.match(
