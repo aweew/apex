@@ -142,7 +142,7 @@ const effect = computed(() => briefing.value?.effect || null)
 const hotThemes = computed(() => normalizeHotThemes(briefing.value))
 const volumeChangeText = computed(() => formatVolumeChangeText(briefing.value))
 
-/** 赚钱效应五指标（展示用） */
+/** 赚钱效应六指标（展示用） */
 const effectMetrics = computed(() => {
   const e = effect.value
   if (!e) return []
@@ -151,6 +151,7 @@ const effectMetrics = computed(() => {
     { key: 'median', label: '中位数', tip: '880009口径', value: e.medianPctChg },
     { key: 'eq', label: '全A等权', tip: '800010 / 全A截面算术平均', value: e.equalWeightPctChg },
     { key: 'micro', label: '微盘股', tip: '800007≈880823', value: e.microPctChg ?? e.csi2000PctChg },
+    { key: 'csi1000', label: '中证1000', tip: '000852', value: e.csi1000PctChg },
     { key: 'hs300', label: '沪深300', tip: '000300', value: e.hs300PctChg },
   ]
 })
@@ -1783,7 +1784,7 @@ onBeforeUnmount(() => {
 
 .pulse-effect-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -2434,7 +2435,7 @@ onBeforeUnmount(() => {
   }
 
   .pulse-effect-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0;
     overflow: hidden;
     border: 1px solid var(--mc-line);
@@ -2461,6 +2462,20 @@ onBeforeUnmount(() => {
     bottom: 10px;
     left: 0;
     width: 1px;
+    background: var(--mc-line);
+    content: '';
+  }
+
+  .pulse-effect-grid .metric:nth-child(3n + 1)::before {
+    display: none;
+  }
+
+  .pulse-effect-grid .metric:nth-child(n + 4)::after {
+    position: absolute;
+    top: 0;
+    right: 10px;
+    left: 10px;
+    height: 1px;
     background: var(--mc-line);
     content: '';
   }

@@ -787,7 +787,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     }
 
     /**
-     * 覆盖赚钱效应：平均股价800005 / 中位数880009口径 / 等权800010 / 微盘800007 / 沪深300
+     * 覆盖赚钱效应：平均股价800005 / 中位数880009口径 / 等权800010 / 微盘800007 /
+     * 中证1000 / 沪深300
      */
     private MarketBriefingResp overlayLiveEffect(MarketBriefingResp resp) {
         if (Objects.isNull(resp)) {
@@ -811,18 +812,20 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 return cachedMarketEffect;
             }
         }
-        // 1. 四指数：平均股价 / 全A等权 / 微盘 / 沪深300
+        // 1. 五指数：平均股价 / 全A等权 / 微盘 / 中证1000 / 沪深300
         Map<String, LiveIndexQuote> indexMap = fetchLiveIndexBatch(
-                "47.800005,47.800010,47.800007,1.000300");
+                "47.800005,47.800010,47.800007,1.000852,1.000300");
         LiveIndexQuote avgPriceIdx = indexMap.get("800005");
         LiveIndexQuote equalWeightIdx = indexMap.get("800010");
         LiveIndexQuote microIdx = indexMap.get("800007");
+        LiveIndexQuote csi1000Idx = indexMap.get("000852");
         LiveIndexQuote hs300Idx = indexMap.get("000300");
 
         BigDecimal avgPrice = Objects.nonNull(avgPriceIdx) ? avgPriceIdx.close : null;
         BigDecimal avgPct = Objects.nonNull(avgPriceIdx) ? avgPriceIdx.pctChg : null;
         BigDecimal equalWeightPct = Objects.nonNull(equalWeightIdx) ? equalWeightIdx.pctChg : null;
         BigDecimal microPct = Objects.nonNull(microIdx) ? microIdx.pctChg : null;
+        BigDecimal csi1000Pct = Objects.nonNull(csi1000Idx) ? csi1000Idx.pctChg : null;
         BigDecimal hsPct = Objects.nonNull(hs300Idx) ? hs300Idx.pctChg : null;
 
         // 2. 中位数：全A截面（880009 口径）
@@ -874,7 +877,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         BigDecimal microVsLarge = MarketBriefingMath.microVsLarge(microPct, hsPct);
         String hint = MarketBriefingMath.effectHint(medianPct, microVsLarge, microPct);
         if (Objects.isNull(avgPct) && Objects.isNull(medianPct) && Objects.isNull(equalWeightPct)
-                && Objects.isNull(microPct) && Objects.isNull(hsPct)) {
+                && Objects.isNull(microPct) && Objects.isNull(csi1000Pct) && Objects.isNull(hsPct)) {
             return null;
         }
         MarketEffectResp effect = MarketEffectResp.builder()
@@ -886,6 +889,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .sampleSize(sampleSize)
                 .csi2000PctChg(microPct)
                 .csi2000Close(Objects.nonNull(microIdx) ? microIdx.close : null)
+                .csi1000PctChg(csi1000Pct)
                 .hs300PctChg(hsPct)
                 .microVsLargePct(microVsLarge)
                 .strongUpCount(strongUp)

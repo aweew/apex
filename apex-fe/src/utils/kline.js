@@ -5,6 +5,67 @@ export function defaultVisibleStart(barCount, visibleBars = 60) {
   return Number((((count - visibleBars) / count) * 100).toFixed(2))
 }
 
+/** 根据 dataZoom 百分比计算当前可见 K 线根数 */
+export function visibleBarCount(barCount, startPct, endPct) {
+  const count = Number(barCount)
+  if (!Number.isFinite(count) || count <= 0) return 0
+  const start = Math.max(0, Math.min(100, Number(startPct) || 0))
+  const end = Math.max(start, Math.min(100, Number(endPct) || 0))
+  return Math.max(1, Math.min(count, Math.round((count * (end - start)) / 100)))
+}
+
+/**
+ * 计算按钮缩放后的 dataZoom 窗口。
+ * 靠近最新行情时固定右边界，查看历史区间时以当前窗口中心为锚点。
+ */
+export function nextKlineZoomRange(
+  barCount,
+  startPct,
+  endPct,
+  direction,
+  minVisibleBars = 12,
+) {
+  const count = Number(barCount)
+  if (!Number.isFinite(count) || count <= 0) return { start: 0, end: 100 }
+  const start = Math.max(0, Math.min(100, Number(startPct) || 0))
+  const end = Math.max(start, Math.min(100, Number(endPct) || 0))
+  const currentBars = visibleBarCount(count, start, end)
+  const minimumBars = Math.min(count, Math.max(1, Number(minVisibleBars) || 12))
+  let nextBars = currentBars
+  if (direction === 'in' && currentBars > minimumBars) {
+    nextBars = Math.max(minimumBars, Math.round(currentBars * 0.8))
+  }
+  if (direction === 'out') nextBars = Math.min(count, Math.round(currentBars / 0.8))
+  if (nextBars === currentBars) return { start, end }
+
+  const nextWidth = (nextBars / count) * 100
+  let nextStart
+  let nextEnd
+  if (end >= 99.5) {
+    nextEnd = 100
+    nextStart = 100 - nextWidth
+  } else if (start <= 0.5) {
+    nextStart = 0
+    nextEnd = nextWidth
+  } else {
+    const center = (start + end) / 2
+    nextStart = center - nextWidth / 2
+    nextEnd = center + nextWidth / 2
+    if (nextStart < 0) {
+      nextEnd -= nextStart
+      nextStart = 0
+    }
+    if (nextEnd > 100) {
+      nextStart -= nextEnd - 100
+      nextEnd = 100
+    }
+  }
+  return {
+    start: Number(Math.max(0, nextStart).toFixed(2)),
+    end: Number(Math.min(100, nextEnd).toFixed(2)),
+  }
+}
+
 /** 交易日归属桶：日 / 自然周(周一) / 月 */
 export function periodBucket(tradeDate, period) {
   const text = String(tradeDate || '')

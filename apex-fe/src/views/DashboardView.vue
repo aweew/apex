@@ -714,7 +714,7 @@ onMounted(() => {
       <div class="effect-head">
         <span class="effect-title"><TermTip term="money_effect">赚钱效应</TermTip></span>
         <span v-if="effect.hint" class="effect-hint">{{ effect.hint }}</span>
-        <span v-else class="effect-hint muted">平均股价 · 中位数 · 全A等权 · 微盘股 · 沪深300</span>
+        <span v-else class="effect-hint muted">平均股价 · 中位数 · 全A等权 · 微盘股 · 中证1000 · 沪深300</span>
       </div>
       <div class="effect-grid">
         <div class="effect-cell" :class="pctDir(effect.avgPctChg)" title="800005 平均股价指数涨跌幅">
@@ -732,6 +732,10 @@ onMounted(() => {
         <div class="effect-cell" :class="pctDir(effect.microPctChg ?? effect.csi2000PctChg)" title="800007 Choice微盘，对齐 880823">
           <em>微盘股</em>
           <b>{{ fmtIndexPct(effect.microPctChg ?? effect.csi2000PctChg) }}</b>
+        </div>
+        <div class="effect-cell" :class="pctDir(effect.csi1000PctChg)" title="000852 中证1000">
+          <em>中证1000</em>
+          <b>{{ fmtIndexPct(effect.csi1000PctChg) }}</b>
         </div>
         <div class="effect-cell" :class="pctDir(effect.hs300PctChg)" title="000300 沪深300">
           <em>沪深300</em>
@@ -2389,7 +2393,7 @@ onMounted(() => {
 
 .effect-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
 }
 

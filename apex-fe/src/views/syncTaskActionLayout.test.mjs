@@ -33,18 +33,20 @@ test('sync task cards separate last execution from data health and keep controls
     syncSource,
     /\.task-card\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*198px;/,
   )
-  assert.match(
-    syncSource,
-    /\.task-health\s*\{[\s\S]*?min-height:\s*20px;[\s\S]*?margin-top:\s*auto;/,
-  )
+  const taskHealthStyles = syncSource.match(/\.task-health\s*\{([\s\S]*?)\}/)?.[1] || ''
+  assert.match(taskHealthStyles, /flex-wrap:\s*wrap;/)
+  assert.match(taskHealthStyles, /min-height:\s*20px;/)
+  assert.match(taskHealthStyles, /margin-top:\s*auto;/)
   assert.match(
     syncSource,
     /\.health-label\s*\{[\s\S]*?flex-shrink:\s*0;[\s\S]*?white-space:\s*nowrap;/,
   )
-  assert.match(
-    syncSource,
-    /\.health-time\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;/,
-  )
+  const healthTimeStyles = syncSource.match(/\.health-time\s*\{([\s\S]*?)\}/)?.[1] || ''
+  assert.match(healthTimeStyles, /flex:\s*1 1 180px;/)
+  assert.match(healthTimeStyles, /white-space:\s*normal;/)
+  assert.match(healthTimeStyles, /font-variant-numeric:\s*tabular-nums;/)
+  assert.doesNotMatch(healthTimeStyles, /overflow:\s*hidden;/)
+  assert.doesNotMatch(healthTimeStyles, /text-overflow:\s*ellipsis;/)
 })
 
 test('recent sync start times keep date and time on stable separate lines', () => {

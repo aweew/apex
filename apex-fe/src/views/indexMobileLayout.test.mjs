@@ -13,10 +13,11 @@ const mobileStyles = indexSource.slice(
   indexSource.indexOf('@media (max-width: 560px)'),
 )
 
-test('mobile money effect metrics stay in one aligned five-column strip', () => {
-  assert.match(phoneStyles, /\.pulse-effect-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/)
+test('mobile money effect metrics stay in an aligned three-column grid', () => {
+  assert.match(phoneStyles, /\.pulse-effect-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/)
   assert.match(phoneStyles, /\.pulse-effect-grid\s*\{[\s\S]*?gap:\s*0;/)
   assert.match(phoneStyles, /\.metric \+ \.metric::before\s*\{[\s\S]*?background:\s*var\(--mc-line\);/)
+  assert.match(phoneStyles, /\.metric:nth-child\(n \+ 4\)::after\s*\{[\s\S]*?background:\s*var\(--mc-line\);/)
   assert.doesNotMatch(mobileStyles, /\.pulse-effect-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,/)
 })
 

@@ -667,6 +667,7 @@ onUnmounted(stopPoll)
 .task-health {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   min-height: 20px;
   margin-top: auto;
@@ -722,12 +723,11 @@ span.health-unknown {
 }
 
 .health-time {
+  flex: 1 1 180px;
   min-width: 0;
   color: var(--muted);
   margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
   font-variant-numeric: tabular-nums;
 }
 

@@ -1,12 +1,36 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { aggregateBars, defaultVisibleStart, periodBucket, tdSequential } from './kline.js'
+import {
+  aggregateBars,
+  defaultVisibleStart,
+  nextKlineZoomRange,
+  periodBucket,
+  tdSequential,
+  visibleBarCount,
+} from './kline.js'
 
 test('defaultVisibleStart keeps roughly three months of daily bars visible', () => {
   assert.equal(defaultVisibleStart(40), 0)
   assert.equal(defaultVisibleStart(60), 0)
   assert.equal(defaultVisibleStart(120), 50)
   assert.equal(defaultVisibleStart(500), 88)
+})
+
+test('K-line zoom keeps the latest bar anchored and changes visible bars by one level', () => {
+  assert.equal(visibleBarCount(100, 40, 100), 60)
+  assert.deepEqual(nextKlineZoomRange(100, 40, 100, 'in'), { start: 52, end: 100 })
+  assert.deepEqual(nextKlineZoomRange(100, 40, 100, 'out'), { start: 25, end: 100 })
+})
+
+test('K-line zoom uses the current center away from either data edge', () => {
+  assert.deepEqual(nextKlineZoomRange(100, 20, 80, 'in'), { start: 26, end: 74 })
+  assert.deepEqual(nextKlineZoomRange(100, 20, 80, 'out'), { start: 12.5, end: 87.5 })
+})
+
+test('K-line zoom stops at twelve bars and the full data range', () => {
+  assert.deepEqual(nextKlineZoomRange(100, 88, 100, 'in'), { start: 88, end: 100 })
+  assert.deepEqual(nextKlineZoomRange(100, 94, 100, 'in'), { start: 94, end: 100 })
+  assert.deepEqual(nextKlineZoomRange(100, 0, 100, 'out'), { start: 0, end: 100 })
 })
 
 test('periodBucket week uses Monday', () => {

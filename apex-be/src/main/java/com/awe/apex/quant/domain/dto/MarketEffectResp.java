@@ -8,9 +8,10 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 
 /**
- * 赚钱效应观测（通达信风格五指数口径）
+ * 赚钱效应观测（通达信风格六指标口径）
  * <p>
- * 展示：平均股价(800005) / 中位数(880009口径) / 全A等权(800010) / 微盘(800007) / 沪深300(000300)
+ * 展示：平均股价(800005) / 中位数(880009口径) / 全A等权(800010) / 微盘(800007) /
+ * 中证1000(000852) / 沪深300(000300)
  */
 @Data
 @Builder
@@ -57,6 +58,11 @@ public class MarketEffectResp {
      * 微盘指数点位
      */
     private BigDecimal csi2000Close;
+
+    /**
+     * 中证1000涨跌幅%（000852）
+     */
+    private BigDecimal csi1000PctChg;
 
     /**
      * 沪深300涨跌幅%（000300）

@@ -3,7 +3,15 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { Refresh, Star, TrendCharts, Wallet } from '@element-plus/icons-vue'
+import {
+  Refresh,
+  RefreshLeft,
+  Star,
+  TrendCharts,
+  Wallet,
+  ZoomIn,
+  ZoomOut,
+} from '@element-plus/icons-vue'
 import {
   fetchCompanyProfile,
   fetchStockDetail,
@@ -15,7 +23,13 @@ import {
 import { syncBarsFast } from '../api/bars'
 import { saveObserve } from '../api/observe'
 import { fetchTradeMarkers } from '../api/trade'
-import { aggregateBars, defaultVisibleStart, tdSequential } from '../utils/kline'
+import {
+  aggregateBars,
+  defaultVisibleStart,
+  nextKlineZoomRange,
+  tdSequential,
+  visibleBarCount,
+} from '../utils/kline'
 import { buildTradeMarkerSeries } from '../utils/tradeMarkers'
 import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceStructure'
 import { stockSyncSummary, synchronizeStockData } from '../utils/stockSync'
@@ -49,7 +63,7 @@ const rs20 = ref(null)
 const rs60 = ref(null)
 const volumeRatio = ref(null)
 const chartRef = ref(null)
-const activeTab = ref(['valuation', 'factors'].includes(route.query.tab) ? route.query.tab : 'chart')
+const activeTab = ref(['summary', 'valuation', 'factors'].includes(route.query.tab) ? route.query.tab : 'chart')
 const fund = ref(null)
 const profile = ref(null)
 const macdTip = ref('')
@@ -72,6 +86,7 @@ const tdShowMode = ref('key')
 const isMobileChart = ref(window.matchMedia('(max-width: 820px)').matches)
 const chartParamsExpanded = ref(!isMobileChart.value)
 const BAR_LIMIT = 500
+const MIN_VISIBLE_BARS = 12
 const CHART_PREF_KEY = 'apex.stock.chartPrefs'
 const META_EXPAND_KEY = 'apex.stock.metaExpanded'
 const metaExpanded = ref(localStorage.getItem(META_EXPAND_KEY) === '1')
@@ -106,7 +121,7 @@ const MA_NAMES = MA_META.map((item) => item.name)
 let chart
 let syncingFromLegend = false
 let resetZoomNext = true
-let savedZoom = { start: 0, end: 100 }
+const savedZoom = ref({ start: 0, end: 100 })
 let intradayPollTimer = null
 /** 当前图数据，供可视区高低点随缩放更新 */
 let chartPayload = null
@@ -119,6 +134,15 @@ const showChartShell = computed(() => bars.value.length > 0 || isIntraday.value)
 const chartBars = computed(() =>
   isIntraday.value ? [] : aggregateBars(bars.value, klinePeriod.value),
 )
+const visibleZoomBarCount = computed(() => visibleBarCount(
+  chartBars.value.length,
+  savedZoom.value.start,
+  savedZoom.value.end,
+))
+const canZoomIn = computed(() => (
+  visibleZoomBarCount.value > Math.min(chartBars.value.length, MIN_VISIBLE_BARS)
+))
+const canZoomOut = computed(() => visibleZoomBarCount.value < chartBars.value.length)
 const priceStructure = computed(() =>
   analyzePriceStructure(bars.value, basic.value?.latestPrice),
 )
@@ -230,7 +254,7 @@ function captureZoom() {
   if (!Array.isArray(dz) || !dz.length) return
   const start = Number(dz[0].start)
   const end = Number(dz[0].end)
-  if (!Number.isNaN(start) && !Number.isNaN(end)) savedZoom = { start, end }
+  if (!Number.isNaN(start) && !Number.isNaN(end)) savedZoom.value = { start, end }
 }
 
 /** dataZoom 百分比 → 可视下标区间（含端点） */
@@ -326,8 +350,19 @@ function updateVisibleWindow() {
   if (!chart || !chartPayload) return
   captureZoom()
   const { dates, highs, lows } = chartPayload
-  const markPoint = buildVisibleExtremeMarkPoint(dates, highs, lows, savedZoom.start, savedZoom.end)
-  const extent = calcVisiblePriceExtent(highs, lows, savedZoom.start, savedZoom.end)
+  const markPoint = buildVisibleExtremeMarkPoint(
+    dates,
+    highs,
+    lows,
+    savedZoom.value.start,
+    savedZoom.value.end,
+  )
+  const extent = calcVisiblePriceExtent(
+    highs,
+    lows,
+    savedZoom.value.start,
+    savedZoom.value.end,
+  )
   chart.setOption({
     yAxis: [
       {
@@ -365,13 +400,17 @@ async function loadIntraday(silent = false) {
   } catch (e) {
     intraday.value = null
     intradayAsOf.value = ''
-    if (isIntraday.value && !silent) {
+    if ((isIntraday.value || activeTab.value === 'summary') && !silent) {
       disposeChart()
       ElMessage.error(e.message || '分时加载失败')
     }
   } finally {
     if (!silent) intradayLoading.value = false
   }
+}
+
+function onStockCardPeriodChange(period) {
+  if (period === 'intraday' && !intradayPoints.value.length) loadIntraday()
 }
 
 function startIntradayPoll() {
@@ -616,8 +655,27 @@ function resetChartView() {
     return
   }
   resetZoomNext = true
-  savedZoom = { start: defaultVisibleStart(chartBars.value.length), end: 100 }
+  savedZoom.value = { start: defaultVisibleStart(chartBars.value.length), end: 100 }
   if (bars.value.length && activeTab.value === 'chart') refreshChart()
+}
+
+function zoomChart(direction) {
+  if (!chart || isIntraday.value || !chartBars.value.length) return
+  captureZoom()
+  const nextZoom = nextKlineZoomRange(
+    chartBars.value.length,
+    savedZoom.value.start,
+    savedZoom.value.end,
+    direction,
+    MIN_VISIBLE_BARS,
+  )
+  if (nextZoom.start === savedZoom.value.start && nextZoom.end === savedZoom.value.end) return
+  savedZoom.value = nextZoom
+  chart.dispatchAction({
+    type: 'dataZoom',
+    start: nextZoom.start,
+    end: nextZoom.end,
+  })
 }
 
 function bindChartEvents() {
@@ -1050,10 +1108,11 @@ async function renderChart(list) {
   let zoomStart = defaultVisibleStart(list.length)
   let zoomEnd = 100
   if (!resetZoomNext && list.length > 0) {
-    zoomStart = savedZoom.start
-    zoomEnd = savedZoom.end
+    zoomStart = savedZoom.value.start
+    zoomEnd = savedZoom.value.end
   }
   resetZoomNext = false
+  savedZoom.value = { start: zoomStart, end: zoomEnd }
   const extremeMarkPoint = buildVisibleExtremeMarkPoint(dates, highs, lows, zoomStart, zoomEnd)
   const priceExtent = calcVisiblePriceExtent(highs, lows, zoomStart, zoomEnd)
   const compactPriceLabels = isMobileChart.value || chartRef.value?.clientWidth < 680
@@ -1348,8 +1407,22 @@ async function renderChart(list) {
       },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1, 2, 3], start: zoomStart, end: zoomEnd },
-      { show: true, xAxisIndex: [0, 1, 2, 3], type: 'slider', top: '94%', start: zoomStart, end: zoomEnd },
+      {
+        type: 'inside',
+        xAxisIndex: [0, 1, 2, 3],
+        start: zoomStart,
+        end: zoomEnd,
+        minValueSpan: Math.min(MIN_VISIBLE_BARS, list.length),
+      },
+      {
+        show: true,
+        xAxisIndex: [0, 1, 2, 3],
+        type: 'slider',
+        top: '94%',
+        start: zoomStart,
+        end: zoomEnd,
+        minValueSpan: Math.min(MIN_VISIBLE_BARS, list.length),
+      },
     ],
     series: [
       {
@@ -2023,6 +2096,16 @@ function dash(v) {
           :stock-code="String(basic?.code || code).trim()"
         />
       </el-tab-pane>
+      <el-tab-pane label="行情卡片" name="summary">
+        <StockDetailCard
+          v-if="activeTab === 'summary'"
+          :basic="basic || { code }"
+          :bars="bars"
+          :intraday="intraday"
+          :loading="intradayLoading"
+          @period-change="onStockCardPeriodChange"
+        />
+      </el-tab-pane>
       <el-tab-pane label="行情图表" name="chart">
         <el-empty
           v-if="!loading && !bars.length && !isIntraday"
@@ -2063,9 +2146,37 @@ function dash(v) {
                   <path d="m6 9 6 6 6-6" />
                 </svg>
               </button>
-              <el-button size="small" text type="primary" class="reset-view" @click="resetChartView">
-                重置视野
-              </el-button>
+              <div v-if="!isIntraday" class="chart-zoom-controls" role="group" aria-label="K线缩放">
+                <el-tooltip content="缩小 K 线，显示更多" placement="top">
+                  <el-button
+                    size="small"
+                    class="chart-zoom-button"
+                    :icon="ZoomOut"
+                    aria-label="缩小K线"
+                    :disabled="!canZoomOut"
+                    @click="zoomChart('out')"
+                  />
+                </el-tooltip>
+                <el-tooltip content="放大 K 线，显示更少" placement="top">
+                  <el-button
+                    size="small"
+                    class="chart-zoom-button"
+                    :icon="ZoomIn"
+                    aria-label="放大K线"
+                    :disabled="!canZoomIn"
+                    @click="zoomChart('in')"
+                  />
+                </el-tooltip>
+                <el-tooltip content="还原默认视野" placement="top">
+                  <el-button
+                    size="small"
+                    class="chart-zoom-button"
+                    :icon="RefreshLeft"
+                    aria-label="还原默认视野"
+                    @click="resetChartView"
+                  />
+                </el-tooltip>
+              </div>
             </div>
             <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
             <span v-if="intradayDataTime" class="intraday-asof">{{ intradayDataTime }}</span>
@@ -3002,9 +3113,21 @@ function dash(v) {
   margin-left: -4px;
 }
 
-.reset-view {
-  margin-left: 0;
-  font-weight: 600;
+.chart-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.chart-zoom-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  border-radius: 6px;
 }
 
 .period-meta {
@@ -3257,6 +3380,14 @@ function dash(v) {
     margin: 0;
     padding: 0 10px;
     font-size: 13px;
+  }
+
+  .chart-zoom-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
   }
 
   .chart-advanced-controls {

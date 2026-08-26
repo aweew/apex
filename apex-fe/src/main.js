@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, defineAsyncComponent } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
@@ -10,7 +10,9 @@ import StockIdentity from './components/StockIdentity.vue'
 import './style.css'
 
 const app = createApp(App)
+const StockDetailCard = defineAsyncComponent(() => import('./components/StockDetailCard.vue'))
 app.component('TermTip', TermTip)
 app.component('ScoreBar', ScoreBar)
 app.component('StockIdentity', StockIdentity)
+app.component('StockDetailCard', StockDetailCard)
 app.use(createPinia()).use(router).use(ElementPlus).mount('#app')
