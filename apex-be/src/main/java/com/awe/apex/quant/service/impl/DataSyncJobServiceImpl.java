@@ -1092,11 +1092,20 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         try {
             BarSyncResp barResponse = barDailyService.syncStaleCodes(new ArrayList<>(barCodes));
             int failCount = Objects.nonNull(barResponse.getFailCount()) ? barResponse.getFailCount() : 0;
+            int deferredCount = Objects.nonNull(barResponse.getDeferredCount())
+                    ? barResponse.getDeferredCount() : 0;
+            int successCount = Objects.nonNull(barResponse.getSuccessCount())
+                    ? barResponse.getSuccessCount() : 0;
+            appendLog(job, "[收盘后处理] 共享日线完成：成功 " + successCount + " 项，失败 "
+                    + failCount + " 项，待补齐 " + deferredCount + " 项\n");
+            if (deferredCount > 0) {
+                appendLog(job, "[警告] 共享日线仍有 " + deferredCount + " 项待后续补齐\n");
+            }
             if (failCount > 0) {
                 throw new BusinessException("共享日线刷新失败 " + failCount + " 项");
             }
             log.info("收盘任务共享日线完成，证券数={}，成功数={}，耗时毫秒={}",
-                    barCodes.size(), barResponse.getSuccessCount(), System.currentTimeMillis() - barStartedAt);
+                    barCodes.size(), successCount, System.currentTimeMillis() - barStartedAt);
         } catch (Exception ex) {
             barSuccess = false;
             recordPostProcessingFailure(job, "共享日线", ex, failureMessages,

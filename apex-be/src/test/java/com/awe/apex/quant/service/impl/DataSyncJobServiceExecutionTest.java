@@ -292,6 +292,47 @@ class DataSyncJobServiceExecutionTest {
     }
 
     @Test
+    void sharedBarDeferralKeepsCloseBundleSuccessfulAndLogsWarning() throws Exception {
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(7L));
+        when(watchlistService.listWatchlistCodes("我的自选")).thenReturn(List.of("600000", "600001"));
+        when(barDailyService.syncStaleCodes(any())).thenReturn(BarSyncResp.builder()
+                .successCount(1)
+                .failCount(0)
+                .deferredCount(1)
+                .barCount(6)
+                .build());
+
+        SyncJob result = runCloseBundle("exit 0\n");
+
+        assertEquals("SUCCESS", result.getStatus());
+        assertTrue(result.getLogTail().contains("[警告] 共享日线仍有 1 项待后续补齐"), result::toString);
+        assertTrue(result.getLogTail().contains("共享日线完成：成功 1 项，失败 0 项，待补齐 1 项"),
+                result::toString);
+        verify(portfolioService).snapshotAll();
+    }
+
+    @Test
+    void sharedBarFailureOnlyReportsActualFailuresWhenOtherCodesAreDeferred() throws Exception {
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(7L));
+        when(watchlistService.listWatchlistCodes("我的自选")).thenReturn(List.of("600000", "600001"));
+        when(barDailyService.syncStaleCodes(any())).thenReturn(BarSyncResp.builder()
+                .successCount(0)
+                .failCount(1)
+                .deferredCount(1)
+                .barCount(0)
+                .build());
+
+        SyncJob result = runCloseBundle("exit 0\n");
+
+        assertEquals("PARTIAL", result.getStatus());
+        assertTrue(result.getMessage().contains("共享日线刷新失败 1 项"), result::toString);
+        assertTrue(result.getLogTail().contains("共享日线完成：成功 0 项，失败 1 项，待补齐 1 项"),
+                result::toString);
+        assertTrue(result.getLogTail().contains("[警告] 共享日线仍有 1 项待后续补齐"), result::toString);
+        verify(portfolioService).snapshotAll();
+    }
+
+    @Test
     void closeBundleDeduplicatesSharedMarketWorkAcrossUsers() throws Exception {
         when(userAuthService.listEnabledUserIds()).thenReturn(List.of(1L, 2L));
         when(watchlistService.listWatchlistCodes("我的自选")).thenAnswer(invocation ->

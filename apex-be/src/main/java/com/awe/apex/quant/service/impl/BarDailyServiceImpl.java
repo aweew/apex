@@ -56,6 +56,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     private static final int MAX_SYNC_CODES = 80;
     private static final int INITIAL_SYNC_LOOKBACK_DAYS = 400;
     private static final int RECENT_SYNC_OVERLAP_DAYS = 7;
+    private static final int GROUP_TIMEOUT_SECONDS = 25;
 
     private final Set<String> syncingCodes = ConcurrentHashMap.newKeySet();
 
@@ -247,6 +248,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 .fetchedAt(LocalDateTime.now())
                 .successCount(0)
                 .failCount(0)
+                .deferredCount(0)
                 .barCount(0)
                 .details(List.of("无过期/缺失日线需要同步"))
                 .build();
@@ -308,16 +310,16 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
             for (int groupStart = 0; groupStart < codes.size(); groupStart += MAX_PARALLEL) {
                 int groupEnd = Math.min(groupStart + MAX_PARALLEL, codes.size());
                 List<String> groupCodes = codes.subList(groupStart, groupEnd);
-                int remainingGroupCount = (codes.size() - groupStart + MAX_PARALLEL - 1) / MAX_PARALLEL;
                 long remainingNanos = deadlineNanos - System.nanoTime();
                 if (remainingNanos <= 0) {
                     for (int index = groupStart; index < codes.size(); index++) {
                         String code = codes.get(index);
-                        items.add(new SyncItem(code, false, 0, code + " TIMEOUT"));
+                        items.add(new SyncItem(code, false, true, 0, code + " DEFERRED"));
                     }
                     break;
                 }
-                long groupTimeoutNanos = Math.max(1L, remainingNanos / remainingGroupCount);
+                long groupTimeoutNanos = Math.min(
+                        TimeUnit.SECONDS.toNanos(GROUP_TIMEOUT_SECONDS), remainingNanos);
                 List<Callable<SyncItem>> tasks = new ArrayList<>();
                 for (String code : groupCodes) {
                     tasks.add(() -> syncOne(code, beginDateRaw, end, preferFastSource));
@@ -328,13 +330,13 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                     Future<SyncItem> future = futures.get(index);
                     String code = groupCodes.get(index);
                     if (future.isCancelled()) {
-                        items.add(new SyncItem(code, false, 0, code + " TIMEOUT"));
+                        items.add(new SyncItem(code, false, false, 0, code + " TIMEOUT"));
                         continue;
                     }
                     try {
                         items.add(future.get());
                     } catch (Exception ex) {
-                        items.add(new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage()));
+                        items.add(new SyncItem(code, false, false, 0, code + " FAIL: " + ex.getMessage()));
                     }
                 }
             }
@@ -347,11 +349,14 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
 
         int successCount = 0;
         int failCount = 0;
+        int deferredCount = 0;
         int barCount = 0;
         List<String> details = new ArrayList<>();
         for (SyncItem item : items) {
             details.add(item.detail);
-            if (item.ok) {
+            if (item.deferred) {
+                deferredCount++;
+            } else if (item.ok) {
                 successCount++;
                 barCount += item.barCount;
             } else {
@@ -359,12 +364,14 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
             }
         }
 
-        String status = failCount == 0 ? "SUCCESS" : (successCount == 0 ? "FAIL" : "PARTIAL");
-        // 多数走新浪；仅当明细里完全没有新浪成功标记时才记东财
+        String status = failCount == 0 && deferredCount == 0
+                ? "SUCCESS" : (successCount == 0 && deferredCount == 0 ? "FAIL" : "PARTIAL");
+        // 零成功时不归因到具体数据源；成功明细包含新浪时标记为新浪。
         boolean anySina = details.stream().anyMatch(d -> d.contains("(" + DailyBarClient.SOURCE_SINA + ")"));
-        String sourceLabel = anySina ? DailyBarClient.SOURCE_SINA : DailyBarClient.SOURCE_EASTMONEY;
+        String sourceLabel = successCount == 0 ? "none"
+                : (anySina ? DailyBarClient.SOURCE_SINA : DailyBarClient.SOURCE_EASTMONEY);
         // 明细可能很长，日志只保留摘要 + 截断后的明细，避免撑爆 message 字段
-        String message = buildSyncLogMessage(successCount, failCount, barCount, details);
+        String message = buildSyncLogMessage(successCount, failCount, deferredCount, barCount, details);
         DataSyncLog syncLog = DataSyncLog.builder()
                 .syncType("BAR_DAILY")
                 .source(sourceLabel)
@@ -383,13 +390,16 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 .fetchedAt(fetchedAt)
                 .successCount(successCount)
                 .failCount(failCount)
+                .deferredCount(deferredCount)
                 .barCount(barCount)
                 .details(details)
                 .build();
     }
 
-    private String buildSyncLogMessage(int successCount, int failCount, int barCount, List<String> details) {
-        String summary = "success=" + successCount + ", fail=" + failCount + ", bars=" + barCount;
+    private String buildSyncLogMessage(int successCount, int failCount, int deferredCount,
+                                       int barCount, List<String> details) {
+        String summary = "success=" + successCount + ", fail=" + failCount
+                + ", deferred=" + deferredCount + ", bars=" + barCount;
         if (details == null || details.isEmpty()) {
             return summary;
         }
@@ -404,7 +414,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
 
     private SyncItem syncOne(String code, String beginDate, LocalDate endDate, boolean preferFastSource) {
         if (!syncingCodes.add(code)) {
-            return new SyncItem(code, true, 0, code + " SYNCING");
+            return new SyncItem(code, true, false, 0, code + " SYNCING");
         }
         try {
             // 错峰请求，降低行情源限流概率
@@ -416,10 +426,11 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
             int upserted = upsertBars(bars);
             upsertStockBasic(code, MarketCodeUtils.resolveMarket(code));
             String source = bars.isEmpty() ? "unknown" : bars.get(0).getSource();
-            return new SyncItem(code, true, upserted, code + ": " + upserted + " bars (" + source + ")");
+            return new SyncItem(code, true, false, upserted,
+                    code + ": " + upserted + " bars (" + source + ")");
         } catch (Exception ex) {
             log.warn("同步日线失败，证券代码={}，异常={}", code, ex.getMessage());
-            return new SyncItem(code, false, 0, code + " FAIL: " + ex.getMessage());
+            return new SyncItem(code, false, false, 0, code + " FAIL: " + ex.getMessage());
         } finally {
             syncingCodes.remove(code);
         }
@@ -523,12 +534,14 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
     private static final class SyncItem {
         private final String code;
         private final boolean ok;
+        private final boolean deferred;
         private final int barCount;
         private final String detail;
 
-        private SyncItem(String code, boolean ok, int barCount, String detail) {
+        private SyncItem(String code, boolean ok, boolean deferred, int barCount, String detail) {
             this.code = code;
             this.ok = ok;
+            this.deferred = deferred;
             this.barCount = barCount;
             this.detail = detail;
         }

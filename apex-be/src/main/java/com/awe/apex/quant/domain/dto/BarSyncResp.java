@@ -38,6 +38,11 @@ public class BarSyncResp {
     private Integer failCount;
 
     /**
+     * 因总时限未执行的证券数量
+     */
+    private Integer deferredCount;
+
+    /**
      * 写入/更新的 K 线条数
      */
     private Integer barCount;

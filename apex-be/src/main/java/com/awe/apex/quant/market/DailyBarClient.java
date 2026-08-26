@@ -63,23 +63,24 @@ public class DailyBarClient {
      */
     public List<BarDaily> fetchDailyBars(String code, String beginDate, String endDate) {
         String pureCode = MarketCodeUtils.normalizeCode(code);
+        String market = MarketCodeUtils.resolveMarket(pureCode);
+        boolean eastMoneyOnly = "HK".equals(market) || "BJ".equals(market);
         Exception eastMoneyError = null;
-        if (System.currentTimeMillis() >= eastMoneyCooldownUntil.get()) {
+        if (eastMoneyOnly || System.currentTimeMillis() >= eastMoneyCooldownUntil.get()) {
             try {
                 List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate, DEFAULT_REQUEST_TIMEOUT);
                 eastMoneyFailCount.set(0);
                 eastMoneyCooldownUntil.set(0);
                 return eastMoneyBars;
             } catch (Exception ex) {
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new BusinessException("行情请求被中断", ex);
+                }
                 eastMoneyError = ex;
-                int failCount = eastMoneyFailCount.incrementAndGet();
-                if (failCount >= EAST_MONEY_FAIL_THRESHOLD) {
-                    eastMoneyCooldownUntil.set(System.currentTimeMillis() + EAST_MONEY_COOLDOWN_MS);
-                    eastMoneyFailCount.set(0);
-                    log.warn("东财日线连续失败，熔断 {} 分钟，证券代码={}，异常={}",
-                            EAST_MONEY_COOLDOWN_MS / 60000, pureCode, ex.getMessage());
-                } else {
-                    log.warn("东财前复权日线失败，尝试新浪兜底，证券代码={}，异常={}", pureCode, ex.getMessage());
+                markEastMoneyFailure(pureCode, ex);
+                if (eastMoneyOnly) {
+                    throw new BusinessException("拉取日线失败: " + pureCode
+                            + ", eastmoney: " + messageOf(eastMoneyError), ex);
                 }
             }
         } else {
@@ -115,6 +116,9 @@ public class DailyBarClient {
             }
             throw new BusinessException("新浪日线无数据");
         } catch (Exception ex) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new BusinessException("行情请求被中断", ex);
+            }
             sinaError = ex;
             log.warn("新浪快速日线失败，尝试东财兜底，证券代码={}，异常={}", pureCode, ex.getMessage());
         }
@@ -127,6 +131,9 @@ public class DailyBarClient {
             eastMoneyCooldownUntil.set(0);
             return eastMoneyBars;
         } catch (Exception ex) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new BusinessException("行情请求被中断", ex);
+            }
             eastMoneyError = ex;
             markEastMoneyFailure(pureCode, ex);
         }
@@ -268,6 +275,9 @@ public class DailyBarClient {
     }
 
     private void markEastMoneyFailure(String code, Exception ex) {
+        if (Thread.currentThread().isInterrupted()) {
+            return;
+        }
         int failCount = eastMoneyFailCount.incrementAndGet();
         if (failCount >= EAST_MONEY_FAIL_THRESHOLD) {
             eastMoneyCooldownUntil.set(System.currentTimeMillis() + EAST_MONEY_COOLDOWN_MS);
@@ -276,7 +286,7 @@ public class DailyBarClient {
                     EAST_MONEY_COOLDOWN_MS / 60000, code, ex.getMessage());
             return;
         }
-        log.warn("东财前复权日线失败，尝试新浪兜底，证券代码={}，异常={}", code, ex.getMessage());
+        log.warn("东财前复权日线失败，证券代码={}，异常={}", code, ex.getMessage());
     }
 
     private String httpGet(String url, String referer, Duration requestTimeout) {

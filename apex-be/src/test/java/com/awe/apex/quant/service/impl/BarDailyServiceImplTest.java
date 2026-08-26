@@ -197,7 +197,7 @@ class BarDailyServiceImplTest {
     }
 
     @Test
-    void syncBarsShouldContinueLaterCodesAfterEarlierGroupTimesOut() {
+    void syncBarsShouldDeferUnstartedCodesAfterTimeoutBudgetIsExhausted() {
         BarDailyServiceImpl barDailyService = new BarDailyServiceImpl();
         DailyBarClient dailyBarClient = mock(DailyBarClient.class);
         StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
@@ -223,12 +223,15 @@ class BarDailyServiceImplTest {
         BarSyncResp response = barDailyService.syncBars(request);
         long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
 
-        assertTrue(elapsedMillis < 3000, "整批同步不应逐批累加超时时间");
-        assertEquals(4, callCount.get());
-        assertEquals(2, response.getSuccessCount());
+        assertTrue(elapsedMillis < 2000, "整批同步不应逐批累加超时时间");
+        assertEquals(2, callCount.get());
+        assertEquals(0, response.getSuccessCount());
         assertEquals(2, response.getFailCount());
+        assertEquals(2, response.getDeferredCount());
         assertEquals(List.of("600000 TIMEOUT", "600001 TIMEOUT"),
                 response.getDetails().stream().filter(detail -> detail.endsWith("TIMEOUT")).toList());
+        assertEquals(List.of("600002 DEFERRED", "600003 DEFERRED"),
+                response.getDetails().stream().filter(detail -> detail.endsWith("DEFERRED")).toList());
     }
 
     @Test
@@ -256,9 +259,10 @@ class BarDailyServiceImplTest {
         long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
 
         assertTrue(elapsedMillis < 4500, "整次同步应共享一个总超时预算");
-        assertEquals(6, callCount.get());
+        assertEquals(2, callCount.get());
         assertEquals(0, response.getSuccessCount());
-        assertEquals(6, response.getFailCount());
+        assertEquals(2, response.getFailCount());
+        assertEquals(4, response.getDeferredCount());
     }
 
     @Test
@@ -315,9 +319,14 @@ class BarDailyServiceImplTest {
         long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
 
         assertTrue(elapsedMillis < 2000, "共享代码超过 80 只也不应重复累计总时限");
-        assertEquals(81, response.getFailCount());
+        assertEquals(2, response.getFailCount());
+        assertEquals(79, response.getDeferredCount());
         assertEquals(81, response.getDetails().size());
-        verify(dataSyncLogMapper, times(1)).insert(any(DataSyncLog.class));
+        ArgumentCaptor<DataSyncLog> syncLogCaptor = ArgumentCaptor.forClass(DataSyncLog.class);
+        verify(dataSyncLogMapper).insert(syncLogCaptor.capture());
+        assertEquals("PARTIAL", syncLogCaptor.getValue().getStatus());
+        assertEquals("none", syncLogCaptor.getValue().getSource());
+        assertTrue(syncLogCaptor.getValue().getMessage().contains("fail=2, deferred=79"));
     }
 
     @Test

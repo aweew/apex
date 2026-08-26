@@ -1,5 +1,6 @@
 package com.awe.apex.quant.market;
 
+import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -130,5 +131,61 @@ class DailyBarClientTest {
         assertEquals(1, bars.size());
         assertEquals(DailyBarClient.SOURCE_EASTMONEY, bars.get(0).getSource());
         assertEquals(1, eastMoneyRequests.get());
+    }
+
+    @Test
+    void batchDailyBarsShouldTryEastMoneyForHkWhileCircuitIsOpen() throws Exception {
+        AtomicInteger eastMoneyRequests = new AtomicInteger();
+        AtomicInteger sinaRequests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/eastmoney", exchange -> {
+            eastMoneyRequests.incrementAndGet();
+            byte[] response = ("{\"data\":{\"klines\":["
+                    + "\"2026-08-25,38.00,38.50,39.00,37.80,1000,38500,0,1.20,0,0.80\""
+                    + "]}}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/sina", exchange -> {
+            sinaRequests.incrementAndGet();
+            exchange.sendResponseHeaders(502, -1);
+            exchange.close();
+        });
+        server.start();
+
+        DailyBarClient dailyBarClient = new DailyBarClient();
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        ReflectionTestUtils.setField(dailyBarClient, "eastMoneyUrl", baseUrl + "/eastmoney");
+        ReflectionTestUtils.setField(dailyBarClient, "sinaUrl", baseUrl + "/sina");
+        AtomicLong cooldownUntil = (AtomicLong) ReflectionTestUtils.getField(
+                dailyBarClient, "eastMoneyCooldownUntil");
+        cooldownUntil.set(System.currentTimeMillis() + 60_000L);
+
+        List<BarDaily> bars = dailyBarClient.fetchDailyBars(
+                "01810", "2026-08-25", "2026-08-25");
+
+        assertEquals(1, bars.size());
+        assertEquals(DailyBarClient.SOURCE_EASTMONEY, bars.get(0).getSource());
+        assertEquals(1, eastMoneyRequests.get());
+        assertEquals(0, sinaRequests.get());
+    }
+
+    @Test
+    void interruptedRequestShouldNotIncreaseEastMoneyFailureCount() {
+        DailyBarClient dailyBarClient = new DailyBarClient();
+        AtomicInteger failCount = (AtomicInteger) ReflectionTestUtils.getField(
+                dailyBarClient, "eastMoneyFailCount");
+
+        Thread.currentThread().interrupt();
+        try {
+            ReflectionTestUtils.invokeMethod(dailyBarClient, "markEastMoneyFailure",
+                    "600000", new BusinessException("行情请求被中断"));
+        } finally {
+            Thread.interrupted();
+        }
+
+        assertEquals(0, failCount.get());
     }
 }
