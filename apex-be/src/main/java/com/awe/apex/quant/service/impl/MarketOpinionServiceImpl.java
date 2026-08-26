@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,6 +44,9 @@ import java.util.concurrent.TimeUnit;
 public class MarketOpinionServiceImpl implements IMarketOpinionService {
 
     private static final int OPINION_LIMIT = 80;
+    private static final int INSTITUTION_QUERY_LIMIT = 120;
+    private static final int ACTIVE_SEAT_QUERY_LIMIT = 80;
+    private static final int KOL_QUERY_LIMIT = 20;
 
     @Resource
     private MarketOpinionMapper marketOpinionMapper;
@@ -66,14 +70,15 @@ public class MarketOpinionServiceImpl implements IMarketOpinionService {
      */
     @Override
     public MarketOpinionRadarResp radar() {
-        List<MarketOpinion> opinionRows = marketOpinionMapper.selectList(Wrappers.<MarketOpinion>lambdaQuery()
-                .ge(MarketOpinion::getPublishedAt, LocalDateTime.now().minusDays(5))
-                .orderByDesc(MarketOpinion::getPublishedAt)
-                .orderByDesc(MarketOpinion::getId)
-                .last("LIMIT 120"));
-        if (Objects.isNull(opinionRows)) {
-            opinionRows = List.of();
-        }
+        LocalDateTime opinionStartTime = LocalDate.now().minusDays(5).atStartOfDay();
+        List<MarketOpinion> institutionRows = queryOpinions("INSTITUTION", opinionStartTime, INSTITUTION_QUERY_LIMIT);
+        List<MarketOpinion> activeSeatRows = queryOpinions("ACTIVE_SEAT", opinionStartTime, ACTIVE_SEAT_QUERY_LIMIT);
+        List<MarketOpinion> kolRows = queryOpinions("KOL", opinionStartTime, KOL_QUERY_LIMIT);
+        List<MarketOpinion> opinionRows = new ArrayList<>(institutionRows.size() + activeSeatRows.size() + kolRows.size());
+        opinionRows.addAll(institutionRows);
+        opinionRows.addAll(activeSeatRows);
+        opinionRows.addAll(kolRows);
+
         List<MarketOpinionItemResp> institutionViews = new ArrayList<>();
         List<MarketOpinionItemResp> activeSeats = new ArrayList<>();
         List<MarketOpinionItemResp> traderSeatViews = new ArrayList<>();
@@ -87,7 +92,7 @@ public class MarketOpinionServiceImpl implements IMarketOpinionService {
             if ("INSTITUTION".equals(opinionRow.getOpinionType()) && institutionViews.size() < 4) {
                 institutionViews.add(toItem(opinionRow));
             } else if ("ACTIVE_SEAT".equals(opinionRow.getOpinionType())) {
-                if (activeSeats.size() < 3) {
+                if (StringUtils.isBlank(opinionRow.getActorName()) && activeSeats.size() < 3) {
                     activeSeats.add(toItem(opinionRow));
                 }
                 if (StringUtils.isNotBlank(opinionRow.getActorName()) && traderSeatViews.size() < 3) {
@@ -109,6 +114,16 @@ public class MarketOpinionServiceImpl implements IMarketOpinionService {
                 .kolSources(kolSources)
                 .snapshotTime(snapshotTime)
                 .build();
+    }
+
+    private List<MarketOpinion> queryOpinions(String opinionType, LocalDateTime opinionStartTime, int limit) {
+        List<MarketOpinion> opinionRows = marketOpinionMapper.selectList(Wrappers.<MarketOpinion>lambdaQuery()
+                .eq(MarketOpinion::getOpinionType, opinionType)
+                .ge(MarketOpinion::getPublishedAt, opinionStartTime)
+                .orderByDesc(MarketOpinion::getPublishedAt)
+                .orderByDesc(MarketOpinion::getId)
+                .last("LIMIT " + limit));
+        return Objects.isNull(opinionRows) ? List.of() : opinionRows;
     }
 
     /**

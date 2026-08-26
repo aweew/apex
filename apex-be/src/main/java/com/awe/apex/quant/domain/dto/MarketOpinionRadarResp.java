@@ -20,7 +20,7 @@ public class MarketOpinionRadarResp {
     /** 机构公开观点 */
     private List<MarketOpinionItemResp> institutionViews;
 
-    /** 龙虎榜活跃席位 */
+    /** 未映射到具体游资标签的龙虎榜活跃席位 */
     private List<MarketOpinionItemResp> activeSeats;
 
     /** 已映射的游资席位行为 */

@@ -68,6 +68,7 @@ const visiblePreMarketEventImpacts = computed(() => (
 const marketOpinion = computed(() => morningBriefing.value?.marketOpinion || null)
 const institutionViews = computed(() => marketOpinion.value?.institutionViews || [])
 const traderSeatViews = computed(() => marketOpinion.value?.traderSeatViews || [])
+const activeSeats = computed(() => marketOpinion.value?.activeSeats || [])
 const kolViews = computed(() => marketOpinion.value?.kolViews || [])
 const kolSources = computed(() => marketOpinion.value?.kolSources || [])
 const legacyIndexSymbols = new Set(['usIXIC', 'usDJI', 'usINX'])
@@ -1144,48 +1145,57 @@ onMounted(() => {
             </div>
 
             <section v-if="marketOpinion" class="opinion-radar" aria-label="市场观点雷达">
-            <div class="opinion-radar-head">
-              <h5>观点雷达</h5>
-              <time>{{ fmtBriefingTime(marketOpinion.snapshotTime) }}</time>
-            </div>
-            <div class="opinion-summary-grid">
-              <p><span>共识</span>{{ marketOpinion.consensus || '暂未形成有效共识' }}</p>
-              <p><span>分歧</span>{{ marketOpinion.divergence || '暂未发现明确分歧' }}</p>
-            </div>
-            <div v-if="traderSeatViews.length" class="opinion-group">
-              <div class="opinion-group-head"><h6>游资席位行为</h6><span>公开龙虎榜</span></div>
-              <article v-for="item in traderSeatViews" :key="item.url + item.subjectName" class="opinion-item">
-                <span class="opinion-direction seat">席位</span>
-                <a v-if="item.actorEvidenceUrl" :href="item.actorEvidenceUrl" target="_blank" rel="noopener noreferrer">{{ item.actorName }}</a>
-                <span v-else class="opinion-item-title">{{ item.actorName }}</span>
-                <small>{{ item.subjectName }} · {{ item.summary || formatOpinionAmount(item.netAmount) || '金额未披露' }}</small>
-              </article>
-            </div>
-            <div v-if="kolViews.length || kolSources.length" class="opinion-group">
-              <div class="opinion-group-head"><h6>公开账号观点</h6><span>原帖可追溯</span></div>
-              <article v-for="item in kolViews" :key="item.url || item.title" class="opinion-item">
-                <span class="opinion-direction seat">原帖</span>
-                <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
-                <span v-else class="opinion-item-title">{{ item.title }}</span>
-                <small>{{ item.actorName || item.subjectName }} · {{ opinionTime(item.publishedAt) }}</small>
-              </article>
-              <div v-if="kolSources.length" class="opinion-source-list">
-                <span v-for="source in kolSources" :key="source.actorName" :title="source.sourceNote">
-                  <a v-if="source.accountUrl" :href="source.accountUrl" target="_blank" rel="noopener noreferrer">{{ source.actorName }}</a>
-                  <b v-else>{{ source.actorName }}</b>
-                  <i>{{ source.platform || '公开源' }} · {{ opinionSourceStatusLabel(source.sourceStatus) }}</i>
-                </span>
+              <div class="opinion-radar-head">
+                <h5>观点雷达</h5>
+                <time>{{ fmtBriefingTime(marketOpinion.snapshotTime) }}</time>
               </div>
-            </div>
-            <div v-if="institutionViews.length" class="opinion-group">
-              <div class="opinion-group-head"><h6>机构观点</h6><span>公开研报</span></div>
-              <article v-for="item in institutionViews" :key="item.url || item.title" class="opinion-item">
-                <span class="opinion-direction" :class="opinionTone(item.direction)">{{ item.direction || '未评级' }}</span>
-                <button v-if="item.url" type="button" class="opinion-item-link" @click="openOpinionPreview(item)">{{ item.title }}</button>
-                <span v-else class="opinion-item-title">{{ item.title }}</span>
-                <small>{{ item.subjectName }} · {{ item.relatedName || item.topic || opinionTime(item.publishedAt) }}</small>
-              </article>
-            </div>
+              <div class="opinion-summary-grid">
+                <p><span>共识</span>{{ marketOpinion.consensus || '暂未形成有效共识' }}</p>
+                <p><span>分歧</span>{{ marketOpinion.divergence || '暂未发现明确分歧' }}</p>
+              </div>
+              <div v-if="traderSeatViews.length" class="opinion-group">
+                <div class="opinion-group-head"><h6>已核验游资席位</h6><span>营业部标签映射</span></div>
+                <article v-for="item in traderSeatViews" :key="[item.url, item.subjectName, item.publishedAt].join('|')" class="opinion-item">
+                  <span class="opinion-direction seat">席位</span>
+                  <a v-if="item.actorEvidenceUrl" :href="item.actorEvidenceUrl" target="_blank" rel="noopener noreferrer">{{ item.actorName }}</a>
+                  <span v-else class="opinion-item-title">{{ item.actorName }}</span>
+                  <small>{{ item.subjectName }} · {{ item.summary || '涉及股票未披露' }} · {{ formatOpinionAmount(item.netAmount) || '金额未披露' }}</small>
+                </article>
+              </div>
+              <div v-if="activeSeats.length" class="opinion-group">
+                <div class="opinion-group-head"><h6>龙虎榜活跃营业部</h6><span>仅表示公开席位行为，不代表具体自然人观点</span></div>
+                <article v-for="item in activeSeats" :key="[item.url, item.subjectName, item.publishedAt].join('|')" class="opinion-item">
+                  <span class="opinion-direction seat">营业部</span>
+                  <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.subjectName }}</a>
+                  <span v-else class="opinion-item-title">{{ item.subjectName }}</span>
+                  <small>{{ item.summary || '涉及股票未披露' }} · {{ formatOpinionAmount(item.netAmount) || '金额未披露' }}</small>
+                </article>
+              </div>
+              <div v-if="kolViews.length || kolSources.length" class="opinion-group">
+                <div class="opinion-group-head"><h6>公开账号观点</h6><span>原帖可追溯</span></div>
+                <article v-for="item in kolViews" :key="item.url || item.title" class="opinion-item">
+                  <span class="opinion-direction seat">原帖</span>
+                  <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+                  <span v-else class="opinion-item-title">{{ item.title }}</span>
+                  <small>{{ item.actorName || item.subjectName }} · {{ opinionTime(item.publishedAt) }}</small>
+                </article>
+                <div v-if="kolSources.length" class="opinion-source-list">
+                  <span v-for="source in kolSources" :key="source.actorName" :title="source.sourceNote">
+                    <a v-if="source.accountUrl" :href="source.accountUrl" target="_blank" rel="noopener noreferrer">{{ source.actorName }}</a>
+                    <b v-else>{{ source.actorName }}</b>
+                    <i>{{ source.platform || '公开源' }} · {{ opinionSourceStatusLabel(source.sourceStatus) }}</i>
+                  </span>
+                </div>
+              </div>
+              <div v-if="institutionViews.length" class="opinion-group">
+                <div class="opinion-group-head"><h6>机构观点</h6><span>公开研报</span></div>
+                <article v-for="item in institutionViews" :key="item.url || item.title" class="opinion-item">
+                  <span class="opinion-direction" :class="opinionTone(item.direction)">{{ item.direction || '未评级' }}</span>
+                  <button v-if="item.url" type="button" class="opinion-item-link" @click="openOpinionPreview(item)">{{ item.title }}</button>
+                  <span v-else class="opinion-item-title">{{ item.title }}</span>
+                  <small>{{ item.subjectName }} · {{ item.relatedName || item.topic || opinionTime(item.publishedAt) }}</small>
+                </article>
+              </div>
               <p class="opinion-kol-status">{{ marketOpinion.kolSourceStatus }}</p>
             </section>
           </div>
@@ -3582,6 +3592,12 @@ onMounted(() => {
 
 .opinion-group-head {
   margin-bottom: 5px;
+}
+
+.opinion-group-head span {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .opinion-item {

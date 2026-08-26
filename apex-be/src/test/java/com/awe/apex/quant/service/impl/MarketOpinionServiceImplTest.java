@@ -5,14 +5,18 @@ import com.awe.apex.quant.domain.entity.MarketActor;
 import com.awe.apex.quant.domain.entity.MarketOpinion;
 import com.awe.apex.quant.mapper.MarketActorMapper;
 import com.awe.apex.quant.mapper.MarketOpinionMapper;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -20,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MarketOpinionServiceImplTest {
@@ -34,12 +40,18 @@ class MarketOpinionServiceImplTest {
     void buildsConsensusAndDivergenceFromTraceableInstitutionViews() {
         MarketOpinionMapper marketOpinionMapper = mock(MarketOpinionMapper.class);
         MarketActorMapper marketActorMapper = mock(MarketActorMapper.class);
+        MarketOpinion activeSeat = opinion(
+                "ACTIVE_SEAT", "国泰海通证券上海江苏路证券营业部", "活跃席位",
+                null, null, null, "净买入 1.20 亿元");
+        activeSeat.setActorName(null);
         when(marketOpinionMapper.selectList(any())).thenReturn(List.of(
                 opinion("INSTITUTION", "中信证券", "买入", "000001", "平安银行", "银行", "买入"),
                 opinion("INSTITUTION", "华泰证券", "增持", "000001", "平安银行", "银行", "看多"),
-                opinion("INSTITUTION", "国泰海通", "减持", "600000", "浦发银行", "银行", "减持"),
-                opinion("ACTIVE_SEAT", "国盛证券宁波桑田路证券营业部", "活跃席位", null, null, null, "净买入 2.01 亿元")
-        ));
+                opinion("INSTITUTION", "国泰海通", "减持", "600000", "浦发银行", "银行", "减持")
+        ), List.of(
+                opinion("ACTIVE_SEAT", "国盛证券宁波桑田路证券营业部", "活跃席位", null, null, null, "净买入 2.01 亿元"),
+                activeSeat
+        ), List.of());
         when(marketActorMapper.selectList(any())).thenReturn(List.of(
                 MarketActor.builder()
                         .actorName("边风炜")
@@ -58,10 +70,31 @@ class MarketOpinionServiceImplTest {
         assertEquals(3, response.getInstitutionViews().size());
         assertEquals(1, response.getTraderSeatViews().size());
         assertEquals("宁波桑田路", response.getTraderSeatViews().get(0).getActorName());
+        assertEquals(1, response.getActiveSeats().size());
+        assertEquals("国泰海通证券上海江苏路证券营业部", response.getActiveSeats().get(0).getSubjectName());
         assertEquals(1, response.getKolSources().size());
         assertTrue(response.getKolSourceStatus().contains("待核验"));
         assertTrue(response.getConsensus().contains("偏积极"));
         assertTrue(response.getDivergence().contains("银行"));
+
+        ArgumentCaptor<Wrapper<MarketOpinion>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(marketOpinionMapper, times(3)).selectList(queryCaptor.capture());
+        LocalDateTime expectedStartTime = LocalDate.now().minusDays(5).atStartOfDay();
+        assertOpinionQuery(queryCaptor.getAllValues().get(0), "INSTITUTION", expectedStartTime, "LIMIT 120");
+        assertOpinionQuery(queryCaptor.getAllValues().get(1), "ACTIVE_SEAT", expectedStartTime, "LIMIT 80");
+        assertOpinionQuery(queryCaptor.getAllValues().get(2), "KOL", expectedStartTime, "LIMIT 20");
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertOpinionQuery(Wrapper<MarketOpinion> query, String opinionType,
+                                    LocalDateTime expectedStartTime, String limitClause) {
+        LambdaQueryWrapper<MarketOpinion> queryWrapper = (LambdaQueryWrapper<MarketOpinion>) query;
+        String sqlSegment = queryWrapper.getSqlSegment();
+        assertTrue(queryWrapper.getParamNameValuePairs().containsValue(opinionType),
+                queryWrapper.getParamNameValuePairs().toString());
+        assertTrue(queryWrapper.getParamNameValuePairs().containsValue(expectedStartTime),
+                queryWrapper.getParamNameValuePairs().toString());
+        assertTrue(sqlSegment.contains(limitClause), sqlSegment);
     }
 
     private MarketOpinion opinion(String opinionType, String subjectName, String direction,
