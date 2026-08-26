@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { Reading, Search } from '@element-plus/icons-vue'
+import { getTradingCalendar } from './api/market'
 import { searchStock } from './api/stock'
 import http from './api/http'
 import BackToTopButton from './components/BackToTopButton.vue'
@@ -10,7 +11,13 @@ import { BRAND } from './brand/identity.js'
 import { isNavigating, requestCount } from './utils/appActivity'
 import { MAIN_NAV_GROUPS, PRIMARY_SHORTCUTS } from './navigation/menu.js'
 import { getCurrentUser, logout } from './api/auth'
-import { clearDataFreshness, dataFreshness } from './utils/dataFreshness.js'
+import {
+  chinaMarketDate,
+  clearDataFreshness,
+  dataFreshness,
+  setTradingCalendar,
+  tradingCalendar,
+} from './utils/dataFreshness.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -205,6 +212,16 @@ async function pingHealth() {
   }
 }
 
+async function syncTradingCalendar() {
+  if (isPublicRoute.value || tradingCalendar.value?.date === chinaMarketDate()) return
+  try {
+    const response = await getTradingCalendar(undefined, 2)
+    setTradingCalendar(response.data)
+  } catch {
+    setTradingCalendar(null)
+  }
+}
+
 function escapeHtml(text) {
   return String(text ?? '')
     .replace(/&/g, '&amp;')
@@ -381,6 +398,7 @@ watch(
   () => {
     setMobileMenu(false)
     clearDataFreshness()
+    void syncTradingCalendar()
     nextTick(() => {
       syncMobileModuleTitle()
       syncMobileBackTarget()
@@ -452,6 +470,7 @@ watch(
 
 onMounted(() => {
   pingHealth()
+  void syncTradingCalendar()
   healthTimer = setInterval(pingHealth, 30000)
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('resize', closeMobileMenuOnDesktop)
