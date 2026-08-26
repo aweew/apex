@@ -360,6 +360,15 @@ textarea {
   margin-bottom: 12px;
 }
 
+/* 内联图标使用文本中线，避免自定义图标文字控件回落到字体基线。 */
+.page .el-icon {
+  vertical-align: middle;
+}
+
+.page :where(button, a, .el-link) > svg:not(:only-child) {
+  vertical-align: middle;
+}
+
 /* —— Element overrides —— */
 .page > .el-loading-mask {
   background: rgba(244, 246, 249, 0.66);
