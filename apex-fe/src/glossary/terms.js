@@ -1,6 +1,7 @@
 /**
  * 灵极 Apex 全局指标/名词百科词条。
- * 新增词条只需追加本文件或 terms.extra.js；页面用 <TermTip term="id"> 或打开「名词」面板搜索。
+ * 股票业务词条追加到本文件或 terms.extra.js，金融通识词条追加到 terms.finance.js。
+ * 页面用 <TermTip term="id"> 或打开「名词」面板搜索。
  *
  * 字段约定：
  * - short：悬浮/列表一句摘要（宜短）
@@ -12,8 +13,22 @@
  * - diagram：可选图解 id，对应 glossary/diagrams.js 中的内联 SVG
  */
 import { EXTRA_TERMS } from './terms.extra.js'
+import { FINANCE_TERMS } from './terms.finance.js'
 
-export const GLOSSARY_CATEGORIES = ['绩效', '风险', '技术', '基本面', '策略', '行情']
+export const GLOSSARY_CATEGORIES = [
+  '绩效',
+  '风险',
+  '技术',
+  '基本面',
+  '策略',
+  '行情',
+  '基础',
+  '市场',
+  '估值',
+  '宏观',
+  '行为',
+  '公司金融',
+]
 
 /** @type {Array<{id:string,title:string,aliases:string[],category:string,short:string,plain?:string,detail:string,tip?:string,highlights?:string[],related?:string[],diagram?:string}>} */
 const CORE_TERMS = [
@@ -129,7 +144,7 @@ const CORE_TERMS = [
   {
     id: 'alpha',
     title: 'Alpha',
-    aliases: ['超额收益', '阿尔法'],
+    aliases: ['超额收益', '阿尔法', '阿尔法收益', 'Alpha收益'],
     category: '绩效',
     short: '相对基准（如沪深300）多赚或少赚的部分。',
     plain: '把大盘本来会带来的收益先扣掉，剩下的才更接近策略自己的本事。',
@@ -142,7 +157,7 @@ const CORE_TERMS = [
   {
     id: 'beta',
     title: 'Beta',
-    aliases: ['贝塔'],
+    aliases: ['贝塔', '贝塔系数', 'Beta系数'],
     category: '绩效',
     short: '组合相对基准的敏感度（跟涨跟跌的放大倍数）。',
     plain: 'Beta≈1 像跟着大盘同速跑；Beta>1 通常涨跌都更猛。',
@@ -259,7 +274,7 @@ const CORE_TERMS = [
   {
     id: 'var95',
     title: 'VaR95',
-    aliases: ['VaR', '在险价值'],
+    aliases: ['VaR', '在险价值', '风险价值'],
     category: '风险',
     short: '在 95% 置信下，单日可能亏损的大致上限估计。',
     plain: '不是“最多只亏这么多”，而是正常情况下大多数日子的风险门槛。',
@@ -794,4 +809,4 @@ const CORE_TERMS = [
   },
 ]
 
-export const GLOSSARY_TERMS = [...CORE_TERMS, ...EXTRA_TERMS]
+export const GLOSSARY_TERMS = [...CORE_TERMS, ...EXTRA_TERMS, ...FINANCE_TERMS]

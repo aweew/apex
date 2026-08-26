@@ -5,6 +5,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import FloatingShareButton from './FloatingShareButton.vue'
 import {
   GLOSSARY_EVENT,
+  allTerms,
   allCategories,
   findTerm,
   getRelatedTerms,
@@ -40,9 +41,10 @@ let sharePreviewObjectUrl = ''
 let returnFocus = null
 
 const categories = allCategories()
+const totalTerms = allTerms().length
 
 const list = computed(() => {
-  let rows = searchTerms(query.value, 200)
+  let rows = searchTerms(query.value, totalTerms)
   if (category.value) {
     rows = rows.filter((term) => term.category === category.value)
   }
@@ -292,7 +294,7 @@ defineExpose({ openGlossary, close })
         </button>
         <div class="glossary-title">
           <strong>名词百科</strong>
-          <span>灵极 · 指标 · 策略 · 行情释义</span>
+          <span>灵极 · 金融 · 宏观 · 投资释义</span>
         </div>
         <div class="glossary-actions">
           <button type="button" class="glossary-close" aria-label="关闭名词百科" @click="close">
@@ -308,7 +310,7 @@ defineExpose({ openGlossary, close })
           ref="inputRef"
           v-model="query"
           class="glossary-input"
-          placeholder="搜索：夏普、回撤、止损、情绪周期、MACD…"
+          placeholder="搜索：股票、GDP、DCF、夏普、MACD…"
           autocomplete="off"
           aria-controls="glossary-results"
           @keydown.esc.prevent="handleEscape"

@@ -234,7 +234,7 @@ export const EXTRA_TERMS = [
   {
     id: 'liquidity_risk',
     title: '流动性风险',
-    aliases: ['流动性', '买不到卖不出'],
+    aliases: ['买不到卖不出', '流动性不足风险'],
     category: '风险',
     short: '想买买不到、想卖卖不出，或必须大幅让价才能成交。',
     detail:

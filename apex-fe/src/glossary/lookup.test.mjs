@@ -99,6 +99,117 @@ test('common stock terms stay available even when they are basic', () => {
   }
 })
 
+test('financial encyclopedia covers the requested learning map', () => {
+  const expectedTerms = {
+    货币: 'money',
+    信用: 'credit',
+    利率: 'interest_rate',
+    汇率: 'exchange_rate',
+    通胀: 'inflation',
+    资产: 'asset',
+    负债: 'liability',
+    权益: 'owners_equity',
+    收入: 'accounting_income',
+    费用: 'expense',
+    利润: 'profit',
+    股票: 'stock',
+    债券: 'bond',
+    基金: 'fund',
+    衍生品: 'derivative',
+    期货: 'futures',
+    期权: 'option',
+    互换: 'swap',
+    一级发行: 'primary_market',
+    二级交易: 'secondary_market',
+    做市商: 'market_maker',
+    流动性: 'market_liquidity',
+    波动率: 'volatility',
+    套利: 'arbitrage',
+    贝塔系数: 'beta',
+    阿尔法收益: 'alpha',
+    夏普比率: 'sharpe',
+    最大回撤: 'max_drawdown',
+    胜率: 'win_rate',
+    盈亏比: 'payoff_ratio',
+    资本资产定价: 'capm',
+    套利定价: 'apt',
+    有效市场假说: 'efficient_market_hypothesis',
+    随机游走: 'random_walk',
+    均值回归: 'mean_reversion',
+    财务报表分析: 'financial_statement_analysis',
+    现金流折现: 'dcf',
+    内部收益率: 'irr',
+    净现值: 'npv',
+    回收期: 'payback_period',
+    宏观经济周期: 'business_cycle',
+    GDP: 'gdp',
+    CPI: 'cpi',
+    PMI: 'pmi',
+    失业率: 'unemployment_rate',
+    贸易差额: 'trade_balance',
+    中央银行: 'central_bank',
+    公开市场操作: 'open_market_operations',
+    准备金率: 'reserve_requirement_ratio',
+    再贴现率: 'rediscount_rate',
+    基准利率: 'policy_rate',
+    风险价值: 'var95',
+    压力测试: 'stress_testing',
+    蒙特卡洛模拟: 'monte_carlo_simulation',
+    对冲: 'hedging',
+    保险: 'insurance',
+    行为金融学: 'behavioral_finance',
+    锚定效应: 'anchoring_bias',
+    过度自信: 'overconfidence_bias',
+    损失厌恶: 'loss_aversion',
+    羊群效应: 'herding_effect',
+    公司治理: 'corporate_governance',
+    股权激励: 'equity_incentive',
+    并购: 'mergers_acquisitions',
+    杠杆收购: 'leveraged_buyout',
+    破产重整: 'bankruptcy_reorganization',
+  }
+
+  for (const [alias, expectedId] of Object.entries(expectedTerms)) {
+    assert.equal(findTerm(alias)?.id, expectedId, `${alias} should resolve to ${expectedId}`)
+  }
+})
+
+test('new financial learning categories and explanations stay complete', () => {
+  const expectedCategories = ['基础', '市场', '估值', '宏观', '行为', '公司金融']
+  const financeTerms = allTerms().filter((term) => expectedCategories.includes(term.category))
+
+  for (const category of expectedCategories) {
+    assert.ok(financeTerms.some((term) => term.category === category), `${category} should contain terms`)
+  }
+  assert.ok(financeTerms.length >= 80)
+  for (const term of financeTerms) {
+    assert.ok(term.plain, `${term.id} should provide a plain explanation`)
+    assert.ok(term.highlights?.length, `${term.id} should define highlights`)
+    assert.ok(term.related?.length, `${term.id} should provide related reading`)
+  }
+})
+
+test('similar financial concepts keep distinct lookup keys', () => {
+  assert.equal(findTerm('ETF')?.id, 'etf')
+  assert.equal(findTerm('指数基金')?.id, 'index_fund')
+  assert.equal(findTerm('折现率')?.id, 'discount_rate')
+  assert.equal(findTerm('再贴现率')?.id, 'rediscount_rate')
+  assert.equal(findTerm('内在价值')?.id, 'fair_value')
+  assert.equal(findTerm('期权内在价值')?.id, 'option_intrinsic_value')
+  assert.equal(findTerm('Forward')?.id, 'forward_eval')
+  assert.equal(findTerm('Forward Contract')?.id, 'forward_contract')
+})
+
+test('full glossary browse limit includes every category', () => {
+  const terms = allTerms()
+  const browsableTerms = searchTerms('', terms.length)
+
+  assert.equal(browsableTerms.length, terms.length)
+  for (const category of ['基础', '市场', '估值', '宏观', '行为', '公司金融']) {
+    assert.ok(browsableTerms.some((term) => term.category === category))
+  }
+})
+
 test('difficult terms provide plain explanations with valid highlights and related terms', () => {
   const terms = allTerms()
   const explainedTerms = terms.filter((term) => term.plain)
@@ -142,7 +253,7 @@ test('glossary term ids are unique', () => {
   const terms = allTerms()
   const ids = terms.map((t) => t.id)
   assert.equal(ids.length, new Set(ids).size)
-  assert.ok(terms.length >= 145)
+  assert.ok(terms.length >= 259)
 })
 
 test('diagram builders return svg for keyed terms', () => {
