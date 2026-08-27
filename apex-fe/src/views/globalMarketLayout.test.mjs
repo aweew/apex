@@ -26,6 +26,13 @@ test('market navigation separates index quotes from A-share analysis', () => {
   assert.match(mobileStyles, /\.market-nav-group\s*\{[\s\S]*?width:\s*100%;/)
 })
 
+test('market navigation and action buttons share the same bottom baseline', () => {
+  assert.match(
+    indexSource,
+    /\.mc-page > \.header > \.actions\s*\{[\s\S]*?align-items:\s*flex-end;/,
+  )
+})
+
 test('global overview maps market hubs and keeps quote freshness visible', () => {
   assert.match(indexSource, /class="global-overview"/)
   assert.match(indexSource, /class="world-market-map"/)

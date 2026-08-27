@@ -1177,6 +1177,10 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
 }
 
+.mc-page > .header > .actions {
+  align-items: flex-end;
+}
+
 .market-nav {
   display: flex;
   align-items: flex-end;
