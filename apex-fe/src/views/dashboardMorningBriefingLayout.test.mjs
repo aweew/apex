@@ -86,11 +86,11 @@ test('dashboard places the command band after market effect and before pre-marke
   assert.ok(commandIndex > effectIndex)
   assert.ok(contextIndex > commandIndex)
   assert.match(dashboardSource, /<section\s+v-if="command"[^>]+class="command-band[^>]+aria-label="开盘准备"/s)
-  assert.match(dashboardSource, /command\.tradeDate/)
-  assert.match(dashboardSource, /command\.marketDataAsOf/)
-  assert.match(dashboardSource, /command\.marketDataUpdatedAt/)
-  assert.match(dashboardSource, /command\.decisionDataAsOf/)
-  assert.match(dashboardSource, /command\.generatedAt/)
+  assert.match(dashboardSource, /const commandDataTimeText = computed/)
+  assert.match(dashboardSource, /行情 \$\{compactUpdatedTime\} 更新/)
+  assert.match(dashboardSource, /行情截至 \$\{command\.value\.marketDataAsOf\}/)
+  assert.doesNotMatch(dashboardSource, /class="command-meta"/)
+  assert.doesNotMatch(dashboardSource, /fmtCommandTime/)
   assert.match(dashboardSource, /commandStatusLabel\(command\.status\)/)
   assert.match(dashboardSource, /command\.value\?\.phase === 'IN_SESSION'/)
   assert.match(dashboardSource, /盘中判断/)
@@ -274,7 +274,7 @@ test('dashboard keeps dense briefing copy readable across desktop and mobile', (
   )
   assert.match(
     dashboardSource,
-    /\.command-meta\s*\{[^}]*font-size:\s*11px;[^}]*line-height:\s*1\.5;/s,
+    /\.command-head p\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.5;/s,
   )
   assert.match(
     dashboardSource,
@@ -330,6 +330,22 @@ test('mobile market overview balances labels and values across each card', () =>
     compactMarketStyles,
     /\.stat-line \.stat-value\s*\{[^}]*justify-self:\s*end;[^}]*text-align:\s*right;/s,
   )
+  assert.match(
+    compactMarketStyles,
+    /\.stat-line \.volume-stat\s*\{[^}]*align-items:\s*center;/s,
+  )
+  assert.match(
+    compactMarketStyles,
+    /\.stat-line \.stat:not\(\.volume-stat\)\s*\{[^}]*min-height:\s*50px;[^}]*padding-block:\s*7px;/s,
+  )
+})
+
+test('mobile market volume aligns the percentage sign independently from its digits', () => {
+  assert.match(dashboardSource, /const volumePercentageParts = computed/)
+  assert.match(dashboardSource, /class="vol-sign"/)
+  assert.match(dashboardSource, /class="vol-number"/)
+  assert.match(dashboardSource, /\.vol-percentage\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;/s)
+  assert.match(dashboardSource, /\.vol-sign\s*\{[^}]*transform:\s*translateY\(-1px\);/s)
 })
 
 test('mobile money effect cards stay compact and vertically center signed values', () => {

@@ -251,6 +251,15 @@ const volumeChangeParts = computed(() => {
   return buildVolumeChangeParts(market.value)
 })
 
+const volumePercentageParts = computed(() => {
+  const percentageText = volumeChangeParts.value?.percentageText || ''
+  const matched = percentageText.match(/^([+\-−]?)(.*)$/)
+  return {
+    sign: matched?.[1] || '',
+    number: matched?.[2] || percentageText,
+  }
+})
+
 const breadth = computed(() => {
   const up = Number(market.value?.breadthUp)
   const down = Number(market.value?.breadthDown)
@@ -367,10 +376,19 @@ function operationStatusLabel(status) {
   return labels[status] || '待确认'
 }
 
-function fmtCommandTime(value) {
-  if (!value) return '-'
-  return String(value).replace('T', ' ').slice(0, 16)
-}
+const commandDataTimeText = computed(() => {
+  const tradeDate = command.value?.tradeDate || '-'
+  const marketDataUpdatedAt = command.value?.marketDataUpdatedAt
+  if (marketDataUpdatedAt) {
+    const updatedTime = String(marketDataUpdatedAt).replace('T', ' ').slice(0, 16)
+    const compactUpdatedTime = updatedTime.startsWith(tradeDate) ? updatedTime.slice(11) : updatedTime
+    return `${tradeDate} · 行情 ${compactUpdatedTime} 更新`
+  }
+  if (command.value?.marketDataAsOf) {
+    return `${tradeDate} · 行情截至 ${command.value.marketDataAsOf}`
+  }
+  return tradeDate
+})
 
 function openCommandAction(code) {
   if (code === 'VIEW_CONTEXT') {
@@ -611,7 +629,10 @@ onMounted(() => {
                   v-if="volumeChangeParts.percentageText"
                   class="vol-percentage"
                   :class="volumeDir(market?.volumeTrend, market?.volumeVsMa5Pct)"
-                >{{ volumeChangeParts.percentageText }}</span>
+                >
+                  <span v-if="volumePercentageParts.sign" class="vol-sign">{{ volumePercentageParts.sign }}</span>
+                  <span class="vol-number">{{ volumePercentageParts.number }}</span>
+                </span>
               </i>
               <i v-else class="miss-hint">暂无今日额</i>
             </span>
@@ -749,20 +770,11 @@ onMounted(() => {
       <div class="command-head">
         <div>
           <h3>开盘准备</h3>
-          <p>目标交易日 {{ command.tradeDate || '-' }}</p>
+          <p>{{ commandDataTimeText }}</p>
         </div>
         <span class="command-status" :class="`status-${String(command.status || '').toLowerCase()}`">
           {{ commandStatusLabel(command.status) }}
         </span>
-      </div>
-
-      <div class="command-meta" aria-label="开盘准备数据时间">
-        <span>
-          行情 <b>{{ command.marketDataAsOf || '-' }}</b>
-          <small>刷新 {{ fmtCommandTime(command.marketDataUpdatedAt) }}</small>
-        </span>
-        <span>决策 <b>{{ fmtCommandTime(command.decisionDataAsOf) }}</b></span>
-        <span>生成 <b>{{ fmtCommandTime(command.generatedAt) }}</b></span>
       </div>
 
       <div class="command-grid">
@@ -2110,6 +2122,23 @@ onMounted(() => {
   line-height: 1;
 }
 
+.stat .vol-percentage {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.vol-percentage .vol-sign,
+.vol-percentage .vol-number {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.vol-sign {
+  transform: translateY(-1px);
+}
+
 .volume-stat > b,
 .volume-stat .vol-change > span:not(.vol-percentage) {
   font-weight: 500;
@@ -2478,10 +2507,11 @@ onMounted(() => {
 }
 
 .command-head p {
-  margin: 5px 0 0;
+  margin: 4px 0 12px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .command-status {
@@ -2507,34 +2537,6 @@ onMounted(() => {
   border-color: rgba(255, 59, 48, 0.23);
   background: rgba(255, 59, 48, 0.07);
   color: var(--up);
-}
-
-.command-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px 18px;
-  margin: 10px 0 15px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-  font-variant-numeric: tabular-nums;
-}
-
-.command-meta span,
-.command-meta b {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.command-meta b {
-  color: var(--ink-soft);
-  font-weight: 600;
-}
-
-.command-meta small {
-  margin-left: 4px;
-  color: var(--muted);
-  font-size: inherit;
 }
 
 .command-grid {
@@ -4825,6 +4827,8 @@ onMounted(() => {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
     align-items: center;
+    min-height: 50px;
+    padding-block: 7px;
     gap: 8px;
   }
 
@@ -4850,7 +4854,7 @@ onMounted(() => {
     grid-column: 1 / -1;
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    align-items: center;
     min-height: 48px;
     padding-top: 8px;
     padding-bottom: 8px;
