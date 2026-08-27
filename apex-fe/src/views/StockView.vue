@@ -1424,6 +1424,8 @@ async function renderChart(list) {
         start: zoomStart,
         end: zoomEnd,
         minValueSpan: Math.min(MIN_VISIBLE_BARS, list.length),
+        zoomOnMouseWheel: false,
+        moveOnMouseWheel: false,
       },
       {
         show: true,
@@ -2133,71 +2135,18 @@ function dash(v) {
           <el-button @click="klinePeriod = 'intraday'">看分时</el-button>
         </el-empty>
         <div v-if="showChartShell" class="chart-toolbar" v-loading="intradayLoading && isIntraday">
-          <div class="chart-primary-controls">
-            <el-radio-group v-model="klinePeriod" size="small" class="period-mode">
-              <el-radio-button value="intraday">分时</el-radio-button>
-              <el-radio-button value="day">日K</el-radio-button>
-              <el-radio-button value="week">周K</el-radio-button>
-              <el-radio-button value="month">月K</el-radio-button>
-            </el-radio-group>
-            <div class="chart-primary-actions">
-              <el-button
-                v-if="isIntraday"
-                size="small"
-                text
-                type="primary"
-                :loading="intradayLoading"
-                @click="loadIntraday"
-              >
-                刷新分时
-              </el-button>
-              <button
-                v-if="isMobileChart && !isIntraday"
-                type="button"
-                class="chart-params-toggle"
-                :aria-expanded="chartParamsExpanded"
-                @click="toggleChartParams"
-              >
-                <span>图表参数</span>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </button>
-              <div v-if="!isIntraday" class="chart-zoom-controls" role="group" aria-label="K线缩放">
-                <el-tooltip content="缩小 K 线，显示更多" placement="top">
-                  <el-button
-                    size="small"
-                    class="chart-zoom-button"
-                    :icon="ZoomOut"
-                    aria-label="缩小K线"
-                    :disabled="!canZoomOut"
-                    @click="zoomChart('out')"
-                  />
-                </el-tooltip>
-                <el-tooltip content="放大 K 线，显示更少" placement="top">
-                  <el-button
-                    size="small"
-                    class="chart-zoom-button"
-                    :icon="ZoomIn"
-                    aria-label="放大K线"
-                    :disabled="!canZoomIn"
-                    @click="zoomChart('in')"
-                  />
-                </el-tooltip>
-                <el-tooltip content="还原默认视野" placement="top">
-                  <el-button
-                    size="small"
-                    class="chart-zoom-button"
-                    :icon="RefreshLeft"
-                    aria-label="还原默认视野"
-                    @click="resetChartView"
-                  />
-                </el-tooltip>
-              </div>
-            </div>
-            <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
-            <span v-if="intradayDataTime" class="intraday-asof">{{ intradayDataTime }}</span>
-          </div>
+          <button
+            v-if="isMobileChart && !isIntraday"
+            type="button"
+            class="chart-params-toggle"
+            :aria-expanded="chartParamsExpanded"
+            @click="toggleChartParams"
+          >
+            <span>图表参数</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
           <div v-if="!isIntraday" v-show="!isMobileChart || chartParamsExpanded" class="chart-advanced-controls">
             <el-checkbox-group v-model="selectedMas" size="small" class="ma-checks">
               <el-checkbox
@@ -2231,23 +2180,6 @@ function dash(v) {
             show-icon
             :title="`日线仅 ${bars.length} 根，周/月K样本偏少，建议同步更多日线`"
           />
-          <p class="chart-hint">
-            <template v-if="isIntraday">
-              东财分时 · 价格 / 均价 / 成交量 · 右侧为相对昨收涨跌幅
-            </template>
-            <template v-else>
-              设置会记住 · 切换周期重置视野 · 改均线/九转保持缩放 · 副图：量 /
-              <TermTip term="macd">MACD</TermTip>
-              /
-              <TermTip term="kdj">KDJ</TermTip>
-              · 常见还有
-              <TermTip term="rsi">RSI</TermTip>
-              /
-              <TermTip term="atr">ATR</TermTip>
-              /
-              <TermTip term="boll">布林带</TermTip>
-            </template>
-          </p>
           <p v-if="!isIntraday && tdTip && showTd9" class="macd-tip">{{ tdTip }}</p>
           <p v-if="!isIntraday && macdTip" class="macd-tip macd-tip--sub">{{ macdTip }}</p>
           <div v-if="isMobileChart && !isIntraday && priceStructure.ready" class="chart-price-levels">
@@ -2260,6 +2192,27 @@ function dash(v) {
             <small>长按图表查看详情</small>
           </div>
         </div>
+        <div v-if="showChartShell" class="chart-primary-controls">
+          <el-radio-group v-model="klinePeriod" size="small" class="period-mode">
+            <el-radio-button value="intraday">分时</el-radio-button>
+            <el-radio-button value="day">日K</el-radio-button>
+            <el-radio-button value="week">周K</el-radio-button>
+            <el-radio-button value="month">月K</el-radio-button>
+          </el-radio-group>
+          <div v-if="isIntraday" class="chart-primary-actions">
+            <el-button
+              size="small"
+              text
+              type="primary"
+              :loading="intradayLoading"
+              @click="loadIntraday"
+            >
+              刷新分时
+            </el-button>
+          </div>
+          <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
+          <span v-if="intradayDataTime" class="intraday-asof">{{ intradayDataTime }}</span>
+        </div>
         <el-empty
           v-if="isIntraday && !intradayLoading && !intradayPoints.length"
           description="暂无分时数据"
@@ -2268,9 +2221,41 @@ function dash(v) {
         </el-empty>
         <div
           v-if="(bars.length && !isIntraday) || (isIntraday && intradayPoints.length)"
-          ref="chartRef"
-          class="chart"
-        />
+          class="chart-stage"
+        >
+          <div ref="chartRef" class="chart" />
+          <div v-if="!isIntraday" class="chart-zoom-controls" role="group" aria-label="K线缩放">
+            <el-tooltip content="缩小 K 线，显示更多" placement="top">
+              <el-button
+                size="small"
+                class="chart-zoom-button"
+                :icon="ZoomOut"
+                aria-label="缩小K线"
+                :disabled="!canZoomOut"
+                @click="zoomChart('out')"
+              />
+            </el-tooltip>
+            <el-tooltip content="放大 K 线，显示更少" placement="top">
+              <el-button
+                size="small"
+                class="chart-zoom-button"
+                :icon="ZoomIn"
+                aria-label="放大K线"
+                :disabled="!canZoomIn"
+                @click="zoomChart('in')"
+              />
+            </el-tooltip>
+            <el-tooltip content="还原默认视野" placement="top">
+              <el-button
+                size="small"
+                class="chart-zoom-button"
+                :icon="RefreshLeft"
+                aria-label="还原默认视野"
+                @click="resetChartView"
+              />
+            </el-tooltip>
+          </div>
+        </div>
         <ChipDistributionPanel
           v-if="!isIntraday && priceStructure.ready"
           :analysis="priceStructure"
@@ -3056,7 +3041,7 @@ function dash(v) {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 0 0 10px;
+  margin: 0 0 6px;
 }
 
 .chart-primary-controls,
@@ -3065,6 +3050,10 @@ function dash(v) {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 16px;
+}
+
+.chart-primary-controls {
+  margin: 0 0 4px;
 }
 
 .chart-primary-actions {
@@ -3131,10 +3120,20 @@ function dash(v) {
 }
 
 .chart-zoom-controls {
-  display: inline-flex;
+  position: absolute;
+  right: 14px;
+  bottom: 46px;
+  z-index: 3;
+  display: flex;
   align-items: center;
   gap: 4px;
-  flex: 0 0 auto;
+  opacity: 0.82;
+  transition: opacity 160ms ease;
+}
+
+.chart-zoom-controls:hover,
+.chart-zoom-controls:focus-within {
+  opacity: 1;
 }
 
 .chart-zoom-button {
@@ -3145,6 +3144,14 @@ function dash(v) {
   margin: 0;
   padding: 0;
   border-radius: 6px;
+}
+
+.chart-zoom-controls :deep(.chart-zoom-button.el-button) {
+  border-color: rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .period-meta {
@@ -3205,13 +3212,6 @@ function dash(v) {
   line-height: 1.4;
 }
 
-.chart-hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  letter-spacing: 0.01em;
-}
-
 .macd-tip {
   margin: 0;
   color: #1d1d1f;
@@ -3225,6 +3225,11 @@ function dash(v) {
   color: #4b5563;
 }
 
+
+.chart-stage {
+  position: relative;
+  width: 100%;
+}
 
 .chart {
   height: 720px;
@@ -3353,16 +3358,18 @@ function dash(v) {
 
   .chart-toolbar {
     gap: 6px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   .chart-primary-controls {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
+    margin-bottom: 4px;
   }
 
   .period-mode {
+    order: 4;
     display: flex;
     width: 100%;
   }
@@ -3388,6 +3395,7 @@ function dash(v) {
   }
 
   .chart-primary-actions {
+    order: 3;
     justify-content: flex-end;
   }
 
@@ -3405,6 +3413,12 @@ function dash(v) {
     height: 44px;
     min-height: 44px;
     padding: 0;
+  }
+
+  .chart-zoom-controls {
+    right: 8px;
+    bottom: 38px;
+    gap: 2px;
   }
 
   .chart-advanced-controls {
@@ -3451,12 +3465,13 @@ function dash(v) {
   }
 
   .period-meta {
+    order: 1;
     margin-left: 0;
     font-size: 11px;
   }
 
-  .chart-hint {
-    display: none;
+  .intraday-asof {
+    order: 2;
   }
 
   .macd-tip {
