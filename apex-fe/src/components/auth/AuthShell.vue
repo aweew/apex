@@ -89,18 +89,14 @@ defineProps({
 .brand-lockup span { color: #6e6e73; font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: uppercase; }
 .brand-positioning { margin-top: 7px; color: #86868b; font-size: 10px; font-weight: 500; letter-spacing: 0; line-height: 1.4; }
 
-.apex-geometry { position: fixed; right: -64px; bottom: -50px; z-index: 0; width: 600px; aspect-ratio: 1.15; overflow: hidden; color: #0066cc; opacity: .18; pointer-events: none; }
-.apex-letter { position: absolute; font-family: var(--auth-font); font-size: 180px; font-weight: 700; line-height: .8; letter-spacing: 0; opacity: .18; user-select: none; }
-.apex-letter--a { left: 2%; bottom: 15%; }
-.apex-letter--p { left: 27%; top: 5%; }
-.apex-letter--e { left: 51%; bottom: 16%; }
-.apex-letter--x { right: 0; top: 17%; }
+.apex-geometry { position: fixed; right: clamp(24px, 5vw, 72px); bottom: clamp(20px, 4vh, 48px); z-index: 0; display: grid; grid-template-columns: repeat(4, 1fr); align-items: end; width: clamp(360px, 40vw, 560px); height: clamp(110px, 10vw, 150px); padding: 0 16px 18px; color: #0066cc; opacity: .12; pointer-events: none; }
+.apex-letter { position: static; font-family: var(--auth-font); font-size: clamp(78px, 7vw, 112px); font-weight: 700; line-height: .8; letter-spacing: 0; text-align: center; opacity: .28; user-select: none; }
 .geometry-line { position: absolute; display: block; height: 1px; background: currentColor; opacity: .42; transform-origin: left center; }
-.geometry-line--one { width: 78%; left: 10%; top: 52%; transform: rotate(-23deg); }
-.geometry-line--two { width: 64%; left: 29%; top: 25%; transform: rotate(49deg); }
+.geometry-line--one { right: 16px; bottom: 16px; left: 16px; }
+.geometry-line--two { width: calc(100% - 80px); left: 40px; bottom: 38%; opacity: .2; transform: rotate(-8deg); }
 .geometry-point { position: absolute; display: block; width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 50%; background: var(--page-bg); }
-.geometry-point--one { left: 8%; top: 58%; }
-.geometry-point--two { right: 7%; bottom: 17%; }
+.geometry-point--one { left: 12px; bottom: 12px; }
+.geometry-point--two { right: 12px; bottom: 12px; }
 
 .auth-panel { padding: 34px 32px 30px; border: 1px solid var(--panel-border); border-radius: 8px; background: var(--panel-bg); box-shadow: 0 12px 36px rgba(0, 0, 0, .065); }
 .auth-panel--compact { padding-top: 32px; padding-bottom: 28px; }
@@ -125,8 +121,7 @@ h1 { margin: 0; color: var(--ink); font-size: 28px; font-weight: 600; line-heigh
 @media (max-width: 820px) {
   .auth-page { padding-top: 28px; padding-bottom: max(28px, env(safe-area-inset-bottom)); }
   .auth-layout { width: min(100%, 440px); }
-  .apex-geometry { right: -150px; bottom: -48px; width: 440px; opacity: .12; }
-  .apex-letter { font-size: 132px; }
+  .apex-geometry { display: none; }
   .auth-panel { padding: 32px 28px 28px; }
 }
 
@@ -137,24 +132,6 @@ h1 { margin: 0; color: var(--ink); font-size: 28px; font-weight: 600; line-heigh
   .brand-lockup span { font-size: 12px; }
   .auth-panel { padding: 28px 24px 24px; }
   h1 { font-size: 25px; }
-}
-
-@media (prefers-color-scheme: dark) {
-  .auth-page { --page-bg: #000000; --ink: #f5f5f7; --muted: #a1a1a6; --panel-bg: #1c1c1e; --panel-border: #3a3a3c; --field-bg: #2c2c2e; --field-border: #48484a; --field-text: #f5f5f7; --field-placeholder: #8e8e93; --field-icon: #a1a1a6; background: #000000; color-scheme: dark; }
-  .auth-page::before {
-    background-image:
-      repeating-linear-gradient(90deg, transparent 0, transparent 47px, rgba(10, 132, 255, .075) 47px, rgba(10, 132, 255, .075) 48px),
-      repeating-linear-gradient(0deg, transparent 0, transparent 47px, rgba(10, 132, 255, .075) 47px, rgba(10, 132, 255, .075) 48px);
-  }
-  .brand-lockup span,
-  .brand-positioning { color: #a1a1a6; }
-  .apex-geometry,
-  .eyebrow { color: #0a84ff; }
-  .auth-panel { box-shadow: 0 16px 42px rgba(0, 0, 0, .32); }
-  :deep(.el-input__wrapper:hover) { background: #323234; box-shadow: 0 0 0 1px #636366 inset !important; }
-  :deep(.el-input__wrapper.is-focus) { background: #2c2c2e; box-shadow: 0 0 0 3px rgba(10, 132, 255, .22), 0 0 0 1px #0a84ff inset !important; }
-  :deep(.el-form-item__error) { color: #ff453a; }
-  :deep(.el-form-item.is-error .el-input__wrapper) { box-shadow: 0 0 0 1px #ff453a inset !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

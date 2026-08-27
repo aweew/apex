@@ -77,12 +77,6 @@ async function submit() {
 .invite-link:hover { color: #1d1d1f; }
 .invite-link:focus-visible { border-radius: 4px; outline: 3px solid rgba(0, 113, 227, .18); outline-offset: 2px; }
 
-@media (prefers-color-scheme: dark) {
-  .invite-link { color: #a1a1a6; }
-  .invite-link strong { color: #0a84ff; }
-  .invite-link:hover { color: #f5f5f7; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .submit-btn { transition: none; }
 }

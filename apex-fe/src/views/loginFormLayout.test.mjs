@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const loginSource = await readFile(new URL('./LoginView.vue', import.meta.url), 'utf8')
+const registerSource = await readFile(new URL('./RegisterView.vue', import.meta.url), 'utf8')
 const authShellSource = await readFile(new URL('../components/auth/AuthShell.vue', import.meta.url), 'utf8')
 
 test('login fields keep the expected keyboard focus order', () => {
@@ -55,7 +56,9 @@ test('auth shell keeps the restrained premium surface contract', () => {
   assert.match(authShellSource, /\.el-input__wrapper\)\s*\{[\s\S]*?background:\s*var\(--field-bg\);/)
   assert.match(authShellSource, /\.el-input\.is-disabled \.el-input__wrapper\)\s*\{[\s\S]*?background:\s*#eeeeef;/)
   assert.match(authShellSource, /\.auth-page::before\s*\{[\s\S]*?repeating-linear-gradient\(/)
-  assert.match(authShellSource, /\.apex-geometry\s*\{[^}]*opacity:\s*\.18;/)
+  assert.match(authShellSource, /\.apex-geometry\s*\{[^}]*right:\s*clamp\([^;]+;[^}]*bottom:\s*clamp\([^;]+;[^}]*display:\s*grid;/)
+  assert.match(authShellSource, /@media \(max-width:\s*820px\)[\s\S]*?\.apex-geometry\s*\{\s*display:\s*none;/)
   assert.match(authShellSource, /\.auth-panel\s*\{[\s\S]*?border-radius:\s*8px;/)
-  assert.doesNotMatch(authShellSource, /backdrop-filter:/)
+  assert.doesNotMatch(authShellSource, /backdrop-filter:|prefers-color-scheme:\s*dark/)
+  assert.doesNotMatch(`${loginSource}\n${registerSource}`, /prefers-color-scheme:\s*dark/)
 })
