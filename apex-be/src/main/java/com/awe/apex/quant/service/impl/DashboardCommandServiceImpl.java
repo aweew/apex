@@ -639,7 +639,7 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             return "今日操作已生成，请按执行清单处理。";
         }
         if (sellCount > 0) {
-            return "今日操作已生成，今天不开新仓。";
+            return "今日有" + sellCount + "项卖出/减仓，按清单处理。";
         }
         if (executableCount > 0) {
             return "今日操作已生成，候选需满足开仓条件。";
@@ -723,8 +723,7 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             summary = "先处理" + buildRiskSummary(decision, freshTriggeredCount) + "，再执行"
                     + buyItem.getTargetCount() + "个新仓。";
         } else if (OperationGuideStatusEnum.REQUIRED.getCode().equals(riskItem.getStatus())) {
-            summary = "先处理" + buildRiskSummary(decision, freshTriggeredCount)
-                    + "；今天不开新仓。";
+            summary = "先处理" + buildRiskSummary(decision, freshTriggeredCount) + "。";
         } else if (OperationGuideStatusEnum.READY.getCode().equals(buyItem.getStatus())) {
             summary = "执行" + buyItem.getTargetCount() + "个新仓候选，按建议仓位和止损价下单。";
         } else if (!isDecisionGeneratedForTradeDate(decision, tradeDate)) {

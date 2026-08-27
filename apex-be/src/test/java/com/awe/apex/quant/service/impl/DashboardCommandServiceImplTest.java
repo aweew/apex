@@ -398,10 +398,10 @@ class DashboardCommandServiceImplTest {
                 .observeAlerts(List.of())
                 .build());
 
-        assertEquals("今日操作已生成，今天不开新仓。",
+        assertEquals("今日有3项卖出/减仓，按清单处理。",
                 command.getPreMarketSummary().getHeadline());
         assertTrue(command.getPreMarketSummary().getWatchConditions().isEmpty());
-        assertEquals("先处理3项卖出/减仓；今天不开新仓。",
+        assertEquals("先处理3项卖出/减仓。",
                 command.getOperationGuide().getSummary());
         assertEquals(1, command.getOperationGuide().getItems().size());
         assertGuideItem(command, 0, OperationGuideCodeEnum.RISK_FIRST,
