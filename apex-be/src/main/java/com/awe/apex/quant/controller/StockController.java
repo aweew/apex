@@ -42,7 +42,7 @@ public class StockController {
     private IStockAnalysisService stockAnalysisService;
 
     /**
-     * 搜索股票
+     * 按代码、名称或拼音缩写搜索股票
      *
      * @param q     关键词
      * @param limit 条数

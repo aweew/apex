@@ -31,6 +31,7 @@ import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockCompanyProfileMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
+import com.awe.apex.quant.util.StockPinyinUtils;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.ICompanyProfileService;
 import com.awe.apex.quant.service.IMyHoldingService;
@@ -531,6 +532,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
                 ? stockQuoteClient.fetchRealtime(code)
                 : stockQuoteClient.fetchBasic(code);
         fillPriceFromBarIfNeeded(fetched);
+        fetched.setPinyinAbbr(StockPinyinUtils.buildAbbr(fetched.getName()));
         LocalDateTime now = LocalDateTime.now();
         StockBasic existing = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                 .eq(StockBasic::getCode, code)
@@ -549,6 +551,7 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         }
         if (StringUtils.isNotBlank(fetched.getName())) {
             existing.setName(fetched.getName());
+            existing.setPinyinAbbr(fetched.getPinyinAbbr());
         }
         if (StringUtils.isNotBlank(fetched.getMarket())) {
             existing.setMarket(fetched.getMarket());

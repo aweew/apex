@@ -47,7 +47,7 @@ public interface IStockService {
     StockIntradayResp intraday(String code);
 
     /**
-     * 按代码/名称搜索
+     * 按代码、名称或拼音缩写搜索
      *
      * @param keyword 关键词
      * @param limit   条数

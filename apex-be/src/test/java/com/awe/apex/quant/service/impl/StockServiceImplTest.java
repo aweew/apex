@@ -1,11 +1,16 @@
 package com.awe.apex.quant.service.impl;
 
+import com.awe.apex.quant.domain.dto.StockSearchItem;
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.StockQuoteClient;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -14,6 +19,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -74,6 +80,7 @@ class StockServiceImplTest {
         assertEquals(new BigDecimal("20.5"), result.getPeTtm());
         assertEquals(new BigDecimal("8.2"), result.getPb());
         assertEquals(new BigDecimal("1420.00"), result.getLatestPrice());
+        assertEquals("gzmt", result.getPinyinAbbr());
     }
 
     @Test
@@ -110,5 +117,82 @@ class StockServiceImplTest {
 
         assertTrue(detail.getNeedSyncBars());
         assertEquals("STALE", detail.getBarStatus());
+    }
+
+    @Test
+    void searchShouldMatchUppercasePinyinInitials() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), StockBasic.class);
+        StockServiceImpl service = new StockServiceImpl();
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        WatchlistMapper watchlistMapper = mock(WatchlistMapper.class);
+        when(watchlistMapper.selectList(any())).thenReturn(List.of());
+        when(stockBasicMapper.selectList(any())).thenAnswer(invocation -> {
+            LambdaQueryWrapper<StockBasic> queryWrapper = invocation.getArgument(0);
+            if (!queryWrapper.getSqlSegment().contains("pinyin_abbr")) {
+                return List.of();
+            }
+            assertTrue(queryWrapper.getParamNameValuePairs().containsValue("gzmt%"));
+            return List.of(StockBasic.builder()
+                    .code("600519")
+                    .name("贵州茅台")
+                    .market("SH")
+                    .build());
+        });
+        ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(service, "watchlistMapper", watchlistMapper);
+
+        List<StockSearchItem> result = service.search("GZMT", 10);
+
+        assertEquals(1, result.size());
+        assertEquals("600519", result.get(0).getCode());
+        assertEquals("贵州茅台", result.get(0).getName());
+    }
+
+    @Test
+    void searchShouldKeepChineseNameMatching() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), StockBasic.class);
+        StockServiceImpl service = new StockServiceImpl();
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        WatchlistMapper watchlistMapper = mock(WatchlistMapper.class);
+        when(watchlistMapper.selectList(any())).thenReturn(List.of());
+        when(stockBasicMapper.selectList(any())).thenAnswer(invocation -> {
+            LambdaQueryWrapper<StockBasic> queryWrapper = invocation.getArgument(0);
+            assertTrue(queryWrapper.getSqlSegment().contains("name"));
+            assertFalse(queryWrapper.getSqlSegment().contains("pinyin_abbr"));
+            return List.of();
+        });
+        ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(service, "watchlistMapper", watchlistMapper);
+
+        service.search("茅台", 10);
+
+        verify(stockBasicMapper).selectList(any());
+    }
+
+    @Test
+    void searchShouldKeepEnglishNameMatching() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), StockBasic.class);
+        StockServiceImpl service = new StockServiceImpl();
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        WatchlistMapper watchlistMapper = mock(WatchlistMapper.class);
+        when(watchlistMapper.selectList(any())).thenReturn(List.of());
+        when(stockBasicMapper.selectList(any())).thenAnswer(invocation -> {
+            LambdaQueryWrapper<StockBasic> queryWrapper = invocation.getArgument(0);
+            if (!queryWrapper.getSqlSegment().contains("name")) {
+                return List.of();
+            }
+            return List.of(StockBasic.builder()
+                    .code("588000")
+                    .name("科创50ETF")
+                    .market("SH")
+                    .build());
+        });
+        ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
+        ReflectionTestUtils.setField(service, "watchlistMapper", watchlistMapper);
+
+        List<StockSearchItem> result = service.search("ETF", 10);
+
+        assertEquals(1, result.size());
+        assertEquals("588000", result.get(0).getCode());
     }
 }

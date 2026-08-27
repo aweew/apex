@@ -18,6 +18,8 @@ import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IStockService;
+import com.awe.apex.quant.util.StockPinyinUtils;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -95,6 +98,7 @@ public class StockServiceImpl implements IStockService {
     }
 
     private StockBasic saveSyncedBasic(String pure, StockBasic fetched, boolean quoteOnly) {
+        fetched.setPinyinAbbr(StockPinyinUtils.buildAbbr(fetched.getName()));
         StockBasic existing = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                 .eq(StockBasic::getCode, pure)
                 .last("limit 1"));
@@ -106,6 +110,7 @@ public class StockServiceImpl implements IStockService {
             return fetched;
         }
         existing.setName(fetched.getName());
+        existing.setPinyinAbbr(fetched.getPinyinAbbr());
         existing.setMarket(fetched.getMarket());
         existing.setStFlag(fetched.getStFlag());
         if (!quoteOnly) {
@@ -260,7 +265,7 @@ public class StockServiceImpl implements IStockService {
     }
 
     /**
-     * 按代码/名称搜索
+     * 按代码、名称或拼音缩写搜索
      *
      * @param keyword 关键词
      * @param limit   条数
@@ -272,6 +277,7 @@ public class StockServiceImpl implements IStockService {
             return Collections.emptyList();
         }
         String q = keyword.trim();
+        String normalizedKeyword = q.toLowerCase(Locale.ROOT);
         int size = Objects.isNull(limit) ? 15 : Math.max(1, Math.min(limit, 50));
         Map<String, StockSearchItem> map = new LinkedHashMap<>();
 
@@ -287,9 +293,17 @@ public class StockServiceImpl implements IStockService {
                     .build());
         }
 
-        List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
+        List<StockBasic> basics = new ArrayList<>();
+        if (normalizedKeyword.matches("[a-z]+")) {
+            LambdaQueryWrapper<StockBasic> pinyinQuery = Wrappers.<StockBasic>lambdaQuery()
+                    .likeRight(StockBasic::getPinyinAbbr, normalizedKeyword)
+                    .last("limit " + size);
+            basics.addAll(stockBasicMapper.selectList(pinyinQuery));
+        }
+        LambdaQueryWrapper<StockBasic> codeNameQuery = Wrappers.<StockBasic>lambdaQuery()
                 .and(w -> w.like(StockBasic::getCode, q).or().like(StockBasic::getName, q))
-                .last("limit " + size));
+                .last("limit " + size);
+        basics.addAll(stockBasicMapper.selectList(codeNameQuery));
         for (StockBasic basic : basics) {
             StockSearchItem existing = map.get(basic.getCode());
             if (Objects.isNull(existing)) {

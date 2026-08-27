@@ -23,6 +23,7 @@
         <springdoc.version>2.8.13</springdoc.version>
         <therapi-javadoc.version>0.15.0</therapi-javadoc.version>
         <hutool.version>5.8.40</hutool.version>
+        <tiny-pinyin.version>2.0.3.RELEASE</tiny-pinyin.version>
         <transmittable.version>2.14.3</transmittable.version>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <lombok.version>1.18.30</lombok.version>
@@ -112,6 +113,11 @@
             <groupId>cn.hutool</groupId>
             <artifactId>hutool-all</artifactId>
             <version>${hutool.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.biezhi</groupId>
+            <artifactId>TinyPinyin</artifactId>
+            <version>${tiny-pinyin.version}</version>
         </dependency>
 
         <dependency>

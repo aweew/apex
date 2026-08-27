@@ -13,6 +13,22 @@ test('command center searches routes and stocks from the same overlay', () => {
   assert.match(appSource, /股票/)
 })
 
+test('stock search is a first-level action and supports pinyin abbreviation discovery', () => {
+  const desktopActions = appSource.slice(
+    appSource.indexOf('<div class="nav-actions desktop-nav-actions">'),
+    appSource.indexOf('<div\n        class="app-activity"'),
+  )
+  const stockSectionIndex = appSource.indexOf('aria-labelledby="command-stock-title"')
+  const routeSectionIndex = appSource.indexOf('aria-labelledby="command-route-title"')
+
+  assert.match(appSource, /aria-label="个股搜索"/)
+  assert.match(desktopActions, /class="search-btn stock-search-trigger"/)
+  assert.match(desktopActions, /<span>个股搜索<\/span>/)
+  assert.match(appSource, /placeholder="输入代码、名称或拼音缩写"/)
+  assert.match(appSource, /const commandResults = computed\(\(\) => \[\.\.\.stockCommandResults\.value, \.\.\.filteredRouteCommands\.value\]\)/)
+  assert.ok(stockSectionIndex >= 0 && routeSectionIndex > stockSectionIndex)
+})
+
 test('command center supports keyboard selection instead of only opening the first stock result', () => {
   assert.match(appSource, /function moveCommandSelection\(step\)/)
   assert.match(appSource, /@keydown\.down\.prevent="moveCommandSelection\(1\)"/)

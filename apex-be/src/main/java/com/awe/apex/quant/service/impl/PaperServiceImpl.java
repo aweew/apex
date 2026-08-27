@@ -66,6 +66,7 @@ import com.awe.apex.quant.mapper.StrategySignalMapper;
 import com.awe.apex.quant.mapper.WatchlistMapper;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
+import com.awe.apex.quant.util.StockPinyinUtils;
 import com.awe.apex.quant.paper.PaperEquityCalculator;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IJournalService;
@@ -540,6 +541,7 @@ public class PaperServiceImpl implements IPaperService {
         try {
             StockBasic fetched = stockQuoteClient.fetchBasic(code);
             if (Objects.nonNull(fetched) && StringUtils.isNotBlank(fetched.getName())) {
+                fetched.setPinyinAbbr(StockPinyinUtils.buildAbbr(fetched.getName()));
                 LocalDateTime now = LocalDateTime.now();
                 if (Objects.isNull(basic)) {
                     fetched.setCreateTime(now);
@@ -547,6 +549,7 @@ public class PaperServiceImpl implements IPaperService {
                     stockBasicMapper.insert(fetched);
                 } else {
                     basic.setName(fetched.getName());
+                    basic.setPinyinAbbr(fetched.getPinyinAbbr());
                     basic.setIndustry(fetched.getIndustry());
                     basic.setLatestPrice(fetched.getLatestPrice());
                     basic.setUpdateTime(now);
@@ -952,6 +955,7 @@ public class PaperServiceImpl implements IPaperService {
             try {
                 StockBasic basic = stockQuoteClient.fetchBasic(position.getCode());
                 if (Objects.nonNull(basic) && Objects.nonNull(basic.getLatestPrice())) {
+                    basic.setPinyinAbbr(StockPinyinUtils.buildAbbr(basic.getName()));
                     StockBasic stored = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                             .eq(StockBasic::getCode, position.getCode())
                             .last("limit 1"));
@@ -964,6 +968,7 @@ public class PaperServiceImpl implements IPaperService {
                         stored.setLatestPrice(basic.getLatestPrice());
                         stored.setPctChg(basic.getPctChg());
                         stored.setName(basic.getName());
+                        stored.setPinyinAbbr(basic.getPinyinAbbr());
                         stored.setUpdateTime(now);
                         stockBasicMapper.updateById(stored);
                     }

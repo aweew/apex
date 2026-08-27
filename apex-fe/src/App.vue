@@ -66,7 +66,7 @@ const stockCommandResults = computed(() => {
   const source = keyword ? results.value : recentStocks.value
   return source.map((item) => ({ ...item, kind: 'stock' }))
 })
-const commandResults = computed(() => [...filteredRouteCommands.value, ...stockCommandResults.value])
+const commandResults = computed(() => [...stockCommandResults.value, ...filteredRouteCommands.value])
 const commandResultStatus = computed(() => {
   if (loading.value) return '正在搜索股票'
   if (!commandResults.value.length) return '没有找到匹配页面或股票'
@@ -540,7 +540,7 @@ onBeforeUnmount(() => {
           </svg>
           <span>{{ mobileBackLabel }}</span>
         </button>
-        <button type="button" class="nav-icon-btn" aria-label="搜索股票" title="搜索股票" @click="openSearch">
+        <button type="button" class="nav-icon-btn" aria-label="个股搜索" title="个股搜索" @click="openSearch">
           <Search aria-hidden="true" />
         </button>
         <button type="button" class="nav-icon-btn" aria-label="名词百科" title="名词百科" @click="openGlossary()">
@@ -652,9 +652,15 @@ onBeforeUnmount(() => {
           <i class="dot" />
           {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
         </span>
-        <button type="button" class="search-btn" title="打开快捷入口 Ctrl+K" @click="openSearch">
+        <button
+          type="button"
+          class="search-btn stock-search-trigger"
+          aria-label="个股搜索"
+          title="个股搜索 Ctrl+K"
+          @click="openSearch"
+        >
           <Search aria-hidden="true" />
-          <span>快捷入口</span>
+          <span>个股搜索</span>
         </button>
         <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
           <Reading aria-hidden="true" />
@@ -703,7 +709,7 @@ onBeforeUnmount(() => {
             v-model="query"
             role="combobox"
             class="search-input"
-            placeholder="搜索股票、页面或操作"
+            placeholder="输入代码、名称或拼音缩写"
             autocomplete="off"
             autocapitalize="none"
             enterkeyhint="search"
@@ -730,20 +736,42 @@ onBeforeUnmount(() => {
         </p>
         <div id="command-results" class="search-body">
           <div v-if="loading" class="search-tip" role="status">正在搜索股票…</div>
-          <div v-else-if="!commandResults.length" class="search-tip">没有找到匹配页面或股票，请尝试代码、名称或功能名称</div>
+          <div v-else-if="!commandResults.length" class="search-tip">没有找到匹配结果，请尝试代码、名称、拼音缩写或功能名称</div>
           <template v-else>
+            <section v-if="stockCommandResults.length" class="command-section" aria-labelledby="command-stock-title">
+              <h2 id="command-stock-title" class="command-section-title">{{ query.trim() ? '股票' : '最近股票' }}</h2>
+              <ul class="search-list command-list" role="listbox" aria-label="股票">
+                <li v-for="(item, index) in stockCommandResults" :key="item.code">
+                  <button
+                    :id="`command-result-${index}`"
+                    type="button"
+                    class="search-item"
+                    :class="{ selected: index === commandSelection }"
+                    role="option"
+                    :aria-selected="index === commandSelection"
+                    @mouseenter="commandSelection = index"
+                    @click="goCommand(item)"
+                  >
+                    <StockIdentity :security="item" include-main>
+                      <template v-if="query.trim()" #name><span v-html="item.nameHtml" /></template>
+                      <template v-if="query.trim()" #code><span v-html="item.codeHtml" /></template>
+                    </StockIdentity>
+                  </button>
+                </li>
+              </ul>
+            </section>
             <section v-if="filteredRouteCommands.length" class="command-section" aria-labelledby="command-route-title">
               <h2 id="command-route-title" class="command-section-title">页面与操作</h2>
               <ul class="search-list command-list" role="listbox" aria-label="页面与操作">
                 <li v-for="(item, index) in filteredRouteCommands" :key="item.to">
                   <button
-                    :id="`command-result-${index}`"
+                    :id="`command-result-${stockCommandResults.length + index}`"
                     type="button"
                     class="search-item command-item"
-                    :class="{ selected: index === commandSelection }"
+                    :class="{ selected: stockCommandResults.length + index === commandSelection }"
                     role="option"
-                    :aria-selected="index === commandSelection"
-                    @mouseenter="commandSelection = index"
+                    :aria-selected="stockCommandResults.length + index === commandSelection"
+                    @mouseenter="commandSelection = stockCommandResults.length + index"
                     @click="goCommand(item)"
                   >
                     <span class="command-item-copy">
@@ -753,28 +781,6 @@ onBeforeUnmount(() => {
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
-                  </button>
-                </li>
-              </ul>
-            </section>
-            <section v-if="stockCommandResults.length" class="command-section" aria-labelledby="command-stock-title">
-              <h2 id="command-stock-title" class="command-section-title">{{ query.trim() ? '股票' : '最近股票' }}</h2>
-              <ul class="search-list command-list" role="listbox" aria-label="股票">
-                <li v-for="(item, index) in stockCommandResults" :key="item.code">
-                  <button
-                    :id="`command-result-${filteredRouteCommands.length + index}`"
-                    type="button"
-                    class="search-item"
-                    :class="{ selected: filteredRouteCommands.length + index === commandSelection }"
-                    role="option"
-                    :aria-selected="filteredRouteCommands.length + index === commandSelection"
-                    @mouseenter="commandSelection = filteredRouteCommands.length + index"
-                    @click="goCommand(item)"
-                  >
-                    <StockIdentity :security="item" include-main>
-                      <template v-if="query.trim()" #name><span v-html="item.nameHtml" /></template>
-                      <template v-if="query.trim()" #code><span v-html="item.codeHtml" /></template>
-                    </StockIdentity>
                   </button>
                 </li>
               </ul>

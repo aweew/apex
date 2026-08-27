@@ -45,6 +45,11 @@ public class StockBasic implements Serializable {
     private String name;
 
     /**
+     * 证券简称拼音首字母缩写
+     */
+    private String pinyinAbbr;
+
+    /**
      * 市场 SH/SZ/BJ
      */
     private String market;

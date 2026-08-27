@@ -32,7 +32,7 @@ test('mobile navigation keeps glossary beside search and removes density configu
     appSource.indexOf('</div>\n      </div>\n      <div class="nav-actions desktop-nav-actions">'),
   )
 
-  const searchIndex = topActions.indexOf('aria-label="搜索股票"')
+  const searchIndex = topActions.indexOf('aria-label="个股搜索"')
   const glossaryIndex = topActions.indexOf('aria-label="名词百科"')
   const menuIndex = topActions.indexOf('aria-label="打开菜单"')
   assert.ok(searchIndex >= 0 && glossaryIndex > searchIndex && menuIndex > glossaryIndex)
