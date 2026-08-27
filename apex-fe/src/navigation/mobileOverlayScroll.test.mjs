@@ -97,6 +97,18 @@ test('shared mobile dialogs and drawers retain vertical touch scrolling', () => 
 test('desktop navigation keeps its original horizontal layout', () => {
   const desktopStyles = appSource.slice(0, appSource.indexOf('@media (max-width: 900px)'))
   assert.match(desktopStyles, /\.mobile-menu-scroll\s*\{\s*display:\s*contents;/)
+  assert.match(appSource, /const mobileMenuDrawerStyle = computed\(\(\) => \(isMobileViewport\.value/)
+  assert.match(appSource, /:inert="isMobileViewport && !mobileMenuActive"/)
+})
+
+test('mobile navigation drawer follows horizontal page swipes progressively', () => {
+  assert.match(appSource, /@touchstart="onMobileMenuTouchStart"/)
+  assert.match(appSource, /@touchmove="onMobileMenuTouchMove"/)
+  assert.match(appSource, /@touchend="finishMobileMenuSwipe"/)
+  assert.match(appSource, /:style="mobileMenuDrawerStyle"/)
+  assert.match(appSource, /:style="mobileMenuScrimStyle"/)
+  assert.match(appSource, /\.links\.dragging\s*\{[^}]*transition:\s*none;/)
+  assert.match(appSource, /\.nav-scrim\.dragging\s*\{[^}]*transition:\s*none;/)
 })
 
 test('mobile sticky title keeps only the page name in the narrow navigation slot', () => {

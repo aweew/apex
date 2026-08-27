@@ -18,18 +18,27 @@ import {
   setTradingCalendar,
   tradingCalendar,
 } from './utils/dataFreshness.js'
+import {
+  menuSwipeProgress,
+  resolveMenuSwipeAxis,
+  shouldOpenMenuAfterSwipe,
+} from './utils/mobileMenuSwipe.js'
 
 const router = useRouter()
 const route = useRoute()
 const healthOk = ref(null)
 const searchOpen = ref(false)
 const mobileMenuOpen = ref(false)
+const mobileMenuProgress = ref(0)
+const mobileMenuDragging = ref(false)
+const isMobileViewport = ref(window.innerWidth <= 900)
 const query = ref('')
 const loading = ref(false)
 const results = ref([])
 const commandSelection = ref(0)
 const inputRef = ref(null)
 const glossaryRef = ref(null)
+const shellRef = ref(null)
 const mobileMenuRef = ref(null)
 const mobileMenuButtonRef = ref(null)
 const mobileMenuCloseRef = ref(null)
@@ -40,6 +49,15 @@ const mobileBackPath = ref('')
 const mobileBackLabel = ref('')
 const currentUser = ref(getCurrentUser())
 const isPublicRoute = computed(() => Boolean(route.meta.public))
+const mobileMenuActive = computed(() => (
+  mobileMenuOpen.value || mobileMenuDragging.value || mobileMenuProgress.value > 0
+))
+const mobileMenuDrawerStyle = computed(() => (isMobileViewport.value
+  ? { transform: `translate3d(${(mobileMenuProgress.value - 1) * 100}%, 0, 0)` }
+  : undefined))
+const mobileMenuScrimStyle = computed(() => (isMobileViewport.value
+  ? { opacity: mobileMenuProgress.value }
+  : undefined))
 const COMMAND_ROUTE_ITEMS = [
   { to: '/dashboard', label: '看板', detail: '市场立场与今日指挥', keywords: '首页 工作台' },
   { to: '/pre-market-report', label: '盘前研报', detail: '盘前市场、主线与组合风险研判', keywords: '晨报 研报 市场判断' },
@@ -79,6 +97,7 @@ let searchReturnFocus
 let activityShowTimer
 let activityHideTimer
 let moduleTitleFrame
+let mobileMenuSwipe
 
 function syncMobileModuleTitle() {
   if (window.innerWidth > 900) {
@@ -180,11 +199,104 @@ async function logoutCurrentUser() {
 }
 
 function setMobileMenu(open) {
+  mobileMenuDragging.value = false
   mobileMenuOpen.value = open
+  mobileMenuProgress.value = open ? 1 : 0
+  mobileMenuSwipe = undefined
+}
+
+function isMobileMenuSwipeTarget(target) {
+  if (!(target instanceof Element)) return true
+  if (target.closest([
+    'input',
+    'textarea',
+    'select',
+    '[contenteditable="true"]',
+    '[data-mobile-swipe-ignore]',
+    'canvas',
+    '.el-slider',
+    '.el-carousel',
+    '.el-date-editor',
+    '.el-select',
+  ].join(','))) return false
+
+  let currentElement = target
+  while (currentElement && currentElement !== shellRef.value) {
+    const style = window.getComputedStyle(currentElement)
+    const scrollsHorizontally = /(auto|scroll)/.test(style.overflowX)
+      && currentElement.scrollWidth > currentElement.clientWidth + 2
+    if (scrollsHorizontally) return false
+    currentElement = currentElement.parentElement
+  }
+  return true
+}
+
+function onMobileMenuTouchStart(event) {
+  if (
+    window.innerWidth > 900
+    || isPublicRoute.value
+    || searchOpen.value
+    || event.touches.length !== 1
+    || !isMobileMenuSwipeTarget(event.target)
+  ) {
+    mobileMenuSwipe = undefined
+    return
+  }
+
+  const touch = event.touches[0]
+  mobileMenuSwipe = {
+    startX: touch.clientX,
+    startY: touch.clientY,
+    lastX: touch.clientX,
+    lastTime: event.timeStamp,
+    velocity: 0,
+    startProgress: mobileMenuOpen.value ? 1 : 0,
+    axis: 'pending',
+  }
+}
+
+function onMobileMenuTouchMove(event) {
+  if (!mobileMenuSwipe || event.touches.length !== 1) return
+  const touch = event.touches[0]
+  const deltaX = touch.clientX - mobileMenuSwipe.startX
+  const deltaY = touch.clientY - mobileMenuSwipe.startY
+
+  if (mobileMenuSwipe.axis === 'pending') {
+    mobileMenuSwipe.axis = resolveMenuSwipeAxis(deltaX, deltaY)
+    if (mobileMenuSwipe.axis === 'pending') return
+    const openingWrongWay = mobileMenuSwipe.startProgress === 0 && deltaX < 0
+    const closingWrongWay = mobileMenuSwipe.startProgress === 1 && deltaX > 0
+    if (mobileMenuSwipe.axis === 'vertical' || openingWrongWay || closingWrongWay) {
+      mobileMenuSwipe.axis = 'ignored'
+      return
+    }
+    mobileMenuDragging.value = true
+  }
+
+  if (mobileMenuSwipe.axis !== 'horizontal') return
+  event.preventDefault()
+
+  const drawerWidth = mobileMenuRef.value?.getBoundingClientRect?.().width || window.innerWidth * 0.86
+  mobileMenuProgress.value = menuSwipeProgress(mobileMenuSwipe.startProgress, deltaX, drawerWidth)
+  const elapsed = event.timeStamp - mobileMenuSwipe.lastTime
+  if (elapsed > 0) mobileMenuSwipe.velocity = (touch.clientX - mobileMenuSwipe.lastX) / elapsed
+  mobileMenuSwipe.lastX = touch.clientX
+  mobileMenuSwipe.lastTime = event.timeStamp
+}
+
+function finishMobileMenuSwipe(event) {
+  if (!mobileMenuSwipe || mobileMenuSwipe.axis !== 'horizontal') {
+    mobileMenuSwipe = undefined
+    return
+  }
+  const releaseVelocity = event.timeStamp - mobileMenuSwipe.lastTime > 100 ? 0 : mobileMenuSwipe.velocity
+  const shouldOpen = shouldOpenMenuAfterSwipe(mobileMenuProgress.value, releaseVelocity)
+  setMobileMenu(shouldOpen)
 }
 
 function closeMobileMenuOnDesktop() {
-  if (window.innerWidth > 900 && mobileMenuOpen.value) setMobileMenu(false)
+  isMobileViewport.value = window.innerWidth <= 900
+  if (!isMobileViewport.value && mobileMenuActive.value) setMobileMenu(false)
   syncMobileBackTarget()
 }
 
@@ -499,7 +611,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="shell">
+  <div
+    ref="shellRef"
+    class="shell"
+    @touchstart="onMobileMenuTouchStart"
+    @touchmove="onMobileMenuTouchMove"
+    @touchend="finishMobileMenuSwipe"
+    @touchcancel="finishMobileMenuSwipe"
+  >
     <nav
       v-if="!isPublicRoute"
       class="nav"
@@ -561,9 +680,12 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <button
-        v-if="mobileMenuOpen"
         type="button"
         class="nav-scrim"
+        :class="{ visible: mobileMenuActive, dragging: mobileMenuDragging }"
+        :style="mobileMenuScrimStyle"
+        :disabled="!mobileMenuActive"
+        :aria-hidden="mobileMenuActive ? undefined : 'true'"
         aria-label="关闭菜单"
         @click="setMobileMenu(false)"
       />
@@ -571,7 +693,10 @@ onBeforeUnmount(() => {
         id="mobile-navigation"
         ref="mobileMenuRef"
         class="links"
-        :class="{ open: mobileMenuOpen }"
+        :class="{ open: mobileMenuOpen, visible: mobileMenuActive, dragging: mobileMenuDragging }"
+        :style="mobileMenuDrawerStyle"
+        :inert="isMobileViewport && !mobileMenuActive"
+        :aria-hidden="isMobileViewport && !mobileMenuActive ? 'true' : undefined"
         aria-label="移动端功能菜单"
       >
         <div class="mobile-menu-head">
@@ -1529,8 +1654,19 @@ onBeforeUnmount(() => {
     padding: 0;
     border: 0;
     background: rgba(15, 23, 42, 0.46);
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.3s cubic-bezier(0.22, 0.72, 0, 1), visibility 0.3s step-end;
+  }
+
+  .nav-scrim.visible {
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity 0.3s cubic-bezier(0.22, 0.72, 0, 1), visibility 0s step-start;
+  }
+
+  .nav-scrim.dragging {
+    transition: none;
   }
 
   .links {
@@ -1551,15 +1687,20 @@ onBeforeUnmount(() => {
     background: #f2f4f7;
     border-right: 1px solid rgba(0, 0, 0, 0.08);
     box-shadow: 18px 0 54px rgba(15, 23, 42, 0.16);
-    transform: translateX(-104%);
+    transform: translate3d(-100%, 0, 0);
     visibility: hidden;
-    transition: transform 0.22s ease, visibility 0.22s step-end;
+    transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1), visibility 0.3s step-end;
   }
 
-  .links.open {
-    transform: translateX(0);
+  .links.open,
+  .links.visible {
     visibility: visible;
-    transition: transform 0.22s ease, visibility 0s step-start;
+    transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1), visibility 0s step-start;
+  }
+
+  .links.dragging {
+    transition: none;
+    will-change: transform;
   }
 
   .mobile-menu-head {
