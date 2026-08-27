@@ -39,6 +39,8 @@ let sharePreviewObjectUrl = ''
 let rulesRequestSeq = 0
 let aiRequestSeq = 0
 
+const ANALYSIS_SHARE_WIDTH = 720
+
 const stanceClass = computed(() => {
   const s = data.value?.stance || ''
   if (s.includes('积极') || s.includes('跟踪')) return 'good'
@@ -357,16 +359,25 @@ async function captureAnalysisShare() {
       padding: el.style.padding,
       background: el.style.background,
       boxSizing: el.style.boxSizing,
+      width: el.style.width,
+      minWidth: el.style.minWidth,
+      maxWidth: el.style.maxWidth,
     }
     el.style.boxSizing = 'border-box'
-    el.style.padding = '28px 28px 24px'
+    el.style.width = `${ANALYSIS_SHARE_WIDTH}px`
+    el.style.minWidth = `${ANALYSIS_SHARE_WIDTH}px`
+    el.style.maxWidth = 'none'
+    el.style.padding = '28px 30px 22px'
     el.style.background = '#ffffff'
     try {
       return await captureElementBlob(el, {
         scale: 2,
         backgroundColor: '#ffffff',
         style: {
-          padding: '28px 28px 24px',
+          width: `${ANALYSIS_SHARE_WIDTH}px`,
+          minWidth: `${ANALYSIS_SHARE_WIDTH}px`,
+          maxWidth: 'none',
+          padding: '28px 30px 22px',
           backgroundColor: '#ffffff',
           boxSizing: 'border-box',
         },
@@ -375,6 +386,9 @@ async function captureAnalysisShare() {
       el.style.padding = prev.padding
       el.style.background = prev.background
       el.style.boxSizing = prev.boxSizing
+      el.style.width = prev.width
+      el.style.minWidth = prev.minWidth
+      el.style.maxWidth = prev.maxWidth
       restoreLong()
       restoreScroll()
     }
@@ -503,7 +517,7 @@ defineExpose({ reload: () => loadRules() })
       <el-button type="primary" @click="loadRules">重试</el-button>
     </el-empty>
 
-    <div v-if="data" ref="shareCardRef" class="share-card">
+    <div v-if="data" ref="shareCardRef" class="share-card" :class="{ 'is-share-capture': capturingShare }">
       <header class="share-head">
         <div class="share-head-top">
           <div class="share-head-main">
@@ -1886,5 +1900,254 @@ defineExpose({ reload: () => loadRules() })
   .analysis-actions :deep(.analysis-link .el-icon) {
     display: none;
   }
+}
+
+/* 分享图使用独立画布密度，不继承触发分享时的手机断点布局。 */
+.share-card.is-share-capture {
+  width: 720px;
+  min-width: 720px;
+  max-width: none;
+  color: #172033;
+}
+
+.share-card.is-share-capture .share-head {
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e6ebf1;
+}
+
+.share-card.is-share-capture .share-head-top {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.share-card.is-share-capture .share-head-main {
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+}
+
+.share-card.is-share-capture .quote-id {
+  flex-wrap: nowrap;
+  gap: 7px;
+}
+
+.share-card.is-share-capture .quote-core {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f7f9fc;
+  overflow: hidden;
+}
+
+.share-card.is-share-capture .qc-item {
+  padding: 9px 12px;
+  border: 0;
+  border-right: 1px solid #e6ebf1;
+  border-radius: 0;
+  background: transparent;
+}
+
+.share-card.is-share-capture .qc-item:last-child {
+  border-right: 0;
+}
+
+.share-card.is-share-capture .fresh-note {
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.share-card.is-share-capture .hero {
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 10px;
+  padding: 15px 18px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.share-card.is-share-capture .score-ring {
+  width: 76px;
+  height: 76px;
+}
+
+.share-card.is-share-capture .score-ring em {
+  font-size: 23px;
+  letter-spacing: 0;
+}
+
+.share-card.is-share-capture .hero-stance {
+  margin-bottom: 4px;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.share-card.is-share-capture .hero-action {
+  margin-bottom: 5px;
+}
+
+.share-card.is-share-capture .hero-summary {
+  margin-bottom: 7px;
+  -webkit-line-clamp: 1;
+}
+
+.share-card.is-share-capture .ai-card {
+  margin-bottom: 10px;
+  padding: 12px 14px 12px 17px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.share-card.is-share-capture .ai-head {
+  margin-bottom: 6px;
+}
+
+.share-card.is-share-capture .ai-brief {
+  margin-bottom: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.share-card.is-share-capture .watch-row {
+  margin-bottom: 6px;
+}
+
+.share-card.is-share-capture .watch-chip {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.share-card.is-share-capture .ai-risk {
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.share-card.is-share-capture .grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+  align-items: start;
+}
+
+.share-card.is-share-capture .card {
+  padding: 12px;
+  border-color: #e3e8ef;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.share-card.is-share-capture .stock-news-card {
+  margin-bottom: 10px;
+}
+
+.share-card.is-share-capture .stock-news-list {
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.share-card.is-share-capture .stock-news-item {
+  padding: 6px 8px;
+  border-radius: 5px;
+}
+
+.share-card.is-share-capture .stock-news-item:nth-child(n + 4) {
+  display: none;
+}
+
+.share-card.is-share-capture .card-head {
+  margin-bottom: 8px;
+}
+
+.share-card.is-share-capture .card-head.stacked {
+  gap: 6px;
+}
+
+.share-card.is-share-capture .point-list {
+  gap: 5px;
+}
+
+.share-card.is-share-capture .point-list li {
+  padding: 6px 8px 6px 11px;
+  border-radius: 5px;
+}
+
+.share-card.is-share-capture .point-main {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.share-card.is-share-capture .point-tip {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.share-card.is-share-capture .kpi-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.share-card.is-share-capture .kpi {
+  padding: 6px 7px;
+  border-radius: 5px;
+}
+
+.share-card.is-share-capture .radar,
+.share-card.is-share-capture .hot-sources,
+.share-card.is-share-capture .strat-legend {
+  gap: 4px;
+}
+
+.share-card.is-share-capture .radar-chip,
+.share-card.is-share-capture .tag,
+.share-card.is-share-capture .legend-chip {
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+
+.share-card.is-share-capture .dims {
+  gap: 6px;
+}
+
+.share-card.is-share-capture .dim-track,
+.share-card.is-share-capture .mini-bar {
+  height: 6px;
+}
+
+.share-card.is-share-capture .decision-box {
+  margin-bottom: 7px;
+  padding: 7px 9px;
+  border-radius: 6px;
+}
+
+.share-card.is-share-capture .sig-list {
+  gap: 5px;
+}
+
+.share-card.is-share-capture .sig-card {
+  padding: 7px 8px;
+  border-radius: 6px;
+}
+
+.share-card.is-share-capture .sig-tip {
+  display: none;
+}
+
+.share-card.is-share-capture .sig-reason {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+}
+
+.share-card.is-share-capture .sig-foot {
+  margin-top: 3px;
 }
 </style>

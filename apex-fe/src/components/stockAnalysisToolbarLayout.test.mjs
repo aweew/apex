@@ -42,3 +42,12 @@ test('mobile stock analysis controls keep a stable two-row hierarchy', () => {
   assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.analysis-actions\s*\{[\s\S]*?grid-template-columns:\s*44px minmax\(78px, 1\.1fr\) minmax\(76px, 1fr\) minmax\(58px, 0\.72fr\);/)
   assert.match(source, /@media \(max-width: 560px\)[\s\S]*?min-height:\s*44px;/)
 })
+
+test('stock analysis share capture uses a fixed dense canvas independent of mobile breakpoints', () => {
+  assert.match(source, /const ANALYSIS_SHARE_WIDTH = 720/)
+  assert.match(source, /:class="\{ 'is-share-capture': capturingShare \}"/)
+  assert.match(source, /el\.style\.width = `\$\{ANALYSIS_SHARE_WIDTH\}px`/)
+  assert.match(source, /\.share-card\.is-share-capture \.grid-2\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+  assert.match(source, /\.share-card\.is-share-capture \.quote-core\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/)
+  assert.match(source, /\.share-card\.is-share-capture \.stock-news-item:nth-child\(n \+ 4\)/)
+})
