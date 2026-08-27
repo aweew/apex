@@ -257,6 +257,17 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 lastSuccessAt = Objects.nonNull(success.getFinishedAt())
                         ? success.getFinishedAt() : success.getStartedAt();
             }
+            LocalDateTime lastPartialAt = null;
+            var partialQuery = Wrappers.<SyncJob>lambdaQuery()
+                    .eq(SyncJob::getTaskType, spec.getTaskType())
+                    .eq(SyncJob::getStatus, "PARTIAL");
+            SyncJob partial = syncJobMapper.selectOne(partialQuery
+                    .orderByDesc(SyncJob::getId)
+                    .last("LIMIT 1"));
+            if (Objects.nonNull(partial)) {
+                lastPartialAt = Objects.nonNull(partial.getFinishedAt())
+                        ? partial.getFinishedAt() : partial.getStartedAt();
+            }
             boolean latestFailed = Objects.nonNull(latest) && "FAILED".equals(latest.getStatus());
             String health = "PARTIAL".equals(Objects.nonNull(latest) ? latest.getStatus() : null)
                     ? "YELLOW" : SyncTaskHealth.resolve(isRunning, lastSuccessAt, latestFailed, LocalDateTime.now());
@@ -269,6 +280,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     .running(isRunning)
                     .latestJob(latest)
                     .lastSuccessAt(lastSuccessAt)
+                    .lastPartialAt(lastPartialAt)
                     .healthLevel(health)
                     .build());
         }

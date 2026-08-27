@@ -15,6 +15,7 @@ import com.awe.apex.quant.service.TaskProgressListener;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.sync.SyncTaskRegistry;
 import com.awe.apex.quant.sync.SyncJobLeaseService;
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -303,6 +304,52 @@ class DataSyncJobServiceOwnershipTest {
         assertFalse(successQueries.isEmpty());
         assertTrue(successQueries.stream().allMatch(sql -> sql.contains("id")));
         assertTrue(successQueries.stream().noneMatch(sql -> sql.contains("finished_at")));
+    }
+
+    @Test
+    void overviewReportsLatestPartialAndCompleteSuccessTimesSeparately() {
+        LocalDateTime partialFinishedAt = LocalDateTime.of(2026, 8, 27, 21, 15, 53);
+        LocalDateTime successFinishedAt = LocalDateTime.of(2026, 8, 17, 16, 46, 41);
+        SyncJob partialJob = SyncJob.builder()
+                .id(320L)
+                .taskType("CLOSE_BUNDLE")
+                .taskName("一键收盘同步")
+                .status("PARTIAL")
+                .finishedAt(partialFinishedAt)
+                .build();
+        SyncJob successJob = SyncJob.builder()
+                .id(300L)
+                .taskType("CLOSE_BUNDLE")
+                .taskName("一键收盘同步")
+                .status("SUCCESS")
+                .finishedAt(successFinishedAt)
+                .build();
+        when(syncJobMapper.selectList(any())).thenReturn(java.util.List.of(partialJob));
+        when(syncJobMapper.selectOne(any())).thenAnswer(invocation -> {
+            AbstractWrapper<?, ?, ?> query = invocation.getArgument(0);
+            query.getSqlSegment();
+            java.util.Collection<Object> queryValues = query.getParamNameValuePairs().values();
+            if (queryValues.contains("CLOSE_BUNDLE") && queryValues.contains("SUCCESS")) {
+                return successJob;
+            }
+            if (queryValues.contains("CLOSE_BUNDLE") && queryValues.contains("PARTIAL")) {
+                return partialJob;
+            }
+            return null;
+        });
+
+        SyncOverviewResp overview = service.overview();
+
+        SyncTaskDefResp closeBundleTask = null;
+        for (SyncTaskDefResp task : overview.getTasks()) {
+            if ("CLOSE_BUNDLE".equals(task.getTaskType())) {
+                closeBundleTask = task;
+                break;
+            }
+        }
+        assertNotNull(closeBundleTask);
+        assertEquals(partialFinishedAt, closeBundleTask.getLastPartialAt());
+        assertEquals(successFinishedAt, closeBundleTask.getLastSuccessAt());
     }
 
     @Test

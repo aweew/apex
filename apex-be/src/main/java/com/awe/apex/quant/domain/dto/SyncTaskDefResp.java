@@ -57,6 +57,11 @@ public class SyncTaskDefResp {
     private LocalDateTime lastSuccessAt;
 
     /**
+     * 最近部分完成时间
+     */
+    private LocalDateTime lastPartialAt;
+
+    /**
      * 健康色 GREEN/YELLOW/RED
      */
     private String healthLevel;

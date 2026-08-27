@@ -26,7 +26,10 @@ test('sync task log action uses a same-size secondary button', () => {
 
 test('sync task cards separate last execution from data health and keep controls aligned', () => {
   assert.match(syncSource, /上次\{\{ statusLabel\(task\.latestJob\.status\) \}\}/)
+  assert.match(syncSource, /v-if="task\.lastPartialAt"[\s\S]*?最近部分完成 \{\{ fmtTime\(task\.lastPartialAt\) \}\}/)
   assert.match(syncSource, /最近完整成功 \{\{ fmtTime\(task\.lastSuccessAt\) \}\}/)
+  assert.match(syncSource, /closeBundleTask\.lastPartialAt[\s\S]*?最近部分完成 \{\{ fmtTime\(closeBundleTask\.lastPartialAt\) \}\}/)
+  assert.match(syncSource, /最近完整成功 \{\{ fmtTime\(closeBundleTask\.lastSuccessAt\) \}\}/)
   assert.match(syncSource, /if \(level === 'GREEN'\) return '数据正常'/)
   assert.match(syncSource, /if \(level === 'YELLOW'\) return '数据待更新'/)
   assert.match(

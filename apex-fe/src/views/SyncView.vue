@@ -375,7 +375,10 @@ onUnmounted(stopPoll)
         <h2>收盘后点一次就够</h2>
         <p>
           自动串行：大盘指数 → 板块行情 → 涨停池 → 热点 → 资讯。
-          最近成功 {{ fmtTime(closeBundleTask.lastSuccessAt) }} ·
+          <template v-if="closeBundleTask.lastPartialAt">
+            最近部分完成 {{ fmtTime(closeBundleTask.lastPartialAt) }} ·
+          </template>
+          最近完整成功 {{ fmtTime(closeBundleTask.lastSuccessAt) }} ·
           <span :class="healthClass(closeBundleTask.healthLevel)">{{ healthLabel(closeBundleTask.healthLevel) }}</span>
         </p>
       </div>
@@ -429,9 +432,14 @@ onUnmounted(stopPoll)
                 <span class="health-label" :class="healthClass(task.healthLevel)">{{ healthLabel(task.healthLevel) }}</span>
                 <span
                   class="health-time"
-                  :title="`最近完整成功 ${fmtTime(task.lastSuccessAt)}`"
+                  :title="task.lastPartialAt
+                    ? `最近部分完成 ${fmtTime(task.lastPartialAt)} · 最近完整成功 ${fmtTime(task.lastSuccessAt)}`
+                    : `最近完整成功 ${fmtTime(task.lastSuccessAt)}`"
                 >
-                  最近完整成功 {{ fmtTime(task.lastSuccessAt) }}
+                  <span v-if="task.lastPartialAt" class="health-time-row">
+                    最近部分完成 {{ fmtTime(task.lastPartialAt) }}
+                  </span>
+                  <span class="health-time-row">最近完整成功 {{ fmtTime(task.lastSuccessAt) }}</span>
                 </span>
               </div>
               <div class="task-actions">
@@ -729,6 +737,10 @@ span.health-unknown {
   margin-left: auto;
   white-space: normal;
   font-variant-numeric: tabular-nums;
+}
+
+.health-time-row {
+  display: block;
 }
 
 .task-actions {
