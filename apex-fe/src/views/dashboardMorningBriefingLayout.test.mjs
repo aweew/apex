@@ -52,12 +52,20 @@ test('dashboard separates external environment signals and explains their A-shar
   assert.match(dashboardSource, /<h5>外围环境<\/h5>/)
   assert.match(dashboardSource, /v-for="item in externalMarketItems"/)
   assert.match(dashboardSource, /class="external-market-grid"/)
-  assert.match(dashboardSource, /item\.aShareImpact/)
+  assert.match(dashboardSource, /item\.aShareImpact\s*\|\|\s*item\.ashareImpact\s*\|\|\s*'影响说明暂未获取'/)
   assert.match(dashboardSource, /const externalMarketAvailableCount\s*=\s*computed\(/)
   assert.match(dashboardSource, /v-if="item\.available"/)
   assert.match(dashboardSource, /v-else>暂未获取<\/span>/)
   assert.match(dashboardSource, /影响 A 股开盘情绪的外部线索，并非单独买卖信号/)
   assert.match(dashboardSource, /已获取 \{\{ externalMarketAvailableCount \}\}\/5 项/)
+  assert.match(
+    dashboardSource,
+    /\.external-market-grid\s*\{[^}]*column-gap:\s*24px;[^}]*border-top:\s*1px solid/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.external-market-card\s*\{[^}]*padding:\s*10px 0 11px;[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid[^}]*border-radius:\s*0;[^}]*background:\s*transparent;/s,
+  )
 })
 
 test('dashboard presents structured pre-market event impacts with evidence labels', () => {
@@ -186,6 +194,14 @@ test('dashboard morning context has a compact responsive layout', () => {
   assert.match(dashboardSource, /marketOpinion\.kolSourceStatus/)
 })
 
+test('dashboard keeps each Asia quote grouped instead of stretching it across the column', () => {
+  assert.match(
+    dashboardSource,
+    /\.asia-index-grid \.overnight-quote\s*\{[^}]*justify-content:\s*flex-start;[^}]*gap:\s*12px;/s,
+  )
+  assert.match(dashboardSource, /\.asia-index-grid\s*\{[^}]*column-gap:\s*24px;/s)
+})
+
 test('dashboard keeps report reading inside a closable preview and exposes active-seat context', () => {
   assert.match(dashboardSource, /const opinionPreviewOpen = ref\(false\)/)
   assert.match(dashboardSource, /function openOpinionPreview\(item\)/)
@@ -229,6 +245,10 @@ test('dashboard constrains overnight grids and quote prices within their desktop
   assert.match(
     dashboardSource,
     /\.overnight-star-grid\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.overnight-star-grid \.overnight-quote\s*\{[^}]*justify-content:\s*flex-start;[^}]*gap:\s*12px;/s,
   )
   assert.match(
     dashboardSource,
@@ -377,10 +397,15 @@ test('dashboard keeps overnight layers stable across desktop and phone layouts',
   const themeColumnRules = [...dashboardSource.matchAll(
     /\.overnight-theme\s*\{[^}]*grid-template-columns:\s*([^;]+);/gs,
   )].map((match) => match[1])
-  assert.deepEqual(themeColumnRules, ['24px fit-content(180px) minmax(82px, max-content)'])
+  assert.deepEqual(themeColumnRules, ['24px minmax(0, 1fr) 104px'])
   assert.match(
     dashboardSource,
-    /\.overnight-theme\s*\{[^}]*justify-content:\s*start;/s,
+    /\.overnight-theme\s*\{[^}]*justify-content:\s*stretch;/s,
+  )
+  assert.match(dashboardSource, /\.overnight-theme-stats\s*\{[^}]*align-items:\s*stretch;/s)
+  assert.match(
+    dashboardSource,
+    /\.overnight-theme-stats \.overnight-theme-breadth\s*\{[^}]*grid-template-columns:\s*28px 58px;[^}]*justify-content:\s*end;/s,
   )
 })
 
@@ -408,7 +433,7 @@ test('dashboard theme ranking exposes breadth without relying on color alone', (
   assert.match(dashboardSource, /\{\{ theme\.upCount \?\? 0 \}\}\/\{\{ theme\.quoteCount \?\? 0 \}\} 上涨/)
   assert.match(
     dashboardSource,
-    /\.overnight-theme\s*\{[^}]*grid-template-columns:\s*24px fit-content\(180px\) minmax\(82px,\s*max-content\);/s,
+    /\.overnight-theme\s*\{[^}]*grid-template-columns:\s*24px minmax\(0,\s*1fr\) 104px;/s,
   )
 })
 

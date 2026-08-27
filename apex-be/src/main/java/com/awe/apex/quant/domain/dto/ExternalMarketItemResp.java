@@ -1,5 +1,7 @@
 package com.awe.apex.quant.domain.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -55,5 +57,7 @@ public class ExternalMarketItemResp {
     /**
      * 面向新手的 A 股影响说明。
      */
+    @JsonAlias("ashareImpact")
+    @JsonProperty("aShareImpact")
     private String aShareImpact;
 }

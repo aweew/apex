@@ -28,12 +28,12 @@ test('observe reminder chips use a dedicated compact alert treatment', () => {
   assert.doesNotMatch(observeChipStyle, /border-radius:\s*999px;/)
 })
 
-test('desktop decision table reserves one complete cue column for linkage and mainline tags', () => {
+test('desktop decision table reserves one complete flexible cue column for linkage and mainline tags', () => {
   const tableStart = dashboardSource.indexOf(':data="topBuys"')
   const tableEnd = dashboardSource.indexOf('</el-table>', tableStart)
   const decisionTable = dashboardSource.slice(tableStart, tableEnd)
 
-  assert.match(decisionTable, /label="联动" width="124" class-name="action-cues-col"/)
+  assert.match(decisionTable, /label="联动" min-width="124" class-name="action-cues-col"/)
   assert.match(decisionTable, /class="action-cues"[\s\S]*?row\.linkHint[\s\S]*?row\.mainlineMatch/)
   assert.doesNotMatch(decisionTable, /<el-table-column label="主线"/)
   assert.match(dashboardSource, /\.action-cues :deep\(\.link-hint-tag\)\s*\{[\s\S]*?white-space:\s*nowrap;/)
@@ -48,6 +48,20 @@ test('desktop action panels stay inside the dashboard container', () => {
     dashboardSource,
     /\.action-panel\s*\{[^}]*min-width:\s*0;/,
   )
+})
+
+test('desktop action tables keep adjacent fields together and fill their panels', () => {
+  const buyTableStart = dashboardSource.indexOf(':data="topBuys"')
+  const buyTableEnd = dashboardSource.indexOf('</el-table>', buyTableStart)
+  const buyTable = dashboardSource.slice(buyTableStart, buyTableEnd)
+  const sellTableStart = dashboardSource.indexOf(':data="topSells"')
+  const sellTableEnd = dashboardSource.indexOf('</el-table>', sellTableStart)
+  const sellTable = dashboardSource.slice(sellTableStart, sellTableEnd)
+
+  assert.match(buyTable, /prop="name" label="股票" width="120"/)
+  assert.match(buyTable, /label="联动" min-width="124" class-name="action-cues-col"/)
+  assert.match(sellTable, /prop="name" label="股票" width="120"/)
+  assert.match(sellTable, /prop="exitRule" label="触发" min-width="160"/)
 })
 
 test('mobile sell cards keep strategy beside the stock identity instead of a separate row', () => {

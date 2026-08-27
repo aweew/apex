@@ -1011,7 +1011,9 @@ onMounted(() => {
                 <span v-if="item.available && fmtQuotePrice(item.latestPrice)" class="external-market-price">
                   {{ fmtQuotePrice(item.latestPrice) }}
                 </span>
-                <p>对 A 股：{{ item.aShareImpact }}</p>
+                <p>
+                  <span>对 A 股：</span>{{ item.aShareImpact || item.ashareImpact || '影响说明暂未获取' }}
+                </p>
               </article>
             </div>
             <p v-else class="morning-context-empty">外围环境指标暂未获取</p>
@@ -1303,7 +1305,7 @@ onMounted(() => {
               empty-text="暂无买入建议"
               stripe
             >
-              <el-table-column prop="name" label="股票" width="132">
+              <el-table-column prop="name" label="股票" width="120">
                 <template #default="{ row }">
                   <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
                 </template>
@@ -1324,7 +1326,7 @@ onMounted(() => {
                   <span class="num">{{ fmtWeight(row.suggestedWeight) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="联动" width="124" class-name="action-cues-col">
+              <el-table-column label="联动" min-width="124" class-name="action-cues-col">
                 <template #default="{ row }">
                   <div class="action-cues">
                     <el-tag
@@ -1435,7 +1437,7 @@ onMounted(() => {
               class="dash-table desktop-action-table"
               stripe
             >
-              <el-table-column prop="name" label="股票" width="138">
+              <el-table-column prop="name" label="股票" width="120">
                 <template #default="{ row }">
                   <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
                 </template>
@@ -1452,7 +1454,7 @@ onMounted(() => {
                   <ScoreBar :score="row.score" />
                 </template>
               </el-table-column>
-              <el-table-column prop="exitRule" label="触发" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="exitRule" label="触发" min-width="160" show-overflow-tooltip />
             </el-table>
 
             <div class="mobile-action-list" aria-label="持仓卖出行动">
@@ -2699,10 +2701,15 @@ onMounted(() => {
 .asia-index-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0;
+  column-gap: 24px;
   min-width: 0;
   width: 100%;
   border-top: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.asia-index-grid .overnight-quote {
+  justify-content: flex-start;
+  gap: 12px;
 }
 
 .command-watch > span {
@@ -3107,16 +3114,19 @@ onMounted(() => {
 .external-market-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  column-gap: 24px;
+  row-gap: 0;
   min-width: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
 .external-market-card {
   min-width: 0;
-  padding: 11px 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.42);
+  padding: 10px 0 11px;
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  border-radius: 0;
+  background: transparent;
 }
 
 .external-market-quote {
@@ -3157,7 +3167,7 @@ onMounted(() => {
 
 .external-market-card p,
 .external-market-note {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.6;
@@ -3165,6 +3175,12 @@ onMounted(() => {
 
 .external-market-card p {
   overflow-wrap: anywhere;
+}
+
+.external-market-card p span {
+  color: var(--ink-soft);
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .external-market-note {
@@ -3186,6 +3202,11 @@ onMounted(() => {
   min-width: 0;
   width: 100%;
   column-gap: 18px;
+}
+
+.overnight-star-grid .overnight-quote {
+  justify-content: flex-start;
+  gap: 12px;
 }
 
 .overnight-quote {
@@ -3254,9 +3275,9 @@ onMounted(() => {
 
 .overnight-theme {
   display: grid;
-  grid-template-columns: 24px fit-content(180px) minmax(82px, max-content);
+  grid-template-columns: 24px minmax(0, 1fr) 104px;
   align-items: center;
-  justify-content: start;
+  justify-content: stretch;
   gap: 8px;
   min-width: 0;
   min-height: 56px;
@@ -3306,7 +3327,7 @@ onMounted(() => {
 }
 
 .overnight-theme-stats {
-  align-items: flex-end;
+  align-items: stretch;
   flex-direction: column;
   gap: 1px;
   white-space: nowrap;
@@ -3317,6 +3338,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
+  text-align: right;
 }
 
 .overnight-theme-stats b.up { color: var(--up); }
@@ -3330,9 +3352,14 @@ onMounted(() => {
 
 .overnight-theme-stats .overnight-theme-breadth {
   display: grid;
-  grid-template-columns: 28px auto;
+  grid-template-columns: 28px 58px;
   align-items: center;
+  justify-content: end;
   gap: 5px;
+}
+
+.overnight-theme-breadth > span:last-child {
+  text-align: right;
 }
 
 .overnight-theme-breadth-track {
