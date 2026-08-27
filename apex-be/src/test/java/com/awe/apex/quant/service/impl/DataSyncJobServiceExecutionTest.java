@@ -242,6 +242,58 @@ class DataSyncJobServiceExecutionTest {
     }
 
     @Test
+    void closeBundleProgressReservesPostProcessingRangeAndIgnoresNestedCounters() {
+        SyncJob job = SyncJob.builder()
+                .taskType("CLOSE_BUNDLE")
+                .progressPct(0)
+                .build();
+
+        ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
+                job, "[CLOSE_BUNDLE] 步骤 1/5：index", 1L);
+        assertEquals(1, job.getProgressPct());
+
+        ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
+                job, "[300/300] 000001 OK", 2L);
+        ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
+                job, "子脚本进度 99%", 3L);
+        assertEquals(1, job.getProgressPct());
+
+        ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
+                job, "[CLOSE_BUNDLE] 步骤 5/5：news", 4L);
+        assertEquals(72, job.getProgressPct());
+
+        ReflectionTestUtils.invokeMethod(service, "updateProgressFromLine",
+                job, "[CLOSE_BUNDLE] 全部完成", 5L);
+        assertEquals(89, job.getProgressPct());
+    }
+
+    @Test
+    void closeBundlePersistedProgressNeverMovesBackward() throws Exception {
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(7L));
+
+        SyncJob result = runCloseBundle("echo '[CLOSE_BUNDLE] 步骤 1/5：index'\n"
+                + "echo '[300/300] 子脚本完成'\n"
+                + "echo '[CLOSE_BUNDLE] 步骤 5/5：news'\n"
+                + "echo '子脚本进度 99%'\n"
+                + "echo '[CLOSE_BUNDLE] 全部完成'\n"
+                + "exit 0\n");
+
+        List<Integer> persistedProgress = updates.stream()
+                .filter(job -> "RUNNING".equals(job.getStatus()))
+                .map(SyncJob::getProgressPct)
+                .filter(Objects::nonNull)
+                .toList();
+        for (int index = 1; index < persistedProgress.size(); index++) {
+            assertTrue(persistedProgress.get(index) >= persistedProgress.get(index - 1),
+                    () -> "进度发生回退：" + persistedProgress);
+        }
+        assertTrue(persistedProgress.contains(89), () -> "缺少脚本完成进度：" + persistedProgress);
+        assertTrue(persistedProgress.contains(90), () -> "缺少后处理起始进度：" + persistedProgress);
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(100, result.getProgressPct());
+    }
+
+    @Test
     void nightlyRepairInvalidatesMarketBriefingCache() {
         SyncJob job = SyncJob.builder().taskType("NIGHTLY_REPAIR").build();
 

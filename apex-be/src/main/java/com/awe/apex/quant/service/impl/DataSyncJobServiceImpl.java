@@ -93,6 +93,8 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             "成功步骤=([^，\\n]+).*失败步骤=([^，\\n]+)");
     private static final Pattern INCOMPLETE_PATTERN = Pattern.compile("未完成.*剩余缺口=([1-9]\\d*)");
     private static final int LOG_MAX = 12000;
+    private static final int CLOSE_BUNDLE_SCRIPT_MAX_PROGRESS = 89;
+    private static final int CLOSE_BUNDLE_POST_PROCESS_START_PROGRESS = 90;
     private static final long ORPHAN_RECONCILE_GRACE_SECONDS = 300;
     private static final long SHARED_DECISION_KEY = 0L;
     private static final int USER_DECISION_PARALLELISM = 2;
@@ -828,7 +830,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             } else {
                 String postProcessingWarning = "";
                 if ("CLOSE_BUNDLE".equals(spec.getTaskType())) {
-                    job.setProgressPct(Math.min(99, Math.max(90,
+                    job.setProgressPct(Math.min(99, Math.max(CLOSE_BUNDLE_POST_PROCESS_START_PROGRESS,
                             Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0)));
                     job.setDoneItems(0);
                     job.setTotalItems(null);
@@ -1140,12 +1142,14 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
     private void persistPostProcessingStage(SyncJob job, String stage, int completedStages,
                                             int totalStages, AtomicBoolean cancelled) {
         ensurePostProcessingActive(cancelled);
-        int progress = 90 + Math.min(9, completedStages * 9 / Math.max(totalStages, 1));
-        job.setProgressPct(progress);
+        int progress = CLOSE_BUNDLE_POST_PROCESS_START_PROGRESS
+                + Math.min(9, completedStages * 9 / Math.max(totalStages, 1));
+        int currentProgress = Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0;
+        job.setProgressPct(Math.max(currentProgress, progress));
         job.setDoneItems(completedStages);
         job.setTotalItems(totalStages);
         job.setMessage("收盘后处理：" + stage);
-        appendLog(job, "[收盘后处理] 阶段=" + stage + "，进度=" + progress + "%\n");
+        appendLog(job, "[收盘后处理] 阶段=" + stage + "，进度=" + job.getProgressPct() + "%\n");
         syncJobMapper.updateById(job);
     }
 
@@ -1208,6 +1212,33 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
         if ("NIGHTLY_REPAIR".equalsIgnoreCase(job.getTaskType())
                 && !line.contains("[NIGHTLY_REPAIR] 步骤")
                 && !line.contains("[NIGHTLY_REPAIR] step")) {
+            return;
+        }
+        if ("CLOSE_BUNDLE".equalsIgnoreCase(job.getTaskType())) {
+            if (!line.contains("[CLOSE_BUNDLE]")) {
+                return;
+            }
+            if (line.contains("[CLOSE_BUNDLE] 全部完成")) {
+                int currentProgress = Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0;
+                job.setProgressPct(Math.max(currentProgress, CLOSE_BUNDLE_SCRIPT_MAX_PROGRESS));
+                job.setMessage("收盘同步脚本完成");
+                return;
+            }
+            Matcher closeBundleStep = SCRIPT_STEP_PATTERN.matcher(line);
+            if (!closeBundleStep.find()) {
+                return;
+            }
+            int startedStep = Integer.parseInt(closeBundleStep.group(1));
+            int totalSteps = Integer.parseInt(closeBundleStep.group(2));
+            job.setDoneItems(startedStep);
+            job.setTotalItems(totalSteps);
+            if (totalSteps > 0) {
+                int progress = 1 + Math.max(0, startedStep - 1) * CLOSE_BUNDLE_SCRIPT_MAX_PROGRESS / totalSteps;
+                int currentProgress = Objects.nonNull(job.getProgressPct()) ? job.getProgressPct() : 0;
+                job.setProgressPct(Math.max(currentProgress,
+                        Math.min(CLOSE_BUNDLE_SCRIPT_MAX_PROGRESS - 1, progress)));
+            }
+            job.setMessage(trimMessage(line));
             return;
         }
         Matcher step = STEP_PATTERN.matcher(line);
