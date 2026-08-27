@@ -10,6 +10,13 @@ test('stock detail embeds the factor center as a lazy tab', () => {
   assert.match(source, /<FactorCenterView\s+embedded\s+:stock-code="String\(basic\?\.code \|\| code\)\.trim\(\)"/)
 })
 
+test('stock detail opens the decision radar as the first-level default view', () => {
+  assert.match(source, /const STOCK_TAB_NAMES = \[/)
+  assert.match(source, /const activeTab = ref\(STOCK_TAB_NAMES\.includes\(route\.query\.tab\) \? route\.query\.tab : 'analysis'\)/)
+  assert.match(source, /<el-tab-pane label="今日雷达" name="analysis" lazy>/)
+  assert.match(source, /今日雷达 · 个股消息 · 估值 · 行情/)
+})
+
 test('stock detail keeps only the compact high-value action toolbar', () => {
   const actions = source.slice(source.indexOf('<div class="actions">'), source.indexOf('</header>'))
 

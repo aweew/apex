@@ -24,6 +24,7 @@ const props = defineProps({
 const router = useRouter()
 const loading = ref(false)
 const aiLoading = ref(false)
+const aiRequested = ref(false)
 const side = ref('BUY')
 const data = ref(null)
 const error = ref('')
@@ -127,6 +128,64 @@ const radarResultText = computed(() => {
   return total > 0
     ? `${radarDirectionLabel.value} · 命中 ${hit}/${total}`
     : `${radarDirectionLabel.value} · 暂无信号`
+})
+
+const todayRadarItems = computed(() => {
+  const analysis = data.value
+  if (!analysis) return []
+
+  const techHitCount = Number(analysis.tech?.hitCount) || 0
+  const techTotal = Number(analysis.tech?.total) || 0
+  const newsCount = analysis.recentNews?.length || 0
+  const valuationLevel = analysis.valuation?.level
+  const valuationUnknown = !analysis.valuation || valuationLevel === 'UNKNOWN'
+  const valuationCheap = ['UNDERVALUED', 'SLIGHTLY_CHEAP'].includes(valuationLevel)
+  const valuationFacts = []
+  if (analysis.valuation?.levelLabel) valuationFacts.push(analysis.valuation.levelLabel)
+  if (analysis.valuation?.pePercentile != null) {
+    valuationFacts.push(`PE 行业分位 ${fmtNum(analysis.valuation.pePercentile, 0)}%`)
+  }
+  if (analysis.valuation?.marginOfSafety != null) {
+    valuationFacts.push(`安全边际 ${fmtPct(analysis.valuation.marginOfSafety)}`)
+  }
+
+  const sectorActive = Number(analysis.capital?.sectorPctChg) > 0
+    || Number(analysis.capital?.sectorMainNetInflow) > 0
+  let marketValue = '未命中热点'
+  let marketTone = sectorActive ? 'watch' : 'quiet'
+  if (analysis.capital?.hotHit) {
+    marketValue = `多源共振 ×${analysis.capital.hotSourceCount || 1}`
+    marketTone = 'hot'
+  } else if (sectorActive) {
+    marketValue = '板块有热度'
+  }
+
+  return [
+    {
+      label: '技术信号',
+      value: techTotal ? `${techHitCount}/${techTotal} 命中` : '数据不足',
+      detail: analysis.tech?.summary || '暂无可用技术结构',
+      tone: techTotal && techHitCount ? 'active' : 'quiet',
+    },
+    {
+      label: '个股消息',
+      value: newsCount ? `${newsCount} 条直接相关` : '暂未收录',
+      detail: analysis.newsSummary || '近7日未收录直接相关消息',
+      tone: newsCount ? 'active' : 'quiet',
+    },
+    {
+      label: '估值洼地',
+      value: valuationUnknown ? '数据不足' : valuationCheap ? '存在洼地' : '未处洼地',
+      detail: valuationFacts.join(' · ') || '缺少可核验估值数据',
+      tone: valuationCheap ? 'good' : valuationUnknown ? 'quiet' : 'neutral',
+    },
+    {
+      label: '盘面热点',
+      value: marketValue,
+      detail: analysis.capital?.summary || '暂无板块资金与热点证据',
+      tone: marketTone,
+    },
+  ]
 })
 
 function strategyMeta(id) {
@@ -278,14 +337,13 @@ async function loadRules() {
   aiRequestSeq += 1
   loading.value = true
   aiLoading.value = false
+  aiRequested.value = false
   error.value = ''
   try {
     const res = await fetchStockAnalysis(props.code, requestedSide, 120, false, false)
     const next = await enrichQuotePeriods(res.data)
     if (requestSeq !== rulesRequestSeq || requestedSide !== side.value) return
     data.value = next
-    // 规则先出，再独立刷新行情、补日线并生成 AI 解读
-    loadAi(false, requestedSide)
   } catch (e) {
     if (requestSeq !== rulesRequestSeq || requestedSide !== side.value) return
     data.value = null
@@ -299,6 +357,7 @@ async function loadRules() {
 async function loadAi(forceAi = false, requestedSide = side.value) {
   if (!props.code) return
   const requestSeq = ++aiRequestSeq
+  aiRequested.value = true
   aiLoading.value = true
   try {
     const res = await fetchStockAnalysis(props.code, requestedSide, 120, true, forceAi)
@@ -559,6 +618,28 @@ defineExpose({ reload: () => loadRules() })
         <span v-if="data.freshness.barCount != null"> · {{ data.freshness.barCount }} 根</span>
       </p>
 
+      <section class="today-radar" aria-labelledby="today-radar-title">
+        <header class="today-radar-head">
+          <div>
+            <h2 id="today-radar-title">今日雷达</h2>
+            <span>本地规则快照</span>
+          </div>
+          <small>{{ radarResultText }}</small>
+        </header>
+        <div class="today-radar-grid">
+          <article
+            v-for="item in todayRadarItems"
+            :key="item.label"
+            class="today-radar-item"
+            :data-tone="item.tone"
+          >
+            <span>{{ item.label }}</span>
+            <b>{{ item.value }}</b>
+            <p :title="item.detail">{{ item.detail }}</p>
+          </article>
+        </div>
+      </section>
+
       <!-- 结论总览 -->
       <section class="hero" :class="stanceClass">
         <div class="hero-score">
@@ -577,7 +658,7 @@ defineExpose({ reload: () => loadRules() })
         </div>
       </section>
 
-      <section class="ai-card" :class="aiStanceClass" v-loading="aiLoading">
+      <section v-if="aiRequested" class="ai-card" :class="aiStanceClass" v-loading="aiLoading">
         <header class="ai-head">
           <h3>AI 实时解读</h3>
           <div class="ai-meta">
@@ -598,7 +679,7 @@ defineExpose({ reload: () => loadRules() })
 
       <section class="card stock-news-card">
         <header class="card-head stock-news-head">
-          <h3>消息面</h3>
+          <h3>个股消息面</h3>
           <span class="pill quiet">近7日</span>
         </header>
         <p class="stock-news-summary">{{ data.newsSummary || '近7日未收录直接相关消息' }}</p>
@@ -685,7 +766,7 @@ defineExpose({ reload: () => loadRules() })
         <section class="card dim-val">
           <header class="card-head stacked">
             <div class="title-row">
-              <h3><TermTip term="pe_ttm">估值</TermTip></h3>
+              <h3><TermTip term="pe_ttm">估值洼地</TermTip></h3>
               <span class="pill val">{{ data.valuation?.levelLabel || '-' }}</span>
             </div>
             <div class="mini-bar val" :title="`估值分 ${fmtNum(data.valuation?.score, 1)}`">
@@ -713,7 +794,7 @@ defineExpose({ reload: () => loadRules() })
         <section class="card dim-cap">
           <header class="card-head stacked">
             <div class="title-row">
-              <h3>资金情绪</h3>
+              <h3>盘面热点</h3>
               <span class="pill" :class="data.capital?.hotHit ? 'hot' : 'quiet'">
                 {{ data.capital?.hotHit ? `热点×${data.capital.hotSourceCount}` : '非热点' }}
               </span>
@@ -1040,6 +1121,128 @@ defineExpose({ reload: () => loadRules() })
 
 .fresh-note.stale {
   color: #c77700;
+}
+
+.today-radar {
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.today-radar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.today-radar-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.today-radar-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.today-radar-head span,
+.today-radar-head small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.today-radar-head small {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.today-radar-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.today-radar-item {
+  position: relative;
+  min-width: 0;
+  min-height: 104px;
+  padding: 14px 12px 12px;
+  border-right: 1px solid var(--line);
+}
+
+.today-radar-item:last-child {
+  border-right: 0;
+}
+
+.today-radar-item::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: #a1a1aa;
+  content: '';
+}
+
+.today-radar-item[data-tone='active']::before {
+  background: #0071e3;
+}
+
+.today-radar-item[data-tone='good']::before {
+  background: #1d8a45;
+}
+
+.today-radar-item[data-tone='hot']::before {
+  background: #d92d20;
+}
+
+.today-radar-item[data-tone='watch']::before {
+  background: #b26a00;
+}
+
+.today-radar-item[data-tone='neutral']::before {
+  background: #6b7280;
+}
+
+.today-radar-item > span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.today-radar-item > b {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.today-radar-item > p {
+  display: -webkit-box;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--slate);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .hero {
@@ -1894,6 +2097,31 @@ defineExpose({ reload: () => loadRules() })
   .analysis-actions :deep(.analysis-refresh) {
     padding: 0;
   }
+
+  .today-radar-head {
+    align-items: flex-start;
+  }
+
+  .today-radar-head > div {
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .today-radar-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .today-radar-item {
+    min-height: 108px;
+  }
+
+  .today-radar-item:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .today-radar-item:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
 }
 
 @media (max-width: 360px) {
@@ -1958,6 +2186,21 @@ defineExpose({ reload: () => loadRules() })
 .share-card.is-share-capture .fresh-note {
   margin-bottom: 10px;
   font-size: 11px;
+}
+
+.share-card.is-share-capture .today-radar-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.share-card.is-share-capture .today-radar-item {
+  min-height: 92px;
+  padding: 12px 10px 10px;
+  border-top: 0;
+  border-right: 1px solid #e6ebf1;
+}
+
+.share-card.is-share-capture .today-radar-item:last-child {
+  border-right: 0;
 }
 
 .share-card.is-share-capture .hero {

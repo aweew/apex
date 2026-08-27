@@ -22,12 +22,35 @@ test('stock analysis ignores stale direction responses', () => {
 
 test('stock analysis shows traceable local news coverage', () => {
   assert.match(source, /class="card stock-news-card"/)
+  assert.match(source, /<h3>个股消息面<\/h3>/)
   assert.match(source, /data\.newsSummary/)
   assert.match(source, /data\.recentNews\.slice\(0, 5\)/)
   assert.match(source, /newsSourceLabel\(news\.source\)/)
   assert.match(source, /fmtNewsTime\(news\.publishedAt\)/)
   assert.match(source, /:href="news\.url \|\| undefined"/)
   assert.match(source, /\.stock-news-item\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/)
+})
+
+test('today radar summarizes technical news valuation and market evidence without inventing data', () => {
+  assert.match(source, /const todayRadarItems = computed/)
+  assert.match(source, /label: '技术信号'/)
+  assert.match(source, /label: '个股消息'/)
+  assert.match(source, /label: '估值洼地'/)
+  assert.match(source, /label: '盘面热点'/)
+  assert.match(source, /\['UNDERVALUED', 'SLIGHTLY_CHEAP'\]\.includes/)
+  assert.match(source, /valuationLevel === 'UNKNOWN'/)
+  assert.match(source, /analysis\.capital\?\.hotHit/)
+  assert.match(source, /class="today-radar"/)
+  assert.match(source, /v-for="item in todayRadarItems"/)
+  assert.match(source, /<h3><TermTip term="pe_ttm">估值洼地<\/TermTip><\/h3>/)
+  assert.match(source, /<h3>盘面热点<\/h3>/)
+})
+
+test('opening the radar does not automatically trigger slow AI refresh', () => {
+  const loadRulesBody = source.slice(source.indexOf('async function loadRules()'), source.indexOf('async function loadAi('))
+
+  assert.doesNotMatch(loadRulesBody, /loadAi\(/)
+  assert.match(source, /@click="refreshAi"/)
 })
 
 test('mobile stock analysis controls keep a stable two-row hierarchy', () => {
@@ -41,6 +64,7 @@ test('mobile stock analysis controls keep a stable two-row hierarchy', () => {
   assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.analysis-toolbar\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
   assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.analysis-actions\s*\{[\s\S]*?grid-template-columns:\s*44px minmax\(78px, 1\.1fr\) minmax\(76px, 1fr\) minmax\(58px, 0\.72fr\);/)
   assert.match(source, /@media \(max-width: 560px\)[\s\S]*?min-height:\s*44px;/)
+  assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.today-radar-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
 })
 
 test('stock analysis share capture uses a fixed dense canvas independent of mobile breakpoints', () => {
@@ -48,6 +72,7 @@ test('stock analysis share capture uses a fixed dense canvas independent of mobi
   assert.match(source, /:class="\{ 'is-share-capture': capturingShare \}"/)
   assert.match(source, /el\.style\.width = `\$\{ANALYSIS_SHARE_WIDTH\}px`/)
   assert.match(source, /\.share-card\.is-share-capture \.grid-2\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+  assert.match(source, /\.share-card\.is-share-capture \.today-radar-grid\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/)
   assert.match(source, /\.share-card\.is-share-capture \.quote-core\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/)
   assert.match(source, /\.share-card\.is-share-capture \.stock-news-item:nth-child\(n \+ 4\)/)
 })

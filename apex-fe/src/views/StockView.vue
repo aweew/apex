@@ -63,7 +63,20 @@ const rs20 = ref(null)
 const rs60 = ref(null)
 const volumeRatio = ref(null)
 const chartRef = ref(null)
-const activeTab = ref(['summary', 'valuation', 'factors'].includes(route.query.tab) ? route.query.tab : 'chart')
+const STOCK_TAB_NAMES = [
+  'analysis',
+  'valuation',
+  'factors',
+  'summary',
+  'chart',
+  'profile',
+  'abstract',
+  'indicator',
+  'profitSheet',
+  'balanceSheet',
+  'cashflowSheet',
+]
+const activeTab = ref(STOCK_TAB_NAMES.includes(route.query.tab) ? route.query.tab : 'analysis')
 const fund = ref(null)
 const profile = ref(null)
 const macdTip = ref('')
@@ -88,8 +101,7 @@ const chartParamsExpanded = ref(!isMobileChart.value)
 const BAR_LIMIT = 500
 const MIN_VISIBLE_BARS = 12
 const CHART_PREF_KEY = 'apex.stock.chartPrefs'
-const META_EXPAND_KEY = 'apex.stock.metaExpanded'
-const metaExpanded = ref(localStorage.getItem(META_EXPAND_KEY) === '1')
+const metaExpanded = ref(false)
 
 const syncButtonLabel = computed(() => {
   if (!syncingBars.value) return '同步行情'
@@ -109,7 +121,6 @@ function syncStateLabel(state) {
 
 function toggleMetaExpanded() {
   metaExpanded.value = !metaExpanded.value
-  localStorage.setItem(META_EXPAND_KEY, metaExpanded.value ? '1' : '0')
 }
 const MA_META = [
   { name: 'MA5', color: '#1d1d1f' },
@@ -1843,7 +1854,7 @@ watch(
 watch(
   () => route.query.tab,
   (tab) => {
-    if (['valuation', 'factors'].includes(tab)) activeTab.value = tab
+    if (STOCK_TAB_NAMES.includes(tab)) activeTab.value = tab
   },
 )
 
@@ -1961,7 +1972,7 @@ function onTabChange(name) {
   if (name === 'profile' && !profile.value) {
     loadProfile(false)
   }
-  // 综合研判 Tab 由 StockAnalysisPanel 自行按 code 加载
+  // 今日雷达 Tab 由 StockAnalysisPanel 自行按 code 加载
 }
 
 function dash(v) {
@@ -1982,7 +1993,7 @@ function dash(v) {
             prominent
           />
         </h1>
-        <p class="stock-note">{{ note || 'K线 · 综合研判 · 估值 · 回测 · 观察池' }}</p>
+        <p class="stock-note">{{ note || '今日雷达 · 个股消息 · 估值 · 行情' }}</p>
       </div>
       <div class="actions">
         <div class="stock-action-toolbar">
@@ -2041,11 +2052,17 @@ function dash(v) {
           <span class="meta-chip">{{ profile?.industryL2 || basic.industry || basic.market || '-' }}</span>
           <span class="meta-chip">量比 {{ volumeRatio ?? '-' }}</span>
         </div>
-        <button type="button" class="meta-toggle" @click="toggleMetaExpanded">
+        <button
+          type="button"
+          class="meta-toggle"
+          :aria-expanded="metaExpanded"
+          aria-controls="stock-meta-details"
+          @click="toggleMetaExpanded"
+        >
           {{ metaExpanded ? '收起指标' : '展开指标' }}
         </button>
       </div>
-      <div v-show="metaExpanded" class="meta">
+      <div id="stock-meta-details" v-show="metaExpanded" class="meta">
         <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
         <div><label><TermTip term="pct_chg">涨跌幅</TermTip></label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
         <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><span>{{ basic.peDynamic ?? '-' }}</span></div>
@@ -2081,7 +2098,7 @@ function dash(v) {
     />
 
     <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">
-      <el-tab-pane label="综合研判" name="analysis" lazy>
+      <el-tab-pane label="今日雷达" name="analysis" lazy>
         <StockAnalysisPanel v-if="basic?.code || code" :code="String(basic?.code || code).trim()" />
       </el-tab-pane>
       <el-tab-pane label="估值" name="valuation" lazy>
