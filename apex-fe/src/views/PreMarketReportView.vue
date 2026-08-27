@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CopyDocument, DocumentCopy, Download, Refresh, Share } from '@element-plus/icons-vue'
 import { fetchDailyPreMarketReport, refreshDailyPreMarketReport } from '../api/preMarketReport'
+import PreMarketHoldingCard from '../components/PreMarketHoldingCard.vue'
 import PreMarketReportShareSheet from '../components/share/PreMarketReportShareSheet.vue'
 import { parsePreMarketReport } from '../utils/preMarketReport'
 import {
@@ -218,7 +219,14 @@ onMounted(loadReport)
             <span>{{ section.number }}</span>
             <h2>{{ section.title }}</h2>
           </header>
-          <div class="section-lines">
+          <div v-if="section.holdings?.length === section.lines.length" class="holding-grid">
+            <PreMarketHoldingCard
+              v-for="holding in section.holdings"
+              :key="holding.code"
+              :holding="holding"
+            />
+          </div>
+          <div v-else class="section-lines">
             <p v-for="line in section.lines" :key="line">{{ line }}</p>
           </div>
         </section>
@@ -425,6 +433,13 @@ onMounted(loadReport)
   min-width: 0;
 }
 
+.holding-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+
 .section-lines p {
   margin: 0 0 10px;
   color: #303943;
@@ -519,6 +534,10 @@ onMounted(loadReport)
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     padding-block: 20px;
+  }
+
+  .holding-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

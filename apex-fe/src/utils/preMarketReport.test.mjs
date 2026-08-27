@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parsePreMarketReport } from './preMarketReport.js'
+import { parseHoldingLine, parsePreMarketReport } from './preMarketReport.js'
 
 const content = `Apex 每日盘前研报
 日期：2026-08-27
@@ -47,4 +47,33 @@ test('returns an empty document for blank content', () => {
     risk: '',
     sections: [],
   })
+})
+
+test('parses a holding reminder into visual metrics and action fields', () => {
+  const holding = parseHoldingLine('- 德明利 001309｜正向关注｜入选：价格波动超过 3%｜仓位 9.05%｜价格 429.76｜盈亏 5.32%｜趋势 中性震荡 · RS20 +14.2 · 雷达 2/8 · 相对大盘偏强｜处理 不加仓；收盘跌破止损 309.59 全部卖出')
+
+  assert.deepEqual(holding, {
+    name: '德明利',
+    code: '001309',
+    status: '正向关注',
+    reason: '价格波动超过 3%',
+    weight: 9.05,
+    weightText: '9.05%',
+    priceText: '429.76',
+    pnl: 5.32,
+    pnlText: '5.32%',
+    trend: '中性震荡 · RS20 +14.2 · 雷达 2/8 · 相对大盘偏强',
+    advice: '不加仓；收盘跌破止损 309.59 全部卖出',
+    radarHit: 2,
+    radarTotal: 8,
+  })
+})
+
+test('keeps unavailable holding metrics empty instead of inventing values', () => {
+  const holding = parseHoldingLine('- 示例股份 600000｜高风险｜入选：已触及止损线｜处理 优先离场复盘')
+
+  assert.equal(holding.weight, null)
+  assert.equal(holding.pnl, null)
+  assert.equal(holding.radarHit, null)
+  assert.equal(holding.radarTotal, null)
 })

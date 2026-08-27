@@ -16,6 +16,50 @@ function fieldValue(line, label) {
   return line.startsWith(label) ? line.slice(label.length).trim() : ''
 }
 
+function holdingField(parts, label) {
+  const field = parts.find((part) => part.startsWith(label))
+  return field ? field.slice(label.length).trim() : ''
+}
+
+function metricValue(text) {
+  if (!text) return null
+  const value = Number.parseFloat(text.replace('%', ''))
+  return Number.isFinite(value) ? value : null
+}
+
+export function parseHoldingLine(line) {
+  const parts = String(line || '')
+    .split(/[｜|]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (parts.length < 2) return null
+
+  const identity = parts[0].replace(/^[-•]\s*/, '')
+  const identityMatch = identity.match(/^(.+?)\s+([A-Za-z0-9.]+)$/)
+  if (!identityMatch) return null
+
+  const weightText = holdingField(parts, '仓位 ')
+  const pnlText = holdingField(parts, '盈亏 ')
+  const trend = holdingField(parts, '趋势 ')
+  const radarMatch = trend.match(/雷达\s*(\d+)\s*\/\s*(\d+)/)
+
+  return {
+    name: identityMatch[1].trim(),
+    code: identityMatch[2].trim(),
+    status: parts[1],
+    reason: holdingField(parts, '入选：'),
+    weight: metricValue(weightText),
+    weightText,
+    priceText: holdingField(parts, '价格 '),
+    pnl: metricValue(pnlText),
+    pnlText,
+    trend,
+    advice: holdingField(parts, '处理 '),
+    radarHit: radarMatch ? Number.parseInt(radarMatch[1], 10) : null,
+    radarTotal: radarMatch ? Number.parseInt(radarMatch[2], 10) : null,
+  }
+}
+
 export function parsePreMarketReport(content) {
   if (!String(content || '').trim()) return emptyReport()
 
@@ -46,6 +90,13 @@ export function parsePreMarketReport(content) {
     }
 
     currentSection.lines.push(line)
+    if (currentSection.number === '05') {
+      const holding = parseHoldingLine(line)
+      if (holding) {
+        currentSection.holdings ||= []
+        currentSection.holdings.push(holding)
+      }
+    }
     parsedReport.priority ||= fieldValue(line, '优先看：')
     parsedReport.risk ||= fieldValue(line, '最大风险：')
   }

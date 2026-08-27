@@ -21,6 +21,13 @@ test('pre-market report presents decision first and renders parsed sections', ()
   assert.doesNotMatch(source, /<article>\{\{ report\.content \}\}<\/article>/)
 })
 
+test('pre-market report renders holding reminders as scannable visual cards', () => {
+  assert.match(source, /PreMarketHoldingCard/)
+  assert.match(source, /section\.holdings/)
+  assert.match(source, /v-for="holding in section\.holdings"/)
+  assert.match(source, /class="holding-grid"/)
+})
+
 test('pre-market report keeps secondary sections collapsible and mobile safe', () => {
   assert.match(source, /<details[^>]*class="secondary-section"/)
   assert.match(source, /overflow-wrap:\s*anywhere/)
