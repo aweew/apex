@@ -908,7 +908,10 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="morning-context-grid">
+      <div
+        class="morning-context-grid"
+        :class="{ 'is-market-collapsed': !morningMarketExpanded }"
+      >
         <div class="morning-context-block overnight-block">
           <div class="morning-block-head">
             <h4>开盘影响</h4>
@@ -2956,6 +2959,12 @@ onMounted(() => {
   width: 100%;
   gap: 0;
   margin-top: 20px;
+}
+
+@media (min-width: 1200px) {
+  .morning-context-grid.is-market-collapsed {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 5fr);
+  }
 }
 
 .morning-context-block {

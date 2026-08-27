@@ -194,6 +194,17 @@ test('dashboard morning context has a compact responsive layout', () => {
   assert.match(dashboardSource, /marketOpinion\.kolSourceStatus/)
 })
 
+test('dashboard gives collapsed market context less desktop width than the denser news column', () => {
+  assert.match(
+    dashboardSource,
+    /class="morning-context-grid"\s+:class="\{ 'is-market-collapsed': !morningMarketExpanded \}"/,
+  )
+  assert.match(
+    dashboardSource,
+    /@media \(min-width: 1200px\)[\s\S]*?\.morning-context-grid\.is-market-collapsed\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*3fr\) minmax\(0,\s*5fr\);/s,
+  )
+})
+
 test('dashboard keeps each Asia quote grouped instead of stretching it across the column', () => {
   assert.match(
     dashboardSource,
