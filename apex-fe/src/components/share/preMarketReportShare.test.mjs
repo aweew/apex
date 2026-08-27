@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+const source = await readFile(new URL('./PreMarketReportShareSheet.vue', import.meta.url), 'utf8')
+
+test('pre-market share sheet leads with the three actionable decisions', () => {
+  assert.match(source, /BrandShareLockup[^>]+subtitle="盘前观点"/)
+  assert.match(source, /今日判断/)
+  assert.match(source, /优先方向/)
+  assert.match(source, /最大风险/)
+  assert.match(source, /document\.judgement/)
+  assert.match(source, /document\.priority/)
+  assert.match(source, /document\.risk/)
+})
+
+test('pre-market share sheet renders every useful report section without missing-data audit text', () => {
+  assert.match(source, /v-for="section in detailSections"/)
+  assert.match(source, /section\.lines/)
+  assert.match(source, /BrandShareFoot/)
+  assert.doesNotMatch(source, /missingData|本次数据缺口/)
+})
+
+test('pre-market share sheet uses a stable high-resolution long-image canvas', () => {
+  assert.match(source, /width:\s*760px/)
+  assert.match(source, /overflow-wrap:\s*anywhere/)
+  assert.match(source, /letter-spacing:\s*0/)
+  assert.doesNotMatch(source, /max-height/)
+})

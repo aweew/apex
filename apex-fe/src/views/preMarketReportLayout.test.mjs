@@ -4,16 +4,38 @@ import test from 'node:test'
 
 const source = await readFile(new URL('./PreMarketReportView.vue', import.meta.url), 'utf8')
 
-test('pre-market report exposes generation state and explicit data gaps', () => {
-  assert.match(source, /report\.missingData/)
-  assert.match(source, /以下项目不会被当作中性数据参与判断/)
+test('pre-market report exposes generation state without listing missing data', () => {
+  assert.doesNotMatch(source, /report\.missingData/)
+  assert.doesNotMatch(source, /本次数据缺口|以下项目不会被当作中性数据参与判断/)
   assert.match(source, /report\.value\?\.reportSource/)
   assert.match(source, /report\.portfolioCount/)
 })
 
-test('pre-market report keeps long content readable on mobile without tables', () => {
-  assert.match(source, /white-space:\s*pre-wrap/)
+test('pre-market report presents decision first and renders parsed sections', () => {
+  assert.match(source, /parsePreMarketReport/)
+  assert.match(source, /class="decision-brief"/)
+  assert.match(source, /今日判断/)
+  assert.match(source, /优先方向/)
+  assert.match(source, /最大风险/)
+  assert.match(source, /v-for="section in primarySections"/)
+  assert.doesNotMatch(source, /<article>\{\{ report\.content \}\}<\/article>/)
+})
+
+test('pre-market report keeps secondary sections collapsible and mobile safe', () => {
+  assert.match(source, /<details[^>]*class="secondary-section"/)
   assert.match(source, /overflow-wrap:\s*anywhere/)
   assert.match(source, /@media \(max-width: 760px\)/)
   assert.doesNotMatch(source, /<el-table/)
+})
+
+test('pre-market report exposes a complete long-image sharing workflow', () => {
+  assert.match(source, /PreMarketReportShareSheet/)
+  assert.match(source, /captureElementBlob/)
+  assert.match(source, /copyImageBlob/)
+  assert.match(source, /downloadBlob/)
+  assert.match(source, /shareFilename\('apex_pre_market'/)
+  assert.match(source, />分享长图<\/el-button>/)
+  assert.match(source, /title="分享盘前观点长图"/)
+  assert.match(source, />复制图片<\/el-button>/)
+  assert.match(source, />下载 PNG<\/el-button>/)
 })

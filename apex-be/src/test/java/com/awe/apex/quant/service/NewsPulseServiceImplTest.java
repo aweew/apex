@@ -71,4 +71,25 @@ class NewsPulseServiceImplTest {
         assertTrue(response.getEventImpacts().get(0).isOfficialSource());
         assertEquals("媒体报道待核验", response.getEventImpacts().get(1).getVerificationStatus());
     }
+
+    @Test
+    void treatsNvidiaEarningsAsTopTierAiMarketVariable() {
+        MarketNews nvidiaEarnings = MarketNews.builder()
+                .id(3L)
+                .title("英伟达发布最新季度财报")
+                .summary("营收与下一季度业绩指引成为全球 AI 产业链定价焦点")
+                .source("cls")
+                .sentiment("中性")
+                .publishedAt(LocalDateTime.now())
+                .build();
+        when(marketNewsMapper.selectList(any())).thenReturn(List.of(nvidiaEarnings));
+
+        NewsPulseResp response = service.pulse(6, false);
+
+        assertEquals(1, response.getEventImpacts().size());
+        assertEquals("EARNINGS", response.getEventImpacts().get(0).getEventType());
+        assertEquals(5, response.getEventImpacts().get(0).getPriority());
+        assertTrue(response.getEventImpacts().get(0).getThemes().contains("算力"));
+        assertTrue(response.getEventImpacts().get(0).getImpactExplanation().contains("全球 AI"));
+    }
 }

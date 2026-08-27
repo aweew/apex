@@ -90,6 +90,13 @@ public final class NewsPulseHeuristics {
             if (body.contains("暴涨") || body.contains("暴跌") || body.contains("涨停") || body.contains("跌停")) {
                 score += 1;
             }
+            String upperBody = body.toUpperCase(Locale.ROOT);
+            boolean globalTechEarnings = (upperBody.contains("英伟达") || upperBody.contains("NVIDIA"))
+                    && (upperBody.contains("财报") || upperBody.contains("业绩")
+                    || upperBody.contains("营收") || upperBody.contains("EARNINGS"));
+            if (globalTechEarnings) {
+                score += 2;
+            }
         }
         return Math.max(1, Math.min(5, score));
     }
