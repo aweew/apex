@@ -133,15 +133,16 @@ test('brand navigation replaces history and the dashboard never shows a back act
   )
 })
 
-test('mobile bottom navigation floats above content without covering the final controls', () => {
+test('mobile bottom navigation docks to the viewport edge without covering final controls', () => {
   assert.match(appSource, /class="mobile-bottom-nav"/)
   assert.match(appSource, /aria-label="常用功能"/)
   assert.match(appSource, /data-mobile-swipe-ignore/)
   assert.match(appSource, /class="mobile-bottom-nav__item"/)
   assert.match(appSource, /@click="setMobileMenu\(true\)"/)
-  assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?backdrop-filter:\s*blur\(20px\) saturate\(150%\);/)
-  assert.match(appSource, /\.main\s*\{[^}]*padding-bottom:\s*calc\(84px \+ env\(safe-area-inset-bottom\)\);/)
-  assert.match(appSource, /bottom:\s*max\(8px, env\(safe-area-inset-bottom\)\);/)
+  assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?bottom:\s*0;[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.4\);/)
+  assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?border-radius:\s*24px 24px 0 0;[\s\S]*?backdrop-filter:\s*blur\(16px\) saturate\(150%\);/)
+  assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?padding:\s*5px 6px calc\(5px \+ env\(safe-area-inset-bottom\)\);/)
+  assert.match(appSource, /\.main\s*\{[^}]*padding-bottom:\s*calc\(76px \+ env\(safe-area-inset-bottom\)\);/)
 })
 
 test('settings stay at the bottom of the menu and expose common preferences', () => {
