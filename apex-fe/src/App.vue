@@ -2357,7 +2357,7 @@ onBeforeUnmount(() => {
     overflow: hidden;
     border: 1px solid rgba(203, 213, 225, 0.82);
     border-bottom: 0;
-    border-radius: 24px 24px 0 0;
+    border-radius: 12px 12px 0 0;
     background: rgba(255, 255, 255, 0.4);
     box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.13), 0 -1px 6px rgba(15, 23, 42, 0.06);
     backdrop-filter: blur(16px) saturate(150%);

@@ -140,7 +140,7 @@ test('mobile bottom navigation docks to the viewport edge without covering final
   assert.match(appSource, /class="mobile-bottom-nav__item"/)
   assert.match(appSource, /@click="setMobileMenu\(true\)"/)
   assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?bottom:\s*0;[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.4\);/)
-  assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?border-radius:\s*24px 24px 0 0;[\s\S]*?backdrop-filter:\s*blur\(16px\) saturate\(150%\);/)
+  assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?border-radius:\s*12px 12px 0 0;[\s\S]*?backdrop-filter:\s*blur\(16px\) saturate\(150%\);/)
   assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?padding:\s*5px 6px calc\(5px \+ env\(safe-area-inset-bottom\)\);/)
   assert.match(appSource, /\.main\s*\{[^}]*padding-bottom:\s*calc\(76px \+ env\(safe-area-inset-bottom\)\);/)
 })
