@@ -3,7 +3,6 @@ export const MAIN_NAV_GROUPS = [
     label: '工作台',
     items: [
       { to: '/dashboard', label: '看板' },
-      { to: '/pre-market-report', label: '盘前研报' },
       { to: '/decision', label: '决策', activePaths: ['/decision', '/signals'] },
       { to: '/watchlist', label: '自选' },
       { to: '/observe', label: '观察池' },

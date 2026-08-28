@@ -83,14 +83,16 @@ export function parsePreMarketReport(content) {
     }
 
     if (!currentSection) {
-      if (!parsedReport.title && line === 'Apex 每日盘前研报') parsedReport.title = line
+      if (!parsedReport.title && line.startsWith('今日投资机会｜')) parsedReport.title = line
       parsedReport.date ||= fieldValue(line, '日期：')
-      parsedReport.judgement ||= fieldValue(line, '今日判断：')
+      parsedReport.judgement ||= fieldValue(line, '核心观点：') || fieldValue(line, '今日判断：')
+      parsedReport.priority ||= fieldValue(line, '优先看：')
+      parsedReport.risk ||= fieldValue(line, '最大风险：')
       continue
     }
 
     currentSection.lines.push(line)
-    if (currentSection.number === '05') {
+    if (currentSection.number === '04') {
       const holding = parseHoldingLine(line)
       if (holding) {
         currentSection.holdings ||= []
@@ -103,8 +105,11 @@ export function parsePreMarketReport(content) {
 
   parsedReport.sections = parsedReport.sections.filter((section) => section.lines.length > 0)
   if (!parsedReport.priority) {
-    const directionSection = parsedReport.sections.find((section) => section.title === '今日方向')
-    parsedReport.priority = directionSection?.lines[0]?.replace(/^\d+[.、]\s*/, '') || ''
+    const opportunitySection = parsedReport.sections.find((section) => section.title === '投资机会')
+    parsedReport.priority = opportunitySection?.lines[0]
+      ?.replace(/^\d+[.、]\s*/, '')
+      .split(/[｜|]/)[0]
+      .trim() || ''
   }
   if (!parsedReport.risk) {
     const riskSection = parsedReport.sections.find((section) => section.title === '组合风险')

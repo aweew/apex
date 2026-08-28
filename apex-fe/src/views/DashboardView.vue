@@ -772,9 +772,15 @@ onMounted(() => {
           <h3>开盘准备</h3>
           <p>{{ commandDataTimeText }}</p>
         </div>
-        <span class="command-status" :class="`status-${String(command.status || '').toLowerCase()}`">
-          {{ commandStatusLabel(command.status) }}
-        </span>
+        <div class="command-head-actions">
+          <el-button class="full-report-link" link type="primary" @click="router.push('/pre-market-report')">
+            完整研报
+            <span aria-hidden="true">→</span>
+          </el-button>
+          <span class="command-status" :class="`status-${String(command.status || '').toLowerCase()}`">
+            {{ commandStatusLabel(command.status) }}
+          </span>
+        </div>
       </div>
 
       <div class="command-grid">
@@ -2492,6 +2498,18 @@ onMounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+}
+
+.command-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.full-report-link {
+  min-height: 40px;
+  padding-inline: 4px;
+  font-weight: 650;
 }
 
 .command-head h3,

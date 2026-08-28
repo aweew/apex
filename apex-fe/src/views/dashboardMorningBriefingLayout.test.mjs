@@ -96,6 +96,11 @@ test('dashboard places the command band after market effect and before pre-marke
   assert.match(dashboardSource, /盘中判断/)
 })
 
+test('dashboard links to the full pre-market report without requiring a standalone menu item', () => {
+  assert.match(dashboardSource, /router\.push\('\/pre-market-report'\)/)
+  assert.match(dashboardSource, /完整研报/)
+})
+
 test('dashboard renders position controls and at most three command actions in backend order', () => {
   assert.match(dashboardSource, /command\.value\?\.operationGuide\?\.items[\s\S]{0,160}?\.slice\(0,\s*3\)/)
   assert.match(

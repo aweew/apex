@@ -16,6 +16,7 @@ public final class PreMarketEventHeuristics {
             "商务部", "监管", "政策", "条例", "方案", "行动计划", "降准", "降息"};
     private static final String[] EMERGENCY_KEYWORDS = {"突发", "事故", "爆炸", "地震", "洪水", "台风", "战争",
             "冲突", "制裁", "断供", "停产", "召回"};
+    private static final String[] WEATHER_DISASTER_KEYWORDS = {"地震", "洪水", "台风", "暴雨", "暴雪", "高温", "寒潮"};
     private static final String[] EARNINGS_KEYWORDS = {"财报", "业绩预告", "业绩快报", "业绩指引", "年报", "半年报",
             "季报", "净利润", "营收", "同比增长", "同比下降", "亏损", "扭亏", "Earnings", "earnings"};
     private static final String[] GLOBAL_TECH_BELLWETHER_KEYWORDS = {"英伟达", "NVIDIA", "Nvidia", "台积电", "苹果",
@@ -41,6 +42,10 @@ public final class PreMarketEventHeuristics {
         String text = title + " " + summary;
         PreMarketEventTypeEnum eventType = resolveEventType(text);
         if (Objects.isNull(eventType)) {
+            return null;
+        }
+        if (containsAny(text, WEATHER_DISASTER_KEYWORDS)
+                && CollUtil.isEmpty(card.getRelatedCodes()) && CollUtil.isEmpty(card.getThemes())) {
             return null;
         }
         boolean globalTechEarnings = PreMarketEventTypeEnum.EARNINGS == eventType

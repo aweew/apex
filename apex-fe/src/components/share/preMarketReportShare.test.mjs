@@ -4,9 +4,10 @@ import test from 'node:test'
 
 const source = await readFile(new URL('./PreMarketReportShareSheet.vue', import.meta.url), 'utf8')
 
-test('pre-market share sheet leads with the three actionable decisions', () => {
+test('pre-market share sheet leads with the investment headline and thesis', () => {
   assert.match(source, /BrandShareLockup[^>]+subtitle="盘前观点"/)
-  assert.match(source, /今日判断/)
+  assert.match(source, /document\.title/)
+  assert.match(source, /核心观点/)
   assert.match(source, /优先方向/)
   assert.match(source, /最大风险/)
   assert.match(source, /document\.judgement/)
@@ -16,12 +17,10 @@ test('pre-market share sheet leads with the three actionable decisions', () => {
 
 test('pre-market share sheet turns report sections into visual decision blocks', () => {
   assert.match(source, /PreMarketHoldingCard/)
-  assert.match(source, /class="sentiment-meter"/)
-  assert.match(source, /class="variable-card"/)
-  assert.match(source, /class="direction-rank"/)
+  assert.match(source, /class="report-section"/)
+  assert.doesNotMatch(source, /关键变量|variable-card|S 级/)
   assert.match(source, /class="holding-card-grid"/)
-  assert.match(source, /class="risk-bar"/)
-  assert.match(source, /class="scenario-grid"/)
+  assert.match(source, /scenario-grid/)
   assert.match(source, /section\.lines/)
   assert.match(source, /BrandShareFoot/)
   assert.doesNotMatch(source, /missingData|本次数据缺口/)

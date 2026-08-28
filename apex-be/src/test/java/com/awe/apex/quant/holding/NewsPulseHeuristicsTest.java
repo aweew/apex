@@ -7,6 +7,7 @@ import com.awe.apex.quant.domain.dto.PreMarketEventImpactResp;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -86,5 +87,20 @@ class NewsPulseHeuristicsTest {
         assertEquals("EMERGENCY", impact.getEventType());
         assertEquals("待验证", impact.getDirection());
         assertTrue(impact.getImpactExplanation().contains("权威来源"));
+    }
+
+    @Test
+    void ignoresWeatherNewsWithoutTradableMarketMapping() {
+        NewsPulseCardResp card = NewsPulseCardResp.builder()
+                .title("台风将于沿海登陆")
+                .summary("多地发布天气预警")
+                .sentiment("中性")
+                .stars(5)
+                .source("sina")
+                .build();
+
+        PreMarketEventImpactResp impact = PreMarketEventHeuristics.toImpact(card);
+
+        assertNull(impact);
     }
 }

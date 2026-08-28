@@ -15,8 +15,6 @@ import com.awe.apex.quant.domain.dto.DashboardHomeResp;
 import com.awe.apex.quant.domain.dto.ExternalMarketItemResp;
 import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
-import com.awe.apex.quant.domain.dto.ObservePoolResp;
-import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.OvernightMarketTheme;
 import com.awe.apex.quant.domain.dto.PortfolioBriefResp;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
@@ -49,7 +47,7 @@ import java.util.Objects;
 @Service
 public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportService {
 
-    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v2:";
+    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v3:";
     private static final Duration CACHE_TTL = Duration.ofHours(20);
     private static final String DEFAULT_WATCHLIST_GROUP = "我的自选";
     private static final String DATA_MISSING = "数据暂缺";
@@ -304,155 +302,142 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
 
     private String buildRuleReport(DailyPreMarketReportContextBO context, String marketJudgement) {
         StringBuilder report = new StringBuilder();
-        report.append("Apex 每日盘前研报\n")
-                .append("日期：").append(context.getTradeDate()).append("\n")
-                .append("今日判断：").append(marketJudgement).append("\n")
-                .append("\n01｜今日结论\n");
         List<String> focusDirectionNames = collectFocusDirectionNames(context);
+        report.append(buildReportTitle(context, focusDirectionNames)).append("\n")
+                .append("日期：").append(context.getTradeDate()).append("\n")
+                .append("核心观点：").append(marketJudgement).append("\n");
         if (CollUtil.isNotEmpty(focusDirectionNames)) {
             report.append("优先看：").append(String.join("、", focusDirectionNames)).append("。\n");
         }
         report.append("最大风险：").append(resolvePrimaryRisk(context)).append("\n");
 
-        appendCapitalAndSentiment(report, context);
-        appendKeyVariables(report, context.getMorningBriefing());
-        appendFocusDirections(report, context);
+        appendMarketState(report, context);
+        appendCapitalStyle(report, context, focusDirectionNames);
+        appendInvestmentOpportunities(report, context, focusDirectionNames);
         appendPortfolioSection(report, context);
-        appendObservePoolSection(report, context.getObservePool());
-        appendPortfolioRiskSection(report, context.getPortfolios());
-
-        report.append("\n08｜开盘验证\n")
-                .append("偏多：核心方向放量、上涨家数继续扩大，且龙头不回补大部分高开缺口。\n")
-                .append("中性：指数横盘、量能未放大，资金在两三个方向间快速轮动。\n")
-                .append("转谨慎：核心方向高开低走、下跌家数持续扩大，跌停数量同步增加。\n")
+        report.append("\n05｜开盘剧本\n")
+                .append("偏强｜核心方向放量、上涨家数继续扩大，核心股保住大部分高开涨幅。\n")
+                .append("震荡｜指数横盘、量能没有放大，资金在两三个方向间快速轮动。\n")
+                .append("转弱｜核心方向高开低走、下跌家数持续扩大，跌停数量同步增加。\n")
                 .append("仅供研究，不构成投资建议。");
         return report.toString();
     }
 
-    private void appendCapitalAndSentiment(StringBuilder report, DailyPreMarketReportContextBO context) {
+    private String buildReportTitle(DailyPreMarketReportContextBO context, List<String> focusDirectionNames) {
+        if (CollUtil.isNotEmpty(focusDirectionNames)) {
+            String primaryDirection = focusDirectionNames.get(0);
+            PreMarketEventImpactResp event = findDirectionEvent(context, primaryDirection);
+            if (Objects.nonNull(event)) {
+                return "今日投资机会｜" + primaryDirection + "获事件催化，开盘承接决定持续性";
+            }
+            if (isShrinkingVolume(context.getMarket())) {
+                return "今日投资机会｜" + primaryDirection + "保持活跃，缩量环境不追高";
+            }
+            return "今日投资机会｜" + primaryDirection + "居前，等待量价确认主线强度";
+        }
+        if (Objects.nonNull(context.getSentimentScore()) && context.getSentimentScore() <= 40) {
+            return "今日投资机会｜弱势先控仓，只做逆势走强方向";
+        }
+        return "今日投资机会｜震荡轮动，先等主线走出来";
+    }
+
+    private void appendMarketState(StringBuilder report, DailyPreMarketReportContextBO context) {
         DashboardHomeResp.MarketBlock market = context.getMarket();
-        boolean hasVolume = Objects.nonNull(market) && StringUtils.isNotBlank(market.getVolumeLabel());
-        boolean hasSentiment = Objects.nonNull(context.getSentimentScore());
-        if (!hasVolume && !hasSentiment) {
-            return;
+        report.append("\n01｜市场状态\n");
+        if (Objects.nonNull(market) && StringUtils.isNotBlank(market.getStance())) {
+            report.append("状态：").append(market.getStance()).append("。\n");
         }
-        report.append("\n02｜资金与情绪\n");
-        if (hasVolume) {
-            report.append("量能：").append(market.getVolumeLabel()).append("。")
-                    .append(isShrinkingVolume(market)
-                            ? "增量承接不足，昨日强势方向不能只看高开，必须等开盘放量。"
-                            : "资金承接改善，核心方向若同步扩散可提高优先级。")
-                    .append("\n");
+        StringBuilder marketEvidence = new StringBuilder();
+        if (Objects.nonNull(market) && StringUtils.isNotBlank(market.getVolumeLabel())) {
+            marketEvidence.append("量能 ").append(market.getVolumeLabel());
         }
-        if (hasSentiment) {
-            report.append("情绪：").append(context.getSentimentScore()).append(" / 100（")
-                    .append(sentimentLabel(context.getSentimentScore())).append("）");
-            if (Objects.nonNull(market) && Objects.nonNull(market.getBreadthUp())
-                    && Objects.nonNull(market.getBreadthDown())) {
-                report.append("，上涨 ").append(market.getBreadthUp())
-                        .append(" / 下跌 ").append(market.getBreadthDown());
-            }
-            if (Objects.nonNull(market) && Objects.nonNull(market.getLimitUpCount())
-                    && Objects.nonNull(market.getLimitDownCount())) {
-                report.append("，涨停 ").append(market.getLimitUpCount())
-                        .append(" / 跌停 ").append(market.getLimitDownCount());
-            }
-            report.append("。\n");
+        if (Objects.nonNull(market) && Objects.nonNull(market.getBreadthUp())
+                && Objects.nonNull(market.getBreadthDown())) {
+            appendEvidenceSeparator(marketEvidence);
+            marketEvidence.append("上涨 ").append(market.getBreadthUp())
+                    .append(" / 下跌 ").append(market.getBreadthDown());
         }
-    }
-
-    private void appendKeyVariables(StringBuilder report, MorningBriefingResp morning) {
-        if (Objects.isNull(morning)) {
-            return;
+        if (Objects.nonNull(market) && Objects.nonNull(market.getLimitUpCount())
+                && Objects.nonNull(market.getLimitDownCount())) {
+            appendEvidenceSeparator(marketEvidence);
+            marketEvidence.append("涨停 ").append(market.getLimitUpCount())
+                    .append(" / 跌停 ").append(market.getLimitDownCount());
         }
-        List<PreMarketEventImpactResp> events = morningEvents(morning);
-        List<String> variableLines = new ArrayList<>();
-        for (PreMarketEventImpactResp event : events) {
-            if (StringUtils.isBlank(event.getTitle())) {
-                continue;
-            }
-            StringBuilder line = new StringBuilder(eventLevel(event)).append("｜").append(event.getTitle());
-            if (StringUtils.isNotBlank(event.getDirection()) && !"待验证".equals(event.getDirection())) {
-                line.append("｜").append(event.getDirection());
-            }
-            String targets = resolveEventTargets(event);
-            if (isUsefulText(targets)) {
-                line.append("｜影响：").append(targets);
-            }
-            if (StringUtils.isNotBlank(event.getImpactExplanation())) {
-                line.append("｜").append(event.getImpactExplanation());
-            }
-            line.append("｜").append(defaultText(event.getVerificationStatus(), "待确认"));
-            variableLines.add(line.toString());
-            if (variableLines.size() >= 3) {
-                break;
-            }
+        if (Objects.nonNull(context.getSentimentScore())) {
+            appendEvidenceSeparator(marketEvidence);
+            marketEvidence.append("情绪 ").append(context.getSentimentScore())
+                    .append(" / 100（").append(sentimentLabel(context.getSentimentScore())).append("）");
         }
-        if (CollUtil.isNotEmpty(morning.getStarQuotes())) {
-            for (OvernightMarketQuote quote : morning.getStarQuotes()) {
-                if (Objects.isNull(quote) || Objects.isNull(quote.getPctChg())
-                        || quote.getPctChg().abs().compareTo(BigDecimal.valueOf(2)) < 0
-                        || (StringUtils.isBlank(quote.getName()) && StringUtils.isBlank(quote.getSymbol()))) {
-                    continue;
-                }
-                variableLines.add(defaultText(quote.getName(), quote.getSymbol()) + "隔夜 "
-                        + formatPercent(quote.getPctChg()) + "，相关 A 股映射先看开盘承接，不直接追价。");
-                if (variableLines.size() >= 4) {
-                    break;
-                }
-            }
+        if (marketEvidence.length() > 0) {
+            report.append("盘面：").append(marketEvidence).append("。\n");
         }
-        if (CollUtil.isNotEmpty(morning.getExternalMarketItems())) {
-            for (ExternalMarketItemResp item : morning.getExternalMarketItems()) {
-                if (Objects.isNull(item) || !item.isAvailable() || Objects.isNull(item.getPctChg())) {
-                    continue;
-                }
-                if (StringUtils.isBlank(item.getName())) {
-                    continue;
-                }
-                String line = item.getName() + " " + formatPercent(item.getPctChg());
-                if (isUsefulText(item.getAShareImpact())) {
-                    line += "，" + item.getAShareImpact();
-                }
-                variableLines.add(line);
-                if (variableLines.size() >= 5) {
-                    break;
-                }
-            }
-        }
-        if (CollUtil.isEmpty(variableLines)) {
-            return;
-        }
-        report.append("\n03｜关键变量\n");
-        for (String variableLine : variableLines) {
-            report.append("- ").append(variableLine).append("\n");
+        if (Objects.nonNull(market) && StringUtils.isNotBlank(market.getStanceReason())) {
+            report.append("含义：").append(market.getStanceReason()).append("。\n");
         }
     }
 
-    private void appendFocusDirections(StringBuilder report, DailyPreMarketReportContextBO context) {
-        List<String> directionNames = collectFocusDirectionNames(context);
-        if (CollUtil.isEmpty(directionNames)) {
+    private void appendEvidenceSeparator(StringBuilder evidence) {
+        if (evidence.length() > 0) {
+            evidence.append("，");
+        }
+    }
+
+    private void appendCapitalStyle(StringBuilder report, DailyPreMarketReportContextBO context,
+                                    List<String> focusDirectionNames) {
+        List<String> riskDirectionNames = collectRiskDirectionNames(context);
+        DashboardHomeResp.MarketBlock market = context.getMarket();
+        boolean hasVolumeEvidence = Objects.nonNull(market)
+                && (StringUtils.isNotBlank(market.getVolumeLabel())
+                || StringUtils.isNotBlank(market.getVolumeTrend()));
+        if (CollUtil.isEmpty(focusDirectionNames) && CollUtil.isEmpty(riskDirectionNames)
+                && !hasVolumeEvidence) {
             return;
         }
-        report.append("\n04｜今日方向\n");
+        report.append("\n02｜资金风格\n");
+        if (CollUtil.isNotEmpty(focusDirectionNames)) {
+            report.append("偏强：").append(String.join("、", focusDirectionNames)).append("。\n");
+        }
+        if (CollUtil.isNotEmpty(riskDirectionNames)) {
+            report.append("承压：").append(String.join("、", riskDirectionNames)).append("。\n");
+        }
+        report.append("风格：");
+        if (isShrinkingVolume(market)) {
+            report.append("存量资金抱团，强势方向容易冲高兑现，开盘只认放量承接。");
+        } else if (Objects.nonNull(context.getSentimentScore()) && context.getSentimentScore() <= 40) {
+            report.append("弱势资金偏防守，放量下跌时先控制回撤，只关注逆势走强方向。");
+        } else if (Objects.nonNull(context.getSentimentScore()) && context.getSentimentScore() >= 60) {
+            report.append("风险偏好正在修复，核心方向若带动涨跌家数扩散，可继续提高优先级。");
+        } else {
+            report.append("资金仍在轮动，板块成交与个股扩散同步增强后才提高优先级。");
+        }
+        report.append("\n");
+    }
+
+    private void appendInvestmentOpportunities(StringBuilder report, DailyPreMarketReportContextBO context,
+                                               List<String> focusDirectionNames) {
+        if (CollUtil.isEmpty(focusDirectionNames)) {
+            return;
+        }
+        report.append("\n03｜投资机会\n");
         int rank = 0;
-        for (String directionName : directionNames) {
+        for (String directionName : focusDirectionNames) {
             rank++;
             PreMarketEventImpactResp matchedEvent = findDirectionEvent(context, directionName);
             CommandDirectionItemResp matchedCommand = findCommandDirection(context, directionName);
             MarketHotThemeItem matchedTheme = findHotTheme(context, directionName);
-            report.append(rank).append(". ").append(directionName).append("：");
+            report.append(rank).append(". ").append(directionName).append("｜催化：");
             if (Objects.nonNull(matchedEvent)) {
-                report.append("事件驱动，核心变量是“").append(matchedEvent.getTitle()).append("”。");
+                report.append(matchedEvent.getTitle());
             } else if (Objects.nonNull(matchedCommand) && StringUtils.isNotBlank(matchedCommand.getReason())) {
-                report.append(matchedCommand.getReason()).append("。");
+                report.append(matchedCommand.getReason());
             } else if (Objects.nonNull(matchedTheme) && Objects.nonNull(matchedTheme.getPctChg())) {
-                report.append("昨日涨 ").append(formatPercent(matchedTheme.getPctChg()))
-                        .append("，只列为延续候选，不直接定义为今日主线。");
+                report.append("昨日涨 ").append(formatPercent(matchedTheme.getPctChg())).append("，具备延续基础");
             } else if (Objects.nonNull(matchedTheme)) {
-                report.append("昨日进入活跃方向，只列为延续候选，不直接定义为今日主线。");
+                report.append("昨日进入活跃方向，具备延续基础");
+            } else {
+                report.append("盘前机会信号居前");
             }
-            report.append("观察板块成交和核心股承接；高开低走或放量转弱即失效。\n");
+            report.append("；确认：板块成交放大且核心股强于指数；失效：高开低走或放量转弱。\n");
             if (rank >= 3) {
                 break;
             }
@@ -463,13 +448,22 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         if (CollUtil.isEmpty(context.getPortfolios())) {
             return;
         }
+        List<String> portfolioRiskLines = collectPortfolioRiskLines(context.getPortfolios());
+        boolean hasHolding = false;
+        for (PortfolioSummaryResp portfolio : context.getPortfolios()) {
+            if (CollUtil.isNotEmpty(portfolio.getHoldings())) {
+                hasHolding = true;
+                break;
+            }
+        }
+        if (!hasHolding && CollUtil.isEmpty(portfolioRiskLines)) {
+            return;
+        }
+        report.append("\n04｜持仓应对\n");
         int appendedHoldingCount = 0;
         for (PortfolioSummaryResp portfolio : context.getPortfolios()) {
-            if (CollUtil.isEmpty(portfolio.getHoldings())) {
+            if (CollUtil.isEmpty(portfolio.getHoldings()) || appendedHoldingCount >= 6) {
                 continue;
-            }
-            if (appendedHoldingCount == 0) {
-                report.append("\n05｜持仓提醒\n");
             }
             for (PortfolioHolding holding : portfolio.getHoldings()) {
                 if (Objects.isNull(holding)
@@ -498,41 +492,16 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                 report.append("\n");
                 appendedHoldingCount++;
                 if (appendedHoldingCount >= 6) {
-                    return;
+                    break;
                 }
             }
         }
-    }
-
-    private void appendObservePoolSection(StringBuilder report, List<ObservePoolResp> observePool) {
-        if (CollUtil.isEmpty(observePool)) {
-            return;
-        }
-        report.append("\n06｜观察池\n");
-        int count = 0;
-        for (ObservePoolResp item : observePool) {
-            if (StringUtils.isBlank(item.getCode()) && StringUtils.isBlank(item.getName())) {
-                continue;
-            }
-            count++;
-            report.append(count).append(". ").append(defaultText(item.getName(), item.getCode()));
-            if (StringUtils.isNotBlank(item.getReason())) {
-                report.append("｜").append(item.getReason());
-            }
-            if (StringUtils.isNotBlank(item.getTriggerLabel())) {
-                report.append("｜观察：").append(item.getTriggerLabel());
-            }
-            if (CollUtil.isNotEmpty(item.getRiskFlags())) {
-                report.append("｜风险：").append(String.join("、", item.getRiskFlags()));
-            }
-            report.append("\n");
-            if (count >= 5) {
-                break;
-            }
+        for (String portfolioRiskLine : portfolioRiskLines) {
+            report.append("- 组合风险｜").append(portfolioRiskLine).append("\n");
         }
     }
 
-    private void appendPortfolioRiskSection(StringBuilder report, List<PortfolioSummaryResp> portfolios) {
+    private List<String> collectPortfolioRiskLines(List<PortfolioSummaryResp> portfolios) {
         List<String> riskLines = new ArrayList<>();
         for (PortfolioSummaryResp portfolio : portfolios) {
             PortfolioBriefResp brief = portfolio.getBrief();
@@ -551,13 +520,7 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                         + "”暴露 " + formatPercent(brief.getTopThemePct()));
             }
         }
-        if (CollUtil.isEmpty(riskLines)) {
-            return;
-        }
-        report.append("\n07｜组合风险\n");
-        for (String riskLine : riskLines) {
-            report.append("- ").append(riskLine).append("\n");
-        }
+        return riskLines;
     }
 
     private List<PortfolioSummaryResp> selectFocusPortfolios(List<PortfolioSummaryResp> portfolios,
@@ -786,6 +749,19 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         return names;
     }
 
+    private List<String> collectRiskDirectionNames(DailyPreMarketReportContextBO context) {
+        List<String> names = new ArrayList<>();
+        DashboardCommandResp command = context.getCommand();
+        if (Objects.isNull(command) || Objects.isNull(command.getPreMarketSummary())
+                || CollUtil.isEmpty(command.getPreMarketSummary().getRiskItems())) {
+            return names;
+        }
+        for (CommandDirectionItemResp direction : command.getPreMarketSummary().getRiskItems()) {
+            addDirectionName(names, direction.getName());
+        }
+        return names;
+    }
+
     private void addDirectionNames(List<String> names, List<String> candidates) {
         if (CollUtil.isEmpty(candidates)) {
             return;
@@ -839,9 +815,22 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
     }
 
     private List<PreMarketEventImpactResp> morningEvents(MorningBriefingResp morning) {
-        return Objects.nonNull(morning) && Objects.nonNull(morning.getNewsPulse())
-                && CollUtil.isNotEmpty(morning.getNewsPulse().getEventImpacts())
-                ? morning.getNewsPulse().getEventImpacts() : List.of();
+        if (Objects.isNull(morning) || Objects.isNull(morning.getNewsPulse())
+                || CollUtil.isEmpty(morning.getNewsPulse().getEventImpacts())) {
+            return List.of();
+        }
+        List<PreMarketEventImpactResp> investmentEvents = new ArrayList<>();
+        for (PreMarketEventImpactResp event : morning.getNewsPulse().getEventImpacts()) {
+            if (Objects.isNull(event) || StringUtils.isBlank(event.getTitle())) {
+                continue;
+            }
+            if ("EMERGENCY".equals(event.getEventType())
+                    && CollUtil.isEmpty(event.getThemes()) && CollUtil.isEmpty(event.getRelatedCodes())) {
+                continue;
+            }
+            investmentEvents.add(event);
+        }
+        return investmentEvents;
     }
 
     private boolean isShrinkingVolume(DashboardHomeResp.MarketBlock market) {
@@ -861,7 +850,7 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
         } catch (Exception ex) {
             log.warn("盘前研报提示词读取失败，原因={}", ex.getMessage());
-            return "仅根据输入数据生成精简的 Apex 每日盘前研报；缺失项直接省略，禁止编造。";
+            return "仅根据输入事实生成明确的盘前投资观点；没有 A 股传导链的新闻直接省略，禁止编造。";
         }
     }
 
@@ -886,16 +875,30 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                 || content.contains("暂不据此")) {
             return false;
         }
+        if (!content.startsWith("今日投资机会｜") || content.contains("关键变量")
+                || content.contains("S 级") || content.contains("A 级") || content.contains("B 级")) {
+            return false;
+        }
         List<String> requiredSections = List.of(
-                "Apex 每日盘前研报",
-                "01｜今日结论",
-                "08｜开盘验证");
+                "核心观点：",
+                "最大风险：",
+                "01｜市场状态",
+                "05｜开盘剧本",
+                "偏强｜",
+                "震荡｜",
+                "转弱｜");
         for (String requiredSection : requiredSections) {
             if (!content.contains(requiredSection)) {
                 return false;
             }
         }
-        if (CollUtil.isNotEmpty(collectFocusDirectionNames(context)) && !content.contains("04｜今日方向")) {
+        if (CollUtil.isNotEmpty(collectFocusDirectionNames(context))) {
+            if (!content.contains("03｜投资机会")
+                    || !content.contains("确认：") || !content.contains("失效：")) {
+                return false;
+            }
+        }
+        if (CollUtil.isNotEmpty(context.getPortfolios()) && !content.contains("04｜持仓应对")) {
             return false;
         }
         for (PortfolioSummaryResp portfolio : context.getPortfolios()) {
@@ -1005,27 +1008,6 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         return distinctTexts;
     }
 
-    private String eventLevel(PreMarketEventImpactResp event) {
-        if ("MARKET".equals(event.getImpactScope())) {
-            return "S 级";
-        }
-        if ("THEME".equals(event.getImpactScope())) {
-            return "A 级";
-        }
-        return "B 级";
-    }
-
-    private String resolveEventTargets(PreMarketEventImpactResp event) {
-        List<String> targets = new ArrayList<>();
-        if (CollUtil.isNotEmpty(event.getThemes())) {
-            targets.addAll(event.getThemes());
-        }
-        if (CollUtil.isNotEmpty(event.getRelatedCodes())) {
-            targets.addAll(event.getRelatedCodes());
-        }
-        return joinTexts(targets);
-    }
-
     private String holdingStatus(PortfolioHolding holding) {
         if (Objects.nonNull(holding.getMarketPrice()) && Objects.nonNull(holding.getStopLoss())
                 && holding.getMarketPrice().compareTo(holding.getStopLoss()) <= 0) {
@@ -1063,19 +1045,6 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             return "偏强";
         }
         return "极度亢奋";
-    }
-
-    private String joinTexts(List<String> texts) {
-        if (CollUtil.isEmpty(texts)) {
-            return DATA_MISSING;
-        }
-        List<String> validTexts = new ArrayList<>();
-        for (String text : texts) {
-            if (StringUtils.isNotBlank(text)) {
-                validTexts.add(text.trim());
-            }
-        }
-        return CollUtil.isNotEmpty(validTexts) ? String.join("、", validTexts) : DATA_MISSING;
     }
 
     private String formatPercent(BigDecimal value) {

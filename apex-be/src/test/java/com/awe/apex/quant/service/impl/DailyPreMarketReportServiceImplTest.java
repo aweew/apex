@@ -154,18 +154,21 @@ class DailyPreMarketReportServiceImplTest {
         assertEquals("RULE", report.getReportSource());
         assertEquals(1, report.getPortfolioCount());
         assertEquals(2, report.getHoldingCount());
-        assertTrue(report.getContent().contains("01｜今日结论"));
-        assertTrue(report.getContent().contains("02｜资金与情绪"));
+        assertTrue(report.getContent().startsWith("今日投资机会｜"));
+        assertTrue(report.getContent().contains("01｜市场状态"));
+        assertTrue(report.getContent().contains("02｜资金风格"));
         assertTrue(report.getContent().contains("上涨 2800 / 下跌 2200"));
         assertTrue(report.getContent().contains("缩量 -1.21%"));
-        assertTrue(report.getContent().contains("05｜持仓提醒"));
+        assertTrue(report.getContent().contains("04｜持仓应对"));
         assertTrue(report.getContent().contains("贵州茅台"));
         assertFalse(report.getContent().contains("平安银行"));
+        assertFalse(report.getContent().contains("关键变量"));
+        assertFalse(report.getContent().contains("S 级"));
         assertFalse(report.getContent().contains("数据暂缺"));
         assertFalse(report.getContent().contains("未获取"));
         assertFalse(report.getContent().contains("观察不等于推荐买入"));
         assertFalse(report.getContent().contains("观察池"));
-        assertTrue(report.getContent().contains("08｜开盘验证"));
+        assertTrue(report.getContent().contains("05｜开盘剧本"));
         assertTrue(report.getContent().length() < 3500);
         verify(portfolioService, never()).detail(12L);
         verify(redisCacheService).put(anyString(), any(DailyPreMarketReportResp.class), any());
@@ -210,8 +213,8 @@ class DailyPreMarketReportServiceImplTest {
 
         DailyPreMarketReportResp report = service.latest(false);
 
-        assertTrue(report.getContent().contains("今日先交易“英伟达发布最新季度财报”"));
-        assertTrue(report.getContent().contains("1. 算力：事件驱动"));
+        assertTrue(report.getContent().contains("核心观点：今日先交易“英伟达发布最新季度财报”"));
+        assertTrue(report.getContent().contains("1. 算力｜催化：英伟达发布最新季度财报"));
         assertFalse(report.getContent().contains("机器人"));
     }
 
@@ -245,12 +248,12 @@ class DailyPreMarketReportServiceImplTest {
                 .name("我的持仓")
                 .holdings(List.of(holding))
                 .build();
-        String incompleteAiReport = "Apex 每日盘前研报\n"
-                + "01｜今日结论\n一句话：均衡\n"
-                + "02｜资金与情绪\n行业资金：数据暂缺\n"
-                + "03｜关键变量\n外围市场未获取\n"
-                + "04｜今日方向\n机器人\n"
-                + "06｜开盘验证\n量价增强则偏多";
+        String incompleteAiReport = "今日投资机会｜机器人修复\n"
+                + "核心观点：均衡\n"
+                + "01｜市场状态\n行业资金：数据暂缺\n"
+                + "02｜资金风格\n外围市场未获取\n"
+                + "03｜投资机会\n机器人\n"
+                + "05｜开盘剧本\n偏强｜量价增强";
         when(userContext.currentUserId()).thenReturn(7L);
         when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
         when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
@@ -264,5 +267,79 @@ class DailyPreMarketReportServiceImplTest {
         assertEquals("RULE", report.getReportSource());
         assertFalse(report.getContent().contains("数据暂缺"));
         assertFalse(report.getContent().contains("未获取"));
+    }
+
+    @Test
+    void omitsCapitalStyleWhenOnlyWeakSentimentExistsWithoutDirectionEvidence() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 28);
+        DashboardHomeResp.MarketBlock market = DashboardHomeResp.MarketBlock.builder()
+                .asOf(tradeDate.minusDays(1))
+                .stance("偏弱")
+                .stanceReason("下跌家数明显多于上涨家数")
+                .dataLevel("YELLOW")
+                .breadthUp(900)
+                .breadthDown(4100)
+                .limitUpCount(20)
+                .limitDownCount(70)
+                .build();
+        MorningBriefingResp morning = MorningBriefingResp.builder()
+                .tradeDate(tradeDate)
+                .dataLevel("YELLOW")
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(market)
+                .morningBriefing(morning)
+                .build();
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(false);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertFalse(report.getContent().contains("02｜资金风格"));
+        assertFalse(report.getContent().contains("风险偏好正在修复"));
+    }
+
+    @Test
+    void fallsBackWhenAiOpportunityHasNoRiskOrValidationConditions() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 28);
+        PreMarketEventImpactResp event = PreMarketEventImpactResp.builder()
+                .eventType("EARNINGS")
+                .title("英伟达发布季度财报")
+                .themes(List.of("算力"))
+                .build();
+        MorningBriefingResp morning = MorningBriefingResp.builder()
+                .tradeDate(tradeDate)
+                .dataLevel("GREEN")
+                .newsPulse(NewsPulseResp.builder().eventImpacts(List.of(event)).build())
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(tradeDate.minusDays(1))
+                        .stance("均衡")
+                        .dataLevel("GREEN")
+                        .build())
+                .morningBriefing(morning)
+                .build();
+        String emptyOpinion = "今日投资机会｜算力获得催化\n"
+                + "核心观点：算力方向今日占优。\n"
+                + "01｜市场状态\n市场结构均衡。\n"
+                + "03｜投资机会\n1. 算力｜英伟达财报催化。\n"
+                + "05｜开盘剧本\n偏强｜算力上涨。";
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(true);
+        when(kimiChatClient.chat(anyString(), anyString(), eq(2600))).thenReturn(emptyOpinion);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertEquals("RULE", report.getReportSource());
+        assertTrue(report.getContent().contains("最大风险："));
+        assertTrue(report.getContent().contains("确认："));
+        assertTrue(report.getContent().contains("失效："));
     }
 }
