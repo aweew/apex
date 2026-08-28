@@ -379,6 +379,9 @@ public class ValuationServiceImpl implements IValuationService {
                 .score(score.setScale(1, RoundingMode.HALF_UP))
                 .weight(new BigDecimal("0.25"))
                 .verdict(verdict)
+                .reference(Objects.nonNull(pePct) && stats.peerCount >= 8
+                        ? "同行分位≤30%偏低，30%–60%中性，>60%偏高；低估值不等于低风险"
+                        : "同业样本不足时：PE≤15偏低，15–30中性，30–50偏高，>50很高")
                 .detail(detail)
                 .rawValue(pe)
                 .build();
@@ -426,6 +429,9 @@ public class ValuationServiceImpl implements IValuationService {
                 .score(score.setScale(1, RoundingMode.HALF_UP))
                 .weight(new BigDecimal("0.15"))
                 .verdict(verdict)
+                .reference(Objects.nonNull(pbPct) && stats.peerCount >= 8
+                        ? "同行分位≤30%偏低，30%–60%中性，>60%偏高；重资产行业更适合看PB"
+                        : "同业样本不足时：PB≤1.2偏低，1.2–3中性，3–6偏高，>6很高")
                 .detail(detail)
                 .rawValue(pb)
                 .build();
@@ -448,6 +454,7 @@ public class ValuationServiceImpl implements IValuationService {
                     .score(score)
                     .weight(new BigDecimal("0.10"))
                     .verdict(verdict)
+                    .reference("PEG≤0.8偏低，0.8–1.2较合理，1.2–1.8偏高，>1.8很高；需确认增长可持续")
                     .detail(detail)
                     .rawValue(peg)
                     .build();
@@ -481,6 +488,7 @@ public class ValuationServiceImpl implements IValuationService {
                 .score(score)
                 .weight(new BigDecimal("0.18"))
                 .verdict(verdict)
+                .reference("PEG≤0.8偏低，0.8–1.2较合理，1.2–1.8偏高，>1.8很高；需确认增长可持续")
                 .detail(detail)
                 .rawValue(peg)
                 .build();
@@ -537,6 +545,7 @@ public class ValuationServiceImpl implements IValuationService {
                 .score(score)
                 .weight(new BigDecimal("0.22"))
                 .verdict(verdict)
+                .reference("安全边际≥25%较充足，10%–25%略有空间，-10%–10%接近公允，<-10%偏贵")
                 .detail(detail)
                 .rawValue(margin)
                 .build();
@@ -598,6 +607,7 @@ public class ValuationServiceImpl implements IValuationService {
                 .score(score)
                 .weight(new BigDecimal("0.12"))
                 .verdict(verdict)
+                .reference("ROE≥18%优秀，12%–18%良好，8%–12%一般，<8%偏弱；负债率≤40%稳健，55%–70%中等偏高，负债率≥70%偏高，金融地产需同行对比")
                 .detail(String.join(" · ", bits))
                 .rawValue(roe)
                 .build();
@@ -639,6 +649,7 @@ public class ValuationServiceImpl implements IValuationService {
                 .score(score)
                 .weight(new BigDecimal("0.08"))
                 .verdict(verdict)
+                .reference("采用营收与净利同比较低值：≥25%高增长，12%–25%稳健，3%–12%低速，0%–3%近乎停滞，<0%下滑")
                 .detail(detail)
                 .rawValue(growthPct)
                 .build();

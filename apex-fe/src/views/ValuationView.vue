@@ -145,6 +145,10 @@ function dimBarColor(score) {
   return 'var(--up)'
 }
 
+function dimension(key) {
+  return detail.value?.dimensions?.find((item) => item.key === key)
+}
+
 watch(
   () => route.query.code,
   (v) => {
@@ -217,26 +221,82 @@ onMounted(() => {
     <div class="grid" v-if="detail">
       <section class="card-block">
         <h3>关键指标</h3>
-        <div class="meta">
-          <div><label>行业</label><span>{{ detail.industry || '-' }}</span></div>
-          <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><b>{{ fmt(detail.peDynamic) }}</b></div>
-          <div><label><TermTip term="pe_static">市盈率（静）</TermTip></label><b>{{ fmt(detail.peStatic) }}</b></div>
-          <div><label><TermTip term="pe_ttm">市盈率（TTM）</TermTip></label><b>{{ fmt(detail.peTtm) }}</b></div>
-          <div><label>行业PE中位</label><span>{{ fmt(detail.industryPeMedian) }}</span></div>
-          <div><label><TermTip term="pe_percentile">PE分位</TermTip></label><span>{{ detail.pePercentile != null ? fmtPct(detail.pePercentile) : '-' }}</span></div>
-          <div><label><TermTip term="pb">PB</TermTip></label><b>{{ fmt(detail.pb) }}</b></div>
-          <div><label>行业PB中位</label><span>{{ fmt(detail.industryPbMedian) }}</span></div>
-          <div><label>PB分位</label><span>{{ detail.pbPercentile != null ? fmtPct(detail.pbPercentile) : '-' }}</span></div>
-          <div><label><TermTip term="peg">PEG</TermTip></label><b>{{ fmt(detail.peg) }}</b></div>
-          <div><label>盈利收益率</label><span>{{ detail.earningsYield != null ? fmtPct(detail.earningsYield) : '-' }}</span></div>
-          <div><label><TermTip term="fair_value">公允PE</TermTip></label><span>{{ fmt(detail.fairPe, 1) }}</span></div>
-          <div><label>公允PB</label><span>{{ fmt(detail.fairPb) }}</span></div>
-          <div><label>同业样本</label><span>{{ detail.industryPeerCount ?? '-' }}</span></div>
-          <div><label>报告期</label><span>{{ detail.reportDate || '-' }}</span></div>
-          <div><label><TermTip term="roe">ROE</TermTip></label><span>{{ fmtPct(detail.roe) }}</span></div>
-          <div><label>资产负债率</label><span>{{ fmtPct(detail.debtRatio) }}</span></div>
-          <div><label>净利同比</label><span>{{ fmtPct(detail.netProfitYoy) }}</span></div>
-          <div><label>营收同比</label><span>{{ fmtPct(detail.revenueYoy) }}</span></div>
+        <div class="metric-context">
+          <span>行业 <b>{{ detail.industry || '-' }}</b></span>
+          <span>同业样本 <b>{{ detail.industryPeerCount ?? '-' }}</b></span>
+          <span>报告期 <b>{{ detail.reportDate || '-' }}</b></span>
+        </div>
+        <div class="metric-list">
+          <div class="metric-row">
+            <div class="metric-row-head">
+              <div class="metric-values">
+                <div><label><TermTip term="pe_dynamic">PE（动）</TermTip></label><b>{{ fmt(detail.peDynamic) }}</b></div>
+                <div><label><TermTip term="pe_static">PE（静）</TermTip></label><b>{{ fmt(detail.peStatic) }}</b></div>
+                <div><label><TermTip term="pe_ttm">PE（TTM）</TermTip></label><b>{{ fmt(detail.peTtm) }}</b></div>
+                <div><label>同行中位</label><span>{{ fmt(detail.industryPeMedian) }}</span></div>
+                <div><label><TermTip term="pe_percentile">同行分位</TermTip></label><span>{{ detail.pePercentile != null ? fmtPct(detail.pePercentile) : '-' }}</span></div>
+              </div>
+              <span v-if="dimension('peRelative')?.verdict" class="metric-verdict">当前：{{ dimension('peRelative').verdict }}</span>
+            </div>
+            <p v-if="dimension('peRelative')?.reference" class="metric-reference">参考：{{ dimension('peRelative').reference }}</p>
+          </div>
+
+          <div class="metric-row">
+            <div class="metric-row-head">
+              <div class="metric-values compact">
+                <div><label><TermTip term="pb">PB</TermTip></label><b>{{ fmt(detail.pb) }}</b></div>
+                <div><label>同行中位</label><span>{{ fmt(detail.industryPbMedian) }}</span></div>
+                <div><label>同行分位</label><span>{{ detail.pbPercentile != null ? fmtPct(detail.pbPercentile) : '-' }}</span></div>
+              </div>
+              <span v-if="dimension('pbRelative')?.verdict" class="metric-verdict">当前：{{ dimension('pbRelative').verdict }}</span>
+            </div>
+            <p v-if="dimension('pbRelative')?.reference" class="metric-reference">参考：{{ dimension('pbRelative').reference }}</p>
+          </div>
+
+          <div class="metric-row emphasis">
+            <div class="metric-row-head">
+              <div class="metric-values compact">
+                <div><label><TermTip term="peg">PEG</TermTip></label><b>{{ fmt(detail.peg) }}</b></div>
+                <div><label>盈利收益率</label><span>{{ detail.earningsYield != null ? fmtPct(detail.earningsYield) : '-' }}</span></div>
+              </div>
+              <span v-if="dimension('peg')?.verdict" class="metric-verdict">当前：{{ dimension('peg').verdict }}</span>
+            </div>
+            <p v-if="dimension('peg')?.reference" class="metric-reference">参考：{{ dimension('peg').reference }}</p>
+          </div>
+
+          <div class="metric-row">
+            <div class="metric-row-head">
+              <div class="metric-values compact">
+                <div><label><TermTip term="fair_value">公允PE</TermTip></label><b>{{ fmt(detail.fairPe, 1) }}</b></div>
+                <div><label>公允PB</label><span>{{ fmt(detail.fairPb) }}</span></div>
+                <div><label>安全边际</label><span>{{ fmtPct(detail.marginOfSafety) }}</span></div>
+              </div>
+              <span v-if="dimension('dcf')?.verdict" class="metric-verdict">当前：{{ dimension('dcf').verdict }}</span>
+            </div>
+            <p v-if="dimension('dcf')?.reference" class="metric-reference">参考：{{ dimension('dcf').reference }}；公允PE/PB是模型中枢，不是市场统一标准</p>
+          </div>
+
+          <div class="metric-row">
+            <div class="metric-row-head">
+              <div class="metric-values compact">
+                <div><label><TermTip term="roe">ROE</TermTip></label><b>{{ fmtPct(detail.roe) }}</b></div>
+                <div><label>资产负债率</label><span>{{ fmtPct(detail.debtRatio) }}</span></div>
+              </div>
+              <span v-if="dimension('quality')?.verdict" class="metric-verdict">当前：{{ dimension('quality').verdict }}</span>
+            </div>
+            <p v-if="dimension('quality')?.reference" class="metric-reference">参考：{{ dimension('quality').reference }}</p>
+          </div>
+
+          <div class="metric-row">
+            <div class="metric-row-head">
+              <div class="metric-values compact">
+                <div><label>净利同比</label><b>{{ fmtPct(detail.netProfitYoy) }}</b></div>
+                <div><label>营收同比</label><span>{{ fmtPct(detail.revenueYoy) }}</span></div>
+              </div>
+              <span v-if="dimension('growth')?.verdict" class="metric-verdict">当前：{{ dimension('growth').verdict }}</span>
+            </div>
+            <p v-if="dimension('growth')?.reference" class="metric-reference">参考：{{ dimension('growth').reference }}</p>
+          </div>
         </div>
         <p class="note">{{ detail.dataNote }}</p>
       </section>
@@ -257,6 +317,7 @@ onMounted(() => {
             />
             <div class="dim-verdict">{{ d.verdict }}</div>
             <div class="dim-detail">{{ d.detail }}</div>
+            <div v-if="d.reference" class="dim-reference">参考：{{ d.reference }}</div>
           </div>
         </div>
         <el-empty v-else description="暂无维度数据" />
@@ -491,20 +552,73 @@ onMounted(() => {
   margin: 0 0 12px;
   font-size: 1rem;
 }
-.meta {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px 12px;
+.metric-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding-bottom: 10px;
+  color: #86868b;
+  font-size: 0.76rem;
 }
-.meta label {
+.metric-context b {
+  margin-left: 3px;
+  color: #515154;
+  font-weight: 600;
+}
+.metric-list {
+  border-top: 1px solid #ececf0;
+}
+.metric-row {
+  padding: 11px 0;
+  border-bottom: 1px solid #ececf0;
+}
+.metric-row.emphasis {
+  background: #f7f9fc;
+  margin: 0 -10px;
+  padding: 11px 10px;
+}
+.metric-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.metric-values {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(54px, 1fr));
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.metric-values.compact {
+  grid-template-columns: repeat(3, minmax(70px, 1fr));
+  max-width: 300px;
+}
+.metric-values label {
   display: block;
   color: #86868b;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   margin-bottom: 2px;
 }
-.meta span,
-.meta b {
+.metric-values span,
+.metric-values b {
   font-size: 0.92rem;
+}
+.metric-verdict {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #eef3fa;
+  color: #315477;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.metric-reference {
+  margin: 7px 0 0;
+  color: #6e6e73;
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 .note {
   margin: 12px 0 0;
@@ -531,6 +645,12 @@ onMounted(() => {
   color: #6e6e73;
   font-size: 0.78rem;
   margin-top: 2px;
+  line-height: 1.4;
+}
+.dim-reference {
+  color: #86868b;
+  font-size: 0.74rem;
+  margin-top: 3px;
   line-height: 1.4;
 }
 .points {
@@ -594,8 +714,18 @@ onMounted(() => {
   .grid.two {
     grid-template-columns: 1fr;
   }
-  .meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .metric-row-head {
+    flex-direction: column;
+    gap: 7px;
+  }
+  .metric-values,
+  .metric-values.compact {
+    width: 100%;
+    max-width: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .metric-verdict {
+    white-space: normal;
   }
   .hero {
     flex-direction: column;

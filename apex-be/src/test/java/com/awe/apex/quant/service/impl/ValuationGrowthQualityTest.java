@@ -1,5 +1,6 @@
 package com.awe.apex.quant.service.impl;
 
+import com.awe.apex.quant.domain.dto.ValuationDimensionResp;
 import com.awe.apex.quant.domain.dto.ValuationResp;
 import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.StockFinAbstract;
@@ -13,6 +14,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -42,6 +44,24 @@ class ValuationGrowthQualityTest {
                 .anyMatch(item -> "growth".equals(item.getKey())
                         && "高增长待验证".equals(item.getVerdict())
                         && new BigDecimal("0.08").compareTo(item.getWeight()) == 0));
+    }
+
+    @Test
+    void valuationDimensionsExposeReferenceRangesNextToCurrentVerdicts() {
+        ValuationResp response = evaluate(new BigDecimal("40"), new BigDecimal("35"), new BigDecimal("18"));
+
+        for (ValuationDimensionResp dimension : response.getDimensions()) {
+            assertNotNull(dimension.getReference());
+            assertTrue(!dimension.getReference().isBlank());
+        }
+        assertTrue(response.getDimensions().stream()
+                .anyMatch(item -> "peg".equals(item.getKey())
+                        && item.getReference().contains("0.8–1.2")
+                        && item.getReference().contains("增长可持续")));
+        assertTrue(response.getDimensions().stream()
+                .anyMatch(item -> "quality".equals(item.getKey())
+                        && item.getReference().contains("ROE≥18%")
+                        && item.getReference().contains("负债率≥70%")));
     }
 
     private ValuationResp evaluate(BigDecimal revenueYoy, BigDecimal profitYoy, BigDecimal roe) {

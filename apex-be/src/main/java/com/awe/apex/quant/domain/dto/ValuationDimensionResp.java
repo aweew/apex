@@ -42,6 +42,11 @@ public class ValuationDimensionResp {
     private String verdict;
 
     /**
+     * 指标参考区间及适用限制
+     */
+    private String reference;
+
+    /**
      * 明细说明
      */
     private String detail;

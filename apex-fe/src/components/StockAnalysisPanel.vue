@@ -787,6 +787,8 @@ defineExpose({ reload: () => loadRules() })
               <span class="dim-name">{{ d.name }}</span>
               <em>{{ fmtNum(d.score, 0) }}</em>
               <div class="dim-track"><i :style="{ width: scoreBar(d.score) + '%' }" /></div>
+              <div v-if="d.verdict" class="dim-verdict">当前：{{ d.verdict }}</div>
+              <div v-if="d.reference" class="dim-reference">参考：{{ d.reference }}</div>
             </div>
           </div>
         </section>
@@ -1831,7 +1833,9 @@ defineExpose({ reload: () => loadRules() })
   grid-template-columns: 1fr auto;
   grid-template-areas:
     'name score'
-    'track track';
+    'track track'
+    'verdict verdict'
+    'reference reference';
   gap: 4px 10px;
   align-items: center;
   font-size: 12px;
@@ -1859,6 +1863,22 @@ defineExpose({ reload: () => loadRules() })
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #64d2ff, #30b0c7);
+}
+
+.dim-verdict {
+  grid-area: verdict;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.dim-reference {
+  grid-area: reference;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .dim-row em {
