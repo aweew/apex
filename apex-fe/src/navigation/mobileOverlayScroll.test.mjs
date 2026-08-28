@@ -132,3 +132,49 @@ test('brand navigation replaces history and the dashboard never shows a back act
     /function syncMobileBackTarget\(\)\s*\{[\s\S]*?route\.path === '\/dashboard'[\s\S]*?mobileBackPath\.value = ''[\s\S]*?mobileBackLabel\.value = ''[\s\S]*?return/,
   )
 })
+
+test('mobile bottom navigation floats above content without covering the final controls', () => {
+  assert.match(appSource, /class="mobile-bottom-nav"/)
+  assert.match(appSource, /aria-label="常用功能"/)
+  assert.match(appSource, /data-mobile-swipe-ignore/)
+  assert.match(appSource, /class="mobile-bottom-nav__item"/)
+  assert.match(appSource, /@click="setMobileMenu\(true\)"/)
+  assert.match(appSource, /\.mobile-bottom-nav\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?backdrop-filter:\s*blur\(20px\) saturate\(150%\);/)
+  assert.match(appSource, /\.main\s*\{[^}]*padding-bottom:\s*calc\(84px \+ env\(safe-area-inset-bottom\)\);/)
+  assert.match(appSource, /bottom:\s*max\(8px, env\(safe-area-inset-bottom\)\);/)
+})
+
+test('settings stay at the bottom of the menu and expose common preferences', () => {
+  const menuActions = appSource.slice(
+    appSource.indexOf('<div class="mobile-menu-actions">'),
+    appSource.indexOf('</div>\n      </div>\n      <div class="nav-actions desktop-nav-actions">'),
+  )
+
+  assert.match(menuActions, /class="mobile-action-btn app-settings-trigger"/)
+  assert.match(menuActions, /<Setting aria-hidden="true" \/>/)
+  assert.match(menuActions, />设置</)
+  assert.match(appSource, /class="desktop-icon-btn app-settings-trigger"/)
+  assert.match(appSource, /<el-drawer[\s\S]*?v-model="settingsOpen"[\s\S]*?title="设置"/)
+  assert.match(appSource, /减少动效/)
+  assert.match(appSource, /清除最近搜索/)
+  assert.match(appSource, /to="\/config"[\s\S]*?>系统参数</)
+  assert.match(appSource, /to="\/sync"[\s\S]*?>同步中心</)
+  assert.match(appSource, /\.mobile-menu-actions \.app-settings-trigger\s*\{[^}]*grid-column:\s*1 \/ -1;/s)
+})
+
+test('fullscreen follows the browser state and cleans up its listener', () => {
+  assert.match(appSource, /const isFullscreen = ref\(Boolean\(document\.fullscreenElement\)\)/)
+  assert.match(appSource, /document\.documentElement\.requestFullscreen\(\)/)
+  assert.match(appSource, /document\.exitFullscreen\(\)/)
+  assert.match(appSource, /document\.addEventListener\('fullscreenchange', syncFullscreenState\)/)
+  assert.match(appSource, /document\.removeEventListener\('fullscreenchange', syncFullscreenState\)/)
+  assert.match(appSource, /:model-value="isFullscreen"[\s\S]*?@change="toggleFullscreen"/)
+  assert.match(appSource, /class="desktop-icon-btn fullscreen-trigger"/)
+})
+
+test('reduced motion is persisted and applied at the document root', () => {
+  assert.match(appSource, /apex\.ui\.reduce-motion/)
+  assert.match(appSource, /document\.documentElement\.classList\.toggle\('reduce-motion', enabled\)/)
+  assert.match(appSource, /localStorage\.setItem\(REDUCE_MOTION_KEY, String\(enabled\)\)/)
+  assert.match(appSource, /:global\(html\.reduce-motion\) \*/)
+})

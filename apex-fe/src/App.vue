@@ -1,7 +1,20 @@
 <script setup>
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { Reading, Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import {
+  ArrowRight,
+  Briefcase,
+  DataBoard,
+  Delete,
+  FullScreen,
+  Histogram,
+  Reading,
+  Search,
+  Setting,
+  TrendCharts,
+  User,
+} from '@element-plus/icons-vue'
 import { getTradingCalendar } from './api/market'
 import { searchStock } from './api/stock'
 import http from './api/http'
@@ -9,7 +22,11 @@ import BackToTopButton from './components/BackToTopButton.vue'
 import GlossaryPanel from './components/GlossaryPanel.vue'
 import { BRAND } from './brand/identity.js'
 import { isNavigating, requestCount } from './utils/appActivity'
-import { MAIN_NAV_GROUPS, PRIMARY_SHORTCUTS } from './navigation/menu.js'
+import {
+  MAIN_NAV_GROUPS,
+  MOBILE_BOTTOM_NAV_ITEMS,
+  PRIMARY_SHORTCUTS,
+} from './navigation/menu.js'
 import { getCurrentUser, logout } from './api/auth'
 import {
   chinaMarketDate,
@@ -29,6 +46,7 @@ const router = useRouter()
 const route = useRoute()
 const healthOk = ref(null)
 const searchOpen = ref(false)
+const settingsOpen = ref(false)
 const mobileMenuOpen = ref(false)
 const mobileMenuProgress = ref(0)
 const mobileMenuDragging = ref(false)
@@ -50,6 +68,19 @@ const mobileModuleTitle = ref('')
 const mobileBackPath = ref('')
 const mobileBackLabel = ref('')
 const currentUser = ref(getCurrentUser())
+const isFullscreen = ref(Boolean(document.fullscreenElement))
+const fullscreenPending = ref(false)
+const fullscreenSupported = Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen)
+const REDUCE_MOTION_KEY = 'apex.ui.reduce-motion'
+const reduceMotion = ref(readReduceMotionPreference())
+const bottomNavIcons = {
+  Briefcase,
+  DataBoard,
+  Histogram,
+  Search,
+  TrendCharts,
+  User,
+}
 const isPublicRoute = computed(() => Boolean(route.meta.public))
 const mobileMenuActive = computed(() => (
   mobileMenuOpen.value || mobileMenuDragging.value || mobileMenuProgress.value > 0
@@ -60,6 +91,8 @@ const mobileMenuDrawerStyle = computed(() => (isMobileViewport.value
 const mobileMenuShellStyle = computed(() => (isMobileViewport.value
   ? { '--mobile-menu-page-offset': `${menuContentOffset(mobileMenuProgress.value, mobileViewportWidth.value)}px` }
   : undefined))
+const settingsDrawerDirection = computed(() => (isMobileViewport.value ? 'btt' : 'rtl'))
+const settingsDrawerSize = computed(() => (isMobileViewport.value ? '74%' : '380px'))
 const COMMAND_ROUTE_ITEMS = [
   { to: '/dashboard', label: '看板', detail: '市场立场与今日指挥', keywords: '首页 工作台' },
   { to: '/pre-market-report', label: '盘前研报', detail: '盘前市场、主线与组合风险研判', keywords: '晨报 研报 市场判断' },
@@ -100,6 +133,18 @@ let activityShowTimer
 let activityHideTimer
 let moduleTitleFrame
 let mobileMenuSwipe
+
+function readReduceMotionPreference() {
+  try {
+    const storedPreference = localStorage.getItem(REDUCE_MOTION_KEY)
+    if (storedPreference === 'true' || storedPreference === 'false') {
+      return storedPreference === 'true'
+    }
+  } catch {
+    // 使用系统偏好继续初始化。
+  }
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false
+}
 
 function syncMobileModuleTitle() {
   if (window.innerWidth > 900) {
@@ -205,6 +250,39 @@ function setMobileMenu(open) {
   mobileMenuOpen.value = open
   mobileMenuProgress.value = open ? 1 : 0
   mobileMenuSwipe = undefined
+}
+
+function syncFullscreenState() {
+  isFullscreen.value = Boolean(document.fullscreenElement)
+}
+
+async function toggleFullscreen() {
+  if (!fullscreenSupported || fullscreenPending.value) return
+  fullscreenPending.value = true
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+    } else {
+      await document.documentElement.requestFullscreen()
+    }
+  } catch (error) {
+    ElMessage.error(error?.message || '无法切换全屏模式')
+  } finally {
+    syncFullscreenState()
+    fullscreenPending.value = false
+  }
+}
+
+function openSettings() {
+  setMobileMenu(false)
+  if (searchOpen.value) closeSearch(false)
+  loadRecentStocks()
+  settingsOpen.value = true
+}
+
+function isBottomNavActive(item) {
+  if (item.action === 'menu') return mobileMenuActive.value
+  return item.activePaths.some((path) => route.path === path || route.path.startsWith(`${path}/`))
 }
 
 function isMobileMenuSwipeTarget(target) {
@@ -425,6 +503,7 @@ async function runSearch(keyword) {
 
 const RECENT_KEY = 'apex.search.recent'
 const recentStocks = ref([])
+const recentSearchCount = computed(() => recentStocks.value.length)
 
 function loadRecentStocks() {
   try {
@@ -445,6 +524,16 @@ function rememberStock(code, name = '') {
   } catch {
     /* ignore */
   }
+}
+
+function clearRecentStocks() {
+  recentStocks.value = []
+  try {
+    localStorage.removeItem(RECENT_KEY)
+  } catch {
+    // 内存状态已经清除。
+  }
+  ElMessage.success('最近搜索已清除')
 }
 
 function goStock(code, name = '') {
@@ -514,6 +603,7 @@ watch(
   () => route.fullPath,
   () => {
     setMobileMenu(false)
+    settingsOpen.value = false
     clearDataFreshness()
     void syncTradingCalendar()
     nextTick(() => {
@@ -572,7 +662,7 @@ watch(
       else mobileMenuCloseRef.value?.focus?.()
       return
     }
-    mobileMenuButtonRef.value?.focus?.()
+    if (!settingsOpen.value) mobileMenuButtonRef.value?.focus?.()
   },
   { immediate: true },
 )
@@ -585,6 +675,19 @@ watch(
   { immediate: true },
 )
 
+watch(
+  reduceMotion,
+  (enabled) => {
+    document.documentElement.classList.toggle('reduce-motion', enabled)
+    try {
+      localStorage.setItem(REDUCE_MOTION_KEY, String(enabled))
+    } catch {
+      // 当前页面仍然应用该偏好。
+    }
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   pingHealth()
   void syncTradingCalendar()
@@ -593,6 +696,7 @@ onMounted(() => {
   window.addEventListener('resize', closeMobileMenuOnDesktop)
   window.addEventListener('resize', scheduleMobileModuleTitle)
   window.addEventListener('scroll', scheduleMobileModuleTitle, { passive: true })
+  document.addEventListener('fullscreenchange', syncFullscreenState)
   nextTick(() => {
     syncMobileModuleTitle()
     syncMobileBackTarget()
@@ -608,8 +712,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', closeMobileMenuOnDesktop)
   window.removeEventListener('resize', scheduleMobileModuleTitle)
   window.removeEventListener('scroll', scheduleMobileModuleTitle)
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
   document.documentElement.classList.remove('mobile-menu-open')
   document.documentElement.classList.remove('search-open')
+  document.documentElement.classList.remove('reduce-motion')
 })
 </script>
 
@@ -629,8 +735,8 @@ onBeforeUnmount(() => {
       class="nav"
       :class="{ 'nav--opaque': route.path.startsWith('/portfolio'), 'nav--has-back': mobileBackLabel }"
       aria-label="主导航"
-      :inert="searchOpen"
-      :aria-hidden="searchOpen ? 'true' : undefined"
+      :inert="searchOpen || settingsOpen"
+      :aria-hidden="searchOpen || settingsOpen ? 'true' : undefined"
     >
       <RouterLink
         class="brand-block"
@@ -749,6 +855,10 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="mobile-menu-actions">
+          <button type="button" class="mobile-action-btn app-settings-trigger" @click="openSettings">
+            <Setting aria-hidden="true" />
+            <span>设置</span>
+          </button>
           <RouterLink
             v-if="dataFreshness"
             class="data-status"
@@ -795,6 +905,25 @@ onBeforeUnmount(() => {
           <Reading aria-hidden="true" />
           <span>百科</span>
         </button>
+        <button
+          type="button"
+          class="desktop-icon-btn fullscreen-trigger"
+          :aria-label="isFullscreen ? '退出全屏' : '进入全屏'"
+          :title="isFullscreen ? '退出全屏' : '进入全屏'"
+          :disabled="!fullscreenSupported || fullscreenPending"
+          @click="toggleFullscreen"
+        >
+          <FullScreen aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="desktop-icon-btn app-settings-trigger"
+          aria-label="打开设置"
+          title="设置"
+          @click="openSettings"
+        >
+          <Setting aria-hidden="true" />
+        </button>
         <el-dropdown v-if="currentUser" trigger="click">
           <button type="button" class="search-btn user-menu" :title="currentUser.phone">
             <span>{{ currentUser.nickName || currentUser.phone }}</span>
@@ -821,6 +950,72 @@ onBeforeUnmount(() => {
     </span>
 
     <GlossaryPanel v-if="!isPublicRoute" ref="glossaryRef" />
+
+    <el-drawer
+      v-if="!isPublicRoute"
+      v-model="settingsOpen"
+      class="app-settings-drawer"
+      title="设置"
+      :direction="settingsDrawerDirection"
+      :size="settingsDrawerSize"
+      append-to-body
+    >
+      <div class="settings-panel">
+        <section class="settings-section" aria-labelledby="display-settings-title">
+          <h3 id="display-settings-title">显示</h3>
+          <div class="settings-row">
+            <span class="settings-row-icon"><FullScreen aria-hidden="true" /></span>
+            <span class="settings-row-copy">
+              <strong>全屏模式</strong>
+              <small>{{ fullscreenSupported ? (isFullscreen ? '已进入全屏' : '使用整个屏幕空间') : '当前浏览器不可用' }}</small>
+            </span>
+            <el-switch
+              :model-value="isFullscreen"
+              :loading="fullscreenPending"
+              :disabled="!fullscreenSupported"
+              aria-label="全屏模式"
+              @change="toggleFullscreen"
+            />
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-icon"><Reading aria-hidden="true" /></span>
+            <span class="settings-row-copy">
+              <strong>减少动效</strong>
+              <small>降低页面切换与反馈动画</small>
+            </span>
+            <el-switch v-model="reduceMotion" aria-label="减少动效" />
+          </div>
+        </section>
+
+        <section class="settings-section" aria-labelledby="workspace-settings-title">
+          <h3 id="workspace-settings-title">工作台</h3>
+          <RouterLink class="settings-link" to="/config" @click="settingsOpen = false">
+            <Setting aria-hidden="true" />
+            <span>系统参数</span>
+            <ArrowRight aria-hidden="true" />
+          </RouterLink>
+          <RouterLink class="settings-link" to="/sync" @click="settingsOpen = false">
+            <DataBoard aria-hidden="true" />
+            <span>同步中心</span>
+            <ArrowRight aria-hidden="true" />
+          </RouterLink>
+        </section>
+
+        <section class="settings-section" aria-labelledby="local-settings-title">
+          <h3 id="local-settings-title">本地记录</h3>
+          <button
+            type="button"
+            class="settings-link settings-clear"
+            :disabled="recentSearchCount === 0"
+            @click="clearRecentStocks"
+          >
+            <Delete aria-hidden="true" />
+            <span>清除最近搜索</span>
+            <small>{{ recentSearchCount }}</small>
+          </button>
+        </section>
+      </div>
+    </el-drawer>
 
     <div
       v-if="!isPublicRoute && searchOpen"
@@ -922,13 +1117,51 @@ onBeforeUnmount(() => {
 
     <main
       class="main"
-      :inert="mobileMenuOpen || searchOpen"
-      :aria-hidden="mobileMenuOpen || searchOpen ? 'true' : undefined"
+      :inert="mobileMenuOpen || searchOpen || settingsOpen"
+      :aria-hidden="mobileMenuOpen || searchOpen || settingsOpen ? 'true' : undefined"
       :aria-busy="appActivityVisible ? 'true' : 'false'"
     >
       <RouterView />
       <BackToTopButton />
     </main>
+
+    <nav
+      v-if="!isPublicRoute"
+      class="mobile-bottom-nav"
+      aria-label="常用功能"
+      data-mobile-swipe-ignore
+      :inert="mobileMenuOpen || searchOpen || settingsOpen"
+      :aria-hidden="mobileMenuOpen || searchOpen || settingsOpen ? 'true' : undefined"
+    >
+      <template v-for="item in MOBILE_BOTTOM_NAV_ITEMS" :key="item.to || item.action">
+        <RouterLink
+          v-if="item.to"
+          class="mobile-bottom-nav__item"
+          :class="{ 'is-active': isBottomNavActive(item) }"
+          :to="item.to"
+          :aria-current="isBottomNavActive(item) ? 'page' : undefined"
+        >
+          <span class="mobile-bottom-nav__icon">
+            <component :is="bottomNavIcons[item.icon]" aria-hidden="true" />
+          </span>
+          <span>{{ item.label }}</span>
+        </RouterLink>
+        <button
+          v-else
+          type="button"
+          class="mobile-bottom-nav__item"
+          :class="{ 'is-active': isBottomNavActive(item) }"
+          aria-controls="mobile-navigation"
+          :aria-expanded="mobileMenuOpen"
+          @click="setMobileMenu(true)"
+        >
+          <span class="mobile-bottom-nav__icon">
+            <component :is="bottomNavIcons[item.icon]" aria-hidden="true" />
+          </span>
+          <span>{{ item.label }}</span>
+        </button>
+      </template>
+    </nav>
   </div>
 </template>
 
@@ -1047,6 +1280,10 @@ onBeforeUnmount(() => {
 
 .mobile-menu-scroll {
   display: contents;
+}
+
+.mobile-bottom-nav {
+  display: none;
 }
 
 .nav-icon-btn {
@@ -1366,6 +1603,180 @@ onBeforeUnmount(() => {
 .search-btn:hover {
   background: #f7f9fc;
   color: var(--ink);
+}
+
+.desktop-icon-btn {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.desktop-icon-btn:hover {
+  background: #f7f9fc;
+  color: var(--ink);
+}
+
+.desktop-icon-btn:focus-visible {
+  outline: 2px solid rgba(0, 113, 227, 0.34);
+  outline-offset: 2px;
+}
+
+.desktop-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.desktop-icon-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+:global(.app-settings-drawer .el-drawer__header) {
+  min-height: 58px;
+  margin: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.09);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+:global(.app-settings-drawer .el-drawer__body) {
+  padding: 0 20px 24px;
+}
+
+.settings-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.settings-section {
+  padding: 18px 0 4px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.settings-section:last-child {
+  border-bottom: 0;
+}
+
+.settings-section h3 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 62px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.settings-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-row-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
+  background: #eef3f8;
+  color: var(--ink-soft);
+}
+
+.settings-row-icon svg,
+.settings-link > svg {
+  width: 17px;
+  height: 17px;
+}
+
+.settings-row-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.settings-row-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settings-row-copy small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.settings-link {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 18px;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.settings-link:last-child {
+  border-bottom: 0;
+}
+
+.settings-link:hover {
+  color: var(--accent);
+}
+
+.settings-link:focus-visible {
+  outline: 2px solid rgba(0, 113, 227, 0.34);
+  outline-offset: 2px;
+}
+
+.settings-link > svg:last-child {
+  color: var(--muted);
+}
+
+.settings-clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.settings-clear small {
+  justify-self: end;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+:global(html.reduce-motion) *,
+:global(html.reduce-motion) *::before,
+:global(html.reduce-motion) *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
 .search-layer {
@@ -1865,6 +2276,23 @@ onBeforeUnmount(() => {
     background: #fff;
   }
 
+  .mobile-menu-actions .app-settings-trigger {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border-color: rgba(0, 113, 227, 0.22);
+    background: rgba(0, 113, 227, 0.06);
+    color: #0058b0;
+    font-weight: 650;
+  }
+
+  .mobile-menu-actions .app-settings-trigger svg {
+    width: 18px;
+    height: 18px;
+  }
+
   .mobile-menu-actions .health {
     justify-content: center;
     min-height: 44px;
@@ -1898,10 +2326,95 @@ onBeforeUnmount(() => {
     color: #a3342a;
   }
 
+  :global(.app-settings-drawer.el-drawer.btt) {
+    max-height: calc(100dvh - env(safe-area-inset-top));
+    border-radius: 8px 8px 0 0;
+  }
+
+  :global(.app-settings-drawer .el-drawer__body) {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+
   .main {
     min-width: 0;
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
     transform: translate3d(var(--mobile-menu-page-offset, 0px), 0, 0);
     transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1);
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    z-index: 90;
+    right: 0;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    width: min(calc(100vw - 20px), 520px);
+    min-height: 66px;
+    margin: 0 auto;
+    padding: 5px 6px;
+    overflow: hidden;
+    border: 1px solid rgba(203, 213, 225, 0.82);
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+  }
+
+  .mobile-bottom-nav__item {
+    display: flex;
+    min-width: 0;
+    min-height: 54px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px;
+    border: 0;
+    border-radius: 20px;
+    outline: none;
+    background: transparent;
+    color: #596579;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-bottom-nav__icon {
+    display: grid;
+    width: 32px;
+    height: 30px;
+    place-items: center;
+    border-radius: 16px;
+    transition: color 0.16s ease, background-color 0.16s ease;
+  }
+
+  .mobile-bottom-nav__icon svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .mobile-bottom-nav__item.is-active {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .mobile-bottom-nav__item.is-active .mobile-bottom-nav__icon {
+    background: rgba(0, 113, 227, 0.11);
+  }
+
+  .mobile-bottom-nav__item:focus-visible {
+    box-shadow: inset 0 0 0 2px rgba(0, 113, 227, 0.44);
+  }
+
+  .mobile-bottom-nav__item:active {
+    background: rgba(0, 113, 227, 0.08);
   }
 
   .nav > .brand-block,
@@ -2062,6 +2575,16 @@ onBeforeUnmount(() => {
   .brand-en,
   .tagline {
     display: none;
+  }
+
+  .mobile-bottom-nav {
+    width: calc(100vw - 12px);
+    padding-right: 3px;
+    padding-left: 3px;
+  }
+
+  .mobile-bottom-nav__item {
+    font-size: 10px;
   }
 }
 </style>

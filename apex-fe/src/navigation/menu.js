@@ -24,9 +24,26 @@ export const MAIN_NAV_GROUPS = [
     items: [
       { to: '/backtest', label: '回测' },
       { to: '/sync', label: '同步' },
-      { to: '/config', label: '参数' },
     ],
   },
+]
+
+export const MOBILE_BOTTOM_NAV_ITEMS = [
+  { to: '/dashboard', label: '看板', icon: 'DataBoard', activePaths: ['/dashboard'] },
+  { to: '/market', label: '行情', icon: 'TrendCharts', activePaths: ['/market'] },
+  {
+    to: '/screener',
+    label: '股票',
+    icon: 'Histogram',
+    activePaths: ['/screener', '/watchlist', '/observe', '/stock'],
+  },
+  {
+    to: '/portfolio',
+    label: '组合',
+    icon: 'Briefcase',
+    activePaths: ['/portfolio', '/paper', '/holding', '/trades'],
+  },
+  { action: 'menu', label: '我的', icon: 'User' },
 ]
 
 export const PRIMARY_SHORTCUTS = {

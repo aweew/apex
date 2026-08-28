@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-import { MAIN_NAV_GROUPS, PRIMARY_SHORTCUTS } from './menu.js'
+import { MAIN_NAV_GROUPS, MOBILE_BOTTOM_NAV_ITEMS, PRIMARY_SHORTCUTS } from './menu.js'
 
 const routerSource = await readFile(new URL('../router/index.js', import.meta.url), 'utf8')
 
@@ -38,7 +38,6 @@ test('main navigation keeps only the consolidated high-frequency entries', () =>
         items: [
           ['/backtest', '回测'],
           ['/sync', '同步'],
-          ['/config', '参数'],
         ],
       },
     ],
@@ -48,7 +47,7 @@ test('main navigation keeps only the consolidated high-frequency entries', () =>
 test('standalone and low-frequency pages stay out of the main navigation', () => {
   const paths = MAIN_NAV_GROUPS.flatMap((group) => group.items.map((item) => item.to))
 
-  for (const hiddenPath of ['/pre-market-report', '/ai-center', '/factors', '/holding', '/valuation', '/signals', '/pipeline', '/daily', '/hot', '/capital-flow', '/sector']) {
+  for (const hiddenPath of ['/pre-market-report', '/ai-center', '/config', '/factors', '/holding', '/valuation', '/signals', '/pipeline', '/daily', '/hot', '/capital-flow', '/sector']) {
     assert.equal(paths.includes(hiddenPath), false, hiddenPath)
   }
 })
@@ -66,4 +65,17 @@ test('primary shortcuts point to the consolidated workbench', () => {
     3: '/observe',
     4: '/portfolio',
   })
+})
+
+test('mobile bottom navigation exposes the five primary touch destinations', () => {
+  assert.deepEqual(
+    MOBILE_BOTTOM_NAV_ITEMS.map((item) => [item.to || item.action, item.label, item.icon]),
+    [
+      ['/dashboard', '看板', 'DataBoard'],
+      ['/market', '行情', 'TrendCharts'],
+      ['/screener', '股票', 'Histogram'],
+      ['/portfolio', '组合', 'Briefcase'],
+      ['menu', '我的', 'User'],
+    ],
+  )
 })
