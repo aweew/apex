@@ -10,6 +10,8 @@ public class MorningBriefingProperties {
 
     private static final String DEFAULT_INDEX_SYMBOLS = "usIXIC,usDJI,usINX";
     private static final String DEFAULT_ASIA_INDEX_SYMBOLS = "hkHSI,hkHSTECH";
+    private static final String DEFAULT_CHINA_CONCEPT_SYMBOLS = "usBABA,usPDD,usJD,usBIDU,usNTES,usTCOM,"
+            + "usNIO,usLI,usXPEV,usBILI,usFUTU,usTME";
     private static final String DEFAULT_STAR_SYMBOLS = "usMSFT,usAAPL,usAMZN,usGOOG,usMETA,usTSLA,usSPCX,"
             + "usNVDA,usAMD,usAVGO,usARM,usMRVL,usMU,usSKHY,usSNDK,usWDC,usSTX,"
             + "usTSM,usGFS,usASML,usAMAT,usLRCX,usKLAC,usSNPS,usCDNS,usQCOM,usINTC,"
@@ -36,9 +38,14 @@ public class MorningBriefingProperties {
     private String asiaIndexSymbols = DEFAULT_ASIA_INDEX_SYMBOLS;
 
     /**
+     * 纳斯达克中国金龙指数行情符号。
+     */
+    private String chinaGoldenDragonSymbol = "usHXC";
+
+    /**
      * 富时 A50 期指连续合约代码。
      */
-    private String ftseA50FutureSymbol = "";
+    private String ftseA50FutureSymbol = "hf_CHA50CFD";
 
     /**
      * 明星股观察池符号，逗号分隔。
@@ -88,5 +95,5 @@ public class MorningBriefingProperties {
     /**
      * 中概风向主题符号，逗号分隔。
      */
-    private String chinaConceptSymbols = "usBABA,usPDD";
+    private String chinaConceptSymbols = DEFAULT_CHINA_CONCEPT_SYMBOLS;
 }

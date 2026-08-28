@@ -15,6 +15,7 @@ import com.awe.apex.quant.domain.dto.DashboardHomeResp;
 import com.awe.apex.quant.domain.dto.ExternalMarketItemResp;
 import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
+import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.OvernightMarketTheme;
 import com.awe.apex.quant.domain.dto.PortfolioBriefResp;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
@@ -47,7 +48,7 @@ import java.util.Objects;
 @Service
 public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportService {
 
-    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v3:";
+    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v4:";
     private static final Duration CACHE_TTL = Duration.ofHours(20);
     private static final String DEFAULT_WATCHLIST_GROUP = "我的自选";
     private static final String DATA_MISSING = "数据暂缺";
@@ -234,6 +235,33 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             }
             if (CollUtil.isEmpty(morning.getAsiaQuotes())) {
                 missingData.add("亚太主要指数");
+            }
+            if (Objects.isNull(morning.getFtseA50Future())) {
+                missingData.add("富时 A50 期指");
+            }
+            if (Objects.isNull(morning.getChinaGoldenDragon())) {
+                missingData.add("纳斯达克中国金龙指数");
+            }
+            int configuredChinaConceptCount = 0;
+            String configuredChinaConceptSymbols = botProperties.getMorningBriefing().getChinaConceptSymbols();
+            if (StringUtils.isNotBlank(configuredChinaConceptSymbols)) {
+                for (String configuredChinaConceptSymbol : configuredChinaConceptSymbols.split(",")) {
+                    if (StringUtils.isNotBlank(configuredChinaConceptSymbol)) {
+                        configuredChinaConceptCount++;
+                    }
+                }
+            }
+            int availableChinaConceptCount = 0;
+            if (CollUtil.isNotEmpty(morning.getChinaConceptQuotes())) {
+                for (OvernightMarketQuote chinaConceptQuote : morning.getChinaConceptQuotes()) {
+                    if (Objects.nonNull(chinaConceptQuote)
+                            && StringUtils.isNotBlank(chinaConceptQuote.getSymbol())) {
+                        availableChinaConceptCount++;
+                    }
+                }
+            }
+            if (configuredChinaConceptCount > 0 && availableChinaConceptCount < configuredChinaConceptCount) {
+                missingData.add("中概股代表行情");
             }
             if (CollUtil.isEmpty(morning.getExternalMarketItems())) {
                 missingData.add("黄金、原油、人民币、美债和美元");

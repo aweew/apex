@@ -77,13 +77,15 @@ class MorningBriefingServiceImplTest {
         List<String> requestedSymbols = symbolsCaptor.getValue();
         assertTrue(requestedSymbols.containsAll(List.of(
                 "usIXIC", "usDJI", "usINX",
+                "usHXC",
                 "hkHSI", "hkHSTECH",
                 "usMSFT", "usAAPL", "usAMZN", "usGOOG", "usMETA", "usTSLA", "usSPCX",
                 "usNVDA", "usAVGO", "usARM", "usMRVL", "usMU",
                 "usSNDK", "usSKHY", "usAMD", "usWDC", "usSTX",
                 "usTSM", "usGFS", "usASML", "usAMAT", "usLRCX", "usKLAC",
                 "usSNPS", "usCDNS", "usQCOM", "usINTC", "usTXN", "usADI",
-                "usNXPI", "usON", "usBABA", "usPDD"
+                "usNXPI", "usON", "usBABA", "usPDD", "usJD", "usBIDU",
+                "usNTES", "usTCOM", "usNIO", "usLI", "usXPEV", "usBILI", "usFUTU", "usTME"
         )));
     }
 
@@ -137,7 +139,7 @@ class MorningBriefingServiceImplTest {
         assertTrue(response.getSummary().contains("AI"));
         assertEquals(List.of("美联储公布最新经济数据"), response.getNewsTitles());
         assertSame(newsPulse, response.getNewsPulse());
-        verify(redisCacheService).put(eq("apex:morning-briefing:latest:v2"), eq(response), any());
+        verify(redisCacheService).put(eq("apex:morning-briefing:latest:v3"), eq(response), any());
     }
 
     @Test
@@ -189,6 +191,25 @@ class MorningBriefingServiceImplTest {
     }
 
     @Test
+    void groupsChinaGoldenDragonAndChinaConceptStocksSeparately() {
+        when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of(
+                quote("usHXC", "纳斯达克中国金龙指数", "-0.74"),
+                quote("usBABA", "阿里巴巴", "-2.94"),
+                quote("usPDD", "拼多多", "-2.36"),
+                quote("usJD", "京东", "1.20")
+        ));
+
+        MorningBriefingResp response = service.generate();
+
+        assertEquals("usHXC", response.getChinaGoldenDragon().getSymbol());
+        assertEquals(List.of("usBABA", "usPDD", "usJD"), response.getChinaConceptQuotes().stream()
+                .map(OvernightMarketQuote::getSymbol)
+                .toList());
+        assertTrue(response.getSummary().contains("中概风向：纳斯达克中国金龙指数 -0.74%"));
+        assertTrue(response.getSummary().contains("代表股中位数 -2.36%"));
+    }
+
+    @Test
     void includesExternalMarketEnvironmentAndMarksMissingItemsAsIncomplete() {
         when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of(quote("usIXIC", "纳斯达克", "0.81")));
         when(externalMarketQuoteClient.fetch()).thenReturn(List.of(
@@ -225,14 +246,14 @@ class MorningBriefingServiceImplTest {
 
     @Test
     void includesFtseA50FutureAsAnAsharesPreMarketReference() {
-        properties.getMorningBriefing().setFtseA50FutureSymbol("hf_FTSE");
+        properties.getMorningBriefing().setFtseA50FutureSymbol("hf_CHA50CFD");
         when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of());
-        when(globalFuturesQuoteClient.fetch("hf_FTSE"))
-                .thenReturn(quote("hf_FTSE", "富时 A50 期指连续", "0.65"));
+        when(globalFuturesQuoteClient.fetch("hf_CHA50CFD"))
+                .thenReturn(quote("hf_CHA50CFD", "富时 A50 期指连续", "0.65"));
 
         MorningBriefingResp response = service.generate();
 
-        assertEquals("hf_FTSE", response.getFtseA50Future().getSymbol());
+        assertEquals("hf_CHA50CFD", response.getFtseA50Future().getSymbol());
         assertTrue(response.getSummary().contains("A股盘前：富时 A50 期指连续 +0.65%"));
     }
 
@@ -339,6 +360,8 @@ class MorningBriefingServiceImplTest {
         properties.getMorningBriefing().setSymbols("usIXIC,usAMD");
         properties.getMorningBriefing().setIndexSymbols("usIXIC");
         properties.getMorningBriefing().setAsiaIndexSymbols("");
+        properties.getMorningBriefing().setChinaGoldenDragonSymbol("");
+        properties.getMorningBriefing().setFtseA50FutureSymbol("");
         properties.getMorningBriefing().setStarSymbols("usAMD");
         properties.getMorningBriefing().setTechnologyGiantsSymbols("usAMD");
         properties.getMorningBriefing().setAiChipSymbols("usAMD");
@@ -384,7 +407,7 @@ class MorningBriefingServiceImplTest {
                 .generatedAt(LocalDateTime.of(2026, 8, 18, 6, 35))
                 .dataLevel("GREEN")
                 .build();
-        when(redisCacheService.get("apex:morning-briefing:latest:v2", MorningBriefingResp.class))
+        when(redisCacheService.get("apex:morning-briefing:latest:v3", MorningBriefingResp.class))
                 .thenReturn(cached);
 
         MorningBriefingResp response = service.latest();

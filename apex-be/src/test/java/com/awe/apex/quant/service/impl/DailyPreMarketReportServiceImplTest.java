@@ -10,6 +10,7 @@ import com.awe.apex.quant.domain.dto.DashboardHomeResp;
 import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
+import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.dto.PreMarketEventImpactResp;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
@@ -172,6 +173,41 @@ class DailyPreMarketReportServiceImplTest {
         assertTrue(report.getContent().length() < 3500);
         verify(portfolioService, never()).detail(12L);
         verify(redisCacheService).put(anyString(), any(DailyPreMarketReportResp.class), any());
+    }
+
+    @Test
+    void reportsMissingA50GoldenDragonAndChinaConceptQuotesSeparately() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 28);
+        MorningBriefingResp morning = MorningBriefingResp.builder()
+                .tradeDate(tradeDate)
+                .dataLevel("YELLOW")
+                .indexQuotes(List.of())
+                .asiaQuotes(List.of())
+                .externalMarketItems(List.of())
+                .chinaConceptQuotes(List.of(OvernightMarketQuote.builder()
+                        .symbol("usBABA")
+                        .name("阿里巴巴")
+                        .pctChg(new BigDecimal("-2.94"))
+                        .build()))
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(tradeDate.minusDays(1))
+                        .dataLevel("YELLOW")
+                        .build())
+                .morningBriefing(morning)
+                .build();
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(false);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertTrue(report.getMissingData().contains("富时 A50 期指"));
+        assertTrue(report.getMissingData().contains("纳斯达克中国金龙指数"));
+        assertTrue(report.getMissingData().contains("中概股代表行情"));
     }
 
     @Test

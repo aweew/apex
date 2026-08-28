@@ -7,7 +7,7 @@ import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 import { publishDataFreshness, staleDataTime } from '../utils/dataFreshness.js'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v19'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v20'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
@@ -79,6 +79,18 @@ const overnightIndexes = computed(() => {
   return marketQuotes.filter((quote) => legacyIndexSymbols.has(quote.symbol))
 })
 const overnightThemes = computed(() => morningBriefing.value?.marketThemes || [])
+const chinaGoldenDragon = computed(() => (
+  morningBriefing.value?.chinaGoldenDragon
+  || (morningBriefing.value?.marketQuotes || []).find((quote) => quote.symbol === 'usHXC')
+  || null
+))
+const chinaConceptMovers = computed(() => {
+  const chinaConceptQuotes = morningBriefing.value?.chinaConceptQuotes || []
+  return [...chinaConceptQuotes]
+    .filter((quote) => quote?.pctChg != null)
+    .sort((left, right) => Math.abs(Number(right.pctChg)) - Math.abs(Number(left.pctChg)))
+    .slice(0, 6)
+})
 const asiaIndexes = computed(() => morningBriefing.value?.asiaQuotes || [])
 const openingAuction = computed(() => home.value?.openingAuction || null)
 const hasOpeningAuction = computed(() => Boolean(
@@ -159,6 +171,12 @@ function fmtQuotePrice(v) {
   const n = Number(v)
   if (Number.isNaN(n)) return ''
   return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtOvernightQuoteTime(quote) {
+  if (!quote?.quoteTime) return ''
+  const timezone = quote.symbol?.startsWith('us') ? '美东' : '北京'
+  return `源行情 ${timezone} ${String(quote.quoteTime).replace('T', ' ').slice(5, 16)}`
 }
 
 function fmtBriefingTime(v) {
@@ -971,6 +989,50 @@ onMounted(() => {
             </p>
           </div>
 
+          <div class="overnight-layer">
+            <div class="overnight-layer-head">
+              <h5>中国资产</h5>
+              <span>金龙指数与代表中概股</span>
+            </div>
+            <div v-if="chinaGoldenDragon || ftseA50Future" class="overnight-index-grid china-assets-grid">
+              <div v-if="chinaGoldenDragon" class="overnight-quote">
+                <div class="overnight-quote-name">
+                  <strong>{{ chinaGoldenDragon.name || '纳斯达克中国金龙指数' }}</strong>
+                  <small class="china-asset-meta">
+                    <span v-if="fmtQuotePrice(chinaGoldenDragon.latestPrice)" class="china-asset-price">{{ fmtQuotePrice(chinaGoldenDragon.latestPrice) }}</span>
+                    <span v-if="fmtOvernightQuoteTime(chinaGoldenDragon)" class="china-asset-time">{{ fmtOvernightQuoteTime(chinaGoldenDragon) }}</span>
+                  </small>
+                </div>
+                <b :class="pctDir(chinaGoldenDragon.pctChg)">{{ fmtIndexPct(chinaGoldenDragon.pctChg) }}</b>
+              </div>
+              <div v-if="ftseA50Future" class="overnight-quote">
+                <div class="overnight-quote-name">
+                  <strong>富时 A50 期指连续</strong>
+                  <small class="china-asset-meta">
+                    <span v-if="fmtQuotePrice(ftseA50Future.latestPrice)" class="china-asset-price">{{ fmtQuotePrice(ftseA50Future.latestPrice) }}</span>
+                    <span v-if="fmtOvernightQuoteTime(ftseA50Future)" class="china-asset-time">{{ fmtOvernightQuoteTime(ftseA50Future) }}</span>
+                  </small>
+                </div>
+                <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
+              </div>
+            </div>
+            <p v-if="!chinaGoldenDragon" class="morning-context-empty">纳斯达克中国金龙指数暂未获取</p>
+            <p v-if="!ftseA50Future" class="morning-context-empty">富时 A50 期指连续暂未获取</p>
+            <div v-if="chinaConceptMovers.length" class="overnight-index-grid china-concept-grid">
+              <div v-for="quote in chinaConceptMovers" :key="quote.symbol" class="overnight-quote">
+                <div class="overnight-quote-name">
+                  <strong>{{ quote.name || quote.symbol }}</strong>
+                  <small class="china-asset-meta">
+                    <span v-if="fmtQuotePrice(quote.latestPrice)" class="china-asset-price">{{ fmtQuotePrice(quote.latestPrice) }}</span>
+                    <span v-if="fmtOvernightQuoteTime(quote)" class="china-asset-time">{{ fmtOvernightQuoteTime(quote) }}</span>
+                  </small>
+                </div>
+                <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
+              </div>
+            </div>
+            <p v-else class="morning-context-empty">中概股代表行情暂未获取</p>
+          </div>
+
           <button
             type="button"
             class="morning-disclosure"
@@ -983,23 +1045,6 @@ onMounted(() => {
           </button>
 
           <div id="morning-market-more" class="morning-context-more" v-show="morningMarketExpanded">
-            <div class="overnight-layer">
-              <div class="overnight-layer-head">
-                <h5>A股盘前</h5>
-                <span>夜盘开盘参考</span>
-              </div>
-              <div v-if="ftseA50Future" class="overnight-index-grid a50-future-grid">
-                <div class="overnight-quote">
-                  <div class="overnight-quote-name">
-                    <strong>富时 A50 期指连续</strong>
-                    <small v-if="fmtQuotePrice(ftseA50Future.latestPrice)">{{ fmtQuotePrice(ftseA50Future.latestPrice) }}</small>
-                  </div>
-                  <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
-                </div>
-              </div>
-              <p v-else class="morning-context-empty">富时 A50 期指连续暂未获取</p>
-            </div>
-
             <div class="overnight-layer">
             <div class="overnight-layer-head">
               <h5>亚太情绪</h5>
@@ -3114,8 +3159,46 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.42);
 }
 
-.a50-future-grid {
-  grid-template-columns: minmax(0, 1fr);
+.china-assets-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.china-concept-grid .overnight-quote {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.china-concept-grid .overnight-quote:nth-child(3n) {
+  border-right: 0;
+}
+
+.china-concept-grid .overnight-quote:nth-last-child(-n + 3) {
+  border-bottom-color: transparent;
+}
+
+.china-assets-grid .overnight-quote,
+.china-concept-grid .overnight-quote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 58px;
+}
+
+.china-assets-grid .overnight-quote-name,
+.china-concept-grid .overnight-quote-name {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.china-asset-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  white-space: normal;
+}
+
+.china-asset-time {
+  overflow-wrap: anywhere;
 }
 
 .opening-auction-grid {
@@ -3914,6 +3997,44 @@ onMounted(() => {
   }
 
   .overnight-quote-name small {
+    display: none;
+  }
+
+  .china-concept-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .china-concept-grid .overnight-quote:nth-child(3n) {
+    border-right: 1px solid rgba(15, 23, 42, 0.07);
+  }
+
+  .china-concept-grid .overnight-quote:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .china-concept-grid .overnight-quote:nth-last-child(-n + 3) {
+    border-bottom-color: rgba(15, 23, 42, 0.07);
+  }
+
+  .china-concept-grid .overnight-quote:nth-last-child(-n + 2) {
+    border-bottom-color: transparent;
+  }
+
+  .china-assets-grid .overnight-quote,
+  .china-concept-grid .overnight-quote {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .overnight-quote-name small.china-asset-meta {
+    display: block;
+    font-size: 10px;
+    line-height: 1.3;
+    white-space: normal;
+  }
+
+  .china-asset-price {
     display: none;
   }
 

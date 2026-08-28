@@ -15,7 +15,7 @@ test('dashboard places overnight market and news before action panels', () => {
 })
 
 test('dashboard uses command headline with legacy advice fallback and a new cache version', () => {
-  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v19'/)
+  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v20'/)
   assert.match(dashboardSource, /const command\s*=\s*computed\(\(\)\s*=>\s*home\.value\?\.command\s*\|\|\s*null\)/)
   assert.match(
     dashboardSource,
@@ -33,7 +33,6 @@ test('dashboard renders the structured forecast and only shows available opening
   assert.match(dashboardSource, /<h5>亚太情绪<\/h5>/)
   assert.match(dashboardSource, /class="asia-index-grid"/)
   assert.match(dashboardSource, /morningBriefing\.value\?\.ftseA50Future/)
-  assert.match(dashboardSource, /<h5>A股盘前<\/h5>/)
   assert.match(dashboardSource, /富时 A50 期指连续暂未获取/)
   assert.match(dashboardSource, /const openingAuction\s*=\s*computed\(/)
   assert.match(
@@ -45,6 +44,42 @@ test('dashboard renders the structured forecast and only shows available opening
   assert.match(dashboardSource, /v-for="item in openingAuction\.indexes"/)
   assert.doesNotMatch(dashboardSource, /集合竞价是开盘前最后确认，不以外盘信号替代/)
   assert.doesNotMatch(dashboardSource, /opening-auction-note/)
+})
+
+test('dashboard shows Golden Dragon and representative China concept stocks as core overnight data', () => {
+  assert.match(dashboardSource, /const chinaGoldenDragon\s*=\s*computed\(/)
+  assert.match(dashboardSource, /const chinaConceptMovers\s*=\s*computed\(/)
+  assert.match(dashboardSource, /<h5>中国资产<\/h5>/)
+  assert.match(dashboardSource, /morningBriefing\.value\?\.chinaGoldenDragon/)
+  assert.match(dashboardSource, /morningBriefing\.value\?\.chinaConceptQuotes/)
+  assert.match(dashboardSource, /v-for="quote in chinaConceptMovers"/)
+  assert.match(dashboardSource, /function fmtOvernightQuoteTime\(quote\)/)
+  assert.match(dashboardSource, /quote\.symbol\?\.startsWith\('us'\) \? '美东' : '北京'/)
+  assert.match(dashboardSource, /class="china-asset-time"/)
+  assert.match(dashboardSource, /纳斯达克中国金龙指数暂未获取/)
+  const chinaAssetsIndex = dashboardSource.indexOf('<h5>中国资产</h5>')
+  const disclosureIndex = dashboardSource.indexOf('class="morning-disclosure"')
+  const ftseA50Index = dashboardSource.indexOf('<strong>富时 A50 期指连续</strong>')
+  assert.ok(chinaAssetsIndex > 0)
+  assert.ok(ftseA50Index > chinaAssetsIndex)
+  assert.ok(ftseA50Index < disclosureIndex)
+  assert.doesNotMatch(dashboardSource, /<h5>A股盘前<\/h5>/)
+  assert.match(
+    dashboardSource,
+    /\.china-assets-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.china-concept-grid \.overnight-quote:nth-child\(3n\)\s*\{[^}]*border-right:\s*0;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /@media \(max-width: 560px\)[\s\S]*?\.china-concept-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
+  )
+  assert.match(
+    dashboardSource,
+    /@media \(max-width: 560px\)[\s\S]*?\.overnight-quote-name small\.china-asset-meta\s*\{[^}]*display:\s*block;/s,
+  )
 })
 
 test('dashboard separates external environment signals and explains their A-share impact', () => {

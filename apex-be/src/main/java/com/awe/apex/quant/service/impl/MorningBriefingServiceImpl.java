@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 public class MorningBriefingServiceImpl implements IMorningBriefingService {
 
-    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest:v2";
+    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest:v3";
     private static final Duration BRIEFING_CACHE_TTL = Duration.ofHours(30);
     private static final ExecutorService MORNING_BRIEFING_REFRESH_POOL = Executors.newSingleThreadExecutor(runnable -> {
         Thread refreshThread = new Thread(runnable, "morning-briefing-refresh");
@@ -94,6 +94,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 properties.getMorningBriefing().getSymbols(),
                 properties.getMorningBriefing().getIndexSymbols(),
                 properties.getMorningBriefing().getAsiaIndexSymbols(),
+                properties.getMorningBriefing().getChinaGoldenDragonSymbol(),
                 properties.getMorningBriefing().getStarSymbols(),
                 properties.getMorningBriefing().getTechnologyGiantsSymbols(),
                 properties.getMorningBriefing().getAiChipSymbols(),
@@ -120,6 +121,12 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 parseSymbols(properties.getMorningBriefing().getIndexSymbols()));
         List<OvernightMarketQuote> asiaQuotes = selectQuotes(marketQuotes,
                 parseSymbols(properties.getMorningBriefing().getAsiaIndexSymbols()));
+        List<OvernightMarketQuote> chinaGoldenDragonQuotes = selectQuotes(marketQuotes,
+                parseSymbols(properties.getMorningBriefing().getChinaGoldenDragonSymbol()));
+        OvernightMarketQuote chinaGoldenDragon = CollUtil.isEmpty(chinaGoldenDragonQuotes)
+                ? null : chinaGoldenDragonQuotes.get(0);
+        List<OvernightMarketQuote> chinaConceptQuotes = selectQuotes(marketQuotes,
+                parseSymbols(properties.getMorningBriefing().getChinaConceptSymbols()));
         OvernightMarketQuote ftseA50Future = globalFuturesQuoteClient.fetch(
                 properties.getMorningBriefing().getFtseA50FutureSymbol());
         List<ExternalMarketItemResp> externalMarketItems = externalMarketQuoteClient.fetch();
@@ -146,8 +153,8 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
         }
 
         // 3. 输出市场温度、主题强弱和明星异动三层结果
-        String summary = buildSummary(ftseA50Future, indexQuotes, asiaQuotes, externalMarketItems,
-                marketThemes, starQuotes, newsPulse);
+        String summary = buildSummary(ftseA50Future, chinaGoldenDragon, indexQuotes, asiaQuotes,
+                externalMarketItems, marketThemes, starQuotes, newsPulse);
         List<String> validQuoteSymbols = new ArrayList<>();
         for (OvernightMarketQuote marketQuote : marketQuotes) {
             if (StringUtils.isNotBlank(marketQuote.getSymbol())
@@ -166,6 +173,8 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 .marketQuotes(marketQuotes)
                 .indexQuotes(indexQuotes)
                 .asiaQuotes(asiaQuotes)
+                .chinaGoldenDragon(chinaGoldenDragon)
+                .chinaConceptQuotes(chinaConceptQuotes)
                 .externalMarketItems(externalMarketItems)
                 .ftseA50Future(ftseA50Future)
                 .starQuotes(starQuotes)
@@ -410,6 +419,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
     }
 
     private String buildSummary(OvernightMarketQuote ftseA50Future,
+                                OvernightMarketQuote chinaGoldenDragon,
                                 List<OvernightMarketQuote> indexQuotes,
                                 List<OvernightMarketQuote> asiaQuotes,
                                 List<ExternalMarketItemResp> externalMarketItems,
@@ -431,6 +441,23 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
             appendQuotes(summary, indexQuotes, indexQuotes.size());
             summary.append("。");
         }
+
+        summary.append("\n中概风向：");
+        if (Objects.isNull(chinaGoldenDragon)) {
+            summary.append("纳斯达克中国金龙指数暂未获取");
+        } else {
+            summary.append(StringUtils.isNotBlank(chinaGoldenDragon.getName())
+                            ? chinaGoldenDragon.getName() : "纳斯达克中国金龙指数")
+                    .append(" ").append(formatPercent(chinaGoldenDragon.getPctChg()));
+        }
+        for (OvernightMarketTheme marketTheme : marketThemes) {
+            if ("CHINA_CONCEPT".equals(marketTheme.getCode())
+                    && Objects.nonNull(marketTheme.getMedianPctChg())) {
+                summary.append("；代表股中位数 ").append(formatPercent(marketTheme.getMedianPctChg()));
+                break;
+            }
+        }
+        summary.append("。");
 
         summary.append("\n亚太市场：");
         if (CollUtil.isEmpty(asiaQuotes)) {

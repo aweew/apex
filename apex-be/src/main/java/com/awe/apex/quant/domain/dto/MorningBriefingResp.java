@@ -44,6 +44,16 @@ public class MorningBriefingResp {
     private List<OvernightMarketQuote> asiaQuotes;
 
     /**
+     * 纳斯达克中国金龙指数报价。
+     */
+    private OvernightMarketQuote chinaGoldenDragon;
+
+    /**
+     * 中概股代表行情。
+     */
+    private List<OvernightMarketQuote> chinaConceptQuotes;
+
+    /**
      * 黄金、原油、美元、汇率和美债等外围环境指标。
      */
     private List<ExternalMarketItemResp> externalMarketItems;

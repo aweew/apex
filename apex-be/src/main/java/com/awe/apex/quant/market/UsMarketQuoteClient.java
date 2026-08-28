@@ -78,7 +78,8 @@ public class UsMarketQuoteClient {
         }
         BigDecimal latestPrice = toDecimal(fields[3]);
         BigDecimal pctChg = toDecimal(fields[32]);
-        if (Objects.isNull(latestPrice) || Objects.isNull(pctChg)) {
+        LocalDateTime quoteTime = toTime(fields[30]);
+        if (Objects.isNull(latestPrice) || Objects.isNull(pctChg) || Objects.isNull(quoteTime)) {
             return null;
         }
         return OvernightMarketQuote.builder()
@@ -86,7 +87,7 @@ public class UsMarketQuoteClient {
                 .name(fields[1].trim())
                 .latestPrice(latestPrice)
                 .pctChg(pctChg)
-                .quoteTime(toTime(fields[30]))
+                .quoteTime(quoteTime)
                 .build();
     }
 
