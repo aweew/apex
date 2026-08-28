@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElDialog, ElDrawer, ElMessage } from 'element-plus'
 import { searchStock } from '../api/stock'
+import { useBottomSheetSwipe } from '../utils/bottomSheetSwipe.js'
 
 const props = defineProps({
   modelValue: {
@@ -68,6 +69,12 @@ const estimatedAmount = computed(() => {
     maximumFractionDigits: 2,
   })
 })
+
+const sheetSwipe = useBottomSheetSwipe({
+  enabled: () => isMobileTrade.value && props.modelValue,
+  onDismiss: () => emit('update:modelValue', false),
+})
+const sheetSwipeStyle = sheetSwipe.panelStyle
 
 function currentDateTime() {
   const now = new Date()
@@ -178,10 +185,18 @@ onBeforeUnmount(() => {
     :is="tradeOverlay"
     :model-value="modelValue"
     v-bind="tradeOverlayProps"
+    :style="sheetSwipeStyle"
+    :data-bottom-sheet="isMobileTrade ? '' : undefined"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #header>
-      <div class="trade-dialog-header">
+      <div
+        class="trade-dialog-header"
+        @touchstart="sheetSwipe.onTouchStart"
+        @touchmove="sheetSwipe.onTouchMove"
+        @touchend="sheetSwipe.onTouchEnd"
+        @touchcancel="sheetSwipe.onTouchCancel"
+      >
         <div>
           <p class="trade-dialog-eyebrow">交易录入</p>
           <h2>{{ title }}</h2>
@@ -476,6 +491,11 @@ onBeforeUnmount(() => {
     margin: 0;
     padding: 24px 48px 14px 18px;
     border-bottom: 1px solid var(--line);
+  }
+
+  :global(.holding-trade-drawer .trade-dialog-header) {
+    touch-action: none;
+    user-select: none;
   }
 
   :global(.holding-trade-drawer .el-drawer__header::before) {

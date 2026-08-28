@@ -23,6 +23,7 @@ import {
   downloadBlob,
   shareFilename,
 } from '../utils/shareCapture.js'
+import { useBottomSheetSwipe } from '../utils/bottomSheetSwipe.js'
 
 const visible = ref(false)
 const query = ref('')
@@ -39,6 +40,14 @@ const copying = ref(false)
 const downloading = ref(false)
 let sharePreviewObjectUrl = ''
 let returnFocus = null
+
+const sheetSwipe = useBottomSheetSwipe({
+  enabled: () => visible.value && isMobileViewport() && !shareOpen.value,
+  onDismiss: close,
+})
+const sheetSwipeStyle = sheetSwipe.panelStyle
+const sheetBackdropStyle = sheetSwipe.backdropStyle
+const sheetSwipeDragging = sheetSwipe.dragging
 
 const categories = allCategories()
 const totalTerms = allTerms().length
@@ -273,35 +282,45 @@ defineExpose({ openGlossary, close })
 </script>
 
 <template>
-  <div v-if="visible" class="glossary-layer" @click.self="close">
+  <div v-if="visible" class="glossary-layer" :style="sheetBackdropStyle" @click.self="close">
     <div
       class="glossary-panel"
-      :class="{ 'is-mobile-detail': mobileDetailOpen }"
+      :class="{ 'is-mobile-detail': mobileDetailOpen, 'is-sheet-dragging': sheetSwipeDragging }"
+      :style="sheetSwipeStyle"
+      data-bottom-sheet
       role="dialog"
       aria-modal="true"
       aria-label="名词百科"
     >
-      <div class="glossary-handle" aria-hidden="true" />
-      <div class="glossary-head">
-        <button
-          v-if="mobileDetailOpen"
-          type="button"
-          class="glossary-head-back"
-          aria-label="返回词条列表"
-          @click="backToList"
-        >
-          <el-icon><ArrowLeft /></el-icon>
-        </button>
-        <div class="glossary-title">
-          <strong>名词百科</strong>
-          <span>灵极 · 金融 · 宏观 · 投资释义</span>
-        </div>
-        <div class="glossary-actions">
-          <button type="button" class="glossary-close" aria-label="关闭名词百科" @click="close">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
+      <div
+        class="glossary-drag-zone"
+        @touchstart="sheetSwipe.onTouchStart"
+        @touchmove="sheetSwipe.onTouchMove"
+        @touchend="sheetSwipe.onTouchEnd"
+        @touchcancel="sheetSwipe.onTouchCancel"
+      >
+        <div class="glossary-handle" aria-hidden="true" />
+        <div class="glossary-head">
+          <button
+            v-if="mobileDetailOpen"
+            type="button"
+            class="glossary-head-back"
+            aria-label="返回词条列表"
+            @click="backToList"
+          >
+            <el-icon><ArrowLeft /></el-icon>
           </button>
+          <div class="glossary-title">
+            <strong>名词百科</strong>
+            <span>灵极 · 金融 · 宏观 · 投资释义</span>
+          </div>
+          <div class="glossary-actions">
+            <button type="button" class="glossary-close" aria-label="关闭名词百科" @click="close">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -474,6 +493,10 @@ defineExpose({ openGlossary, close })
 .glossary-handle,
 .glossary-head-back {
   display: none;
+}
+
+.glossary-drag-zone {
+  flex: 0 0 auto;
 }
 
 .glossary-floating-share {
@@ -838,6 +861,15 @@ defineExpose({ openGlossary, close })
     box-shadow: 0 -12px 36px rgba(15, 23, 42, 0.2);
     background: #fff;
     animation: glossary-sheet-in 220ms ease-out;
+  }
+
+  .glossary-drag-zone {
+    touch-action: none;
+    user-select: none;
+  }
+
+  .glossary-panel.is-sheet-dragging {
+    box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.16);
   }
 
   .glossary-handle {
