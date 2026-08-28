@@ -29,7 +29,8 @@ test('stock indicators start collapsed instead of restoring an expanded state', 
 
 test('intraday polling pauses while the page is hidden and resumes on return', () => {
   assert.match(stockSource, /if \(!isIntraday\.value \|\| document\.hidden\) return/)
-  assert.match(stockSource, /if \(!document\.hidden && isIntraday\.value && activeTab\.value === 'chart'\)/)
+  assert.match(stockSource, /if \(!document\.hidden && isIntraday\.value\) loadIntraday\(true\)/)
+  assert.doesNotMatch(stockSource, /activeTab\.value === 'chart'/)
   assert.match(stockSource, /function onDocumentVisibilityChange\(\)/)
   assert.match(stockSource, /document\.addEventListener\('visibilitychange', onDocumentVisibilityChange\)/)
   assert.match(stockSource, /document\.removeEventListener\('visibilitychange', onDocumentVisibilityChange\)/)

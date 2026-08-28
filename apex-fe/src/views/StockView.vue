@@ -67,8 +67,6 @@ const STOCK_TAB_NAMES = [
   'analysis',
   'valuation',
   'factors',
-  'summary',
-  'chart',
   'profile',
   'abstract',
   'indicator',
@@ -76,6 +74,7 @@ const STOCK_TAB_NAMES = [
   'balanceSheet',
   'cashflowSheet',
 ]
+const LEGACY_MARKET_TABS = ['summary', 'chart']
 const activeTab = ref(STOCK_TAB_NAMES.includes(route.query.tab) ? route.query.tab : 'analysis')
 const fund = ref(null)
 const profile = ref(null)
@@ -157,6 +156,33 @@ const canZoomOut = computed(() => visibleZoomBarCount.value < chartBars.value.le
 const priceStructure = computed(() =>
   analyzePriceStructure(bars.value, basic.value?.latestPrice),
 )
+const latestDailyBar = computed(() => bars.value.at(-1) || null)
+const quoteDirectionClass = computed(() => {
+  if (basic.value?.pctChg == null) return ''
+  const percentage = Number(basic.value.pctChg)
+  if (!Number.isFinite(percentage) || percentage === 0) return ''
+  return percentage > 0 ? 'up' : 'down'
+})
+const previousClose = computed(() => {
+  if (basic.value?.latestPrice == null || basic.value?.pctChg == null) {
+    if (bars.value.length > 1) return Number(bars.value.at(-2)?.closePrice)
+    return null
+  }
+  const currentPrice = Number(basic.value?.latestPrice)
+  const percentage = Number(basic.value?.pctChg)
+  if (Number.isFinite(currentPrice) && Number.isFinite(percentage) && percentage !== -100) {
+    return currentPrice / (1 + percentage / 100)
+  }
+  if (bars.value.length > 1) return Number(bars.value.at(-2)?.closePrice)
+  return null
+})
+const priceChange = computed(() => {
+  if (basic.value?.latestPrice == null || previousClose.value == null) return null
+  const currentPrice = Number(basic.value?.latestPrice)
+  const lastClose = Number(previousClose.value)
+  if (!Number.isFinite(currentPrice) || !Number.isFinite(lastClose)) return null
+  return currentPrice - lastClose
+})
 const periodLabel = computed(() => {
   if (klinePeriod.value === 'intraday') return '分时'
   if (klinePeriod.value === 'week') return '周K'
@@ -405,13 +431,13 @@ async function loadIntraday(silent = false) {
     } else {
       intradayAsOf.value = ''
     }
-    if (activeTab.value === 'chart' && isIntraday.value) {
+    if (isIntraday.value) {
       await renderIntradayChart()
     }
   } catch (e) {
     intraday.value = null
     intradayAsOf.value = ''
-    if ((isIntraday.value || activeTab.value === 'summary') && !silent) {
+    if (isIntraday.value && !silent) {
       disposeChart()
       ElMessage.error(e.message || '分时加载失败')
     }
@@ -420,15 +446,11 @@ async function loadIntraday(silent = false) {
   }
 }
 
-function onStockCardPeriodChange(period) {
-  if (period === 'intraday' && !intradayPoints.value.length) loadIntraday()
-}
-
 function startIntradayPoll() {
   stopIntradayPoll()
   if (!isIntraday.value || document.hidden) return
   intradayPollTimer = setInterval(() => {
-    if (!document.hidden && isIntraday.value && activeTab.value === 'chart') loadIntraday(true)
+    if (!document.hidden && isIntraday.value) loadIntraday(true)
   }, 60000)
 }
 
@@ -444,7 +466,7 @@ function onDocumentVisibilityChange() {
     stopIntradayPoll()
     return
   }
-  if (isIntraday.value && activeTab.value === 'chart') {
+  if (isIntraday.value) {
     loadIntraday(true)
     startIntradayPoll()
   }
@@ -662,12 +684,12 @@ function refreshChart() {
 
 function resetChartView() {
   if (isIntraday.value) {
-    if (activeTab.value === 'chart') refreshChart()
+    refreshChart()
     return
   }
   resetZoomNext = true
   savedZoom.value = { start: defaultVisibleStart(chartBars.value.length), end: 100 }
-  if (bars.value.length && activeTab.value === 'chart') refreshChart()
+  if (bars.value.length) refreshChart()
 }
 
 function zoomChart(direction) {
@@ -1677,7 +1699,7 @@ async function loadTradeRecords() {
     const result = await fetchTradeMarkers(requestedCode)
     if (requestedCode !== code.value.trim()) return
     tradeRecords.value = result?.data || []
-    if (!isIntraday.value && bars.value.length && activeTab.value === 'chart') refreshChart()
+    if (!isIntraday.value && bars.value.length) refreshChart()
   } catch (error) {
     if (requestedCode !== code.value.trim()) return
     tradeRecords.value = []
@@ -1823,10 +1845,10 @@ function onResize() {
   if (nextMobileChart !== isMobileChart.value) {
     isMobileChart.value = nextMobileChart
     chartParamsExpanded.value = !nextMobileChart
-    if (activeTab.value === 'chart') refreshChart()
+    refreshChart()
     return
   }
-  if (isIntraday.value || activeTab.value !== 'chart' || !bars.value.length || !chartRef.value) return
+  if (isIntraday.value || !bars.value.length || !chartRef.value) return
   const nextCompactMode = isMobileChart.value || chartRef.value.clientWidth < 680
   if (nextCompactMode !== compactPriceLabelsMode) refreshChart()
 }
@@ -1843,7 +1865,7 @@ watch(
       intradayAsOf.value = ''
       load(false)
       if (activeTab.value === 'profile') loadProfile(false)
-      if (activeTab.value === 'chart' && isIntraday.value) {
+      if (isIntraday.value) {
         loadIntraday()
         startIntradayPoll()
       } else {
@@ -1856,6 +1878,10 @@ watch(
 watch(
   () => route.query.tab,
   (tab) => {
+    if (LEGACY_MARKET_TABS.includes(tab)) {
+      activeTab.value = 'analysis'
+      return
+    }
     if (STOCK_TAB_NAMES.includes(tab)) activeTab.value = tab
   },
 )
@@ -1863,7 +1889,6 @@ watch(
 watch(klinePeriod, () => {
   resetZoomNext = true
   saveChartPrefs()
-  if (activeTab.value !== 'chart') return
   // 周期切换会触发图表容器 v-if 重建，先释放旧实例避免白屏
   disposeChart()
   if (isIntraday.value) {
@@ -1883,7 +1908,7 @@ watch(
       return
     }
     saveChartPrefs()
-    if (!isIntraday.value && bars.value.length && activeTab.value === 'chart') refreshChart()
+    if (!isIntraday.value && bars.value.length) refreshChart()
   },
   { deep: true },
 )
@@ -1962,15 +1987,6 @@ function sheetCell(row, idx) {
 }
 
 function onTabChange(name) {
-  if (name === 'chart') {
-    nextTick(() => {
-      refreshChart()
-      if (isIntraday.value) startIntradayPoll()
-      else stopIntradayPoll()
-    })
-  } else {
-    stopIntradayPoll()
-  }
   if (name === 'profile' && !profile.value) {
     loadProfile(false)
   }
@@ -2041,18 +2057,31 @@ function dash(v) {
       </div>
     </header>
 
-    <section class="meta-panel" v-if="basic">
-      <div class="meta-bar">
-        <div class="meta-bar-main">
-          <span class="meta-price" :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</span>
-          <span class="meta-pct" :class="basic.pctChg >= 0 ? 'up' : 'down'">
-            {{ basic.pctChg != null ? (Number(basic.pctChg) > 0 ? '+' : '') + Number(basic.pctChg).toFixed(2) + '%' : '-' }}
-          </span>
-          <span class="meta-chip">PE TTM {{ basic.peTtm ?? '-' }}</span>
-          <span class="meta-chip">PB {{ basic.pb ?? '-' }}</span>
-          <span class="meta-chip">总市值 {{ fmtMv(basic.totalMv) }}</span>
-          <span class="meta-chip">{{ profile?.industryL2 || basic.industry || basic.market || '-' }}</span>
-          <span class="meta-chip">量比 {{ volumeRatio ?? '-' }}</span>
+    <section id="market-overview" class="market-overview">
+      <aside class="quote-snapshot" aria-label="个股行情快照">
+        <div class="quote-primary">
+          <strong :class="quoteDirectionClass">
+            {{ fmtNum(basic?.latestPrice) }}
+          </strong>
+          <div :class="quoteDirectionClass">
+            <span>{{ priceChange != null ? (priceChange > 0 ? '+' : '') + fmtNum(priceChange) : '-' }}</span>
+            <span>{{ basic?.pctChg != null ? (Number(basic.pctChg) > 0 ? '+' : '') + Number(basic.pctChg).toFixed(2) + '%' : '-' }}</span>
+          </div>
+        </div>
+        <p class="quote-industry">{{ profile?.industryL2 || basic?.industry || basic?.market || '行业待补充' }}</p>
+        <div class="quote-metrics">
+          <div><label>今开</label><b>{{ fmtNum(latestDailyBar?.openPrice) }}</b></div>
+          <div><label>昨收</label><b>{{ fmtNum(previousClose) }}</b></div>
+          <div><label>最高</label><b class="up">{{ fmtNum(latestDailyBar?.highPrice) }}</b></div>
+          <div><label>最低</label><b class="down">{{ fmtNum(latestDailyBar?.lowPrice) }}</b></div>
+          <div><label>成交量</label><b>{{ fmtVol(latestDailyBar?.volume) }}</b></div>
+          <div><label>成交额</label><b>{{ fmtVol(latestDailyBar?.amount) }}</b></div>
+          <div><label>换手率</label><b>{{ latestDailyBar?.turnoverRate != null ? fmtPct(latestDailyBar.turnoverRate) : '-' }}</b></div>
+          <div><label>量比</label><b>{{ volumeRatio ?? '-' }}</b></div>
+          <div><label>PE TTM</label><b>{{ basic?.peTtm ?? '-' }}</b></div>
+          <div><label>PB</label><b>{{ basic?.pb ?? '-' }}</b></div>
+          <div><label>总市值</label><b>{{ fmtMv(basic?.totalMv) }}</b></div>
+          <div><label>流通值</label><b>{{ fmtMv(basic?.circMv) }}</b></div>
         </div>
         <button
           type="button"
@@ -2061,71 +2090,11 @@ function dash(v) {
           aria-controls="stock-meta-details"
           @click="toggleMetaExpanded"
         >
-          {{ metaExpanded ? '收起指标' : '展开指标' }}
+          {{ metaExpanded ? '收起全部指标' : '查看全部指标' }}
         </button>
-      </div>
-      <div id="stock-meta-details" v-show="metaExpanded" class="meta">
-        <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
-        <div><label><TermTip term="pct_chg">涨跌幅</TermTip></label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
-        <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><span>{{ basic.peDynamic ?? '-' }}</span></div>
-        <div><label><TermTip term="pe_static">市盈率（静）</TermTip></label><span>{{ basic.peStatic ?? '-' }}</span></div>
-        <div><label><TermTip term="pe_ttm">市盈率（TTM）</TermTip></label><span>{{ basic.peTtm ?? '-' }}</span></div>
-        <div><label><TermTip term="pb">市净率</TermTip></label><span>{{ basic.pb ?? '-' }}</span></div>
-        <div><label><TermTip term="total_mv">总市值</TermTip></label><span>{{ fmtMv(basic.totalMv) }}</span></div>
-        <div><label><TermTip term="circ_mv">流通市值</TermTip></label><span>{{ fmtMv(basic.circMv) }}</span></div>
-        <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
-        <div><label>行业</label><span>{{ profile?.industryL2 || basic.industry || '-' }}</span></div>
-        <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>
-        <div><label>来源</label><span>{{ basic.source || '-' }}</span></div>
-        <div><label>本地日线</label><span>{{ barCount }}</span></div>
-        <div>
-          <label><TermTip term="rs20">RS20 vs沪深300</TermTip></label>
-          <b :class="Number(rs20) >= 0 ? 'up' : 'down'">{{ rs20 != null ? rs20 + 'pp' : '-' }}</b>
-        </div>
-        <div>
-          <label><TermTip term="rs60">RS60 vs沪深300</TermTip></label>
-          <b :class="Number(rs60) >= 0 ? 'up' : 'down'">{{ rs60 != null ? rs60 + 'pp' : '-' }}</b>
-        </div>
-        <div><label><TermTip term="volume_ratio">量比</TermTip></label><b :class="Number(volumeRatio) >= 1.5 ? 'up' : ''">{{ volumeRatio ?? '-' }}</b></div>
-      </div>
-    </section>
+      </aside>
 
-    <el-alert
-      v-if="!loading && bars.length && needSyncBars"
-      class="hint"
-      type="warning"
-      :closable="false"
-      show-icon
-      :title="note || `本地仅 ${barCount} 根日线，建议同步补齐后再做指标/回测`"
-    />
-
-    <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">
-      <el-tab-pane label="今日雷达" name="analysis" lazy>
-        <StockAnalysisPanel v-if="basic?.code || code" :code="String(basic?.code || code).trim()" />
-      </el-tab-pane>
-      <el-tab-pane label="估值" name="valuation" lazy>
-        <ValuationView
-          embedded
-          :stock-code="String(basic?.code || code).trim()"
-        />
-      </el-tab-pane>
-      <el-tab-pane label="因子" name="factors" lazy>
-        <FactorCenterView
-          embedded
-          :stock-code="String(basic?.code || code).trim()"
-        />
-      </el-tab-pane>
-      <el-tab-pane label="行情卡片" name="summary">
-        <StockDetailCard
-          v-if="activeTab === 'summary'"
-          :basic="basic || { code }"
-          :bars="bars"
-          :intraday="intraday"
-          :loading="intradayLoading"
-          @period-change="onStockCardPeriodChange"
-        />
-      </el-tab-pane>
-      <el-tab-pane label="行情图表" name="chart">
+      <div class="market-chart">
         <el-empty
           v-if="!loading && !bars.length && !isIntraday"
           class="empty-bars"
@@ -2256,17 +2225,59 @@ function dash(v) {
             </el-tooltip>
           </div>
         </div>
-        <ChipDistributionPanel
-          v-if="!isIntraday && priceStructure.ready"
-          :analysis="priceStructure"
+      </div>
+    </section>
+
+    <div id="stock-meta-details" v-if="basic" v-show="metaExpanded" class="meta">
+      <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
+      <div><label><TermTip term="pct_chg">涨跌幅</TermTip></label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
+      <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><span>{{ basic.peDynamic ?? '-' }}</span></div>
+      <div><label><TermTip term="pe_static">市盈率（静）</TermTip></label><span>{{ basic.peStatic ?? '-' }}</span></div>
+      <div><label><TermTip term="rs20">RS20 vs沪深300</TermTip></label><b :class="Number(rs20) >= 0 ? 'up' : 'down'">{{ rs20 != null ? rs20 + 'pp' : '-' }}</b></div>
+      <div><label><TermTip term="rs60">RS60 vs沪深300</TermTip></label><b :class="Number(rs60) >= 0 ? 'up' : 'down'">{{ rs60 != null ? rs60 + 'pp' : '-' }}</b></div>
+      <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
+      <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>
+      <div><label>来源</label><span>{{ basic.source || '-' }}</span></div>
+      <div><label>本地日线</label><span>{{ barCount }}</span></div>
+    </div>
+
+    <el-alert
+      v-if="!loading && bars.length && needSyncBars"
+      class="hint"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="note || `本地仅 ${barCount} 根日线，建议同步补齐后再做指标/回测`"
+    />
+
+    <ChipDistributionPanel
+      v-if="!isIntraday && priceStructure.ready"
+      class="structure-panel"
+      :analysis="priceStructure"
+    />
+    <el-alert
+      v-else-if="!isIntraday && bars.length"
+      class="structure-insufficient"
+      type="info"
+      :closable="false"
+      show-icon
+      :title="`支撑压力与筹码分布至少需要 ${priceStructure.minimumSampleSize || 20} 根有效日线，当前 ${priceStructure.sampleSize || 0} 根`"
+    />
+
+    <el-tabs v-model="activeTab" class="tabs" @tab-change="onTabChange">
+      <el-tab-pane label="今日雷达" name="analysis" lazy>
+        <StockAnalysisPanel v-if="basic?.code || code" :code="String(basic?.code || code).trim()" />
+      </el-tab-pane>
+      <el-tab-pane label="估值" name="valuation" lazy>
+        <ValuationView
+          embedded
+          :stock-code="String(basic?.code || code).trim()"
         />
-        <el-alert
-          v-else-if="!isIntraday && bars.length"
-          class="structure-insufficient"
-          type="info"
-          :closable="false"
-          show-icon
-          :title="`支撑压力与筹码分布至少需要 ${priceStructure.minimumSampleSize || 20} 根有效日线，当前 ${priceStructure.sampleSize || 0} 根`"
+      </el-tab-pane>
+      <el-tab-pane label="因子" name="factors" lazy>
+        <FactorCenterView
+          embedded
+          :stock-code="String(basic?.code || code).trim()"
         />
       </el-tab-pane>
 
@@ -2933,8 +2944,108 @@ function dash(v) {
   }
 }
 
-.meta-panel {
-  margin-bottom: 12px;
+.market-overview {
+  display: grid;
+  grid-template-columns: minmax(168px, 0.24fr) minmax(0, 1fr);
+  gap: 0;
+  margin-bottom: 14px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.quote-snapshot {
+  min-width: 0;
+  padding: 18px 18px 16px 4px;
+  border-right: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.quote-primary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.quote-primary > strong {
+  min-width: 0;
+  font-size: 34px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.quote-primary > div {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 3px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.quote-industry {
+  margin: 8px 0 14px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+}
+
+.quote-metrics > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  min-height: 34px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  font-size: 11px;
+}
+
+.quote-metrics > div:nth-child(odd) {
+  padding-right: 9px;
+}
+
+.quote-metrics > div:nth-child(even) {
+  padding-left: 9px;
+  border-left: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.quote-metrics label {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.quote-metrics b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-snapshot .meta-toggle {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 12px;
+  border-radius: 6px;
+}
+
+.market-chart {
+  min-width: 0;
+  padding: 12px 0 12px 18px;
 }
 
 .meta-bar {
@@ -2980,7 +3091,7 @@ function dash(v) {
   border: 1px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.65);
   color: var(--ink-soft);
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 4px 12px;
   font-size: 12px;
   cursor: pointer;
@@ -2996,7 +3107,7 @@ function dash(v) {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 10px;
+  margin: 0 0 14px;
 }
 
 .meta > div {
@@ -3232,16 +3343,13 @@ function dash(v) {
 }
 
 .chart {
-  height: 720px;
+  height: 620px;
   width: 100%;
   touch-action: pan-y;
   overscroll-behavior-x: contain;
-  background: var(--glass-strong);
-  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-soft);
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -3249,8 +3357,14 @@ function dash(v) {
   margin-top: 14px;
 }
 
+.structure-panel {
+  margin-top: 14px;
+}
+
 .tabs {
-  margin-top: 4px;
+  margin-top: 18px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
 }
 
 .fund-note {
@@ -3283,6 +3397,74 @@ function dash(v) {
 }
 
 @media (max-width: 820px) {
+  .market-overview {
+    grid-template-columns: minmax(0, 1fr);
+    margin-right: -2px;
+    margin-left: -2px;
+  }
+
+  .quote-snapshot {
+    padding: 12px 2px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .quote-primary {
+    justify-content: flex-start;
+  }
+
+  .quote-primary > strong {
+    font-size: 30px;
+  }
+
+  .quote-primary > div {
+    display: flex;
+    gap: 8px;
+    text-align: left;
+  }
+
+  .quote-industry {
+    margin-bottom: 8px;
+  }
+
+  .quote-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .quote-metrics > div,
+  .quote-metrics > div:nth-child(odd),
+  .quote-metrics > div:nth-child(even) {
+    display: grid;
+    align-content: center;
+    gap: 2px;
+    min-height: 48px;
+    padding: 4px 6px;
+    border-left: 0;
+  }
+
+  .quote-metrics > div:not(:nth-child(4n + 1)) {
+    border-left: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .quote-metrics > div:nth-child(n + 9) {
+    display: none;
+  }
+
+  .quote-metrics label,
+  .quote-metrics b {
+    line-height: 16px;
+  }
+
+  .quote-snapshot .meta-toggle {
+    min-height: 44px;
+    margin-top: 8px;
+  }
+
+  .market-chart {
+    min-width: 0;
+    padding: 10px 0 12px;
+  }
+
   .header {
     gap: 8px;
     margin-bottom: 12px;
@@ -3475,12 +3657,11 @@ function dash(v) {
   }
 
   .macd-tip {
-    font-size: 11px;
-    line-height: 1.4;
+    display: none;
   }
 
   .chart {
-    height: 520px;
+    height: 500px;
     border-radius: 8px;
     user-select: none;
     -webkit-user-select: none;

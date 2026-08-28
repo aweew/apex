@@ -6,10 +6,11 @@ const componentSource = await readFile(new URL('./StockDetailCard.vue', import.m
 const mainSource = await readFile(new URL('../main.js', import.meta.url), 'utf8')
 const stockViewSource = await readFile(new URL('../views/StockView.vue', import.meta.url), 'utf8')
 
-test('stock detail card is registered globally and available from the stock page', () => {
+test('stock detail card stays globally available while the stock page uses one primary chart', () => {
   assert.match(mainSource, /defineAsyncComponent\(\(\) => import\('.\/components\/StockDetailCard\.vue'\)\)/)
   assert.match(mainSource, /app\.component\('StockDetailCard', StockDetailCard\)/)
-  assert.match(stockViewSource, /<el-tab-pane label="行情卡片" name="summary">[\s\S]*?<StockDetailCard\b/)
+  assert.doesNotMatch(stockViewSource, /<StockDetailCard\b/)
+  assert.match(stockViewSource, /class="market-overview"[\s\S]*?class="chart-stage"/)
 })
 
 test('stock detail card exposes all chart periods without a reference disclaimer', () => {
@@ -31,7 +32,6 @@ test('stock detail card keeps unavailable quote and intraday volume distinct fro
   assert.match(componentSource, /if \(props\.basic\?\.latestPrice == null \|\| props\.basic\?\.pctChg == null\) return '-'/)
 })
 
-test('stock detail card can retry an unavailable intraday request', () => {
+test('stock detail card can request another attempt for unavailable intraday data', () => {
   assert.match(componentSource, /if \(activePeriod\.value === period\) \{[\s\S]*?period === 'intraday'[\s\S]*?emit\('period-change', period\)/)
-  assert.match(stockViewSource, /\(isIntraday\.value \|\| activeTab\.value === 'summary'\) && !silent/)
 })
