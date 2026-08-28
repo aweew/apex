@@ -19,6 +19,7 @@ import {
   tradingCalendar,
 } from './utils/dataFreshness.js'
 import {
+  menuContentOffset,
   menuSwipeProgress,
   resolveMenuSwipeAxis,
   shouldOpenMenuAfterSwipe,
@@ -32,6 +33,7 @@ const mobileMenuOpen = ref(false)
 const mobileMenuProgress = ref(0)
 const mobileMenuDragging = ref(false)
 const isMobileViewport = ref(window.innerWidth <= 900)
+const mobileViewportWidth = ref(window.innerWidth)
 const query = ref('')
 const loading = ref(false)
 const results = ref([])
@@ -55,8 +57,8 @@ const mobileMenuActive = computed(() => (
 const mobileMenuDrawerStyle = computed(() => (isMobileViewport.value
   ? { transform: `translate3d(${(mobileMenuProgress.value - 1) * 100}%, 0, 0)` }
   : undefined))
-const mobileMenuScrimStyle = computed(() => (isMobileViewport.value
-  ? { opacity: mobileMenuProgress.value }
+const mobileMenuShellStyle = computed(() => (isMobileViewport.value
+  ? { '--mobile-menu-page-offset': `${menuContentOffset(mobileMenuProgress.value, mobileViewportWidth.value)}px` }
   : undefined))
 const COMMAND_ROUTE_ITEMS = [
   { to: '/dashboard', label: '看板', detail: '市场立场与今日指挥', keywords: '首页 工作台' },
@@ -276,7 +278,7 @@ function onMobileMenuTouchMove(event) {
   if (mobileMenuSwipe.axis !== 'horizontal') return
   event.preventDefault()
 
-  const drawerWidth = mobileMenuRef.value?.getBoundingClientRect?.().width || window.innerWidth * 0.86
+  const drawerWidth = mobileMenuRef.value?.getBoundingClientRect?.().width || window.innerWidth
   mobileMenuProgress.value = menuSwipeProgress(mobileMenuSwipe.startProgress, deltaX, drawerWidth)
   const elapsed = event.timeStamp - mobileMenuSwipe.lastTime
   if (elapsed > 0) mobileMenuSwipe.velocity = (touch.clientX - mobileMenuSwipe.lastX) / elapsed
@@ -295,6 +297,7 @@ function finishMobileMenuSwipe(event) {
 }
 
 function closeMobileMenuOnDesktop() {
+  mobileViewportWidth.value = window.innerWidth
   isMobileViewport.value = window.innerWidth <= 900
   if (!isMobileViewport.value && mobileMenuActive.value) setMobileMenu(false)
   syncMobileBackTarget()
@@ -614,6 +617,8 @@ onBeforeUnmount(() => {
   <div
     ref="shellRef"
     class="shell"
+    :class="{ 'mobile-menu-dragging': mobileMenuDragging }"
+    :style="mobileMenuShellStyle"
     @touchstart="onMobileMenuTouchStart"
     @touchmove="onMobileMenuTouchMove"
     @touchend="finishMobileMenuSwipe"
@@ -682,8 +687,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="nav-scrim"
-        :class="{ visible: mobileMenuActive, dragging: mobileMenuDragging }"
-        :style="mobileMenuScrimStyle"
+        :class="{ visible: mobileMenuActive }"
         :disabled="!mobileMenuActive"
         :aria-hidden="mobileMenuActive ? undefined : 'true'"
         aria-label="关闭菜单"
@@ -1583,6 +1587,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
+  .shell {
+    overflow-x: clip;
+  }
+
   .mobile-module-title {
     position: absolute;
     right: 188px;
@@ -1653,28 +1661,24 @@ onBeforeUnmount(() => {
     z-index: 101;
     padding: 0;
     border: 0;
-    background: rgba(15, 23, 42, 0.46);
+    background: transparent;
     visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.3s cubic-bezier(0.22, 0.72, 0, 1), visibility 0.3s step-end;
+    transition: visibility 0.3s step-end;
   }
 
   .nav-scrim.visible {
     visibility: visible;
     pointer-events: auto;
-    transition: opacity 0.3s cubic-bezier(0.22, 0.72, 0, 1), visibility 0s step-start;
-  }
-
-  .nav-scrim.dragging {
-    transition: none;
+    transition: visibility 0s step-start;
   }
 
   .links {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 102;
-    width: min(86vw, 360px);
-    max-width: 100%;
+    width: 100vw;
+    max-width: none;
     height: 100vh;
     height: 100dvh;
     min-height: 0;
@@ -1896,6 +1900,29 @@ onBeforeUnmount(() => {
 
   .main {
     min-width: 0;
+    transform: translate3d(var(--mobile-menu-page-offset, 0px), 0, 0);
+    transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1);
+  }
+
+  .nav > .brand-block,
+  .nav > .mobile-module-title,
+  .nav > .mobile-top-actions,
+  .nav > .app-activity {
+    transform: translate3d(var(--mobile-menu-page-offset, 0px), 0, 0);
+    transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1);
+  }
+
+  .mobile-menu-dragging .main {
+    transition: none;
+    will-change: transform;
+  }
+
+  .mobile-menu-dragging .nav > .brand-block,
+  .mobile-menu-dragging .nav > .mobile-module-title,
+  .mobile-menu-dragging .nav > .mobile-top-actions,
+  .mobile-menu-dragging .nav > .app-activity {
+    transition: none;
+    will-change: transform;
   }
 
   .search-layer {
