@@ -44,15 +44,15 @@ const ANALYSIS_SHARE_WIDTH = 720
 
 const stanceClass = computed(() => {
   const s = data.value?.stance || ''
-  if (s.includes('积极') || s.includes('跟踪')) return 'good'
-  if (s.includes('谨慎') || s.includes('回避')) return 'bad'
+  if (s.includes('看多')) return 'good'
+  if (s.includes('看空')) return 'bad'
   return 'mid'
 })
 
 const aiStanceClass = computed(() => {
   const s = data.value?.ai?.stance || ''
-  if (s.includes('积极') || s.includes('跟踪')) return 'good'
-  if (s.includes('谨慎') || s.includes('回避')) return 'bad'
+  if (s.includes('看多')) return 'good'
+  if (s.includes('看空')) return 'bad'
   return 'mid'
 })
 
@@ -958,25 +958,33 @@ defineExpose({ reload: () => loadRules() })
 }
 
 .analysis-actions {
-  display: grid;
-  grid-template-columns: 40px minmax(104px, 1.1fr) minmax(96px, 1fr) minmax(84px, 0.8fr);
+  display: flex;
   gap: 8px;
   align-items: end;
+  justify-content: flex-end;
+  justify-self: end;
+  min-width: max-content;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f3f6fa;
 }
 
 .analysis-actions :deep(.el-button) {
-  width: 100%;
+  width: auto;
   min-width: 0;
-  height: 40px;
+  height: 36px;
   margin: 0;
-  padding: 0 11px;
-  border-radius: 6px;
+  padding: 0 10px;
+  border-radius: 5px;
   font-weight: 600;
   letter-spacing: 0;
   white-space: nowrap;
 }
 
 .analysis-actions :deep(.analysis-refresh) {
+  width: 36px;
+  min-width: 36px;
   padding: 0;
   font-size: 16px;
 }
@@ -2104,17 +2112,28 @@ defineExpose({ reload: () => loadRules() })
   }
 
   .analysis-actions {
+    display: grid;
     grid-template-columns: 44px minmax(78px, 1.1fr) minmax(76px, 1fr) minmax(58px, 0.72fr);
     gap: 6px;
+    justify-self: stretch;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   .analysis-actions :deep(.el-button) {
+    width: 100%;
+    min-width: 0;
     min-height: 44px;
     padding: 0 8px;
     font-size: 13px;
   }
 
   .analysis-actions :deep(.analysis-refresh) {
+    width: 100%;
+    min-width: 0;
     padding: 0;
   }
 

@@ -53,6 +53,21 @@ test('opening the radar does not automatically trigger slow AI refresh', () => {
   assert.match(source, /@click="refreshAi"/)
 })
 
+test('desktop stock analysis commands use content width instead of filling the toolbar', () => {
+  assert.match(
+    source,
+    /\.analysis-actions\s*\{[^}]*display:\s*flex;[^}]*gap:\s*8px;[^}]*align-items:\s*end;[^}]*justify-content:\s*flex-end;[^}]*justify-self:\s*end;/s,
+  )
+  assert.match(
+    source,
+    /\.analysis-actions :deep\(\.el-button\)\s*\{[^}]*width:\s*auto;[^}]*min-width:\s*0;/s,
+  )
+  assert.match(
+    source,
+    /\.analysis-actions :deep\(\.analysis-refresh\)\s*\{[^}]*width:\s*36px;[^}]*min-width:\s*36px;/s,
+  )
+})
+
 test('mobile stock analysis controls keep a stable two-row hierarchy', () => {
   assert.match(source, /class="analysis-mode"/)
   assert.match(source, /class="analysis-actions"/)
@@ -62,8 +77,8 @@ test('mobile stock analysis controls keep a stable two-row hierarchy', () => {
   assert.match(source, /<Refresh \/>/)
   assert.match(source, /<MagicStick \/>/)
   assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.analysis-toolbar\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
-  assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.analysis-actions\s*\{[\s\S]*?grid-template-columns:\s*44px minmax\(78px, 1\.1fr\) minmax\(76px, 1fr\) minmax\(58px, 0\.72fr\);/)
-  assert.match(source, /@media \(max-width: 560px\)[\s\S]*?min-height:\s*44px;/)
+  assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.analysis-actions\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*44px minmax\(78px, 1\.1fr\) minmax\(76px, 1fr\) minmax\(58px, 0\.72fr\);/)
+  assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.analysis-actions :deep\(\.el-button\)\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*min-height:\s*44px;/)
   assert.match(source, /@media \(max-width: 560px\)[\s\S]*?\.today-radar-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
 })
 

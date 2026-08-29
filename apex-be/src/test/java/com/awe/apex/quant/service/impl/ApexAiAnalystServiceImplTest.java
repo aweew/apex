@@ -333,8 +333,8 @@ class ApexAiAnalystServiceImplTest {
         when(stockService.search("宁德时代", 5)).thenReturn(List.of(
                 StockSearchItem.builder().code("300750").name("宁德时代").build()));
         when(stockAnalysisService.analyze("300750", "BUY", 120, false, false)).thenReturn(StockAnalysisResp.builder()
-                .code("300750").name("宁德时代").stance("可跟踪").summary("趋势等待确认")
-                .actionHint("等待信号确认").latestPrice(new BigDecimal("210.50"))
+                .code("300750").name("宁德时代").stance("看空").summary("未来20个交易日偏空")
+                .actionHint("未来20个交易日看空（中等置信度）").latestPrice(new BigDecimal("210.50"))
                 .pctChg(new BigDecimal("1.20")).build());
 
         ApexAiAnalysisResp marketResponse = service.analyze(ApexAiAnalyzeReq.builder()
@@ -354,6 +354,7 @@ class ApexAiAnalystServiceImplTest {
         assertEquals("宁德时代", riskResponse.getContributors().get(0).getName());
         assertEquals("STOCK", stockResponse.getAnalysisType());
         assertEquals("宁德时代", stockResponse.getContributors().get(0).getName());
+        assertEquals("NEGATIVE", stockResponse.getContributors().get(0).getDirection());
     }
 
     @Test

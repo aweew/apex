@@ -72,7 +72,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final BigDecimal HUNDRED = new BigDecimal("100");
     private static final String AI_DISCLAIMER = "AI 解读基于本地规则结果与当日快照，非实时全市场资讯；不构成投资建议。";
-    private static final String AI_CACHE_PREFIX = "apex:stock-analysis:ai:";
+    private static final String AI_CACHE_PREFIX = "apex:stock-analysis:ai:v2:";
     private static final int NEWS_DAYS = 7;
     private static final int NEWS_LIMIT = 5;
 
@@ -662,8 +662,16 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         scoreExplain.add("资金/情绪 → " + capitalScore + " 分");
 
         if (Objects.nonNull(decision)) {
-            bull.add("今日决策清单含该股：" + decision.getAction()
-                    + (Objects.nonNull(decision.getScore()) ? ("（决策分 " + decision.getScore() + "）") : ""));
+            String decisionPoint = "今日决策清单含该股：" + decision.getAction()
+                    + (Objects.nonNull(decision.getScore()) ? ("（决策分 " + decision.getScore() + "）") : "");
+            if (StringUtils.contains(decision.getAction(), "BUY")
+                    || StringUtils.contains(decision.getAction(), "ADD")) {
+                bull.add(decisionPoint);
+            } else if (StringUtils.contains(decision.getAction(), "SELL")
+                    || StringUtils.contains(decision.getAction(), "REDUCE")
+                    || StringUtils.contains(decision.getAction(), "EXIT")) {
+                bear.add(decisionPoint);
+            }
         }
         if (Boolean.TRUE.equals(detail.getNeedSyncBars())) {
             risks.add("本地日线偏少，建议先同步日线");
@@ -675,27 +683,78 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             composite = HUNDRED;
         }
 
-        String stance;
-        String actionHint;
-        if (composite.compareTo(new BigDecimal("72")) >= 0) {
-            stance = "积极关注";
-            actionHint = "多维偏积极：可纳入观察/小仓验证，仍需设退出规则";
-        } else if (composite.compareTo(new BigDecimal("58")) >= 0) {
-            stance = "可跟踪";
-            actionHint = "结构尚可：等待更好买点或共振确认，控制仓位";
-        } else if (composite.compareTo(new BigDecimal("42")) >= 0) {
-            stance = "中性观望";
-            actionHint = "多空交织：不宜追涨，优先观察量价与估值边际";
-        } else if (composite.compareTo(new BigDecimal("28")) >= 0) {
-            stance = "谨慎";
-            actionHint = "偏弱：若持仓关注风控；新建仓需更高赔率";
+        // 个股研究必须押注明确方向；分数接近 50 时降低置信度，不回退为观望套话
+        boolean bullish = composite.compareTo(new BigDecimal("50")) >= 0;
+        String stance = bullish ? "看多" : "看空";
+        BigDecimal opinionDistance = composite.subtract(new BigDecimal("50")).abs();
+        boolean techAvailable = Objects.nonNull(tech) && StringUtils.isNotBlank(tech.getRegime())
+                && !TechRegimeEvaluator.REGIME_INSUFFICIENT.equals(tech.getRegime());
+        boolean valuationAvailable = Objects.nonNull(valuation) && Objects.nonNull(valuation.getScore());
+        boolean criticalDataMissing = !techAvailable || !valuationAvailable
+                || Boolean.TRUE.equals(detail.getNeedSyncBars());
+        String confidence;
+        if (criticalDataMissing) {
+            confidence = "低";
+        } else if (opinionDistance.compareTo(new BigDecimal("22")) >= 0) {
+            confidence = "高";
+        } else if (opinionDistance.compareTo(new BigDecimal("8")) >= 0) {
+            confidence = "中等";
         } else {
-            stance = "回避";
-            actionHint = "多维偏空：优先回避或减仓，等待结构修复";
+            confidence = "低";
         }
 
+        List<String> directionPoints = bullish ? bull : bear;
+        String coreEvidence = null;
+        if (CollUtil.isNotEmpty(directionPoints)) {
+            for (String directionPoint : directionPoints) {
+                if (StringUtils.isNotBlank(directionPoint)) {
+                    coreEvidence = directionPoint;
+                    break;
+                }
+            }
+        }
+        boolean techSupportsDirection = techAvailable
+                && (bullish ? TechRegimeEvaluator.GRADE_STRONG.equals(tech.getGrade())
+                : TechRegimeEvaluator.GRADE_WEAK.equals(tech.getGrade()));
+        if (StringUtils.isBlank(coreEvidence) && techSupportsDirection
+                && StringUtils.isNotBlank(tech.getSummary())) {
+            coreEvidence = tech.getSummary();
+        }
+        boolean valuationSupportsDirection = valuationAvailable
+                && (bullish ? valuation.getScore().compareTo(new BigDecimal("50")) >= 0
+                : valuation.getScore().compareTo(new BigDecimal("50")) < 0);
+        if (StringUtils.isBlank(coreEvidence) && valuationSupportsDirection
+                && StringUtils.isNotBlank(valuation.getSummary())) {
+            coreEvidence = valuation.getSummary();
+        }
+        if (StringUtils.isBlank(coreEvidence)) {
+            coreEvidence = "综合评分 " + composite + " 分，位于" + stance + "一侧";
+        }
+        if (criticalDataMissing) {
+            coreEvidence = coreEvidence + "；技术/估值数据不足，观点已降为低置信度";
+        }
+
+        String invalidation;
+        BigDecimal latestPrice = basic.getLatestPrice();
+        BigDecimal ma20 = Objects.nonNull(tech) ? tech.getMa20() : null;
+        boolean priceSupportsMa20Condition = Objects.nonNull(latestPrice) && latestPrice.signum() > 0
+                && Objects.nonNull(ma20) && ma20.signum() > 0
+                && (bullish ? latestPrice.compareTo(ma20) >= 0 : latestPrice.compareTo(ma20) <= 0);
+        if (priceSupportsMa20Condition) {
+            String ma20Text = ma20.setScale(2, RoundingMode.HALF_UP).toPlainString();
+            invalidation = bullish
+                    ? "收盘跌破 MA20（" + ma20Text + "元）"
+                    : "收盘站上 MA20（" + ma20Text + "元）";
+        } else {
+            invalidation = bullish
+                    ? "技术结构转为「破位减仓」，或综合分跌破50"
+                    : "技术结构转为「上升持有」，或综合分升至50以上";
+        }
+        String actionHint = "未来20个交易日" + stance + "（" + confidence + "置信度）。核心依据："
+                + coreEvidence + "。看错条件：" + invalidation + "。";
+
         String summary = basic.getName() + "（" + basic.getCode() + "）综合分 "
-                + composite + "，立场「" + stance + "」。"
+                + composite + "，未来20个交易日观点「" + stance + "」。"
                 + (Objects.nonNull(tech) ? tech.getSummary() : "")
                 + (Objects.nonNull(valuation) && StringUtils.isNotBlank(valuation.getSummary())
                 ? (" 估值：" + valuation.getSummary()) : "");
@@ -780,8 +839,8 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         List<StockAnalysisNewsResp> recentNews = resp.getRecentNews();
         String system = "你是 A 股个股研究助手。只根据给定结构化事实做盘面解读，禁止编造未提供的财报数字、公告或新闻。"
                 + "输出严格 JSON（不要 markdown）："
-                + "{\"stance\":\"积极关注|可跟踪|中性观望|谨慎|回避\","
-                + "\"brief\":\"120-180字中文解读\","
+                + "{\"stance\":\"看多|看空\","
+                + "\"brief\":\"120-180字中文解读，必须明确未来20个交易日方向、核心依据和看错条件\","
                 + "\"watchPoints\":[\"关注点1\",\"关注点2\",\"关注点3\"],"
                 + "\"riskNote\":\"一句话风险\"}."
                 + "语气专业克制；强调本地日线/财务可能滞后，现价以快照为准。";
@@ -858,6 +917,9 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
         ai.setQuoteRefreshed(quoteRefreshed);
         ai.setGeneratedAt(LocalDateTime.now());
         ai.setDisclaimer(AI_DISCLAIMER);
+        if (!"看多".equals(ai.getStance()) && !"看空".equals(ai.getStance())) {
+            ai.setStance(resp.getStance());
+        }
         if (StringUtils.isBlank(ai.getBrief())) {
             ai.setBrief("大模型暂无有效输出，请稍后重试或查看上方规则研判。");
             ai.setStance(resp.getStance());

@@ -833,8 +833,9 @@ public class ApexAiAnalystServiceImpl implements IApexAiAnalystService {
                 .rank(1)
                 .name(stockName)
                 .detail(defaultText(analysis.getActionHint(), defaultText(analysis.getSummary(), "暂无可验证的个股结论")))
-                .displayValue(defaultText(analysis.getStance(), "观望"))
-                .direction("回避".equals(analysis.getStance()) || "谨慎".equals(analysis.getStance()) ? "NEGATIVE" : "NEUTRAL")
+                .displayValue(defaultText(analysis.getStance(), "暂无观点"))
+                .direction("看多".equals(analysis.getStance()) ? "POSITIVE"
+                        : "看空".equals(analysis.getStance()) ? "NEGATIVE" : "NEUTRAL")
                 .build());
         return ApexAiAnalysisResp.builder()
                 .requestId(UUID.randomUUID().toString())

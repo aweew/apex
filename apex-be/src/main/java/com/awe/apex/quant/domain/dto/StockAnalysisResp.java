@@ -63,7 +63,7 @@ public class StockAnalysisResp {
     private BigDecimal compositeScore;
 
     /**
-     * 立场：积极关注 / 可跟踪 / 中性观望 / 谨慎 / 回避
+     * 未来20个交易日观点：看多 / 看空
      */
     private String stance;
 
