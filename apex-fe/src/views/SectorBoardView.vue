@@ -1465,14 +1465,6 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .sector-header .eyebrow {
-    display: none;
-  }
-
-  .sector-header h1 {
-    font-size: 24px;
-  }
-
   .sector-header > div:first-child > p:last-child {
     margin-top: 4px;
     font-size: 12px;

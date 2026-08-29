@@ -139,7 +139,8 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  column-gap: 6px;
+  column-gap: 8px;
+  min-width: 0;
 }
 
 .header > div:first-child > h1 {
@@ -148,13 +149,20 @@ a {
 }
 
 .page .header > div:first-child > h1 {
+  margin: 0 !important;
+  color: var(--ink) !important;
   font-size: var(--page-title-size) !important;
   font-weight: 650 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.15 !important;
 }
 
 .header > div:first-child > h1::after {
+  display: inline-block;
   content: "·";
   margin-left: 6px;
+  line-height: 1;
+  transform: translateY(-0.14em);
 }
 
 .header > div:first-child > .eyebrow {
@@ -164,15 +172,34 @@ a {
 }
 
 .page .header > div:first-child > .eyebrow {
+  color: var(--accent) !important;
   font-size: var(--page-module-size) !important;
   font-weight: 700 !important;
   letter-spacing: 0.04em !important;
   line-height: 1 !important;
+  text-transform: uppercase !important;
 }
 
 .header > div:first-child > p:not(.eyebrow) {
   order: 3;
-  flex-basis: 100%;
+  flex: 0 0 100%;
+  width: 100%;
+  max-width: none;
+}
+
+.page .header > div:first-child > p:not(.eyebrow) {
+  flex: 0 0 100% !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 8px 0 0 !important;
+  color: var(--slate) !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+}
+
+/* 页头标题保持干净，术语仍可通过悬停、聚焦或点击查看解释。 */
+.page .header h1 .term-tip {
+  border-bottom: 0;
 }
 
 .actions,
@@ -674,11 +701,6 @@ textarea {
   .header {
     gap: 12px;
     margin-bottom: 14px;
-  }
-
-  .header h1 {
-    font-size: 24px;
-    letter-spacing: 0;
   }
 
   .header p {

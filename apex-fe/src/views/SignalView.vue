@@ -1009,14 +1009,6 @@ onBeforeUnmount(() => {
     gap: 9px;
   }
 
-  .signal-heading h1 {
-    font-size: 22px;
-  }
-
-  .signal-heading .eyebrow {
-    display: none;
-  }
-
   .signal-heading .sub {
     margin-top: 3px;
     font-size: 12px;

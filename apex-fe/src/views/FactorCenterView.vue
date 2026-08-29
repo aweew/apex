@@ -891,7 +891,6 @@ onMounted(() => loadDetail())
   }
 
   .factor-center-page {
-    --page-title-size: 24px;
     padding: 16px 14px 36px;
   }
 

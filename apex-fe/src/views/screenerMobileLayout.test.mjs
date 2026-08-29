@@ -109,10 +109,10 @@ test('strategy workspace collapses to one column on mobile', () => {
   assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.strategy-workspace\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
 })
 
-test('mobile strategy header removes desktop title decoration', () => {
-  assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.screener-page\s*\{[\s\S]*?--page-title-size:\s*24px;/)
-  assert.match(screenerSource, /\.screener-header > div:first-child > \.eyebrow\s*\{[\s\S]*?display:\s*none !important;/)
-  assert.match(screenerSource, /\.screener-header h1::after\s*\{[\s\S]*?display:\s*none;/)
+test('mobile strategy header keeps the shared page-title treatment', () => {
+  assert.doesNotMatch(screenerSource, /--page-title-size:/)
+  assert.doesNotMatch(screenerSource, /\.screener-header > div:first-child > \.eyebrow\s*\{[\s\S]*?display:\s*none !important;/)
+  assert.doesNotMatch(screenerSource, /\.screener-header h1::after\s*\{[\s\S]*?display:\s*none;/)
   assert.match(screenerSource, /\.screener-page \.screener-header > \.header-refresh-actions > :deep\(\.mobile-refresh-button\)\s*\{[\s\S]*?width:\s*44px !important;[\s\S]*?min-width:\s*44px;/)
 })
 

@@ -2424,7 +2424,6 @@ onBeforeUnmount(() => {
 
 @media (max-width: 820px) {
   .screener-page {
-    --page-title-size: 24px;
     overflow-x: clip;
   }
 
@@ -2438,14 +2437,6 @@ onBeforeUnmount(() => {
 
   .screener-header > div:first-child {
     min-width: 0;
-  }
-
-  .screener-header > div:first-child > .eyebrow {
-    display: none !important;
-  }
-
-  .screener-header h1::after {
-    display: none;
   }
 
   .header-refresh-actions {
