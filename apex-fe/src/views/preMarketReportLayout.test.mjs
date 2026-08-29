@@ -10,6 +10,9 @@ test('pre-market report exposes generation state without listing missing data', 
   assert.doesNotMatch(source, /本次数据缺口|以下项目不会被当作中性数据参与判断/)
   assert.match(source, /report\.value\?\.reportSource/)
   assert.match(source, /report\.portfolioCount/)
+  assert.match(source, /report\.value\?\.marketDataAsOf/)
+  assert.match(source, /report\.focusChanges/)
+  assert.match(source, /预生成/)
 })
 
 test('pre-market report presents one editorial reading flow instead of a status dashboard', () => {
@@ -33,6 +36,8 @@ test('pre-market report renders holding reminders as scannable visual cards', ()
   assert.match(sectionSource, /class="holding-grid"/)
   assert.match(sectionSource, /class="holding-action-grid"/)
   assert.match(sectionSource, /class="portfolio-risk-block"/)
+  assert.match(sectionSource, /处理顺序/)
+  assert.match(sectionSource, /:priority="index \+ 1"/)
 })
 
 test('pre-market report keeps the full article readable and mobile safe', () => {

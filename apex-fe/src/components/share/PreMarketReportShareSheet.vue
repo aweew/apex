@@ -16,7 +16,19 @@ const rootRef = ref(null)
 const tradeDate = computed(() => props.report.tradeDate || props.document.date || '')
 const judgement = computed(() => props.document.judgement || props.report.marketJudgement || '')
 const reportTitle = computed(() => props.document.title.replace(/^今日投资机会[｜|]\s*/, '') || '今日投资机会')
-const shareSections = computed(() => props.document.sections.filter((section) => section.number !== '02'))
+const shareSectionNumbers = ['03', '04', '05']
+const shareSections = computed(() => props.document.sections
+  .filter((section) => shareSectionNumbers.includes(section.number))
+  .map((section, index) => ({
+    ...section,
+    sourceNumber: section.number,
+    number: String(index + 1).padStart(2, '0'),
+    portfolioRisks: section.number === '04' ? [] : section.portfolioRisks,
+  })))
+const isPreGenerated = computed(() => {
+  const generatedDate = props.report.generatedAt ? String(props.report.generatedAt).slice(0, 10) : ''
+  return Boolean(tradeDate.value && generatedDate && generatedDate < tradeDate.value)
+})
 
 function getCaptureElement() {
   return rootRef.value
@@ -34,6 +46,14 @@ defineExpose({ getCaptureElement })
         <span v-if="tradeDate">{{ tradeDate }}</span>
       </div>
     </header>
+
+    <div class="trust-strip" aria-label="研报数据时效">
+      <strong v-if="isPreGenerated">预生成</strong>
+      <span v-if="tradeDate">目标交易日 {{ tradeDate }}</span>
+      <span v-if="report.marketDataAsOf">行情截至 {{ report.marketDataAsOf }}</span>
+      <span v-if="generatedTime">生成于 {{ generatedTime.slice(5, 16) }}</span>
+      <span>{{ dataLevelLabel }}</span>
+    </div>
 
     <div class="headline-block">
       <div class="headline-main">
@@ -64,7 +84,12 @@ defineExpose({ getCaptureElement })
       </div>
     </section>
 
-    <PreMarketReportSections :sections="shareSections" compact />
+    <section v-if="report.focusChanges?.length" class="change-strip" aria-label="相比上一交易日的方向变化">
+      <strong>较前日</strong>
+      <span v-for="focusChange in report.focusChanges" :key="focusChange">{{ focusChange }}</span>
+    </section>
+
+    <PreMarketReportSections :sections="shareSections" :holding-limit="3" compact />
 
     <div class="sheet-meta-foot">
       <span>{{ sourceLabel }} · {{ dataLevelLabel }}</span>
@@ -100,6 +125,21 @@ defineExpose({ getCaptureElement })
   border-bottom: 1px solid #d8dfe4;
 }
 
+.trust-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  padding: 10px 0;
+  color: #687781;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid #e3e8eb;
+}
+
+.trust-strip strong {
+  color: #976116;
+}
+
 .sheet-meta {
   display: flex;
   align-items: flex-end;
@@ -127,7 +167,7 @@ defineExpose({ getCaptureElement })
   display: block;
   margin-bottom: 8px;
   color: #3977a6;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 750;
 }
 
@@ -177,7 +217,7 @@ defineExpose({ getCaptureElement })
 
 .sentiment-block span {
   color: #7b8790;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -207,7 +247,7 @@ defineExpose({ getCaptureElement })
 .sentiment-block em {
   margin-top: 6px;
   color: #3977a6;
-  font-size: 9px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 720;
 }
@@ -237,13 +277,27 @@ defineExpose({ getCaptureElement })
   overflow-wrap: anywhere;
 }
 
+.change-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 10px 0;
+  color: #53646f;
+  font-size: 10px;
+  border-bottom: 1px solid #e1e6e9;
+}
+
+.change-strip strong {
+  color: #29485b;
+}
+
 .sheet-meta-foot {
   display: flex;
   justify-content: space-between;
   gap: 18px;
   padding: 14px 0 2px;
   color: #8d979e;
-  font-size: 9px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 

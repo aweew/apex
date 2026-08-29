@@ -153,12 +153,16 @@ class DailyPreMarketReportServiceImplTest {
         DailyPreMarketReportResp report = service.latest(false);
 
         assertEquals("RULE", report.getReportSource());
+        assertEquals("偏强", report.getMarketStatus());
+        assertEquals(62, report.getSentimentScore());
         assertEquals(1, report.getPortfolioCount());
         assertEquals(2, report.getHoldingCount());
         assertTrue(report.getContent().startsWith("今日投资机会｜"));
         assertTrue(report.getContent().contains("01｜市场状态"));
         assertTrue(report.getContent().contains("02｜资金风格"));
         assertTrue(report.getContent().contains("上涨 2800 / 下跌 2200"));
+        assertTrue(report.getContent().contains("情绪 62 / 100（偏强）"));
+        assertFalse(report.getContent().contains("状态：均衡"));
         assertTrue(report.getContent().contains("缩量 -1.21%"));
         assertTrue(report.getContent().contains("04｜持仓应对"));
         assertTrue(report.getContent().contains("贵州茅台"));
@@ -173,6 +177,51 @@ class DailyPreMarketReportServiceImplTest {
         assertTrue(report.getContent().length() < 3500);
         verify(portfolioService, never()).detail(12L);
         verify(redisCacheService).put(anyString(), any(DailyPreMarketReportResp.class), any());
+    }
+
+    @Test
+    void reportsDirectionChangesAgainstPreviousTradingReport() {
+        DailyPreMarketReportResp previousReport = DailyPreMarketReportResp.builder()
+                .tradeDate(LocalDate.of(2026, 8, 28))
+                .content("今日投资机会｜旧报告\n03｜投资机会\n"
+                        + "1. 消费｜催化：旧催化；确认：旧确认；失效：旧失效。\n"
+                        + "2. 算力｜催化：旧催化；确认：旧确认；失效：旧失效。")
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(LocalDate.of(2026, 8, 28))
+                        .stance("均衡")
+                        .dataLevel("GREEN")
+                        .breadthUp(2600)
+                        .breadthDown(2400)
+                        .limitUpCount(60)
+                        .limitDownCount(10)
+                        .hotThemes(List.of("算力", "地产"))
+                        .hotThemeItems(List.of(
+                                MarketHotThemeItem.builder().name("算力").pctChg(new BigDecimal("1.20")).build(),
+                                MarketHotThemeItem.builder().name("地产").pctChg(new BigDecimal("0.80")).build()))
+                        .build())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(LocalDate.of(2026, 8, 31))
+                        .dataLevel("GREEN")
+                        .build())
+                .build();
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0, String.class).endsWith(":2026-08-28")
+                        ? previousReport : null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(false);
+
+        DailyPreMarketReportResp report = service.latest(true);
+
+        assertTrue(report.getFocusChanges().contains("新增：地产"));
+        assertTrue(report.getFocusChanges().contains("延续：算力"));
+        assertTrue(report.getFocusChanges().contains("降级：消费"));
+        assertTrue(report.getContent().contains("9:45 前"));
+        assertTrue(report.getContent().contains("较昨日同期放大 20%"));
+        verify(redisCacheService).put(anyString(), eq(report), any());
     }
 
     @Test

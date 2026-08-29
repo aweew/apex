@@ -4,6 +4,7 @@ import PreMarketHoldingCard from './PreMarketHoldingCard.vue'
 const props = defineProps({
   sections: { type: Array, default: () => [] },
   compact: { type: Boolean, default: false },
+  holdingLimit: { type: Number, default: 0 },
 })
 
 function holdingPriority(holding) {
@@ -19,6 +20,15 @@ function sortedHoldings(section) {
     if (statusDifference !== 0) return statusDifference
     return (right.weight || 0) - (left.weight || 0)
   })
+}
+
+function displayHoldings(section) {
+  const holdings = sortedHoldings(section)
+  return props.holdingLimit > 0 ? holdings.slice(0, props.holdingLimit) : holdings
+}
+
+function sourceSectionNumber(section) {
+  return section.sourceNumber || section.number
 }
 
 function scenarioTone(name) {
@@ -65,10 +75,10 @@ function scenarioTone(name) {
           </article>
         </div>
 
-        <template v-else-if="section.number === '04'">
+        <template v-else-if="sourceSectionNumber(section) === '04'">
           <div v-if="section.holdings?.length && props.compact" class="holding-action-grid">
             <article
-              v-for="(holding, index) in sortedHoldings(section)"
+              v-for="(holding, index) in displayHoldings(section)"
               :key="`${holding.code}-${index}`"
               class="holding-action-row"
               :class="{ 'is-danger': holding.status === '高风险' }"
@@ -78,7 +88,7 @@ function scenarioTone(name) {
                   <strong>{{ holding.name }}</strong>
                   <span>{{ holding.code }}</span>
                 </div>
-                <em>{{ holding.status }}</em>
+                <em>处理顺序 {{ String(index + 1).padStart(2, '0') }} · {{ holding.status }}</em>
               </header>
               <div class="holding-action-metrics">
                 <span v-if="holding.weightText">仓位 <strong>{{ holding.weightText }}</strong></span>
@@ -91,16 +101,17 @@ function scenarioTone(name) {
           </div>
           <div v-else-if="section.holdings?.length" class="holding-grid">
             <PreMarketHoldingCard
-              v-for="(holding, index) in sortedHoldings(section)"
+              v-for="(holding, index) in displayHoldings(section)"
               :key="`${holding.code}-${index}`"
               :holding="holding"
+              :priority="index + 1"
               :compact="props.compact"
             />
           </div>
           <div v-if="section.portfolioRisks?.length" class="portfolio-risk-block">
             <header>
-              <span>PORTFOLIO RISK</span>
-              <strong>组合暴露</strong>
+              <span>集中度提醒</span>
+              <strong>组合集中风险</strong>
             </header>
             <ul>
               <li v-for="risk in section.portfolioRisks" :key="risk">{{ risk }}</li>
@@ -329,7 +340,7 @@ function scenarioTone(name) {
 
 .holding-action-row header span {
   color: #89949c;
-  font-size: 8px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -339,7 +350,7 @@ function scenarioTone(name) {
   border-radius: 3px;
   color: #9f4039;
   background: #faeceb;
-  font-size: 8px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 700;
 }
@@ -352,12 +363,12 @@ function scenarioTone(name) {
   padding: 5px 0;
   border-block: 1px solid #edf1f3;
   color: #7e8991;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .holding-action-metrics strong {
   color: #334550;
-  font-size: 9px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -367,7 +378,7 @@ function scenarioTone(name) {
   gap: 5px;
   margin: 5px 0 0;
   color: #5b6871;
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -418,7 +429,7 @@ function scenarioTone(name) {
   min-width: 0;
   padding-left: 11px;
   color: #654b49;
-  font-size: calc(var(--body-size) - 2px);
+  font-size: calc(var(--body-size) - 1px);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -475,7 +486,7 @@ function scenarioTone(name) {
   --section-label-width: 104px;
   --section-gap: 20px;
   --section-space: 15px;
-  --body-size: 10px;
+  --body-size: 11px;
   --card-padding: 11px;
 }
 

@@ -31,6 +31,22 @@ const generatedTime = computed(() => {
 
 const sourceLabel = computed(() => report.value?.reportSource === 'AI' ? '智能研判' : '规则研判')
 
+const isPreGenerated = computed(() => {
+  const tradeDate = report.value?.tradeDate
+  const generatedDate = report.value?.generatedAt ? String(report.value.generatedAt).slice(0, 10) : ''
+  return Boolean(tradeDate && generatedDate && generatedDate < tradeDate)
+})
+
+const reportMetaItems = computed(() => {
+  const metaItems = []
+  if (isPreGenerated.value) metaItems.push('预生成')
+  if (report.value?.tradeDate) metaItems.push(`目标交易日 ${report.value.tradeDate}`)
+  if (report.value?.marketDataAsOf) metaItems.push(`行情截至 ${report.value.marketDataAsOf}`)
+  if (report.value?.dataLevel) metaItems.push(dataLevelLabel(report.value.dataLevel))
+  if (generatedTime.value) metaItems.push(`生成于 ${generatedTime.value.slice(5, 16)}`)
+  return metaItems
+})
+
 function dataLevelLabel(level) {
   if (level === 'GREEN') return '数据覆盖较完整'
   if (level === 'YELLOW') return '数据覆盖一般'
@@ -175,6 +191,16 @@ onMounted(loadReport)
           <p class="report-kicker">APEX PRE-MARKET RESEARCH</p>
           <h1>{{ reportTitle }}</h1>
 
+          <div class="report-meta-strip" aria-label="研报数据时效">
+            <span
+              v-for="metaItem in reportMetaItems"
+              :key="metaItem"
+              :class="{ 'is-warning': metaItem === '预生成' || metaItem === '数据覆盖一般' || metaItem === '数据覆盖有限' }"
+            >
+              {{ metaItem }}
+            </span>
+          </div>
+
           <section class="report-thesis" aria-label="核心观点">
             <span>核心观点</span>
             <p>{{ reportDocument.judgement || report.marketJudgement }}</p>
@@ -200,13 +226,17 @@ onMounted(loadReport)
             <dd>{{ reportDocument.risk }}</dd>
           </div>
         </dl>
+
+        <section v-if="report.focusChanges?.length" class="focus-change-strip" aria-label="相比上一交易日的方向变化">
+          <strong>较前日</strong>
+          <span v-for="focusChange in report.focusChanges" :key="focusChange">{{ focusChange }}</span>
+        </section>
       </header>
 
       <PreMarketReportSections :sections="reportDocument.sections" />
 
       <footer class="report-footnote">
-        <span>{{ sourceLabel }} · {{ dataLevelLabel(report.dataLevel) }}</span>
-        <span v-if="generatedTime">生成于 {{ generatedTime }}</span>
+        <span>{{ sourceLabel }}</span>
         <span>{{ report.portfolioCount || 0 }} 个组合 · {{ report.holdingCount || 0 }} 只持仓纳入筛选</span>
       </footer>
     </article>
@@ -314,6 +344,37 @@ onMounted(loadReport)
   line-height: 1.22;
   letter-spacing: 0;
   overflow-wrap: anywhere;
+}
+
+.report-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 14px;
+  color: #647580;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.report-meta-strip span {
+  position: relative;
+}
+
+.report-meta-strip span + span::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: -8px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #a7b0b6;
+}
+
+.report-meta-strip .is-warning {
+  color: #9a6418;
+  font-weight: 650;
 }
 
 .report-thesis {
@@ -437,6 +498,24 @@ onMounted(loadReport)
 
 .risk-line dt {
   color: #a14d47;
+}
+
+.focus-change-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-top: -18px;
+  padding: 11px 0 0;
+  color: #52636e;
+  font-size: 13px;
+  border-top: 1px solid #edf0f2;
+}
+
+.focus-change-strip strong {
+  color: #2b4557;
+  font-size: 12px;
 }
 
 .report-footnote {

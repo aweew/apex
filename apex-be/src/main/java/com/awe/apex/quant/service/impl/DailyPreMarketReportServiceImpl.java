@@ -48,8 +48,8 @@ import java.util.Objects;
 @Service
 public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportService {
 
-    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v5:";
-    private static final Duration CACHE_TTL = Duration.ofHours(20);
+    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v6:";
+    private static final Duration CACHE_TTL = Duration.ofDays(7);
     private static final String DEFAULT_WATCHLIST_GROUP = "我的自选";
     private static final String DATA_MISSING = "数据暂缺";
 
@@ -154,17 +154,22 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
 
         DashboardHomeResp.MarketBlock market = Objects.nonNull(dashboard) ? dashboard.getMarket() : null;
         String dataLevel = resolveDataLevel(dashboard, missingData);
+        LocalDate previousTradeDate = TradingCalendar.prevTradingDay(tradeDate);
+        DailyPreMarketReportResp previousReport = redisCacheService.get(
+                buildCacheKey(userId, previousTradeDate), DailyPreMarketReportResp.class);
+        List<String> focusChanges = resolveFocusChanges(previousReport, reportContent, tradeDate);
         DailyPreMarketReportResp report = DailyPreMarketReportResp.builder()
                 .tradeDate(tradeDate)
                 .generatedAt(generatedAt)
                 .marketDataAsOf(Objects.nonNull(market) ? market.getAsOf() : null)
-                .marketStatus(resolveMarketStatus(dashboard))
+                .marketStatus(sentimentLabel(sentimentScore))
                 .sentimentScore(sentimentScore)
                 .marketJudgement(marketJudgement)
                 .dataLevel(dataLevel)
                 .reportSource(reportSource)
                 .portfolioCount(portfolios.size())
                 .holdingCount(holdingCount)
+                .focusChanges(focusChanges)
                 .missingData(missingData)
                 .content(reportContent)
                 .build();
@@ -372,9 +377,6 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
     private void appendMarketState(StringBuilder report, DailyPreMarketReportContextBO context) {
         DashboardHomeResp.MarketBlock market = context.getMarket();
         report.append("\n01｜市场状态\n");
-        if (Objects.nonNull(market) && StringUtils.isNotBlank(market.getStance())) {
-            report.append("状态：").append(market.getStance()).append("。\n");
-        }
         StringBuilder marketEvidence = new StringBuilder();
         if (Objects.nonNull(market) && StringUtils.isNotBlank(market.getVolumeLabel())) {
             marketEvidence.append("量能 ").append(market.getVolumeLabel());
@@ -473,9 +475,9 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             } else {
                 report.append("盘前机会信号居前");
             }
-            report.append("；确认：").append(directionName)
-                    .append("板块成交放大，核心股高开后保持强于指数；失效：")
-                    .append(directionName).append("高开低走，核心股同步跌破开盘价。\n");
+            report.append("；确认：9:45 前").append(directionName)
+                    .append("板块成交额较昨日同期放大 20%，核心股涨幅持续高于沪深 300；失效：9:45 前")
+                    .append(directionName).append("冲高回落，核心股跌破开盘价且板块涨幅落后沪深 300。\n");
             if (appendedOpportunityCount >= 3) {
                 break;
             }
@@ -1014,11 +1016,6 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         return "GREEN";
     }
 
-    private String resolveMarketStatus(DashboardHomeResp dashboard) {
-        DashboardHomeResp.MarketBlock market = Objects.nonNull(dashboard) ? dashboard.getMarket() : null;
-        return Objects.nonNull(market) && StringUtils.isNotBlank(market.getStance()) ? market.getStance() : null;
-    }
-
     private String resolveMarketJudgement(DashboardCommandResp command, DashboardHomeResp.MarketBlock market) {
         if (Objects.nonNull(command) && Objects.nonNull(command.getPreMarketSummary())
                 && StringUtils.isNotBlank(command.getPreMarketSummary().getHeadline())) {
@@ -1049,6 +1046,79 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
 
     private String buildCacheKey(Long userId, LocalDate tradeDate) {
         return CACHE_KEY_PREFIX + userId + ":" + tradeDate;
+    }
+
+    private List<String> resolveFocusChanges(DailyPreMarketReportResp previousReport, String currentContent,
+                                             LocalDate currentTradeDate) {
+        if (Objects.isNull(previousReport) || Objects.isNull(previousReport.getTradeDate())
+                || !previousReport.getTradeDate().isBefore(currentTradeDate)) {
+            return List.of();
+        }
+        List<String> previousDirections = extractOpportunityDirections(previousReport.getContent());
+        List<String> currentDirections = extractOpportunityDirections(currentContent);
+        if (CollUtil.isEmpty(previousDirections) && CollUtil.isEmpty(currentDirections)) {
+            return List.of();
+        }
+
+        List<String> newDirections = new ArrayList<>();
+        List<String> continuedDirections = new ArrayList<>();
+        for (String currentDirection : currentDirections) {
+            if (previousDirections.contains(currentDirection)) {
+                continuedDirections.add(currentDirection);
+            } else {
+                newDirections.add(currentDirection);
+            }
+        }
+        List<String> downgradedDirections = new ArrayList<>();
+        for (String previousDirection : previousDirections) {
+            if (!currentDirections.contains(previousDirection)) {
+                downgradedDirections.add(previousDirection);
+            }
+        }
+
+        List<String> focusChanges = new ArrayList<>();
+        if (CollUtil.isNotEmpty(newDirections)) {
+            focusChanges.add("新增：" + String.join("、", newDirections));
+        }
+        if (CollUtil.isNotEmpty(continuedDirections)) {
+            focusChanges.add("延续：" + String.join("、", continuedDirections));
+        }
+        if (CollUtil.isNotEmpty(downgradedDirections)) {
+            focusChanges.add("降级：" + String.join("、", downgradedDirections));
+        }
+        return focusChanges;
+    }
+
+    private List<String> extractOpportunityDirections(String reportContent) {
+        if (StringUtils.isBlank(reportContent)) {
+            return List.of();
+        }
+        List<String> directions = new ArrayList<>();
+        boolean opportunitySection = false;
+        for (String rawLine : reportContent.split("\\R")) {
+            String line = rawLine.trim();
+            if (line.startsWith("03｜") || line.startsWith("03|")) {
+                opportunitySection = true;
+                continue;
+            }
+            if (opportunitySection && line.matches("^\\d{2}[｜|].+")) {
+                break;
+            }
+            if (!opportunitySection || !line.matches("^\\d+[.、].+")) {
+                continue;
+            }
+            int separatorIndex = Math.max(line.indexOf('｜'), line.indexOf('|'));
+            if (separatorIndex < 0) {
+                continue;
+            }
+            String direction = line.substring(0, separatorIndex)
+                    .replaceFirst("^\\d+[.、]\\s*", "")
+                    .trim();
+            if (StringUtils.isNotBlank(direction) && !directions.contains(direction)) {
+                directions.add(direction);
+            }
+        }
+        return directions;
     }
 
     private String resolveWatchlistGroup() {

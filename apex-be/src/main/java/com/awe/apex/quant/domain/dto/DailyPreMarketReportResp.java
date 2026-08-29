@@ -70,6 +70,12 @@ public class DailyPreMarketReportResp {
     private Integer holdingCount;
 
     /**
+     * 相比上一交易日报告的重点方向变化。
+     */
+    @Builder.Default
+    private List<String> focusChanges = new ArrayList<>();
+
+    /**
      * 缺失或不可核验的数据项。
      */
     @Builder.Default

@@ -5,6 +5,7 @@ import { TrendCharts, WarningFilled } from '@element-plus/icons-vue'
 const props = defineProps({
   holding: { type: Object, required: true },
   compact: { type: Boolean, default: false },
+  priority: { type: Number, default: 0 },
 })
 
 const statusTone = computed(() => {
@@ -31,10 +32,13 @@ const radarDots = computed(() => Array.from({ length: Math.min(props.holding.rad
         <strong>{{ holding.name }}</strong>
         <span>{{ holding.code }}</span>
       </router-link>
-      <span class="status-badge" :class="`is-${statusTone}`">
-        <el-icon v-if="statusTone === 'danger' || statusTone === 'warning'"><WarningFilled /></el-icon>
-        {{ holding.status }}
-      </span>
+      <div class="holding-flags">
+        <span v-if="priority" class="priority-badge">处理顺序 {{ String(priority).padStart(2, '0') }}</span>
+        <span class="status-badge" :class="`is-${statusTone}`">
+          <el-icon v-if="statusTone === 'danger' || statusTone === 'warning'"><WarningFilled /></el-icon>
+          {{ holding.status }}
+        </span>
+      </div>
     </header>
 
     <div class="holding-metrics" aria-label="持仓关键指标">
@@ -125,6 +129,21 @@ const radarDots = computed(() => Array.from({ length: Math.min(props.holding.rad
   color: #7b8793;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.holding-flags {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.priority-badge {
+  color: #536774;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .status-badge {
