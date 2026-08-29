@@ -28,6 +28,7 @@ import {
   aggregateBars,
   defaultVisibleStart,
   nextKlineZoomRange,
+  spaceChartSignals,
   tdSequential,
   visibleBarCount,
 } from '../utils/kline'
@@ -1034,11 +1035,12 @@ async function renderChart(list) {
   })
   const { dif, dea, hist } = macd(closes)
   const crosses = macdCrosses(dif, dea)
+  const markerCrosses = spaceChartSignals(crosses, 5)
   const goldenPoints = []
   const deathPoints = []
-  for (let i = 0; i < crosses.length; i++) {
-    if (crosses[i] === 'golden') goldenPoints.push([dates[i], dif[i]])
-    if (crosses[i] === 'death') deathPoints.push([dates[i], dif[i]])
+  for (let i = 0; i < markerCrosses.length; i++) {
+    if (markerCrosses[i] === 'golden') goldenPoints.push([dates[i], dif[i]])
+    if (markerCrosses[i] === 'death') deathPoints.push([dates[i], dif[i]])
   }
   const { buy: tdBuy, sell: tdSell } = tdSequential(closes)
   const tdBuyPoints = []
@@ -1532,6 +1534,7 @@ async function renderChart(list) {
         data: goldenPoints,
         symbol: 'triangle',
         symbolSize: 11,
+        symbolOffset: [0, -5],
         legendHoverLink: false,
         itemStyle: { color: '#ef5350' },
         label: {
@@ -1542,6 +1545,7 @@ async function renderChart(list) {
           fontSize: 10,
           fontWeight: 700,
         },
+        labelLayout: { hideOverlap: true },
         z: 10,
       },
       {
@@ -1553,6 +1557,7 @@ async function renderChart(list) {
         symbol: 'triangle',
         symbolRotate: 180,
         symbolSize: 11,
+        symbolOffset: [0, 5],
         legendHoverLink: false,
         itemStyle: { color: '#26a69a' },
         label: {
@@ -1563,6 +1568,7 @@ async function renderChart(list) {
           fontSize: 10,
           fontWeight: 700,
         },
+        labelLayout: { hideOverlap: true },
         z: 10,
       },
       {

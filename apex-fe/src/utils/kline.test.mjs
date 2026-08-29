@@ -5,6 +5,7 @@ import {
   defaultVisibleStart,
   nextKlineZoomRange,
   periodBucket,
+  spaceChartSignals,
   tdSequential,
   visibleBarCount,
 } from './kline.js'
@@ -31,6 +32,23 @@ test('K-line zoom stops at twelve bars and the full data range', () => {
   assert.deepEqual(nextKlineZoomRange(100, 88, 100, 'in'), { start: 88, end: 100 })
   assert.deepEqual(nextKlineZoomRange(100, 94, 100, 'in'), { start: 94, end: 100 })
   assert.deepEqual(nextKlineZoomRange(100, 0, 100, 'out'), { start: 0, end: 100 })
+})
+
+test('dense chart signals keep the latest marker and leave enough K-line spacing', () => {
+  const signals = new Array(20).fill(null)
+  signals[2] = 'golden'
+  signals[5] = 'death'
+  signals[8] = 'golden'
+  signals[15] = 'death'
+  signals[18] = 'golden'
+
+  const spacedSignals = spaceChartSignals(signals, 5)
+
+  assert.deepEqual(
+    spacedSignals.map((signal, index) => (signal ? [index, signal] : null)).filter(Boolean),
+    [[2, 'golden'], [8, 'golden'], [18, 'golden']],
+  )
+  assert.equal(signals[15], 'death')
 })
 
 test('periodBucket week uses Monday', () => {

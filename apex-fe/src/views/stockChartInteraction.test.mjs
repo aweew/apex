@@ -139,6 +139,20 @@ test('K-line status shows the actual daily data date without leaking an empty in
   )
 })
 
+test('dense MACD cross markers are spaced and labels avoid collisions', () => {
+  assert.match(stockSource, /const markerCrosses = spaceChartSignals\(crosses, 5\)/)
+  assert.match(stockSource, /if \(markerCrosses\[i\] === 'golden'\) goldenPoints\.push/)
+  assert.match(stockSource, /if \(markerCrosses\[i\] === 'death'\) deathPoints\.push/)
+  assert.match(
+    stockSource,
+    /name: '金叉',[\s\S]*?symbolOffset: \[0, -5\],[\s\S]*?labelLayout: \{ hideOverlap: true \},/s,
+  )
+  assert.match(
+    stockSource,
+    /name: '死叉',[\s\S]*?symbolOffset: \[0, 5\],[\s\S]*?labelLayout: \{ hideOverlap: true \},/s,
+  )
+})
+
 test('K-line zoom buttons dispatch the next data window and disable at boundaries', () => {
   assert.match(stockSource, /function zoomChart\(direction\)/)
   assert.match(stockSource, /nextKlineZoomRange\([\s\S]*?direction,[\s\S]*?MIN_VISIBLE_BARS/s)

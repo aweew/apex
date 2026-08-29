@@ -14,6 +14,20 @@ export function visibleBarCount(barCount, startPct, endPct) {
   return Math.max(1, Math.min(count, Math.round((count * (end - start)) / 100)))
 }
 
+/** 从最新信号向前保留标记，避免相邻 K 线上的文字与图标重叠 */
+export function spaceChartSignals(signals, minimumBarGap = 5) {
+  if (!Array.isArray(signals) || signals.length === 0) return []
+  const barGap = Math.max(1, Number(minimumBarGap) || 5)
+  const spacedSignals = new Array(signals.length).fill(null)
+  let latestMarkerIndex = signals.length + barGap
+  for (let i = signals.length - 1; i >= 0; i--) {
+    if (!signals[i] || latestMarkerIndex - i < barGap) continue
+    spacedSignals[i] = signals[i]
+    latestMarkerIndex = i
+  }
+  return spacedSignals
+}
+
 /**
  * 计算按钮缩放后的 dataZoom 窗口。
  * 靠近最新行情时固定右边界，查看历史区间时以当前窗口中心为锚点。
