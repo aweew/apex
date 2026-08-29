@@ -3,9 +3,9 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CopyDocument, DocumentCopy, Download, Refresh, Share } from '@element-plus/icons-vue'
 import { fetchDailyPreMarketReport, refreshDailyPreMarketReport } from '../api/preMarketReport'
-import PreMarketHoldingCard from '../components/PreMarketHoldingCard.vue'
+import PreMarketReportSections from '../components/PreMarketReportSections.vue'
 import PreMarketReportShareSheet from '../components/share/PreMarketReportShareSheet.vue'
-import { parseHoldingLine, parsePreMarketReport } from '../utils/preMarketReport'
+import { parsePreMarketReport } from '../utils/preMarketReport'
 import {
   captureElementBlob,
   copyImageBlob,
@@ -21,6 +21,8 @@ const copyingImage = ref(false)
 const downloadingImage = ref(false)
 const shareSheetRef = ref(null)
 const reportDocument = computed(() => parsePreMarketReport(report.value?.content))
+const reportTitle = computed(() => reportDocument.value.title.replace(/^今日投资机会[｜|]\s*/, '') || '今日投资机会')
+const sentimentWidth = computed(() => Math.min(Math.max(report.value?.sentimentScore || 0, 0), 100))
 
 const generatedTime = computed(() => {
   if (!report.value?.generatedAt) return ''
@@ -35,22 +37,10 @@ function dataLevelLabel(level) {
   return '数据覆盖有限'
 }
 
-function cleanLine(line) {
-  return String(line || '').replace(/^[-•]\s*/, '').trim()
-}
-
-function lineParts(line) {
-  const text = cleanLine(line)
-  const separatorIndex = text.search(/[：｜|]/)
-  if (separatorIndex < 0) return { lead: '', detail: text }
-  return {
-    lead: text.slice(0, separatorIndex).trim(),
-    detail: text.slice(separatorIndex + 1).trim(),
-  }
-}
-
-function narrativeLines(section) {
-  return section.lines.filter((line) => !parseHoldingLine(line))
+function sentimentLabel(score) {
+  if (score >= 65) return '偏强'
+  if (score <= 35) return '偏弱'
+  return '均衡'
 }
 
 async function loadReport() {
@@ -181,58 +171,38 @@ onMounted(loadReport)
 
     <article v-if="report?.content" class="report-article" aria-label="盘前研报正文">
       <header class="report-lead">
-        <p class="report-dateline">
-          <span v-if="report.marketStatus">{{ report.marketStatus }}</span>
-          <span v-if="report.sentimentScore != null">情绪 {{ report.sentimentScore }} / 100</span>
-        </p>
-        <h1>{{ reportDocument.title || '今日投资机会' }}</h1>
+        <div class="report-lead-main">
+          <p class="report-kicker">APEX PRE-MARKET RESEARCH</p>
+          <h1>{{ reportTitle }}</h1>
 
-        <section class="report-thesis" aria-label="核心观点">
-          <span>核心观点</span>
-          <p>{{ reportDocument.judgement || report.marketJudgement }}</p>
-        </section>
+          <section class="report-thesis" aria-label="核心观点">
+            <span>核心观点</span>
+            <p>{{ reportDocument.judgement || report.marketJudgement }}</p>
+          </section>
+        </div>
+
+        <aside class="market-temperature" aria-label="盘前市场温度">
+          <span>市场温度</span>
+          <strong v-if="report.sentimentScore != null">{{ report.sentimentScore }}</strong>
+          <strong v-else>--</strong>
+          <em>{{ report.marketStatus || sentimentLabel(report.sentimentScore) }}</em>
+          <i aria-hidden="true"><b :style="{ width: `${sentimentWidth}%` }" /></i>
+          <small v-if="report.sentimentScore != null">0 防守 · 100 进攻</small>
+        </aside>
 
         <dl v-if="reportDocument.priority || reportDocument.risk" class="decision-lines">
-          <div v-if="reportDocument.priority">
+          <div v-if="reportDocument.priority" class="priority-line">
             <dt>优先方向</dt>
             <dd>{{ reportDocument.priority }}</dd>
           </div>
-          <div v-if="reportDocument.risk">
+          <div v-if="reportDocument.risk" class="risk-line">
             <dt>最大风险</dt>
             <dd>{{ reportDocument.risk }}</dd>
           </div>
         </dl>
       </header>
 
-      <div class="report-body">
-        <section
-          v-for="section in reportDocument.sections"
-          :key="section.number"
-          class="report-section"
-          :class="`section-${section.number}`"
-        >
-          <header class="section-heading">
-            <span>{{ section.number }}</span>
-            <h2>{{ section.title }}</h2>
-          </header>
-
-          <div class="section-content">
-            <div v-if="section.holdings?.length" class="holding-grid">
-              <PreMarketHoldingCard
-                v-for="holding in section.holdings"
-                :key="holding.code"
-                :holding="holding"
-              />
-            </div>
-            <div v-if="narrativeLines(section).length" class="section-lines">
-              <p v-for="line in narrativeLines(section)" :key="line">
-                <strong v-if="lineParts(line).lead">{{ lineParts(line).lead }}</strong>
-                <span>{{ lineParts(line).detail }}</span>
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
+      <PreMarketReportSections :sections="reportDocument.sections" />
 
       <footer class="report-footnote">
         <span>{{ sourceLabel }} · {{ dataLevelLabel(report.dataLevel) }}</span>
@@ -282,7 +252,7 @@ onMounted(loadReport)
 
 <style scoped>
 .report-page {
-  padding-bottom: 64px;
+  padding-bottom: 72px;
 }
 
 .report-toolbar {
@@ -315,50 +285,43 @@ onMounted(loadReport)
 }
 
 .report-article {
-  width: min(100%, 960px);
+  width: min(100%, 1120px);
   margin: 0 auto;
   color: #26323c;
 }
 
 .report-lead {
-  padding: 50px 0 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 36px 48px;
+  padding: 56px 0 38px;
 }
 
-.report-dateline {
-  display: flex;
-  gap: 14px;
+.report-kicker {
   margin: 0 0 14px;
-  color: #7a858f;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.report-dateline span + span::before {
-  content: "";
-  display: inline-block;
-  width: 3px;
-  height: 3px;
-  margin: 0 14px 3px 0;
-  border-radius: 50%;
-  background: #aab2b9;
+  color: #3977a6;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0;
 }
 
 .report-lead h1 {
-  max-width: 860px;
+  max-width: 820px;
   margin: 0;
-  color: #17242f;
-  font-size: 38px;
-  font-weight: 760;
-  line-height: 1.28;
+  color: #142733;
+  font-size: 42px;
+  font-weight: 780;
+  line-height: 1.22;
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 
 .report-thesis {
-  max-width: 880px;
-  margin-top: 28px;
-  padding: 3px 0 3px 18px;
-  border-left: 4px solid #b7791f;
+  max-width: 850px;
+  margin-top: 26px;
+  padding: 15px 18px;
+  border-left: 4px solid #b47b27;
+  background: #f6f3ed;
 }
 
 .report-thesis > span {
@@ -371,25 +334,83 @@ onMounted(loadReport)
 
 .report-thesis p {
   margin: 0;
-  color: #2d3943;
-  font-size: 18px;
-  font-weight: 620;
-  line-height: 1.7;
+  color: #273944;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.65;
   overflow-wrap: anywhere;
 }
 
+.market-temperature {
+  align-self: start;
+  padding: 4px 0 0 24px;
+  border-left: 1px solid #d9e1e5;
+}
+
+.market-temperature > span,
+.market-temperature strong,
+.market-temperature em,
+.market-temperature small {
+  display: block;
+}
+
+.market-temperature > span {
+  color: #7d8992;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.market-temperature strong {
+  margin-top: 9px;
+  color: #1d3341;
+  font-size: 52px;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.market-temperature em {
+  margin-top: 7px;
+  color: #3977a6;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 720;
+}
+
+.market-temperature i {
+  display: block;
+  width: 100%;
+  height: 5px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #dfe6ea;
+}
+
+.market-temperature b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #3977a6;
+}
+
+.market-temperature small {
+  margin-top: 7px;
+  color: #929ca3;
+  font-size: 9px;
+}
+
 .decision-lines {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 30px 0 0;
-  border-block: 1px solid #dfe4e7;
+  margin: 0;
+  border-block: 1px solid #dbe2e6;
 }
 
 .decision-lines > div {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 14px;
-  padding: 16px 18px 16px 0;
+  min-width: 0;
+  padding: 16px 22px 17px 0;
 }
 
 .decision-lines > div + div {
@@ -399,92 +420,23 @@ onMounted(loadReport)
 
 .decision-lines dt {
   color: #77838d;
-  font-size: 12px;
-  font-weight: 650;
+  font-size: 10px;
+  font-weight: 720;
 }
 
 .decision-lines dd {
   min-width: 0;
   margin: 0;
   color: #273640;
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-}
-
-.report-body {
-  border-top: 2px solid #253746;
-}
-
-.report-section {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: 32px;
-  padding: 28px 0;
-  border-bottom: 1px solid #e1e5e8;
-}
-
-.section-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-}
-
-.section-heading > span {
-  color: #9aa3aa;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.section-heading h2 {
-  margin: 0;
-  color: #23333f;
-  font-size: 17px;
-  line-height: 1.4;
-  letter-spacing: 0;
-}
-
-.section-content,
-.section-lines {
-  min-width: 0;
-}
-
-.section-lines p {
-  display: grid;
-  grid-template-columns: minmax(84px, auto) minmax(0, 1fr);
-  gap: 14px;
-  margin: 0;
-  padding: 9px 0;
-  color: #394650;
+  margin-top: 6px;
   font-size: 15px;
-  line-height: 1.72;
+  font-weight: 650;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-.section-lines p + p {
-  border-top: 1px solid #edf0f2;
-}
-
-.section-lines strong {
-  color: #203442;
-  font-weight: 720;
-}
-
-.section-03 .section-lines p,
-.section-05 .section-lines p {
-  grid-template-columns: 88px minmax(0, 1fr);
-}
-
-.section-03 .section-lines strong {
-  color: #8a5c16;
-}
-
-.holding-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 12px;
+.risk-line dt {
+  color: #a14d47;
 }
 
 .report-footnote {
@@ -538,11 +490,13 @@ onMounted(loadReport)
   }
 
   .report-lead {
-    padding: 34px 0 26px;
+    grid-template-columns: minmax(0, 1fr) 150px;
+    gap: 28px;
+    padding: 40px 0 30px;
   }
 
   .report-lead h1 {
-    font-size: 30px;
+    font-size: 34px;
   }
 
   .report-thesis p {
@@ -557,16 +511,6 @@ onMounted(loadReport)
     padding-left: 0;
     border-top: 1px solid #e3e7ea;
     border-left: 0;
-  }
-
-  .report-section {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-    padding: 22px 0;
-  }
-
-  .holding-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   :global(.pre-market-share-dialog .el-dialog__body) {
@@ -591,25 +535,42 @@ onMounted(loadReport)
   }
 }
 
-@media (max-width: 420px) {
-  .report-lead h1 {
-    font-size: 27px;
+@media (max-width: 600px) {
+  .report-lead {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .report-dateline {
-    flex-wrap: wrap;
+  .report-lead h1 {
+    font-size: 30px;
+  }
+
+  .market-temperature {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    align-items: baseline;
+    gap: 8px 12px;
+    padding: 14px 0 0;
+    border-top: 1px solid #d9e1e5;
+    border-left: 0;
+  }
+
+  .market-temperature strong {
+    margin: 0;
+    font-size: 34px;
+  }
+
+  .market-temperature em {
+    margin: 0;
+  }
+
+  .market-temperature i,
+  .market-temperature small {
+    grid-column: 1 / -1;
+    margin-top: 0;
   }
 
   .decision-lines > div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 5px;
-  }
-
-  .section-lines p,
-  .section-03 .section-lines p,
-  .section-05 .section-lines p {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
+    padding-block: 13px;
   }
 }
 </style>

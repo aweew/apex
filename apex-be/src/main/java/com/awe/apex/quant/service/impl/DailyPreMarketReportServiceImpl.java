@@ -48,7 +48,7 @@ import java.util.Objects;
 @Service
 public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportService {
 
-    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v4:";
+    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v5:";
     private static final Duration CACHE_TTL = Duration.ofHours(20);
     private static final String DEFAULT_WATCHLIST_GROUP = "我的自选";
     private static final String DATA_MISSING = "数据暂缺";
@@ -447,15 +447,23 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             return;
         }
         report.append("\n03｜投资机会\n");
-        int rank = 0;
+        int appendedOpportunityCount = 0;
+        List<String> usedEventTitles = new ArrayList<>();
         for (String directionName : focusDirectionNames) {
-            rank++;
             PreMarketEventImpactResp matchedEvent = findDirectionEvent(context, directionName);
+            if (Objects.nonNull(matchedEvent) && StringUtils.isNotBlank(matchedEvent.getTitle())
+                    && usedEventTitles.contains(matchedEvent.getTitle())) {
+                continue;
+            }
             CommandDirectionItemResp matchedCommand = findCommandDirection(context, directionName);
             MarketHotThemeItem matchedTheme = findHotTheme(context, directionName);
-            report.append(rank).append(". ").append(directionName).append("｜催化：");
+            appendedOpportunityCount++;
+            report.append(appendedOpportunityCount).append(". ").append(directionName).append("｜催化：");
             if (Objects.nonNull(matchedEvent)) {
                 report.append(matchedEvent.getTitle());
+                if (StringUtils.isNotBlank(matchedEvent.getTitle())) {
+                    usedEventTitles.add(matchedEvent.getTitle());
+                }
             } else if (Objects.nonNull(matchedCommand) && StringUtils.isNotBlank(matchedCommand.getReason())) {
                 report.append(matchedCommand.getReason());
             } else if (Objects.nonNull(matchedTheme) && Objects.nonNull(matchedTheme.getPctChg())) {
@@ -465,8 +473,10 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             } else {
                 report.append("盘前机会信号居前");
             }
-            report.append("；确认：板块成交放大且核心股强于指数；失效：高开低走或放量转弱。\n");
-            if (rank >= 3) {
+            report.append("；确认：").append(directionName)
+                    .append("板块成交放大，核心股高开后保持强于指数；失效：")
+                    .append(directionName).append("高开低走，核心股同步跌破开盘价。\n");
+            if (appendedOpportunityCount >= 3) {
                 break;
             }
         }
@@ -924,6 +934,26 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             if (!content.contains("03｜投资机会")
                     || !content.contains("确认：") || !content.contains("失效：")) {
                 return false;
+            }
+            int opportunityStart = content.indexOf("03｜投资机会");
+            int opportunityEnd = content.indexOf("04｜持仓应对", opportunityStart);
+            if (opportunityEnd < 0) {
+                opportunityEnd = content.indexOf("05｜开盘剧本", opportunityStart);
+            }
+            String opportunityContent = content.substring(opportunityStart,
+                    opportunityEnd > opportunityStart ? opportunityEnd : content.length());
+            List<String> catalystTexts = new ArrayList<>();
+            for (String opportunityLine : opportunityContent.split("\\R")) {
+                int catalystStart = opportunityLine.indexOf("催化：");
+                int catalystEnd = opportunityLine.indexOf("；确认：");
+                if (catalystStart < 0 || catalystEnd <= catalystStart) {
+                    continue;
+                }
+                String catalystText = opportunityLine.substring(catalystStart + 3, catalystEnd).trim();
+                if (StringUtils.isNotBlank(catalystText) && catalystTexts.contains(catalystText)) {
+                    return false;
+                }
+                catalystTexts.add(catalystText);
             }
         }
         if (CollUtil.isNotEmpty(context.getPortfolios()) && !content.contains("04｜持仓应对")) {

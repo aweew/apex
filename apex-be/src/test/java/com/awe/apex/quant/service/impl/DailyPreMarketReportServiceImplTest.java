@@ -251,6 +251,11 @@ class DailyPreMarketReportServiceImplTest {
 
         assertTrue(report.getContent().contains("核心观点：今日先交易“英伟达发布最新季度财报”"));
         assertTrue(report.getContent().contains("1. 算力｜催化：英伟达发布最新季度财报"));
+        String opportunitySection = report.getContent().substring(
+                report.getContent().indexOf("03｜投资机会"),
+                report.getContent().indexOf("05｜开盘剧本"));
+        assertEquals(opportunitySection.indexOf("英伟达发布最新季度财报"),
+                opportunitySection.lastIndexOf("英伟达发布最新季度财报"));
         assertFalse(report.getContent().contains("机器人"));
     }
 
@@ -377,5 +382,50 @@ class DailyPreMarketReportServiceImplTest {
         assertTrue(report.getContent().contains("最大风险："));
         assertTrue(report.getContent().contains("确认："));
         assertTrue(report.getContent().contains("失效："));
+    }
+
+    @Test
+    void fallsBackWhenAiRepeatsTheSameCatalystAcrossOpportunities() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 28);
+        PreMarketEventImpactResp event = PreMarketEventImpactResp.builder()
+                .eventType("EARNINGS")
+                .title("英伟达发布季度财报")
+                .themes(List.of("算力", "半导体"))
+                .build();
+        MorningBriefingResp morning = MorningBriefingResp.builder()
+                .tradeDate(tradeDate)
+                .dataLevel("GREEN")
+                .newsPulse(NewsPulseResp.builder().eventImpacts(List.of(event)).build())
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(tradeDate.minusDays(1))
+                        .stance("均衡")
+                        .dataLevel("GREEN")
+                        .build())
+                .morningBriefing(morning)
+                .build();
+        String duplicateCatalystReport = "今日投资机会｜算力获得业绩催化\n"
+                + "核心观点：只做开盘确认后的强势方向。\n"
+                + "最大风险：核心方向高开低走。\n"
+                + "01｜市场状态\n状态：均衡。\n"
+                + "03｜投资机会\n"
+                + "1. 算力｜催化：英伟达发布季度财报；确认：算力板块放量；失效：核心股跌破开盘价。\n"
+                + "2. 半导体｜催化：英伟达发布季度财报；确认：半导体板块放量；失效：核心股跌破开盘价。\n"
+                + "05｜开盘剧本\n"
+                + "偏强｜核心方向放量。\n"
+                + "震荡｜指数缩量横盘。\n"
+                + "转弱｜核心方向高开低走。";
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(true);
+        when(kimiChatClient.chat(anyString(), anyString(), eq(2600))).thenReturn(duplicateCatalystReport);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertEquals("RULE", report.getReportSource());
+        assertFalse(report.getContent().contains("2. 半导体｜催化：英伟达发布季度财报"));
     }
 }

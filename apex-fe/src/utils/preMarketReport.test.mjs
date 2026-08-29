@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseHoldingLine, parsePreMarketReport } from './preMarketReport.js'
+import {
+  parseHoldingLine,
+  parseOpportunityLine,
+  parsePreMarketReport,
+  parseScenarioLine,
+} from './preMarketReport.js'
 
 const content = `今日投资机会｜算力硬件重回主线，开盘承接决定持续性
 日期：2026-08-27
@@ -76,4 +81,34 @@ test('keeps unavailable holding metrics empty instead of inventing values', () =
   assert.equal(holding.pnl, null)
   assert.equal(holding.radarHit, null)
   assert.equal(holding.radarTotal, null)
+})
+
+test('parses an opportunity into catalyst confirmation and invalidation fields', () => {
+  assert.deepEqual(
+    parseOpportunityLine('1. 算力｜催化：英伟达发布财报；确认：板块放量且核心股强于指数；失效：高开低走。'),
+    {
+      rank: 1,
+      direction: '算力',
+      catalyst: '英伟达发布财报',
+      confirmation: '板块放量且核心股强于指数',
+      invalidation: '高开低走。',
+    },
+  )
+})
+
+test('parses opening scenarios into named conditions', () => {
+  assert.deepEqual(parseScenarioLine('转弱｜核心方向高开低走、下跌家数持续扩大。'), {
+    name: '转弱',
+    condition: '核心方向高开低走、下跌家数持续扩大。',
+  })
+})
+
+test('enriches report sections for one shared visual renderer', () => {
+  const report = parsePreMarketReport(content)
+  const opportunitySection = report.sections.find((section) => section.number === '03')
+  const scenarioSection = report.sections.find((section) => section.number === '05')
+
+  assert.equal(opportunitySection.opportunities[0].direction, '算力')
+  assert.equal(opportunitySection.opportunities[0].confirmation, '开盘成交放大')
+  assert.equal(scenarioSection.scenarios[0].name, '偏强')
 })

@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { parseHoldingLine } from '../../utils/preMarketReport'
-import PreMarketHoldingCard from '../PreMarketHoldingCard.vue'
+import PreMarketReportSections from '../PreMarketReportSections.vue'
 import BrandShareFoot from './BrandShareFoot.vue'
 import BrandShareLockup from './BrandShareLockup.vue'
 
@@ -16,24 +15,8 @@ const props = defineProps({
 const rootRef = ref(null)
 const tradeDate = computed(() => props.report.tradeDate || props.document.date || '')
 const judgement = computed(() => props.document.judgement || props.report.marketJudgement || '')
-
-function cleanLine(line) {
-  return String(line || '').replace(/^[-•]\s*/, '').trim()
-}
-
-function lineParts(line) {
-  const text = cleanLine(line)
-  const separatorIndex = text.search(/[：｜|]/)
-  if (separatorIndex < 0) return { lead: '', detail: text }
-  return {
-    lead: text.slice(0, separatorIndex).trim(),
-    detail: text.slice(separatorIndex + 1).trim(),
-  }
-}
-
-function narrativeLines(section) {
-  return section.lines.filter((line) => !parseHoldingLine(line))
-}
+const reportTitle = computed(() => props.document.title.replace(/^今日投资机会[｜|]\s*/, '') || '今日投资机会')
+const shareSections = computed(() => props.document.sections.filter((section) => section.number !== '02'))
 
 function getCaptureElement() {
   return rootRef.value
@@ -53,11 +36,21 @@ defineExpose({ getCaptureElement })
     </header>
 
     <div class="headline-block">
-      <h1>{{ document.title }}</h1>
-      <div v-if="judgement" class="thesis-block">
-        <span>核心观点</span>
-        <p>{{ judgement }}</p>
+      <div class="headline-main">
+        <span>今日策略判断</span>
+        <h1>{{ reportTitle }}</h1>
       </div>
+      <div v-if="report.sentimentScore != null" class="sentiment-block">
+        <span>市场温度</span>
+        <strong>{{ report.sentimentScore }}</strong>
+        <i aria-hidden="true"><b :style="{ width: `${report.sentimentScore}%` }" /></i>
+        <em>{{ report.marketStatus }}</em>
+      </div>
+    </div>
+
+    <div v-if="judgement" class="thesis-block">
+      <span>核心观点</span>
+      <p>{{ judgement }}</p>
     </div>
 
     <section v-if="document.priority || document.risk" class="decision-grid">
@@ -71,32 +64,7 @@ defineExpose({ getCaptureElement })
       </div>
     </section>
 
-    <section
-      v-for="section in document.sections"
-      :key="section.number"
-      class="report-section"
-      :class="`section-${section.number}`"
-    >
-      <header class="section-title">
-        <span>{{ section.number }}</span>
-        <h2>{{ section.title }}</h2>
-      </header>
-
-      <div v-if="section.holdings?.length" class="holding-card-grid">
-        <PreMarketHoldingCard v-for="holding in section.holdings" :key="holding.code" :holding="holding" />
-      </div>
-
-      <div
-        v-if="narrativeLines(section).length"
-        class="section-lines"
-        :class="{ 'scenario-grid': section.number === '05' }"
-      >
-        <p v-for="line in narrativeLines(section)" :key="line">
-          <strong v-if="lineParts(line).lead">{{ lineParts(line).lead }}</strong>
-          <span>{{ lineParts(line).detail }}</span>
-        </p>
-      </div>
-    </section>
+    <PreMarketReportSections :sections="shareSections" compact />
 
     <div class="sheet-meta-foot">
       <span>{{ sourceLabel }} · {{ dataLevelLabel }}</span>
@@ -110,7 +78,7 @@ defineExpose({ getCaptureElement })
 .pre-market-share-sheet {
   width: 760px;
   box-sizing: border-box;
-  padding: 32px 38px 24px;
+  padding: 30px 36px 22px;
   overflow: visible;
   color: #24323c;
   background: #f8fafb;
@@ -149,22 +117,34 @@ defineExpose({ getCaptureElement })
 }
 
 .headline-block {
-  padding: 28px 0 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 28px;
+  padding: 25px 0 20px;
+}
+
+.headline-main > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #3977a6;
+  font-size: 9px;
+  font-weight: 750;
 }
 
 .headline-block h1 {
   margin: 0;
   color: #172733;
-  font-size: 28px;
+  font-size: 27px;
   font-weight: 760;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .thesis-block {
-  margin-top: 20px;
-  padding-left: 15px;
+  margin-bottom: 18px;
+  padding: 11px 13px;
   border-left: 4px solid #b7791f;
+  background: #f4f1ea;
 }
 
 .thesis-block span,
@@ -178,10 +158,58 @@ defineExpose({ getCaptureElement })
 .thesis-block p {
   margin: 6px 0 0;
   color: #2e3d47;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 650;
   line-height: 1.65;
   overflow-wrap: anywhere;
+}
+
+.sentiment-block {
+  padding-left: 15px;
+  border-left: 1px solid #dbe2e6;
+}
+
+.sentiment-block span,
+.sentiment-block strong,
+.sentiment-block em {
+  display: block;
+}
+
+.sentiment-block span {
+  color: #7b8790;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.sentiment-block strong {
+  margin-top: 7px;
+  color: #203746;
+  font-size: 34px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.sentiment-block i {
+  display: block;
+  height: 4px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #dfe6ea;
+}
+
+.sentiment-block b {
+  display: block;
+  height: 100%;
+  background: #3977a6;
+}
+
+.sentiment-block em {
+  margin-top: 6px;
+  color: #3977a6;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 720;
 }
 
 .decision-grid {
@@ -209,139 +237,6 @@ defineExpose({ getCaptureElement })
   overflow-wrap: anywhere;
 }
 
-.report-section {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 22px;
-  padding: 19px 0;
-  border-bottom: 1px solid #dfe4e7;
-  break-inside: avoid;
-}
-
-.section-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.section-title > span {
-  color: #9aa3aa;
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-}
-
-.section-title h2 {
-  margin: 0;
-  color: #273944;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.section-lines {
-  min-width: 0;
-}
-
-.section-lines p {
-  display: grid;
-  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
-  gap: 10px;
-  margin: 0;
-  padding: 6px 0;
-  color: #4d5b65;
-  font-size: 11px;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-}
-
-.section-lines p + p {
-  border-top: 1px solid #edf0f2;
-}
-
-.section-lines strong {
-  color: #263b49;
-  font-weight: 720;
-}
-
-.section-03 .section-lines strong {
-  color: #8b5d18;
-}
-
-.holding-card-grid {
-  grid-column: 2;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.holding-card-grid + .section-lines {
-  grid-column: 2;
-}
-
-.holding-card-grid :deep(.holding-card) {
-  height: 100%;
-  break-inside: avoid;
-}
-
-.holding-card-grid :deep(.holding-head) {
-  padding: 11px 12px 9px;
-}
-
-.holding-card-grid :deep(.holding-identity strong) {
-  font-size: 14px;
-}
-
-.holding-card-grid :deep(.metric) {
-  padding: 7px 8px;
-}
-
-.holding-card-grid :deep(.radar-row) {
-  padding: 9px 12px 0;
-}
-
-.holding-card-grid :deep(.trend-text) {
-  margin: 6px 12px 0;
-  font-size: 9px;
-}
-
-.holding-card-grid :deep(.holding-notes) {
-  margin: 8px 12px 11px;
-}
-
-.holding-card-grid :deep(.holding-notes dd) {
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.scenario-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.scenario-grid p {
-  display: block;
-  padding: 10px;
-  border-top: 3px solid #87929a;
-  background: #fff;
-}
-
-.scenario-grid p:first-child {
-  border-top-color: #2d7a59;
-}
-
-.scenario-grid p:last-child {
-  border-top-color: #b44e45;
-}
-
-.scenario-grid strong,
-.scenario-grid span {
-  display: block;
-}
-
-.scenario-grid span {
-  margin-top: 5px;
-}
-
 .sheet-meta-foot {
   display: flex;
   justify-content: space-between;
@@ -350,5 +245,10 @@ defineExpose({ getCaptureElement })
   color: #8d979e;
   font-size: 9px;
   font-variant-numeric: tabular-nums;
+}
+
+.pre-market-share-sheet :deep(.holding-card) {
+  height: 100%;
+  break-inside: avoid;
 }
 </style>

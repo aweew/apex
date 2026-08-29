@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const source = await readFile(new URL('./PreMarketReportView.vue', import.meta.url), 'utf8')
+const sectionSource = await readFile(new URL('../components/PreMarketReportSections.vue', import.meta.url), 'utf8')
 
 test('pre-market report exposes generation state without listing missing data', () => {
   assert.doesNotMatch(source, /report\.missingData/)
@@ -14,19 +15,24 @@ test('pre-market report exposes generation state without listing missing data', 
 test('pre-market report presents one editorial reading flow instead of a status dashboard', () => {
   assert.match(source, /parsePreMarketReport/)
   assert.match(source, /class="report-thesis"/)
+  assert.match(source, /PreMarketReportSections/)
+  assert.match(source, /class="market-temperature"/)
   assert.match(source, /核心观点/)
   assert.match(source, /最大风险/)
-  assert.match(source, /v-for="section in reportDocument\.sections"/)
+  assert.match(source, /:sections="reportDocument\.sections"/)
+  assert.match(sectionSource, /v-for="section in sections"/)
   assert.doesNotMatch(source, /class="report-status"/)
   assert.doesNotMatch(source, /<details/)
   assert.doesNotMatch(source, /<article>\{\{ report\.content \}\}<\/article>/)
 })
 
 test('pre-market report renders holding reminders as scannable visual cards', () => {
-  assert.match(source, /PreMarketHoldingCard/)
-  assert.match(source, /section\.holdings/)
-  assert.match(source, /v-for="holding in section\.holdings"/)
-  assert.match(source, /class="holding-grid"/)
+  assert.match(sectionSource, /PreMarketHoldingCard/)
+  assert.match(sectionSource, /section\.holdings/)
+  assert.match(sectionSource, /sortedHoldings\(section\)/)
+  assert.match(sectionSource, /class="holding-grid"/)
+  assert.match(sectionSource, /class="holding-action-grid"/)
+  assert.match(sectionSource, /class="portfolio-risk-block"/)
 })
 
 test('pre-market report keeps the full article readable and mobile safe', () => {

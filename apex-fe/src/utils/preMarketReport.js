@@ -27,6 +27,53 @@ function metricValue(text) {
   return Number.isFinite(value) ? value : null
 }
 
+function cleanLine(line) {
+  return String(line || '').replace(/^[-•]\s*/, '').trim()
+}
+
+function labelledValue(parts, label) {
+  const field = parts.find((part) => part.startsWith(label))
+  return field ? field.slice(label.length).trim() : ''
+}
+
+export function parseFactLine(line) {
+  const text = cleanLine(line)
+  const separatorIndex = text.search(/[：｜|]/)
+  if (separatorIndex < 0) {
+    return { label: '', value: text }
+  }
+  return {
+    label: text.slice(0, separatorIndex).trim(),
+    value: text.slice(separatorIndex + 1).trim(),
+  }
+}
+
+export function parseOpportunityLine(line) {
+  const matchedLine = cleanLine(line).match(/^(\d+)[.、]\s*(.+?)[｜|](.+)$/)
+  if (!matchedLine) return null
+
+  const opportunityParts = matchedLine[3]
+    .split(/[；;]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  return {
+    rank: Number.parseInt(matchedLine[1], 10),
+    direction: matchedLine[2].trim(),
+    catalyst: labelledValue(opportunityParts, '催化：'),
+    confirmation: labelledValue(opportunityParts, '确认：'),
+    invalidation: labelledValue(opportunityParts, '失效：'),
+  }
+}
+
+export function parseScenarioLine(line) {
+  const fact = parseFactLine(line)
+  if (!fact.label || !fact.value) return null
+  return {
+    name: fact.label,
+    condition: fact.value,
+  }
+}
+
 export function parseHoldingLine(line) {
   const parts = String(line || '')
     .split(/[｜|]/)
@@ -77,6 +124,11 @@ export function parsePreMarketReport(content) {
         number: sectionMatch[1],
         title: sectionMatch[2].trim(),
         lines: [],
+        facts: [],
+        opportunities: [],
+        holdings: [],
+        portfolioRisks: [],
+        scenarios: [],
       }
       parsedReport.sections.push(currentSection)
       continue
@@ -95,8 +147,9 @@ export function parsePreMarketReport(content) {
     if (currentSection.number === '04') {
       const holding = parseHoldingLine(line)
       if (holding) {
-        currentSection.holdings ||= []
         currentSection.holdings.push(holding)
+      } else if (cleanLine(line).startsWith('组合风险｜')) {
+        currentSection.portfolioRisks.push(parseFactLine(line).value)
       }
     }
     parsedReport.priority ||= fieldValue(line, '优先看：')
@@ -104,6 +157,15 @@ export function parsePreMarketReport(content) {
   }
 
   parsedReport.sections = parsedReport.sections.filter((section) => section.lines.length > 0)
+  for (const section of parsedReport.sections) {
+    if (section.number === '03') {
+      section.opportunities = section.lines.map(parseOpportunityLine).filter(Boolean)
+    } else if (section.number === '05') {
+      section.scenarios = section.lines.map(parseScenarioLine).filter(Boolean)
+    } else if (section.number !== '04') {
+      section.facts = section.lines.map(parseFactLine)
+    }
+  }
   if (!parsedReport.priority) {
     const opportunitySection = parsedReport.sections.find((section) => section.title === '投资机会')
     parsedReport.priority = opportunitySection?.lines[0]

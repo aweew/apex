@@ -4,6 +4,7 @@ import { TrendCharts, WarningFilled } from '@element-plus/icons-vue'
 
 const props = defineProps({
   holding: { type: Object, required: true },
+  compact: { type: Boolean, default: false },
 })
 
 const statusTone = computed(() => {
@@ -24,7 +25,7 @@ const radarDots = computed(() => Array.from({ length: Math.min(props.holding.rad
 </script>
 
 <template>
-  <article class="holding-card" :class="`is-${statusTone}`">
+  <article class="holding-card" :class="[`is-${statusTone}`, { 'is-compact': props.compact }]">
     <header class="holding-head">
       <router-link class="holding-identity" :to="`/stock/${holding.code}`">
         <strong>{{ holding.name }}</strong>
@@ -299,6 +300,72 @@ const radarDots = computed(() => Array.from({ length: Math.min(props.holding.rad
 .action-note dd {
   color: #9e4039;
   font-weight: 650;
+}
+
+.holding-card.is-compact .holding-head {
+  padding: 10px 11px 8px;
+}
+
+.holding-card.is-compact .holding-identity strong {
+  font-size: 13px;
+}
+
+.holding-card.is-compact .holding-identity span,
+.holding-card.is-compact .status-badge,
+.holding-card.is-compact .metric span,
+.holding-card.is-compact .radar-row > span,
+.holding-card.is-compact .radar-row > strong,
+.holding-card.is-compact .holding-notes dt {
+  font-size: 9px;
+}
+
+.holding-card.is-compact .status-badge {
+  min-height: 20px;
+  padding: 2px 6px;
+}
+
+.holding-card.is-compact .metric {
+  padding: 6px 7px;
+}
+
+.holding-card.is-compact .metric strong {
+  font-size: 11px;
+}
+
+.holding-card.is-compact .radar-row {
+  grid-template-columns: auto minmax(58px, 1fr) auto;
+  gap: 7px;
+  padding: 8px 11px 0;
+}
+
+.holding-card.is-compact .radar-dots,
+.holding-card.is-compact .radar-dots i {
+  height: 6px;
+}
+
+.holding-card.is-compact .trend-text {
+  margin: 5px 11px 0;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.holding-card.is-compact .holding-notes {
+  margin: 7px 11px 9px;
+}
+
+.holding-card.is-compact .holding-notes > div {
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 5px;
+  padding-top: 6px;
+}
+
+.holding-card.is-compact .holding-notes > div + div {
+  margin-top: 6px;
+}
+
+.holding-card.is-compact .holding-notes dd {
+  font-size: 9px;
+  line-height: 1.45;
 }
 
 @media (max-width: 420px) {
