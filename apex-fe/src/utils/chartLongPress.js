@@ -1,3 +1,15 @@
+export function bindChartWheelScroll(element) {
+  const onWheel = (event) => {
+    if (!event.ctrlKey) event.stopImmediatePropagation()
+  }
+
+  element.addEventListener('wheel', onWheel, { capture: true, passive: true })
+
+  return () => {
+    element.removeEventListener('wheel', onWheel, { capture: true })
+  }
+}
+
 export function bindLongPress({
   element,
   onActivate,

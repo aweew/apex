@@ -19,8 +19,10 @@ test('horizontal chart gestures stay inside the chart while vertical page scroll
   assert.doesNotMatch(stockSource, /touch-action:\s*manipulation;/)
   assert.match(
     stockSource,
-    /type:\s*'inside',[\s\S]*?zoomOnMouseWheel:\s*!isMobileChart\.value,[\s\S]*?moveOnMouseWheel:\s*false,/,
+    /type:\s*'inside',[\s\S]*?zoomOnMouseWheel:\s*'ctrl',[\s\S]*?moveOnMouseWheel:\s*false,/,
   )
+  assert.match(stockSource, /bindChartWheelScroll\(chart\.getDom\(\)\)/)
+  assert.match(stockSource, /function unbindChartWheel\(\)/)
 })
 
 test('stock indicators start collapsed instead of restoring an expanded state', () => {
@@ -107,7 +109,24 @@ test('K-line period controls share the desktop chart header with the compact leg
   )
   assert.match(
     stockSource,
+    /<el-checkbox[\s\S]*?v-if="showTd9"[\s\S]*?:model-value="tdShowMode === 'key'"[\s\S]*?@change="tdShowMode = \$event \? 'key' : 'all'"[\s\S]*?>仅看 8\/9<\/el-checkbox>/s,
+  )
+  assert.doesNotMatch(stockSource, /class="chart-td-mode"/)
+  assert.match(
+    stockSource,
+    /\.chart-td-toggle i\s*\{[^}]*display:\s*inline-grid;[^}]*place-items:\s*center;[^}]*line-height:\s*1;/s,
+  )
+  assert.match(
+    stockSource,
+    /\.chart-td-filter\s*\{[^}]*height:\s*26px;[^}]*margin-left:\s*0;/s,
+  )
+  assert.match(
+    stockSource,
     /\.chart-primary-controls\s*\{[^}]*width:\s*100%;[^}]*padding:\s*6px 10px;[^}]*border:\s*1px solid var\(--line\);[^}]*background:\s*#f8fafc;/s,
+  )
+  assert.match(
+    stockSource,
+    /\.period-mode :deep\(\.el-radio-button__inner\)\s*\{[^}]*height:\s*26px;[^}]*min-height:\s*26px;[^}]*padding:\s*0 10px;[^}]*font-size:\s*11px;/s,
   )
   assert.doesNotMatch(stockSource, /class="chart-signal-summary"/)
   assert.doesNotMatch(stockSource, /const periodMeta = computed/)
@@ -117,15 +136,20 @@ test('K-line period controls share the desktop chart header with the compact leg
     stockSource,
     /@media \(max-width: 820px\)[\s\S]*?\.chart-canvas-head \.period-mode--chart\s*\{[^}]*grid-row:\s*2;[^}]*grid-column:\s*1 \/ -1;/s,
   )
-})
-
-test('K-line status shows the actual daily data date without leaking an empty intraday timestamp', () => {
-  assert.match(stockSource, /const lastBarDate = ref\(''\)/)
   assert.match(
     stockSource,
-    /lastBarDate\.value = data\.lastBarDate \|\| data\.bars\?\.at\(-1\)\?\.tradeDate \|\| ''/,
+    /@media \(max-width: 820px\)[\s\S]*?\.period-mode :deep\(\.el-radio-button__inner\)\s*\{[^}]*height:\s*36px;[^}]*min-height:\s*36px;[^}]*font-size:\s*13px;/s,
   )
-  assert.match(stockSource, /return date \? `数据截至 \$\{date\}` : ''/)
+})
+
+test('K-line status shows the quote timestamp to seconds without a redundant prefix', () => {
+  assert.doesNotMatch(stockSource, /const lastBarDate = ref\(''\)/)
+  assert.doesNotMatch(stockSource, /lastBarDate\.value\s*=/)
+  assert.match(
+    stockSource,
+    /return String\(basic\.value\?\.quoteTime \|\| ''\)\.replace\('T', ' '\)\.slice\(0, 19\)/,
+  )
+  assert.doesNotMatch(stockSource, /数据截至/)
   assert.match(stockSource, /if \(!isIntraday\.value \|\| !intraday\.value\) return ''/)
   assert.match(
     stockSource,

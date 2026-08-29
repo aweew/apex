@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { bindLongPress, resolveMobileTooltipPosition } from './chartLongPress.js'
+import { bindChartWheelScroll, bindLongPress, resolveMobileTooltipPosition } from './chartLongPress.js'
 
 function pointerEvent(type, x, y) {
   const event = new Event(type, { cancelable: true })
@@ -16,6 +16,46 @@ function pointerEvent(type, x, y) {
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
+
+test('ordinary chart wheel keeps page scrolling and does not reach ECharts', () => {
+  let wheelListener
+  const element = {
+    addEventListener(type, listener) {
+      if (type === 'wheel') wheelListener = listener
+    },
+    removeEventListener() {},
+  }
+  const cleanup = bindChartWheelScroll(element)
+  let stopped = 0
+  let prevented = 0
+
+  wheelListener({
+    ctrlKey: false,
+    stopImmediatePropagation: () => stopped++,
+    preventDefault: () => prevented++,
+  })
+
+  assert.equal(stopped, 1)
+  assert.equal(prevented, 0)
+  cleanup()
+})
+
+test('control wheel still reaches ECharts for chart zooming', () => {
+  let wheelListener
+  const element = {
+    addEventListener(type, listener) {
+      if (type === 'wheel') wheelListener = listener
+    },
+    removeEventListener() {},
+  }
+  const cleanup = bindChartWheelScroll(element)
+  let stopped = 0
+
+  wheelListener({ ctrlKey: true, stopImmediatePropagation: () => stopped++ })
+
+  assert.equal(stopped, 0)
+  cleanup()
+})
 
 test('quick tap does not activate the tooltip', async () => {
   const element = new EventTarget()

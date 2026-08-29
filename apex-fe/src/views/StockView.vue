@@ -35,7 +35,7 @@ import {
 import { buildTradeMarkerSeries } from '../utils/tradeMarkers'
 import { analyzePriceStructure, buildPriceLevelMarkLines } from '../utils/priceStructure'
 import { stockSyncSummary, synchronizeStockData } from '../utils/stockSync'
-import { bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
+import { bindChartWheelScroll, bindLongPress, resolveMobileTooltipPosition } from '../utils/chartLongPress'
 import { staleDataTime } from '../utils/dataFreshness.js'
 import StockAnalysisPanel from '../components/StockAnalysisPanel.vue'
 import ChipDistributionPanel from '../components/ChipDistributionPanel.vue'
@@ -58,7 +58,6 @@ const code = ref(String(route.params.code || route.query.code || '600519'))
 const basic = ref(null)
 const note = ref('')
 const bars = ref([])
-const lastBarDate = ref('')
 const tradeRecords = ref([])
 const needSyncBars = ref(false)
 const barCount = ref(0)
@@ -132,6 +131,7 @@ let intradayPollTimer = null
 let chartPayload = null
 let compactPriceLabelsMode = null
 let chartPressCleanup = null
+let chartWheelCleanup = null
 
 const isIntraday = computed(() => klinePeriod.value === 'intraday')
 const intradayDataTime = computed(() => {
@@ -162,8 +162,7 @@ const priceStructure = computed(() =>
 const latestDailyBar = computed(() => bars.value.at(-1) || null)
 const dailyDataTime = computed(() => {
   if (isIntraday.value) return ''
-  const date = String(lastBarDate.value || latestDailyBar.value?.tradeDate || '').slice(0, 10)
-  return date ? `数据截至 ${date}` : ''
+  return String(basic.value?.quoteTime || '').replace('T', ' ').slice(0, 19)
 })
 const quoteDirectionClass = computed(() => {
   if (basic.value?.pctChg == null) return ''
@@ -227,6 +226,13 @@ function unbindChartPress() {
   if (chartPressCleanup) {
     chartPressCleanup()
     chartPressCleanup = null
+  }
+}
+
+function unbindChartWheel() {
+  if (chartWheelCleanup) {
+    chartWheelCleanup()
+    chartWheelCleanup = null
   }
 }
 
@@ -507,6 +513,8 @@ async function ensureChartInstance() {
     chart.off('legendselectchanged')
     chart.clear()
   }
+  unbindChartWheel()
+  if (!isIntraday.value) chartWheelCleanup = bindChartWheelScroll(chart.getDom())
   return true
 }
 
@@ -844,6 +852,7 @@ function fmtVol(v) {
 
 function disposeChart() {
   unbindChartPress()
+  unbindChartWheel()
   if (chart) {
     chart.off('datazoom')
     chart.off('legendselectchanged')
@@ -1415,7 +1424,7 @@ async function renderChart(list) {
         start: zoomStart,
         end: zoomEnd,
         minValueSpan: Math.min(MIN_VISIBLE_BARS, list.length),
-        zoomOnMouseWheel: !isMobileChart.value,
+        zoomOnMouseWheel: 'ctrl',
         moveOnMouseWheel: false,
       },
       {
@@ -1753,7 +1762,6 @@ function applyDetail(data) {
   basic.value = data.basic
   note.value = data.needSyncBars ? data.note || '' : ''
   bars.value = data.bars || []
-  lastBarDate.value = data.lastBarDate || data.bars?.at(-1)?.tradeDate || ''
   needSyncBars.value = !!data.needSyncBars
   barCount.value = data.barCount ?? bars.value.length
   rs20.value = data.rs20VsHs300
@@ -2184,16 +2192,14 @@ function dash(v) {
                 <i aria-hidden="true">9</i>
                 <span>神奇九转</span>
               </button>
-              <el-radio-group
+              <el-checkbox
                 v-if="showTd9"
-                v-model="tdShowMode"
                 size="small"
-                class="chart-td-mode"
+                class="chart-td-filter"
+                :model-value="tdShowMode === 'key'"
                 aria-label="神奇九转显示范围"
-              >
-                <el-radio-button value="key">仅8/9</el-radio-button>
-                <el-radio-button value="all">全部</el-radio-button>
-              </el-radio-group>
+                @change="tdShowMode = $event ? 'key' : 'all'"
+              >仅看 8/9</el-checkbox>
             </div>
             <div v-if="dailyDataTime" class="chart-data-status">
               <span class="daily-data-time">{{ dailyDataTime }}</span>
@@ -3320,11 +3326,13 @@ function dash(v) {
 }
 
 .period-mode :deep(.el-radio-button__inner) {
-  min-height: 30px;
+  height: 26px;
+  min-height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 14px;
+  padding: 0 10px;
+  font-size: 11px;
 }
 
 .chart-canvas-head {
@@ -3398,15 +3406,29 @@ function dash(v) {
   font-size: 10px;
   font-style: normal;
   font-weight: 700;
+  line-height: 1;
 }
 
-.chart-td-mode :deep(.el-radio-button__inner) {
+.chart-td-filter {
   display: inline-flex;
   height: 26px;
-  min-height: 26px;
   align-items: center;
-  padding: 0 9px;
+  flex: 0 0 auto;
+  margin-left: 0;
+  --el-checkbox-checked-bg-color: #df6262;
+  --el-checkbox-checked-input-border-color: #df6262;
+  --el-checkbox-input-border-color-hover: #df6262;
+}
+
+.chart-td-filter :deep(.el-checkbox__label) {
+  padding-left: 5px;
+  color: #697180;
   font-size: 11px;
+  line-height: 20px;
+}
+
+.chart-td-filter.is-checked :deep(.el-checkbox__label) {
+  color: var(--ink);
 }
 
 .chart-zoom-controls {
@@ -3858,7 +3880,7 @@ function dash(v) {
     gap: 10px;
   }
 
-  .chart-td-mode {
+  .chart-td-filter {
     display: none;
   }
 
