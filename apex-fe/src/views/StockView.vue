@@ -1976,8 +1976,10 @@ function dash(v) {
             :name="basic?.name || '股票详情'"
             :code="basic?.code || code"
             prominent
+            :show-code="false"
           />
         </h1>
+        <span class="stock-heading-code">{{ basic?.code || code }}</span>
         <p class="stock-note">{{ note || '今日雷达 · 个股消息 · 估值 · 行情' }}</p>
       </div>
       <div class="actions">
@@ -2640,6 +2642,56 @@ function dash(v) {
 </template>
 
 <style scoped>
+.header .stock-heading {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  grid-template-areas:
+    'title module'
+    'code code'
+    'note note';
+  align-items: center;
+  column-gap: 8px;
+  min-width: 0;
+}
+
+.header .stock-heading > h1 {
+  grid-area: title;
+  min-width: 0;
+}
+
+.stock-heading :deep(.stock-identity.is-prominent .stock-identity__name) {
+  font-size: var(--page-title-size);
+  font-weight: 650;
+  line-height: 1.15;
+}
+
+.header .stock-heading > .eyebrow {
+  grid-area: module;
+  align-self: center;
+  margin: 0 !important;
+  color: var(--accent);
+  font-size: 0.72em;
+  line-height: 1;
+}
+
+.header .stock-heading > .stock-heading-code {
+  grid-area: code;
+}
+
+.header .stock-heading > .stock-note {
+  grid-area: note;
+}
+
+.stock-heading-code {
+  display: block;
+  margin-top: 3px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+
 .header .actions {
   display: grid;
   justify-items: end;
@@ -2979,9 +3031,9 @@ function dash(v) {
 }
 
 .quote-primary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 12px;
   min-width: 0;
 }
@@ -2990,12 +3042,16 @@ function dash(v) {
   min-width: 0;
   font-size: 34px;
   font-weight: 760;
-  line-height: 1;
+  line-height: 1.05;
 }
 
 .quote-primary > div {
   display: grid;
+  align-content: start;
+  justify-items: end;
   flex: 0 0 auto;
+  min-width: 72px;
+  padding-top: 3px;
   gap: 3px;
   text-align: right;
   font-size: 13px;

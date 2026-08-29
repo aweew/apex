@@ -26,6 +26,11 @@ test('market overview combines quote snapshot and the primary chart', () => {
   assert.match(source, /if \(basic\.value\?\.pctChg == null\) return ''/)
 })
 
+test('quote primary values share a stable top-aligned two-column layout', () => {
+  assert.match(source, /\.quote-primary\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;[^}]*align-items:\s*start;/s)
+  assert.match(source, /\.quote-primary > div\s*\{[^}]*align-content:\s*start;[^}]*justify-items:\s*end;[^}]*min-width:\s*72px;/s)
+})
+
 test('mobile first-screen market layout stays compact and overflow-safe', () => {
   assert.match(source, /\.market-overview\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(168px, 0\.24fr\) minmax\(0, 1fr\);/s)
   assert.match(source, /@media \(max-width: 820px\)[\s\S]*?\.market-overview\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s)

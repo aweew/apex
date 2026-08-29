@@ -17,6 +17,15 @@ test('stock detail opens the decision radar as the first-level default view', ()
   assert.match(source, /今日雷达 · 个股消息 · 估值 · 行情/)
 })
 
+test('stock detail keeps the market label aligned inside the stock identity title', () => {
+  assert.match(source, /class="stock-heading"[\s\S]*?<p class="eyebrow">Stock<\/p>[\s\S]*?<StockIdentity[\s\S]*?:show-code="false"/)
+  assert.match(source, /class="stock-heading-code">\{\{ basic\?\.code \|\| code \}\}<\/span>/)
+  assert.match(source, /\.header \.stock-heading\s*\{[^}]*display:\s*grid;[^}]*grid-template-areas:/s)
+  assert.match(source, /\.header \.stock-heading\s*\{[^}]*align-items:\s*center;/s)
+  assert.match(source, /\.header \.stock-heading > \.eyebrow\s*\{[^}]*align-self:\s*center;[^}]*color:\s*var\(--accent\);/s)
+  assert.doesNotMatch(source, /\.header \.stock-heading > h1::after\s*\{[^}]*content:\s*none/s)
+})
+
 test('stock detail keeps only the compact high-value action toolbar', () => {
   const actions = source.slice(source.indexOf('<div class="actions">'), source.indexOf('</header>'))
 
