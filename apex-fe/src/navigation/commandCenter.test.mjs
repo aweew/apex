@@ -48,6 +48,19 @@ test('command center supports keyboard selection instead of only opening the fir
   assert.match(appSource, /:aria-selected="index === commandSelection"/)
 })
 
+test('stock search closes when clicking outside the result panel and exposes its shortcut', () => {
+  assert.match(appSource, /function onSearchLayerClick\(event\)/)
+  assert.match(appSource, /class="search-layer"\s*@click="onSearchLayerClick"/)
+  assert.match(appSource, /document\.addEventListener\('pointerdown', onSearchOutsidePointerDown, true\)/)
+  assert.match(appSource, /target\.closest\('\.desktop-stock-search'\)/)
+  assert.match(appSource, /const isMacPlatform = \/Mac\|iPhone\|iPad\|iPod\/i\.test\(/)
+  assert.match(appSource, /const shortcutModifierLabel = isMacPlatform \? '⌘' : 'Ctrl'/)
+  assert.match(appSource, /const searchShortcutLabel = `\$\{shortcutModifierLabel\} K`/)
+  assert.match(appSource, /class="desktop-stock-search-shortcut"[^>]*>\{\{ searchShortcutLabel \}\}<\/kbd>/)
+  assert.match(appSource, /:title="`名词百科 \$\{shortcutModifierLabel\}\+\/`"/)
+  assert.match(appSource, /\.desktop-stock-search-shortcut\s*\{[\s\S]*?white-space:\s*nowrap;/)
+})
+
 test('command center exposes stable combobox semantics and announces dynamic results', () => {
   assert.match(appSource, /role="combobox"/)
   assert.match(appSource, /aria-controls="command-results"/)
@@ -61,7 +74,7 @@ test('command center exposes stable combobox semantics and announces dynamic res
 test('command center keeps shortcut hints visible outside its scrollable result area', () => {
   assert.match(
     appSource,
-    /<\/div>\s*<footer class="search-keys" aria-label="快捷键提示">上下键选择 · Enter 打开 · Ctrl\+\/ 名词百科<\/footer>/,
+    /<\/div>\s*<footer class="search-keys" aria-label="快捷键提示">\s*上下键选择 · Enter 打开 · \{\{ shortcutModifierLabel \}\}\+\/ 名词百科\s*<\/footer>/,
   )
   assert.match(
     appSource,

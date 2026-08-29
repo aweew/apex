@@ -71,6 +71,13 @@ const mobileModuleTitle = ref('')
 const mobileBackPath = ref('')
 const mobileBackLabel = ref('')
 const currentUser = ref(getCurrentUser())
+const isMacPlatform = /Mac|iPhone|iPad|iPod/i.test([
+  navigator.userAgentData?.platform,
+  navigator.platform,
+  navigator.userAgent,
+].filter(Boolean).join(' '))
+const shortcutModifierLabel = isMacPlatform ? '⌘' : 'Ctrl'
+const searchShortcutLabel = `${shortcutModifierLabel} K`
 const isAdmin = computed(() => currentUser.value?.role === 'ADMIN')
 const isFullscreen = ref(Boolean(document.fullscreenElement))
 const fullscreenPending = ref(false)
@@ -457,6 +464,7 @@ async function openSearch() {
   setMobileMenu(false)
   searchReturnFocus = document.activeElement
   searchOpen.value = true
+  document.addEventListener('pointerdown', onSearchOutsidePointerDown, true)
   commandSelection.value = 0
   loadRecentStocks()
   await nextTick()
@@ -466,6 +474,7 @@ async function openSearch() {
 
 function closeSearch(restoreFocus = true) {
   clearTimeout(debounceTimer)
+  document.removeEventListener('pointerdown', onSearchOutsidePointerDown, true)
   searchSeq += 1
   searchOpen.value = false
   query.value = ''
@@ -473,6 +482,20 @@ function closeSearch(restoreFocus = true) {
   commandSelection.value = 0
   loading.value = false
   if (restoreFocus) nextTick(() => searchReturnFocus?.focus?.())
+}
+
+function onSearchLayerClick(event) {
+  const target = event.target
+  if (!(target instanceof Element) || !target.closest('.search-panel')) closeSearch(false)
+}
+
+function onSearchOutsidePointerDown(event) {
+  const target = event.target
+  if (
+    target instanceof Element
+    && (target.closest('.search-panel') || target.closest('.desktop-stock-search'))
+  ) return
+  closeSearch(false)
 }
 
 function onQueryInput() {
@@ -732,6 +755,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', closeMobileMenuOnDesktop)
   window.removeEventListener('resize', scheduleMobileModuleTitle)
   window.removeEventListener('scroll', scheduleMobileModuleTitle)
+  document.removeEventListener('pointerdown', onSearchOutsidePointerDown, true)
   document.removeEventListener('fullscreenchange', syncFullscreenState)
   document.documentElement.classList.remove('mobile-menu-open')
   document.documentElement.classList.remove('search-open')
@@ -934,12 +958,13 @@ onBeforeUnmount(() => {
             @keydown.enter.prevent="runSelectedCommand"
             @keydown.esc.prevent="closeSearch"
           />
+          <kbd class="desktop-stock-search-shortcut" aria-hidden="true">{{ searchShortcutLabel }}</kbd>
         </label>
         <button
           type="button"
           class="desktop-icon-btn glossary-trigger"
           aria-label="打开名词百科"
-          title="名词百科 Ctrl+/"
+          :title="`名词百科 ${shortcutModifierLabel}+/`"
           @click="openGlossary()"
         >
           <Reading aria-hidden="true" />
@@ -1074,7 +1099,7 @@ onBeforeUnmount(() => {
     <div
       v-if="!isPublicRoute && searchOpen"
       class="search-layer"
-      @click.self="closeSearch"
+      @click="onSearchLayerClick"
     >
       <div class="search-panel" role="dialog" aria-label="快捷入口" :aria-modal="isMobileViewport ? 'true' : undefined">
         <div v-if="isMobileViewport" class="search-head">
@@ -1165,7 +1190,9 @@ onBeforeUnmount(() => {
             </section>
           </template>
         </div>
-        <footer class="search-keys" aria-label="快捷键提示">上下键选择 · Enter 打开 · Ctrl+/ 名词百科</footer>
+        <footer class="search-keys" aria-label="快捷键提示">
+          上下键选择 · Enter 打开 · {{ shortcutModifierLabel }}+/ 名词百科
+        </footer>
       </div>
     </div>
 
@@ -1713,6 +1740,19 @@ onBeforeUnmount(() => {
 
 .desktop-stock-search > input::-webkit-search-cancel-button {
   display: none;
+}
+
+.desktop-stock-search-shortcut {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 3px;
+  background: #f7f9fc;
+  color: var(--slate);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .desktop-icon-btn {
