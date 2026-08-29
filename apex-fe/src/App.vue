@@ -28,6 +28,8 @@ import {
   PRIMARY_SHORTCUTS,
 } from './navigation/menu.js'
 import { getCurrentUser, logout } from './api/auth'
+import { recordPageView } from './api/usage.js'
+import { resolveUsageModule } from './utils/userUsage.js'
 import {
   chinaMarketDate,
   clearDataFreshness,
@@ -57,6 +59,7 @@ const loading = ref(false)
 const results = ref([])
 const commandSelection = ref(0)
 const inputRef = ref(null)
+const desktopStockInputRef = ref(null)
 const glossaryRef = ref(null)
 const shellRef = ref(null)
 const mobileMenuRef = ref(null)
@@ -68,6 +71,7 @@ const mobileModuleTitle = ref('')
 const mobileBackPath = ref('')
 const mobileBackLabel = ref('')
 const currentUser = ref(getCurrentUser())
+const isAdmin = computed(() => currentUser.value?.role === 'ADMIN')
 const isFullscreen = ref(Boolean(document.fullscreenElement))
 const fullscreenPending = ref(false)
 const fullscreenSupported = Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen)
@@ -106,12 +110,14 @@ const COMMAND_ROUTE_ITEMS = [
   { to: '/sync', label: '同步中心', detail: '更新行情与决策数据', keywords: '刷新 数据 任务' },
   { to: '/backtest', label: '回测', detail: '验证策略表现', keywords: '策略 历史' },
   { to: '/config', label: '参数设置', detail: '管理系统参数', keywords: '设置 配置' },
+  { to: '/usage', label: '用户使用情况', detail: '成员活跃与功能访问统计', keywords: '用户 活跃 统计 管理', adminOnly: true },
 ]
 const filteredRouteCommands = computed(() => {
   const keyword = String(query.value || '').trim().toLowerCase()
-  if (!keyword) return COMMAND_ROUTE_ITEMS.slice(0, 6).map((item) => ({ ...item, kind: 'route' }))
   return COMMAND_ROUTE_ITEMS
+    .filter((item) => !(item.adminOnly && !isAdmin.value))
     .filter((item) => `${item.label} ${item.detail} ${item.keywords}`.toLowerCase().includes(keyword))
+    .slice(0, keyword ? COMMAND_ROUTE_ITEMS.length : 6)
     .map((item) => ({ ...item, kind: 'route' }))
 })
 const stockCommandResults = computed(() => {
@@ -454,7 +460,8 @@ async function openSearch() {
   commandSelection.value = 0
   loadRecentStocks()
   await nextTick()
-  inputRef.value?.focus?.()
+  if (isMobileViewport.value) inputRef.value?.focus?.()
+  else desktopStockInputRef.value?.focus?.()
 }
 
 function closeSearch(restoreFocus = true) {
@@ -604,6 +611,7 @@ watch(
   () => {
     setMobileMenu(false)
     settingsOpen.value = false
+    if (searchOpen.value) closeSearch(false)
     clearDataFreshness()
     void syncTradingCalendar()
     nextTick(() => {
@@ -648,6 +656,18 @@ watch(
     }, 180)
   },
   { immediate: true, flush: 'sync' },
+)
+
+watch(
+  () => route.fullPath,
+  () => {
+    currentUser.value = getCurrentUser()
+    if (isPublicRoute.value || !currentUser.value) return
+    const moduleCode = resolveUsageModule(route)
+    if (!moduleCode) return
+    void recordPageView(moduleCode).catch(() => undefined)
+  },
+  { immediate: true },
 )
 
 watch(
@@ -735,8 +755,8 @@ onBeforeUnmount(() => {
       class="nav"
       :class="{ 'nav--opaque': route.path.startsWith('/portfolio'), 'nav--has-back': mobileBackLabel }"
       aria-label="主导航"
-      :inert="searchOpen || settingsOpen"
-      :aria-hidden="searchOpen || settingsOpen ? 'true' : undefined"
+      :inert="settingsOpen || (searchOpen && isMobileViewport)"
+      :aria-hidden="settingsOpen || (searchOpen && isMobileViewport) ? 'true' : undefined"
     >
       <RouterLink
         class="brand-block"
@@ -891,19 +911,38 @@ onBeforeUnmount(() => {
           <i class="dot" />
           {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
         </span>
+        <label class="desktop-stock-search" title="支持代码、名称或拼音缩写">
+          <Search aria-hidden="true" />
+          <input
+            ref="desktopStockInputRef"
+            v-model="query"
+            type="search"
+            aria-label="个股搜索"
+            placeholder="搜索个股"
+            autocomplete="off"
+            autocapitalize="none"
+            inputmode="search"
+            :spellcheck="false"
+            aria-controls="command-results"
+            :aria-expanded="searchOpen"
+            aria-autocomplete="list"
+            :aria-activedescendant="commandResults[commandSelection] ? `command-result-${commandSelection}` : undefined"
+            @focus="openSearch"
+            @input="onQueryInput"
+            @keydown.down.prevent="moveCommandSelection(1)"
+            @keydown.up.prevent="moveCommandSelection(-1)"
+            @keydown.enter.prevent="runSelectedCommand"
+            @keydown.esc.prevent="closeSearch"
+          />
+        </label>
         <button
           type="button"
-          class="search-btn stock-search-trigger"
-          aria-label="个股搜索"
-          title="个股搜索 Ctrl+K"
-          @click="openSearch"
+          class="desktop-icon-btn glossary-trigger"
+          aria-label="打开名词百科"
+          title="名词百科 Ctrl+/"
+          @click="openGlossary()"
         >
-          <Search aria-hidden="true" />
-          <span>个股搜索</span>
-        </button>
-        <button type="button" class="search-btn" title="名词百科 Ctrl+/" @click="openGlossary()">
           <Reading aria-hidden="true" />
-          <span>百科</span>
         </button>
         <button
           type="button"
@@ -925,12 +964,22 @@ onBeforeUnmount(() => {
           <Setting aria-hidden="true" />
         </button>
         <el-dropdown v-if="currentUser" trigger="click">
-          <button type="button" class="search-btn user-menu" :title="currentUser.phone">
-            <span>{{ currentUser.nickName || currentUser.phone }}</span>
+          <button
+            type="button"
+            class="desktop-icon-btn user-menu"
+            :aria-label="`打开账户菜单：${currentUser.nickName || currentUser.phone}`"
+            :title="currentUser.nickName || currentUser.phone"
+          >
+            <User aria-hidden="true" />
           </button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item disabled>{{ currentUser.phone }}</el-dropdown-item>
+              <el-dropdown-item disabled class="user-dropdown-profile">
+                <span>
+                  <strong>{{ currentUser.nickName || '当前用户' }}</strong>
+                  <small>{{ currentUser.phone }}</small>
+                </span>
+              </el-dropdown-item>
               <el-dropdown-item divided @click="logoutCurrentUser">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -999,6 +1048,11 @@ onBeforeUnmount(() => {
             <span>同步中心</span>
             <ArrowRight aria-hidden="true" />
           </RouterLink>
+          <RouterLink v-if="isAdmin" class="settings-link" to="/usage" @click="settingsOpen = false">
+            <Histogram aria-hidden="true" />
+            <span>用户使用情况</span>
+            <ArrowRight aria-hidden="true" />
+          </RouterLink>
         </section>
 
         <section class="settings-section" aria-labelledby="local-settings-title">
@@ -1022,8 +1076,8 @@ onBeforeUnmount(() => {
       class="search-layer"
       @click.self="closeSearch"
     >
-      <div class="search-panel" role="dialog" aria-label="快捷入口" aria-modal="true">
-        <div class="search-head">
+      <div class="search-panel" role="dialog" aria-label="快捷入口" :aria-modal="isMobileViewport ? 'true' : undefined">
+        <div v-if="isMobileViewport" class="search-head">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="7" />
             <path d="M20 20l-3.2-3.2" stroke-linecap="round" />
@@ -1413,7 +1467,7 @@ onBeforeUnmount(() => {
 .nav-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 0 0 auto;
   margin-left: auto;
 }
@@ -1605,6 +1659,62 @@ onBeforeUnmount(() => {
   color: var(--ink);
 }
 
+.desktop-stock-search {
+  display: flex;
+  width: 180px;
+  height: 30px;
+  flex: 0 1 180px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--muted);
+  cursor: text;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.desktop-stock-search:hover {
+  border-color: var(--line-strong);
+  background: #fbfcfe;
+}
+
+.desktop-stock-search:focus-within {
+  border-color: rgba(0, 113, 227, 0.5);
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.1);
+}
+
+.desktop-stock-search > svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.desktop-stock-search > input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.desktop-stock-search > input::placeholder {
+  color: var(--slate);
+  opacity: 1;
+}
+
+.desktop-stock-search > input::-webkit-search-cancel-button {
+  display: none;
+}
+
 .desktop-icon-btn {
   display: inline-grid;
   width: 30px;
@@ -1637,6 +1747,36 @@ onBeforeUnmount(() => {
 .desktop-icon-btn svg {
   width: 17px;
   height: 17px;
+}
+
+:global(.user-dropdown-profile) {
+  min-width: 156px;
+  height: auto !important;
+  padding-top: 9px !important;
+  padding-bottom: 9px !important;
+}
+
+:global(.user-dropdown-profile > span) {
+  display: grid;
+  gap: 2px;
+}
+
+:global(.user-dropdown-profile strong),
+:global(.user-dropdown-profile small) {
+  overflow: hidden;
+  max-width: 180px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.user-dropdown-profile strong) {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+:global(.user-dropdown-profile small) {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 :global(.app-settings-drawer .el-drawer__header) {
@@ -1781,25 +1921,24 @@ onBeforeUnmount(() => {
 
 .search-layer {
   position: fixed;
-  inset: 0;
-  z-index: 200;
+  inset: 56px 0 0;
+  z-index: 99;
   display: flex;
-  justify-content: center;
-  padding: 14vh 16px 0;
-  background: rgba(15, 23, 42, 0.42);
-  backdrop-filter: blur(6px) saturate(110%);
-  -webkit-backdrop-filter: blur(6px) saturate(110%);
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 8px 188px 0 16px;
+  background: transparent;
 }
 
 .search-panel {
   width: min(440px, 100%);
-  max-height: min(520px, 70vh);
+  max-height: min(520px, calc(100vh - 72px));
   display: flex;
   flex-direction: column;
   background: #fff;
   border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 12px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.16);
   overflow: hidden;
 }
 
@@ -1994,6 +2133,15 @@ onBeforeUnmount(() => {
     width: 30px;
     padding: 0;
     justify-content: center;
+  }
+
+  .desktop-stock-search {
+    width: 132px;
+    flex-basis: 132px;
+  }
+
+  .search-layer {
+    padding-right: 132px;
   }
 }
 

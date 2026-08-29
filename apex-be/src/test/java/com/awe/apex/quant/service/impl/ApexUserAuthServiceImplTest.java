@@ -11,6 +11,7 @@ import com.awe.apex.manager.mapper.UserMapper;
 import com.awe.apex.quant.domain.dto.ApexLoginReq;
 import com.awe.apex.quant.domain.entity.ApexUserProfile;
 import com.awe.apex.quant.mapper.ApexUserProfileMapper;
+import com.awe.apex.quant.service.UserUsageService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -36,6 +37,7 @@ class ApexUserAuthServiceImplTest {
 
     private final UserMapper userMapper = mock(UserMapper.class);
     private final ApexUserProfileMapper userProfileMapper = mock(ApexUserProfileMapper.class);
+    private final UserUsageService userUsageService = mock(UserUsageService.class);
     private final ApexUserAuthServiceImpl service = new ApexUserAuthServiceImpl();
 
     @BeforeAll
@@ -46,9 +48,10 @@ class ApexUserAuthServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        Mockito.reset(userMapper, userProfileMapper);
+        Mockito.reset(userMapper, userProfileMapper, userUsageService);
         ReflectionTestUtils.setField(service, "userMapper", userMapper);
         ReflectionTestUtils.setField(service, "userProfileMapper", userProfileMapper);
+        ReflectionTestUtils.setField(service, "userUsageService", userUsageService);
     }
 
     @Test
@@ -110,6 +113,7 @@ class ApexUserAuthServiceImplTest {
 
         verify(session).set(Constants.PHONE, phone);
         verify(session).set(Constants.NICK_NAME, nickName);
+        verify(userUsageService).recordLogin(USER_ID);
     }
 
     @Test

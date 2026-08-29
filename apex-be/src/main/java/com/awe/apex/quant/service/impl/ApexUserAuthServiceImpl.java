@@ -24,10 +24,12 @@ import com.awe.apex.quant.mapper.ApexUserProfileMapper;
 import com.awe.apex.quant.mapper.PaperAccountMapper;
 import com.awe.apex.quant.mapper.PortfolioMapper;
 import com.awe.apex.quant.service.ApexUserAuthService;
+import com.awe.apex.quant.service.UserUsageService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +45,7 @@ import java.util.Objects;
  * Apex 用户认证与资产归属服务实现
  */
 @Service
+@Slf4j
 public class ApexUserAuthServiceImpl implements ApexUserAuthService {
 
     private static final String ROLE_ADMIN = "ADMIN";
@@ -62,6 +65,9 @@ public class ApexUserAuthServiceImpl implements ApexUserAuthService {
 
     @Resource
     private PortfolioMapper portfolioMapper;
+
+    @Resource
+    private UserUsageService userUsageService;
 
     /**
      * 用户登录
@@ -85,6 +91,11 @@ public class ApexUserAuthServiceImpl implements ApexUserAuthService {
         StpUtil.login(user.getId());
         StpUtil.getSession().set(Constants.PHONE, user.getPhone());
         StpUtil.getSession().set(Constants.NICK_NAME, user.getNickName());
+        try {
+            userUsageService.recordLogin(user.getId());
+        } catch (Exception exception) {
+            log.warn("记录用户登录事件失败，用户编号={}", user.getId(), exception);
+        }
         return ApexLoginResp.builder()
                 .accessToken(StpUtil.getTokenValue())
                 .expireIn(StpUtil.getTokenTimeout())

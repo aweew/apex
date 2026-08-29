@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { resolveScrollPosition } from './scrollBehavior.js'
 import { beginNavigationActivity } from '../utils/appActivity'
-import { getAccessToken } from '../api/auth'
+import { getAccessToken, getCurrentUser } from '../api/auth'
 
 const DashboardView = () => import('../views/DashboardView.vue')
 const WatchlistView = () => import('../views/WatchlistView.vue')
@@ -28,6 +28,7 @@ const LoginView = () => import('../views/LoginView.vue')
 const RegisterView = () => import('../views/RegisterView.vue')
 const ApexAiView = () => import('../views/ApexAiView.vue')
 const PreMarketReportView = () => import('../views/PreMarketReportView.vue')
+const UserUsageView = () => import('../views/UserUsageView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -89,6 +90,7 @@ const router = createRouter({
     { path: '/paper', name: 'paper', component: PaperView },
     { path: '/daily', name: 'daily', component: DailyView },
     { path: '/config', name: 'config', component: ConfigView },
+    { path: '/usage', name: 'usage', component: UserUsageView, meta: { requiresAdmin: true } },
   ],
 })
 
@@ -100,6 +102,9 @@ router.beforeEach((to) => {
   }
   if (to.meta.public && getAccessToken() && to.name === 'login') {
     return { path: typeof to.query.redirect === 'string' ? to.query.redirect : '/dashboard' }
+  }
+  if (to.meta.requiresAdmin && getCurrentUser()?.role !== 'ADMIN') {
+    return { path: '/dashboard' }
   }
   navigationFinishes.set(to, beginNavigationActivity())
 })

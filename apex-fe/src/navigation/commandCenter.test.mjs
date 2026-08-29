@@ -18,12 +18,23 @@ test('stock search is a first-level action and supports pinyin abbreviation disc
     appSource.indexOf('<div class="nav-actions desktop-nav-actions">'),
     appSource.indexOf('<div\n        class="app-activity"'),
   )
+  const mobileActions = appSource.slice(
+    appSource.indexOf('<div class="mobile-top-actions">'),
+    appSource.indexOf('<button\n        type="button"\n        class="nav-scrim"'),
+  )
   const stockSectionIndex = appSource.indexOf('aria-labelledby="command-stock-title"')
   const routeSectionIndex = appSource.indexOf('aria-labelledby="command-route-title"')
 
   assert.match(appSource, /aria-label="个股搜索"/)
-  assert.match(desktopActions, /class="search-btn stock-search-trigger"/)
-  assert.match(desktopActions, /<span>个股搜索<\/span>/)
+  assert.match(desktopActions, /class="desktop-stock-search"/)
+  assert.match(desktopActions, /<input[\s\S]*?ref="desktopStockInputRef"[\s\S]*?v-model="query"[\s\S]*?type="search"[\s\S]*?aria-label="个股搜索"[\s\S]*?placeholder="搜索个股"/)
+  assert.match(desktopActions, /@focus="openSearch"/)
+  assert.match(desktopActions, /@input="onQueryInput"/)
+  assert.match(desktopActions, /@keydown\.enter\.prevent="runSelectedCommand"/)
+  assert.doesNotMatch(desktopActions, /class="search-btn stock-search-trigger"/)
+  assert.match(mobileActions, /class="nav-icon-btn" aria-label="个股搜索"/)
+  assert.match(appSource, /\.desktop-stock-search\s*\{[\s\S]*?width:\s*180px;[\s\S]*?height:\s*30px;/)
+  assert.match(appSource, /@media \(max-width: 1100px\)[\s\S]*?\.desktop-stock-search\s*\{[\s\S]*?width:\s*132px;/)
   assert.match(appSource, /placeholder="输入代码、名称或拼音缩写"/)
   assert.match(appSource, /const commandResults = computed\(\(\) => \[\.\.\.stockCommandResults\.value, \.\.\.filteredRouteCommands\.value\]\)/)
   assert.ok(stockSectionIndex >= 0 && routeSectionIndex > stockSectionIndex)
@@ -62,8 +73,11 @@ test('command center keeps shortcut hints visible outside its scrollable result 
   )
 })
 
-test('command center uses an opaque surface and a legible modal overlay', () => {
-  assert.match(appSource, /\.search-layer\s*\{[\s\S]*?background:\s*rgba\(15, 23, 42, 0\.42\);/)
+test('desktop stock search uses a navigation dropdown while mobile keeps the full-screen search surface', () => {
+  assert.match(appSource, /\.search-layer\s*\{[\s\S]*?inset:\s*56px 0 0;[\s\S]*?background:\s*transparent;/)
+  assert.match(appSource, /\.search-panel\s*\{[\s\S]*?border-radius:\s*6px;/)
+  assert.match(appSource, /<div v-if="isMobileViewport" class="search-head">/)
+  assert.match(appSource, /@media \(max-width: 900px\)[\s\S]*?\.search-layer\s*\{[\s\S]*?inset:\s*0;[\s\S]*?background:\s*#fff;/)
   assert.match(appSource, /\.search-panel\s*\{[\s\S]*?background:\s*#fff;/)
 })
 
@@ -71,4 +85,32 @@ test('navigation renders the current page data freshness instead of only service
   assert.match(appSource, /dataFreshness/)
   assert.match(appSource, /data-status/)
   assert.match(appSource, /dataFreshness\.label/)
+})
+
+test('desktop account menu uses a compact icon while keeping identity inside the dropdown', () => {
+  const desktopActions = appSource.slice(
+    appSource.indexOf('<div class="nav-actions desktop-nav-actions">'),
+    appSource.indexOf('<div\n        class="app-activity"'),
+  )
+
+  assert.match(desktopActions, /class="desktop-icon-btn user-menu"/)
+  assert.match(desktopActions, /:aria-label="`打开账户菜单：\$\{currentUser\.nickName \|\| currentUser\.phone\}`"/)
+  assert.match(desktopActions, /<User aria-hidden="true" \/>/)
+  assert.doesNotMatch(desktopActions, /class="search-btn user-menu"/)
+  assert.match(desktopActions, /class="user-dropdown-profile"[\s\S]*?currentUser\.nickName[\s\S]*?currentUser\.phone/)
+  assert.match(appSource, /\.nav-actions\s*\{[\s\S]*?gap:\s*6px;/)
+})
+
+test('desktop navigation keeps secondary tools and account controls icon-sized', () => {
+  const desktopActions = appSource.slice(
+    appSource.indexOf('<div class="nav-actions desktop-nav-actions">'),
+    appSource.indexOf('<div\n        class="app-activity"'),
+  )
+
+  assert.match(desktopActions, /class="desktop-icon-btn glossary-trigger"[\s\S]*?aria-label="打开名词百科"/)
+  assert.match(desktopActions, /class="desktop-icon-btn fullscreen-trigger"/)
+  assert.match(desktopActions, /class="desktop-icon-btn app-settings-trigger"/)
+  assert.match(desktopActions, /class="desktop-icon-btn user-menu"/)
+  assert.doesNotMatch(desktopActions, /<span>百科<\/span>/)
+  assert.match(appSource, /\.desktop-icon-btn\s*\{[\s\S]*?width:\s*30px;[\s\S]*?height:\s*30px;/)
 })
