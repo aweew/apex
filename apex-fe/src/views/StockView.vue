@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import {
+  ArrowDown,
   Refresh,
   RefreshLeft,
   Star,
@@ -56,6 +57,7 @@ const code = ref(String(route.params.code || route.query.code || '600519'))
 const basic = ref(null)
 const note = ref('')
 const bars = ref([])
+const lastBarDate = ref('')
 const tradeRecords = ref([])
 const needSyncBars = ref(false)
 const barCount = ref(0)
@@ -78,16 +80,9 @@ const LEGACY_MARKET_TABS = ['summary', 'chart']
 const activeTab = ref(STOCK_TAB_NAMES.includes(route.query.tab) ? route.query.tab : 'analysis')
 const fund = ref(null)
 const profile = ref(null)
-const macdTip = ref('')
-const tdTip = ref('')
 const intraday = ref(null)
 const intradayLoading = ref(false)
 const intradayAsOf = ref('')
-const intradayDataTime = computed(() => staleDataTime({
-  tradeDate: intraday.value?.tradeDate,
-  updatedAt: intradayAsOf.value,
-  intraday: true,
-}))
 /** day | week | month | intraday */
 const klinePeriod = ref('day')
 /** 默认仅显示 MA5 / MA20 */
@@ -96,7 +91,6 @@ const showTd9 = ref(true)
 /** key=仅显示 8/9，all=显示 1–9 */
 const tdShowMode = ref('key')
 const isMobileChart = ref(window.matchMedia('(max-width: 820px)').matches)
-const chartParamsExpanded = ref(!isMobileChart.value)
 const BAR_LIMIT = 500
 const MIN_VISIBLE_BARS = 12
 const CHART_PREF_KEY = 'apex.stock.chartPrefs'
@@ -127,7 +121,7 @@ const MA_META = [
   { name: 'MA20', color: '#7c3aed' },
   { name: 'MA60', color: '#5c6bc0' },
 ]
-const MA_NAMES = MA_META.map((item) => item.name)
+const DISPLAY_MA_NAMES = ['MA5', 'MA10', 'MA20']
 let chart
 let syncingFromLegend = false
 let resetZoomNext = true
@@ -139,6 +133,14 @@ let compactPriceLabelsMode = null
 let chartPressCleanup = null
 
 const isIntraday = computed(() => klinePeriod.value === 'intraday')
+const intradayDataTime = computed(() => {
+  if (!isIntraday.value || !intraday.value) return ''
+  return staleDataTime({
+    tradeDate: intraday.value.tradeDate,
+    updatedAt: intradayAsOf.value,
+    intraday: true,
+  })
+})
 const intradayPoints = computed(() => intraday.value?.points || [])
 const showChartShell = computed(() => bars.value.length > 0 || isIntraday.value)
 const chartBars = computed(() =>
@@ -157,6 +159,11 @@ const priceStructure = computed(() =>
   analyzePriceStructure(bars.value, basic.value?.latestPrice),
 )
 const latestDailyBar = computed(() => bars.value.at(-1) || null)
+const dailyDataTime = computed(() => {
+  if (isIntraday.value) return ''
+  const date = String(lastBarDate.value || latestDailyBar.value?.tradeDate || '').slice(0, 10)
+  return date ? `数据截至 ${date}` : ''
+})
 const quoteDirectionClass = computed(() => {
   if (basic.value?.pctChg == null) return ''
   const percentage = Number(basic.value.pctChg)
@@ -183,32 +190,36 @@ const priceChange = computed(() => {
   if (!Number.isFinite(currentPrice) || !Number.isFinite(lastClose)) return null
   return currentPrice - lastClose
 })
-const periodLabel = computed(() => {
-  if (klinePeriod.value === 'intraday') return '分时'
-  if (klinePeriod.value === 'week') return '周K'
-  if (klinePeriod.value === 'month') return '月K'
-  return '日K'
-})
 /** 随 K 线周期：天 / 周 / 月 */
 const periodUnit = computed(() =>
   klinePeriod.value === 'week' ? '周' : klinePeriod.value === 'month' ? '月' : '天',
 )
-const periodMeta = computed(() => {
-  if (isIntraday.value) {
-    return intraday.value?.note || (intradayLoading.value ? '分时加载中…' : '')
-  }
-  const n = chartBars.value.length
-  if (!n) return ''
-  if (klinePeriod.value === 'day') return `${periodLabel.value} · ${n} 根`
-  return `${periodLabel.value} · ${n} 根（由 ${bars.value.length} 根日线聚合）`
-})
 function maDisplayName(name) {
   const n = String(name).replace(/^MA/i, '')
   return `MA${n}${periodUnit.value}`
 }
 
-function toggleChartParams() {
-  chartParamsExpanded.value = !chartParamsExpanded.value
+const chartLegendItems = computed(() => [
+  ...MA_META.filter((item) => DISPLAY_MA_NAMES.includes(item.name)).map((item) => ({
+    name: maDisplayName(item.name),
+    label: `${String(item.name).replace(/^MA/i, '')}${klinePeriod.value === 'day' ? '日' : periodUnit.value}`,
+    color: item.color,
+    maName: item.name,
+  })),
+])
+
+function isChartLegendSelected(item) {
+  return selectedMas.value.includes(item.maName)
+}
+
+function toggleChartLegend(item) {
+  if (selectedMas.value.includes(item.maName)) {
+    selectedMas.value = selectedMas.value.filter((name) => name !== item.maName)
+    return
+  }
+  selectedMas.value = DISPLAY_MA_NAMES.filter((name) => (
+    name === item.maName || selectedMas.value.includes(name)
+  ))
 }
 
 function unbindChartPress() {
@@ -259,7 +270,7 @@ function loadChartPrefs() {
       klinePeriod.value = prefs.klinePeriod
     }
     if (Array.isArray(prefs.selectedMas)) {
-      const next = prefs.selectedMas.filter((name) => MA_NAMES.includes(name))
+      const next = prefs.selectedMas.filter((name) => DISPLAY_MA_NAMES.includes(name))
       if (next.length) selectedMas.value = next
     }
     if (typeof prefs.showTd9 === 'boolean') showTd9.value = prefs.showTd9
@@ -500,8 +511,6 @@ async function ensureChartInstance() {
 
 async function renderIntradayChart() {
   const points = intradayPoints.value
-  macdTip.value = ''
-  tdTip.value = ''
   chartPayload = null
   if (!points.length) {
     disposeChart()
@@ -674,8 +683,6 @@ function refreshChart() {
     return
   }
   if (!bars.value.length) {
-    macdTip.value = ''
-    tdTip.value = ''
     disposeChart()
     return
   }
@@ -721,7 +728,7 @@ function bindChartEvents() {
   chart.on('legendselectchanged', (evt) => {
     const selected = evt?.selected || {}
     const unit = periodUnit.value
-    const nextMas = MA_NAMES.filter((name) => selected[`${name}${unit}`] !== false)
+    const nextMas = DISPLAY_MA_NAMES.filter((name) => selected[`${name}${unit}`] !== false)
     const masChanged =
       nextMas.length !== selectedMas.value.length ||
       nextMas.some((name) => !selectedMas.value.includes(name))
@@ -983,8 +990,6 @@ function buildTradeGuideSeries(side, markers) {
 
 async function renderChart(list) {
   if (!list.length) {
-    macdTip.value = ''
-    tdTip.value = ''
     disposeChart()
     return
   }
@@ -1034,19 +1039,6 @@ async function renderChart(list) {
   for (let i = 0; i < crosses.length; i++) {
     if (crosses[i] === 'golden') goldenPoints.push([dates[i], dif[i]])
     if (crosses[i] === 'death') deathPoints.push([dates[i], dif[i]])
-  }
-  let lastCrossIdx = -1
-  for (let i = crosses.length - 1; i >= 0; i--) {
-    if (crosses[i]) {
-      lastCrossIdx = i
-      break
-    }
-  }
-  if (lastCrossIdx >= 0) {
-    const kind = crosses[lastCrossIdx] === 'golden' ? '金叉' : '死叉'
-    macdTip.value = `最近 MACD${kind}：${dates[lastCrossIdx]}（DIF ${fmtNum(dif[lastCrossIdx], 3)} / DEA ${fmtNum(dea[lastCrossIdx], 3)}）`
-  } else {
-    macdTip.value = ''
   }
   const { buy: tdBuy, sell: tdSell } = tdSequential(closes)
   const tdBuyPoints = []
@@ -1100,29 +1092,6 @@ async function renderChart(list) {
       }
     }
   }
-  tdTip.value = ''
-  for (let i = closes.length - 1; i >= 0; i--) {
-    if (tdSell[i] === 9) {
-      tdTip.value = `最近上涨九转(卖)：${dates[i]}`
-      break
-    }
-    if (tdBuy[i] === 9) {
-      tdTip.value = `最近下跌九转(买)：${dates[i]}`
-      break
-    }
-  }
-  if (!tdTip.value) {
-    for (let i = closes.length - 1; i >= 0; i--) {
-      if (tdSell[i] > 0) {
-        tdTip.value = `上涨九转进行中：九转卖${tdSell[i]}（${dates[i]}）`
-        break
-      }
-      if (tdBuy[i] > 0) {
-        tdTip.value = `下跌九转进行中：九转买${tdBuy[i]}（${dates[i]}）`
-        break
-      }
-    }
-  }
   const { k: kLine, d: dLine, j: jLine } = kdj(highs, lows, closes)
   // J 常超出 0–100，轴略外扩避免上下被裁切
   let kdjMin = 0
@@ -1157,9 +1126,7 @@ async function renderChart(list) {
     backgroundColor: 'transparent',
     animation: false,
     legend: {
-      show: !isMobileChart.value,
-      top: 0,
-      left: 'center',
+      show: false,
       itemWidth: 14,
       itemHeight: 8,
       itemGap: 12,
@@ -1360,7 +1327,7 @@ async function renderChart(list) {
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
       // 四个子图保持同宽；移动端隐藏图内价格牌，释放右侧绘图区。
-      { left: 56, right: chartGridRight, top: isMobileChart.value ? 12 : 36, height: '38%' },
+      { left: 56, right: chartGridRight, top: 12, height: '38%' },
       { left: 56, right: chartGridRight, top: '47%', height: '9%' },
       { left: 56, right: chartGridRight, top: '60%', height: '11%' },
       { left: 56, right: chartGridRight, top: '75%', height: '10%' },
@@ -1446,7 +1413,7 @@ async function renderChart(list) {
         start: zoomStart,
         end: zoomEnd,
         minValueSpan: Math.min(MIN_VISIBLE_BARS, list.length),
-        zoomOnMouseWheel: false,
+        zoomOnMouseWheel: !isMobileChart.value,
         moveOnMouseWheel: false,
       },
       {
@@ -1780,6 +1747,7 @@ function applyDetail(data) {
   basic.value = data.basic
   note.value = data.needSyncBars ? data.note || '' : ''
   bars.value = data.bars || []
+  lastBarDate.value = data.lastBarDate || data.bars?.at(-1)?.tradeDate || ''
   needSyncBars.value = !!data.needSyncBars
   barCount.value = data.barCount ?? bars.value.length
   rs20.value = data.rs20VsHs300
@@ -1844,7 +1812,6 @@ function onResize() {
   const nextMobileChart = window.matchMedia('(max-width: 820px)').matches
   if (nextMobileChart !== isMobileChart.value) {
     isMobileChart.value = nextMobileChart
-    chartParamsExpanded.value = !nextMobileChart
     refreshChart()
     return
   }
@@ -2086,12 +2053,31 @@ function dash(v) {
         <button
           type="button"
           class="meta-toggle"
+          :class="{ 'is-expanded': metaExpanded }"
           :aria-expanded="metaExpanded"
           aria-controls="stock-meta-details"
           @click="toggleMetaExpanded"
         >
-          {{ metaExpanded ? '收起全部指标' : '查看全部指标' }}
+          <span>{{ metaExpanded ? '收起全部指标' : '查看全部指标' }}</span>
+          <el-icon aria-hidden="true"><ArrowDown /></el-icon>
         </button>
+        <Transition name="quote-meta">
+          <div
+            id="stock-meta-details"
+            v-if="basic && metaExpanded"
+            class="quote-meta-details"
+            aria-label="扩展行情指标"
+          >
+            <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><span>{{ basic.peDynamic ?? '-' }}</span></div>
+            <div><label><TermTip term="pe_static">市盈率（静）</TermTip></label><span>{{ basic.peStatic ?? '-' }}</span></div>
+            <div><label><TermTip term="rs20">RS20 vs沪深300</TermTip></label><b :class="Number(rs20) >= 0 ? 'up' : 'down'">{{ rs20 != null ? rs20 + 'pp' : '-' }}</b></div>
+            <div><label><TermTip term="rs60">RS60 vs沪深300</TermTip></label><b :class="Number(rs60) >= 0 ? 'up' : 'down'">{{ rs60 != null ? rs60 + 'pp' : '-' }}</b></div>
+            <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
+            <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>
+            <div><label>来源</label><span>{{ basic.source || '-' }}</span></div>
+            <div><label>本地日线</label><span>{{ barCount }}</span></div>
+          </div>
+        </Transition>
       </aside>
 
       <div class="market-chart">
@@ -2103,44 +2089,11 @@ function dash(v) {
           <el-button type="primary" :loading="syncingBars" @click="syncStockData">同步数据</el-button>
           <el-button @click="klinePeriod = 'intraday'">看分时</el-button>
         </el-empty>
-        <div v-if="showChartShell" class="chart-toolbar" v-loading="intradayLoading && isIntraday">
-          <button
-            v-if="isMobileChart && !isIntraday"
-            type="button"
-            class="chart-params-toggle"
-            :aria-expanded="chartParamsExpanded"
-            @click="toggleChartParams"
-          >
-            <span>图表参数</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-          <div v-if="!isIntraday" v-show="!isMobileChart || chartParamsExpanded" class="chart-advanced-controls">
-            <el-checkbox-group v-model="selectedMas" size="small" class="ma-checks">
-              <el-checkbox
-                v-for="item in MA_META"
-                :key="item.name"
-                :value="item.name"
-                :style="{ '--ma-color': item.color }"
-              >
-                {{ maDisplayName(item.name) }}
-              </el-checkbox>
-            </el-checkbox-group>
-            <label class="ctrl-label">
-              <TermTip term="td9">神奇九转</TermTip>
-              <el-switch v-model="showTd9" size="small" />
-            </label>
-            <el-radio-group
-              v-if="showTd9"
-              v-model="tdShowMode"
-              size="small"
-              class="td-mode"
-            >
-              <el-radio-button value="key">仅8/9</el-radio-button>
-              <el-radio-button value="all">全部</el-radio-button>
-            </el-radio-group>
-          </div>
+        <div
+          v-if="showChartShell && (isIntraday || (klinePeriod !== 'day' && bars.length < 120) || (isMobileChart && priceStructure.ready))"
+          class="chart-toolbar"
+          v-loading="intradayLoading && isIntraday"
+        >
           <el-alert
             v-if="!isIntraday && klinePeriod !== 'day' && bars.length < 120"
             class="chart-alert"
@@ -2149,8 +2102,6 @@ function dash(v) {
             show-icon
             :title="`日线仅 ${bars.length} 根，周/月K样本偏少，建议同步更多日线`"
           />
-          <p v-if="!isIntraday && tdTip && showTd9" class="macd-tip">{{ tdTip }}</p>
-          <p v-if="!isIntraday && macdTip" class="macd-tip macd-tip--sub">{{ macdTip }}</p>
           <div v-if="isMobileChart && !isIntraday && priceStructure.ready" class="chart-price-levels">
             <span v-if="priceStructure.support" class="support">
               支撑 {{ fmtNum(priceStructure.support.price) }}
@@ -2160,27 +2111,28 @@ function dash(v) {
             </span>
             <small>长按图表查看详情</small>
           </div>
-        </div>
-        <div v-if="showChartShell" class="chart-primary-controls">
-          <el-radio-group v-model="klinePeriod" size="small" class="period-mode">
-            <el-radio-button value="intraday">分时</el-radio-button>
-            <el-radio-button value="day">日K</el-radio-button>
-            <el-radio-button value="week">周K</el-radio-button>
-            <el-radio-button value="month">月K</el-radio-button>
-          </el-radio-group>
-          <div v-if="isIntraday" class="chart-primary-actions">
-            <el-button
-              size="small"
-              text
-              type="primary"
-              :loading="intradayLoading"
-              @click="loadIntraday"
-            >
-              刷新分时
-            </el-button>
+          <div v-if="isIntraday" class="chart-primary-controls">
+            <el-radio-group v-model="klinePeriod" size="small" class="period-mode period-mode--toolbar">
+              <el-radio-button value="intraday">分时</el-radio-button>
+              <el-radio-button value="day">日K</el-radio-button>
+              <el-radio-button value="week">周K</el-radio-button>
+              <el-radio-button value="month">月K</el-radio-button>
+            </el-radio-group>
+            <div v-if="isIntraday" class="chart-primary-actions">
+              <el-button
+                size="small"
+                text
+                type="primary"
+                :loading="intradayLoading"
+                @click="loadIntraday"
+              >
+                刷新分时
+              </el-button>
+            </div>
+            <div v-if="intradayDataTime" class="chart-data-status">
+              <span v-if="isIntraday && intradayDataTime" class="intraday-asof">{{ intradayDataTime }}</span>
+            </div>
           </div>
-          <span v-if="periodMeta" class="period-meta">{{ periodMeta }}</span>
-          <span v-if="intradayDataTime" class="intraday-asof">{{ intradayDataTime }}</span>
         </div>
         <el-empty
           v-if="isIntraday && !intradayLoading && !intradayPoints.length"
@@ -2191,55 +2143,120 @@ function dash(v) {
         <div
           v-if="(bars.length && !isIntraday) || (isIntraday && intradayPoints.length)"
           class="chart-stage"
+          :class="{ 'has-chart-head': !isIntraday }"
         >
-          <div ref="chartRef" class="chart" />
-          <div v-if="!isIntraday" class="chart-zoom-controls" role="group" aria-label="K线缩放">
-            <el-tooltip content="缩小 K 线，显示更多" placement="top">
-              <el-button
+          <div v-if="!isIntraday" class="chart-canvas-head">
+            <el-radio-group v-model="klinePeriod" size="small" class="period-mode period-mode--chart">
+              <el-radio-button value="intraday">分时</el-radio-button>
+              <el-radio-button value="day">日K</el-radio-button>
+              <el-radio-button value="week">周K</el-radio-button>
+              <el-radio-button value="month">月K</el-radio-button>
+            </el-radio-group>
+            <div class="chart-legend" aria-label="K线图例">
+              <button
+                v-for="item in chartLegendItems"
+                :key="item.name"
+                type="button"
+                class="chart-legend-item"
+                :class="{ 'is-inactive': !isChartLegendSelected(item) }"
+                :aria-pressed="isChartLegendSelected(item)"
+                @click="toggleChartLegend(item)"
+              >
+                <i :style="{ background: item.color }" aria-hidden="true"></i>
+                <span>{{ item.label }}</span>
+              </button>
+              <span class="chart-legend-divider" aria-hidden="true"></span>
+              <button
+                type="button"
+                class="chart-legend-item chart-td-toggle"
+                :class="{ 'is-inactive': !showTd9 }"
+                :aria-pressed="showTd9"
+                @click="showTd9 = !showTd9"
+              >
+                <i aria-hidden="true">9</i>
+                <span>神奇九转</span>
+              </button>
+              <el-radio-group
+                v-if="showTd9"
+                v-model="tdShowMode"
                 size="small"
-                class="chart-zoom-button"
-                :icon="ZoomOut"
-                aria-label="缩小K线"
-                :disabled="!canZoomOut"
-                @click="zoomChart('out')"
-              />
-            </el-tooltip>
-            <el-tooltip content="放大 K 线，显示更少" placement="top">
-              <el-button
-                size="small"
-                class="chart-zoom-button"
-                :icon="ZoomIn"
-                aria-label="放大K线"
-                :disabled="!canZoomIn"
-                @click="zoomChart('in')"
-              />
-            </el-tooltip>
-            <el-tooltip content="还原默认视野" placement="top">
-              <el-button
-                size="small"
-                class="chart-zoom-button"
-                :icon="RefreshLeft"
-                aria-label="还原默认视野"
-                @click="resetChartView"
-              />
-            </el-tooltip>
+                class="chart-td-mode"
+                aria-label="神奇九转显示范围"
+              >
+                <el-radio-button value="key">仅8/9</el-radio-button>
+                <el-radio-button value="all">全部</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div v-if="dailyDataTime" class="chart-data-status">
+              <span class="daily-data-time">{{ dailyDataTime }}</span>
+            </div>
+            <div class="chart-zoom-controls chart-zoom-controls--mobile" role="group" aria-label="K线缩放">
+              <el-tooltip content="缩小 K 线，显示更多" placement="top">
+                <el-button
+                  size="small"
+                  class="chart-zoom-button"
+                  :icon="ZoomOut"
+                  aria-label="缩小K线"
+                  :disabled="!canZoomOut"
+                  @click="zoomChart('out')"
+                />
+              </el-tooltip>
+              <el-tooltip content="放大 K 线，显示更少" placement="top">
+                <el-button
+                  size="small"
+                  class="chart-zoom-button"
+                  :icon="ZoomIn"
+                  aria-label="放大K线"
+                  :disabled="!canZoomIn"
+                  @click="zoomChart('in')"
+                />
+              </el-tooltip>
+              <el-tooltip content="还原默认视野" placement="top">
+                <el-button
+                  size="small"
+                  class="chart-zoom-button"
+                  :icon="RefreshLeft"
+                  aria-label="还原默认视野"
+                  @click="resetChartView"
+                />
+              </el-tooltip>
+            </div>
+            <div class="chart-zoom-controls chart-zoom-controls--desktop" role="group" aria-label="K线缩放">
+              <el-tooltip content="缩小 K 线，显示更多" placement="top">
+                <el-button
+                  size="small"
+                  class="chart-zoom-button"
+                  :icon="ZoomOut"
+                  aria-label="缩小K线"
+                  :disabled="!canZoomOut"
+                  @click="zoomChart('out')"
+                />
+              </el-tooltip>
+              <el-tooltip content="放大 K 线，显示更少" placement="top">
+                <el-button
+                  size="small"
+                  class="chart-zoom-button"
+                  :icon="ZoomIn"
+                  aria-label="放大K线"
+                  :disabled="!canZoomIn"
+                  @click="zoomChart('in')"
+                />
+              </el-tooltip>
+              <el-tooltip content="还原默认视野" placement="top">
+                <el-button
+                  size="small"
+                  class="chart-zoom-button"
+                  :icon="RefreshLeft"
+                  aria-label="还原默认视野"
+                  @click="resetChartView"
+                />
+              </el-tooltip>
+            </div>
           </div>
+          <div ref="chartRef" class="chart" />
         </div>
       </div>
     </section>
-
-    <div id="stock-meta-details" v-if="basic" v-show="metaExpanded" class="meta">
-      <div><label>最新价</label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.latestPrice ?? '-' }}</b></div>
-      <div><label><TermTip term="pct_chg">涨跌幅</TermTip></label><b :class="basic.pctChg >= 0 ? 'up' : 'down'">{{ basic.pctChg != null ? basic.pctChg + '%' : '-' }}</b></div>
-      <div><label><TermTip term="pe_dynamic">市盈率（动）</TermTip></label><span>{{ basic.peDynamic ?? '-' }}</span></div>
-      <div><label><TermTip term="pe_static">市盈率（静）</TermTip></label><span>{{ basic.peStatic ?? '-' }}</span></div>
-      <div><label><TermTip term="rs20">RS20 vs沪深300</TermTip></label><b :class="Number(rs20) >= 0 ? 'up' : 'down'">{{ rs20 != null ? rs20 + 'pp' : '-' }}</b></div>
-      <div><label><TermTip term="rs60">RS60 vs沪深300</TermTip></label><b :class="Number(rs60) >= 0 ? 'up' : 'down'">{{ rs60 != null ? rs60 + 'pp' : '-' }}</b></div>
-      <div><label>市场</label><span>{{ basic.market || '-' }}</span></div>
-      <div><label>上市</label><span>{{ basic.listDate || '-' }}</span></div>
-      <div><label>来源</label><span>{{ basic.source || '-' }}</span></div>
-      <div><label>本地日线</label><span>{{ barCount }}</span></div>
-    </div>
 
     <el-alert
       v-if="!loading && bars.length && needSyncBars"
@@ -3087,7 +3104,11 @@ function dash(v) {
 }
 
 .meta-toggle {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.65);
   color: var(--ink-soft);
@@ -3098,42 +3119,93 @@ function dash(v) {
   white-space: nowrap;
 }
 
-.meta-toggle:hover {
+.meta-toggle .el-icon {
+  transition: transform 160ms ease;
+}
+
+.meta-toggle:hover,
+.meta-toggle:focus-visible {
   color: var(--ink);
   border-color: rgba(0, 0, 0, 0.16);
 }
 
-.meta {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0 0 14px;
+.meta-toggle:focus-visible {
+  outline: 2px solid rgba(0, 113, 227, 0.24);
+  outline-offset: 2px;
 }
 
-.meta > div {
-  background: var(--glass);
-  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  box-shadow: var(--shadow-soft);
+.meta-toggle.is-expanded {
+  border-color: rgba(0, 113, 227, 0.24);
+  background: rgba(0, 113, 227, 0.07);
+  color: var(--accent);
+}
+
+.meta-toggle.is-expanded .el-icon {
+  transform: rotate(180deg);
+}
+
+.quote-meta-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }
 
-.meta label {
-  display: block;
+.quote-meta-details > div {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 7px 8px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  font-size: 11px;
+}
+
+.quote-meta-details > div:nth-child(even) {
+  border-left: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.quote-meta-details > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.quote-meta-details label {
+  min-width: 0;
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
-  margin-bottom: 6px;
+  line-height: 16px;
+}
+
+.quote-meta-details span,
+.quote-meta-details b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 650;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-meta-enter-active,
+.quote-meta-leave-active {
+  overflow: hidden;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.quote-meta-enter-from,
+.quote-meta-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 @media (max-width: 720px) {
-  .meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .meta-bar {
     align-items: flex-start;
     flex-direction: column;
@@ -3152,19 +3224,21 @@ function dash(v) {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 0 0 6px;
-}
-
-.chart-primary-controls,
-.chart-advanced-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 16px;
+  margin: 0 0 4px;
 }
 
 .chart-primary-controls {
-  margin: 0 0 4px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
 }
 
 .chart-primary-actions {
@@ -3173,106 +3247,148 @@ function dash(v) {
   gap: 4px;
 }
 
-.chart-params-toggle {
-  display: inline-flex;
+.chart-data-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding-right: 8px;
+  white-space: nowrap;
+}
+
+.period-mode :deep(.el-radio-button__inner) {
+  min-height: 30px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
+  padding: 0 14px;
 }
 
-.chart-params-toggle svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform 160ms ease;
+.chart-canvas-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 40px;
+  padding: 4px 12px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  background: rgba(248, 250, 252, 0.72);
 }
 
-.chart-params-toggle[aria-expanded='true'] svg {
-  transform: rotate(180deg);
+.chart-legend {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
 }
 
-.ma-checks {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-}
-
-.ma-checks :deep(.el-checkbox__label) {
-  color: var(--ma-color, #3a3a3c);
-  font-weight: 600;
-  font-size: 12px;
-  padding-left: 6px;
-}
-
-.ctrl-label {
+.chart-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
+  min-width: 0;
   margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #3a3a3c;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: #697180;
+  font: inherit;
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.td-mode {
-  margin-left: -4px;
+.chart-legend-item i {
+  width: 14px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+}
+
+.chart-legend-item:hover {
+  color: var(--ink);
+}
+
+.chart-legend-item.is-inactive {
+  opacity: 0.34;
+}
+
+.chart-legend-divider {
+  width: 1px;
+  height: 18px;
+  flex: 0 0 auto;
+  background: var(--line);
+}
+
+.chart-td-toggle i {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid #f07b7b;
+  border-radius: 50%;
+  background: rgba(240, 123, 123, 0.08);
+  color: #df6262;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.chart-td-mode :deep(.el-radio-button__inner) {
+  display: inline-flex;
+  height: 26px;
+  min-height: 26px;
+  align-items: center;
+  padding: 0 9px;
+  font-size: 11px;
 }
 
 .chart-zoom-controls {
-  position: absolute;
-  right: 14px;
-  bottom: 46px;
-  z-index: 3;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
-  opacity: 0.82;
-  transition: opacity 160ms ease;
+  gap: 0;
 }
 
-.chart-zoom-controls:hover,
-.chart-zoom-controls:focus-within {
-  opacity: 1;
+.chart-zoom-controls--desktop {
+  justify-self: end;
+}
+
+.chart-zoom-controls--mobile {
+  display: none;
 }
 
 .chart-zoom-button {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  min-height: 32px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
   margin: 0;
   padding: 0;
-  border-radius: 6px;
+  border-radius: 4px;
+  border: 0 !important;
+  background: transparent;
+  box-shadow: none !important;
+  color: #737b87;
+}
+
+.chart-zoom-button:hover:not(:disabled),
+.chart-zoom-button:focus-visible {
+  background: rgba(233, 239, 246, 0.82);
+  color: var(--ink);
 }
 
 .chart-zoom-controls :deep(.chart-zoom-button.el-button) {
-  border-color: rgba(15, 23, 42, 0.12);
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border: 0 !important;
+  background: transparent;
+  box-shadow: none;
 }
 
-.period-meta {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 600;
-  color: #6b7280;
-  font-variant-numeric: tabular-nums;
-}
-
+.daily-data-time,
 .intraday-asof {
   font-size: 11px;
   color: var(--muted);
@@ -3323,23 +3439,16 @@ function dash(v) {
   line-height: 1.4;
 }
 
-.macd-tip {
-  margin: 0;
-  color: #1d1d1f;
-  font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.macd-tip--sub {
-  font-weight: 500;
-  color: #4b5563;
-}
-
-
 .chart-stage {
   position: relative;
   width: 100%;
+}
+
+.chart-stage.has-chart-head {
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.68);
 }
 
 .chart {
@@ -3351,6 +3460,13 @@ function dash(v) {
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 4px;
   overflow: hidden;
+}
+
+.chart-stage.has-chart-head .chart {
+  height: 580px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .structure-insufficient {
@@ -3387,12 +3503,21 @@ function dash(v) {
 }
 
 @media (max-width: 900px) {
-  .meta {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .chart {
     height: 560px;
+  }
+
+  .chart-stage.has-chart-head .chart {
+    height: 520px;
+  }
+
+  .chart-legend {
+    gap: 7px;
+  }
+
+  .chart-legend-item {
+    gap: 3px;
+    font-size: 10px;
   }
 }
 
@@ -3458,6 +3583,22 @@ function dash(v) {
   .quote-snapshot .meta-toggle {
     min-height: 44px;
     margin-top: 8px;
+  }
+
+  .quote-meta-details {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .quote-meta-details > div:nth-child(even) {
+    border-left: 0;
+  }
+
+  .quote-meta-details > div:not(:nth-child(4n + 1)) {
+    border-left: 1px solid rgba(15, 23, 42, 0.06);
+  }
+
+  .quote-meta-details > div:nth-last-child(-n + 4) {
+    border-bottom: 0;
   }
 
   .market-chart {
@@ -3545,13 +3686,16 @@ function dash(v) {
 
   .chart-primary-controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 6px;
-    margin-bottom: 4px;
+    padding: 0;
+    border: 0;
+    background: transparent;
   }
 
   .period-mode {
     order: 4;
+    grid-column: 1 / -1;
     display: flex;
     width: 100%;
   }
@@ -3564,8 +3708,7 @@ function dash(v) {
     flex: 1;
   }
 
-  .period-mode :deep(.el-radio-button__inner),
-  .td-mode :deep(.el-radio-button__inner) {
+  .period-mode :deep(.el-radio-button__inner) {
     height: 36px;
     min-height: 36px;
     display: flex;
@@ -3578,11 +3721,11 @@ function dash(v) {
 
   .chart-primary-actions {
     order: 3;
+    grid-column: 1 / -1;
     justify-content: flex-end;
   }
 
-  .chart-primary-actions :deep(.el-button),
-  .chart-params-toggle {
+  .chart-primary-actions :deep(.el-button) {
     min-height: 44px;
     margin: 0;
     padding: 0 10px;
@@ -3598,66 +3741,68 @@ function dash(v) {
   }
 
   .chart-zoom-controls {
-    right: 8px;
-    bottom: 38px;
-    gap: 2px;
-  }
-
-  .chart-advanced-controls {
-    gap: 4px 12px;
-    padding: 8px 10px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.58);
-  }
-
-  .ma-checks {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0;
-  }
-
-  .ma-checks :deep(.el-checkbox) {
-    min-width: 0;
-    min-height: 44px;
-    margin-right: 0;
-  }
-
-  .ma-checks :deep(.el-checkbox__label) {
-    padding-left: 4px;
-    font-size: 11px;
-  }
-
-  .ctrl-label {
-    min-height: 44px;
-  }
-
-  .td-mode {
-    display: flex;
-    min-width: 152px;
-    margin-left: auto;
-  }
-
-  .td-mode :deep(.el-radio-button) {
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    flex: 1;
-  }
-
-  .period-meta {
-    order: 1;
+    order: 2;
+    justify-self: end;
     margin-left: 0;
-    font-size: 11px;
+    gap: 0;
+    padding-left: 8px;
   }
 
+  .chart-zoom-controls--desktop {
+    display: none;
+  }
+
+  .chart-zoom-controls--mobile {
+    display: flex;
+    border-left: 1px solid var(--line);
+  }
+
+  .chart-data-status {
+    order: 1;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .chart-stage.has-chart-head .chart {
+    height: 500px;
+  }
+
+  .chart-canvas-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    min-height: 40px;
+    padding: 4px 10px;
+  }
+
+  .chart-canvas-head .period-mode--chart {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .chart-canvas-head .chart-data-status {
+    grid-row: 1;
+    grid-column: 1;
+    justify-content: flex-start;
+  }
+
+  .chart-canvas-head .chart-zoom-controls--mobile {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .chart-legend {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    gap: 10px;
+  }
+
+  .chart-td-mode {
+    display: none;
+  }
+
+  .daily-data-time,
   .intraday-asof {
     order: 2;
-  }
-
-  .macd-tip {
-    display: none;
   }
 
   .chart {

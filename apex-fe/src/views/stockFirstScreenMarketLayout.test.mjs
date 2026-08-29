@@ -31,7 +31,7 @@ test('mobile first-screen market layout stays compact and overflow-safe', () => 
   assert.match(source, /@media \(max-width: 820px\)[\s\S]*?\.market-overview\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s)
   assert.match(source, /@media \(max-width: 820px\)[\s\S]*?\.chart\s*\{[^}]*height:\s*500px;/s)
   assert.match(source, /\.quote-metrics > div:nth-child\(n \+ 9\)\s*\{[^}]*display:\s*none;/s)
-  assert.match(source, /@media \(max-width: 820px\)[\s\S]*?\.macd-tip\s*\{[^}]*display:\s*none;/s)
+  assert.doesNotMatch(source, /class="chart-signal-summary"|class="period-meta"/)
   assert.match(source, /\.market-chart\s*\{[^}]*min-width:\s*0;/s)
 })
 

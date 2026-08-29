@@ -35,6 +35,6 @@ test('latest data times are conditionally rendered instead of always occupying t
   assert.match(sourceByPath['./views/DecisionView.vue'], /v-if="decisionMarketTime"/)
   assert.match(sourceByPath['./views/IndexBoardView.vue'], /v-if="globalMarketTime"/)
   assert.match(sourceByPath['./views/SectorBoardView.vue'], /v-if="constituentDataTime"/)
-  assert.match(sourceByPath['./views/StockView.vue'], /v-if="intradayDataTime"/)
+  assert.match(sourceByPath['./views/StockView.vue'], /v-if="isIntraday && intradayDataTime"/)
   assert.match(sourceByPath['./views/ApexAiView.vue'], /v-if="analysisDataTime\(message\.analysis\)"/)
 })

@@ -17,14 +17,26 @@ test('horizontal chart gestures stay inside the chart while vertical page scroll
     /\.chart\s*\{[\s\S]*?touch-action:\s*pan-y;[\s\S]*?overscroll-behavior-x:\s*contain;/,
   )
   assert.doesNotMatch(stockSource, /touch-action:\s*manipulation;/)
-  assert.match(stockSource, /type:\s*'inside',[\s\S]*?zoomOnMouseWheel:\s*false,[\s\S]*?moveOnMouseWheel:\s*false,/)
+  assert.match(
+    stockSource,
+    /type:\s*'inside',[\s\S]*?zoomOnMouseWheel:\s*!isMobileChart\.value,[\s\S]*?moveOnMouseWheel:\s*false,/,
+  )
 })
 
 test('stock indicators start collapsed instead of restoring an expanded state', () => {
   assert.match(stockSource, /const metaExpanded = ref\(false\)/)
   assert.doesNotMatch(stockSource, /META_EXPAND_KEY/)
   assert.doesNotMatch(stockSource, /apex\.stock\.metaExpanded/)
-  assert.match(stockSource, /class="meta-toggle"[\s\S]*?:aria-expanded="metaExpanded"[\s\S]*?aria-controls="stock-meta-details"/)
+  assert.match(
+    stockSource,
+    /class="meta-toggle"[\s\S]*?:class="\{ 'is-expanded': metaExpanded \}"[\s\S]*?:aria-expanded="metaExpanded"[\s\S]*?aria-controls="stock-meta-details"/,
+  )
+  assert.match(
+    stockSource,
+    /class="meta-toggle"[\s\S]*?<Transition name="quote-meta">[\s\S]*?id="stock-meta-details"[\s\S]*?v-if="basic && metaExpanded"[\s\S]*?class="quote-meta-details"[\s\S]*?<\/aside>/,
+  )
+  assert.doesNotMatch(stockSource, /v-show="metaExpanded" class="meta"/)
+  assert.match(stockSource, /\.quote-meta-details\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s)
 })
 
 test('intraday polling pauses while the page is hidden and resumes on return', () => {
@@ -38,22 +50,30 @@ test('intraday polling pauses while the page is hidden and resumes on return', (
 
 test('K-line toolbar exposes icon zoom controls with accessible labels', () => {
   assert.match(stockSource, /import \{[^}]*RefreshLeft[^}]*ZoomIn[^}]*ZoomOut[^}]*\} from '@element-plus\/icons-vue'/s)
-  assert.match(stockSource, /class="chart-zoom-controls"[^>]*aria-label="K线缩放"/)
+  assert.match(stockSource, /class="chart-zoom-controls [^"]+"[^>]*aria-label="K线缩放"/)
   assert.match(stockSource, /:icon="ZoomOut"[^>]*aria-label="缩小K线"/s)
   assert.match(stockSource, /:icon="ZoomIn"[^>]*aria-label="放大K线"/s)
   assert.match(stockSource, /:icon="RefreshLeft"[^>]*aria-label="还原默认视野"/s)
   assert.match(stockSource, /@click="zoomChart\('out'\)"/)
   assert.match(stockSource, /@click="zoomChart\('in'\)"/)
-  assert.match(stockSource, /class="chart-stage"[\s\S]*?class="chart-zoom-controls"/)
   assert.match(
     stockSource,
-    /\.chart-zoom-controls\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*46px;[^}]*opacity:\s*0\.82;/s,
+    /class="chart-canvas-head"[\s\S]*?class="period-mode period-mode--chart"[\s\S]*?class="chart-legend"[\s\S]*?class="chart-data-status"[\s\S]*?class="chart-zoom-controls chart-zoom-controls--desktop"/,
   )
-  assert.match(stockSource, /\.chart-zoom-controls :deep\(\.chart-zoom-button\.el-button\)\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.76\);/s)
+  assert.match(
+    stockSource,
+    /\.chart-canvas-head\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto auto;[^}]*align-items:\s*center;/s,
+  )
+  assert.match(stockSource, /\.chart-zoom-controls--desktop\s*\{[^}]*justify-self:\s*end;/s)
+  assert.doesNotMatch(stockSource, /\.chart-zoom-controls\s*\{[^}]*position:\s*absolute;/s)
+  assert.match(stockSource, /\.chart-zoom-controls :deep\(\.chart-zoom-button\.el-button\)\s*\{[^}]*background:\s*transparent;/s)
+  assert.match(stockSource, /legend:\s*\{[^}]*show:\s*false,/s)
+  assert.match(stockSource, /v-for="item in chartLegendItems"/)
+  assert.match(stockSource, /@click="toggleChartLegend\(item\)"/)
   assert.doesNotMatch(stockSource, /class="chart-hint"/)
 })
 
-test('K-line period controls sit directly above the chart instead of above secondary indicators', () => {
+test('K-line period controls share the desktop chart header with the compact legend', () => {
   const toolbarIndex = stockSource.indexOf('class="chart-toolbar"')
   const periodControlsIndex = stockSource.indexOf('class="chart-primary-controls"')
   const chartStageIndex = stockSource.indexOf('class="chart-stage"')
@@ -61,8 +81,62 @@ test('K-line period controls sit directly above the chart instead of above secon
   assert.ok(toolbarIndex > 0)
   assert.ok(periodControlsIndex > toolbarIndex)
   assert.ok(chartStageIndex > periodControlsIndex)
-  assert.match(stockSource, /\.chart-primary-controls\s*\{[^}]*margin:\s*0 0 4px;/s)
+  assert.match(
+    stockSource,
+    /v-if="isIntraday" class="chart-primary-controls"[\s\S]*?class="period-mode period-mode--toolbar"[\s\S]*?class="chart-data-status"/s,
+  )
+  assert.match(
+    stockSource,
+    /class="chart-canvas-head"[\s\S]*?class="period-mode period-mode--chart"[\s\S]*?<el-radio-button value="day">日K<\/el-radio-button>[\s\S]*?<el-radio-button value="week">周K<\/el-radio-button>[\s\S]*?<el-radio-button value="month">月K<\/el-radio-button>[\s\S]*?class="chart-legend"/s,
+  )
+  assert.doesNotMatch(stockSource, /class="chart-advanced-controls"/)
+  assert.doesNotMatch(stockSource, /class="ma-checks"/)
+  assert.match(stockSource, /const DISPLAY_MA_NAMES = \['MA5', 'MA10', 'MA20'\]/)
+  assert.match(
+    stockSource,
+    /MA_META\.filter\(\(item\) => DISPLAY_MA_NAMES\.includes\(item\.name\)\)/,
+  )
+  assert.match(
+    stockSource,
+    /label: `\$\{String\(item\.name\)\.replace\(\/\^MA\/i, ''\)\}\$\{klinePeriod\.value === 'day' \? '日' : periodUnit\.value\}`/,
+  )
+  assert.match(stockSource, /<span>\{\{ item\.label \}\}<\/span>/)
+  assert.match(
+    stockSource,
+    /class="chart-legend"[\s\S]*?v-for="item in chartLegendItems"[\s\S]*?class="chart-legend-item chart-td-toggle"[\s\S]*?<span>神奇九转<\/span>/s,
+  )
+  assert.match(
+    stockSource,
+    /\.chart-primary-controls\s*\{[^}]*width:\s*100%;[^}]*padding:\s*6px 10px;[^}]*border:\s*1px solid var\(--line\);[^}]*background:\s*#f8fafc;/s,
+  )
+  assert.doesNotMatch(stockSource, /class="chart-signal-summary"/)
+  assert.doesNotMatch(stockSource, /const periodMeta = computed/)
+  assert.doesNotMatch(stockSource, /最近 MACD|最近上涨九转|最近下跌九转/)
   assert.match(stockSource, /@media \(max-width: 820px\)[\s\S]*?\.period-mode\s*\{[^}]*order:\s*4;/s)
+  assert.match(
+    stockSource,
+    /@media \(max-width: 820px\)[\s\S]*?\.chart-canvas-head \.period-mode--chart\s*\{[^}]*grid-row:\s*2;[^}]*grid-column:\s*1 \/ -1;/s,
+  )
+})
+
+test('K-line status shows the actual daily data date without leaking an empty intraday timestamp', () => {
+  assert.match(stockSource, /const lastBarDate = ref\(''\)/)
+  assert.match(
+    stockSource,
+    /lastBarDate\.value = data\.lastBarDate \|\| data\.bars\?\.at\(-1\)\?\.tradeDate \|\| ''/,
+  )
+  assert.match(stockSource, /return date \? `数据截至 \$\{date\}` : ''/)
+  assert.match(stockSource, /if \(!isIntraday\.value \|\| !intraday\.value\) return ''/)
+  assert.match(
+    stockSource,
+    /class="chart-canvas-head"[\s\S]*?v-if="dailyDataTime" class="chart-data-status"[\s\S]*?<span class="daily-data-time">\{\{ dailyDataTime \}\}<\/span>/s,
+  )
+  assert.match(stockSource, /v-if="isIntraday && intradayDataTime" class="intraday-asof"/)
+  assert.match(stockSource, /\.chart-data-status\s*\{[^}]*padding-right:\s*8px;/s)
+  assert.match(
+    stockSource,
+    /@media \(max-width: 820px\)[\s\S]*?\.daily-data-time,\s*\.intraday-asof\s*\{[^}]*order:\s*2;/s,
+  )
 })
 
 test('K-line zoom buttons dispatch the next data window and disable at boundaries', () => {
@@ -78,9 +152,13 @@ test('K-line zoom buttons dispatch the next data window and disable at boundarie
 })
 
 test('mobile K-line zoom controls keep stable touch targets', () => {
-  assert.match(stockSource, /\.chart-zoom-button\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;/s)
+  assert.match(stockSource, /\.chart-zoom-button\s*\{[^}]*width:\s*28px;[^}]*height:\s*28px;/s)
   assert.match(
     stockSource,
     /@media \(max-width: 820px\)[\s\S]*?\.chart-zoom-button\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+  )
+  assert.match(
+    stockSource,
+    /@media \(max-width: 820px\)[\s\S]*?\.chart-zoom-controls\s*\{[^}]*order:\s*2;[^}]*justify-self:\s*end;/s,
   )
 })
