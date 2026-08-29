@@ -1992,6 +1992,10 @@ onBeforeUnmount(() => {
   padding: 12px 16px 0;
 }
 
+.command-section:last-child {
+  padding-bottom: 12px;
+}
+
 .command-section + .command-section {
   margin-top: 8px;
   border-top: 1px solid rgba(15, 23, 42, 0.07);

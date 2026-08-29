@@ -71,6 +71,10 @@ test('command center keeps shortcut hints visible outside its scrollable result 
     appSource,
     /\.search-keys\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?border-top:/,
   )
+  assert.match(
+    appSource,
+    /\.command-section:last-child\s*\{[\s\S]*?padding-bottom:\s*12px;/,
+  )
 })
 
 test('desktop stock search uses a navigation dropdown while mobile keeps the full-screen search surface', () => {
