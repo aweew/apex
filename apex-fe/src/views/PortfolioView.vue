@@ -2641,27 +2641,28 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  padding: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 2px 8px rgba(29, 29, 31, 0.04);
+  gap: 4px;
 }
 .portfolio-desktop-toolbar :deep(.el-button) {
-  min-height: 38px;
+  min-height: 32px;
+  padding: 0 12px;
   margin-left: 0;
-  border-radius: 6px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.portfolio-desktop-toolbar :deep(.el-button .el-icon) {
+  font-size: 14px;
 }
 .portfolio-toolbar-divider {
   width: 1px;
-  height: 24px;
-  margin: 0 2px;
-  background: rgba(0, 0, 0, 0.1);
+  height: 18px;
+  margin: 0 3px;
+  background: rgba(0, 0, 0, 0.09);
 }
 .portfolio-toolbar-more-icon {
-  margin-left: 5px;
-  font-size: 12px;
+  margin-left: 4px;
+  font-size: 11px;
 }
 
 .layout {

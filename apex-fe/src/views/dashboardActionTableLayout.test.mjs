@@ -42,11 +42,60 @@ test('desktop decision table reserves one complete flexible cue column for linka
 test('desktop action panels stay inside the dashboard container', () => {
   assert.match(
     dashboardSource,
-    /\.two-col\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+    /\.two-col\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*align-items:\s*start;/,
   )
   assert.match(
     dashboardSource,
-    /\.action-panel\s*\{[^}]*min-width:\s*0;/,
+    /\.panel\.action-panel\s*\{[^}]*align-self:\s*start;[^}]*min-width:\s*0;/,
+  )
+})
+
+test('action panels use compact hierarchy without reserving empty equal-height space', () => {
+  assert.match(dashboardSource, /class="panel action-panel decision-action-panel enter delay-1"/)
+  assert.match(dashboardSource, /class="panel action-panel holding-action-panel enter delay-2"/)
+  assert.match(dashboardSource, /全部决策 <span aria-hidden="true">→<\/span>/)
+  assert.match(dashboardSource, /查看组合 <span aria-hidden="true">→<\/span>/)
+  assert.match(
+    dashboardSource,
+    /\.panel-meta\s*\{[^}]*min-height:\s*0;[^}]*padding:\s*10px 0 12px;/,
+  )
+  assert.match(
+    dashboardSource,
+    /\.panel-meta \.val-dist-placeholder\s*\{[^}]*display:\s*none;/,
+  )
+  assert.match(
+    dashboardSource,
+    /\.panel-body\s*\{[^}]*flex:\s*0 0 auto;/,
+  )
+})
+
+test('action summaries expose decision counts as aligned visual metrics', () => {
+  assert.match(dashboardSource, /class="meta-stat is-buy"><em>买入<\/em><b>/)
+  assert.match(dashboardSource, /class="meta-stat is-sell"><em>卖出<\/em><b>/)
+  assert.match(dashboardSource, /class="meta-stat is-executable"><em>可执行<\/em><b>/)
+  assert.match(dashboardSource, /class="meta-stat is-sell"><em>卖点<\/em><b>/)
+  assert.match(
+    dashboardSource,
+    /\.meta-date\s*\{[^}]*border-right:\s*1px solid/,
+  )
+  assert.match(
+    dashboardSource,
+    /\.meta-stat\s*\{[^}]*display:\s*inline-flex;[^}]*font-variant-numeric:\s*tabular-nums;/,
+  )
+})
+
+test('desktop action tables use a flat compact table surface inside each panel', () => {
+  assert.match(
+    dashboardSource,
+    /\.action-panel \.dash-table\s*\{[^}]*border-top:\s*1px solid[^}]*border-bottom:\s*1px solid[^}]*border-radius:\s*0;/,
+  )
+  assert.match(
+    dashboardSource,
+    /\.action-panel \.dash-table :deep\(th\.el-table__cell\)\s*\{[^}]*height:\s*36px;/,
+  )
+  assert.match(
+    dashboardSource,
+    /\.action-panel \.dash-table :deep\(td\.el-table__cell\)\s*\{[^}]*height:\s*50px;/,
   )
 })
 

@@ -66,19 +66,19 @@ test('dashboard shows Golden Dragon and representative China concept stocks as c
   assert.doesNotMatch(dashboardSource, /<h5>A股盘前<\/h5>/)
   assert.match(
     dashboardSource,
-    /\.china-assets-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
+    /\.china-assets-grid,[\s\S]*?\.china-concept-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
   )
   assert.match(
     dashboardSource,
-    /\.china-concept-grid \.overnight-quote:nth-child\(3n\)\s*\{[^}]*border-right:\s*0;/s,
+    /\.overnight-index-grid\.china-assets-grid \.overnight-quote,[\s\S]*?\.overnight-index-grid\.china-concept-grid \.overnight-quote\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/s,
   )
   assert.match(
     dashboardSource,
-    /@media \(max-width: 560px\)[\s\S]*?\.china-concept-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
+    /@media \(max-width: 900px\)[\s\S]*?\.china-assets-grid,[\s\S]*?\.china-concept-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s,
   )
   assert.match(
     dashboardSource,
-    /@media \(max-width: 560px\)[\s\S]*?\.overnight-quote-name small\.china-asset-meta\s*\{[^}]*display:\s*block;/s,
+    /@media \(max-width: 560px\)[\s\S]*?\.overnight-quote-name small\.china-asset-meta\s*\{[^}]*display:\s*flex;/s,
   )
 })
 
@@ -451,7 +451,19 @@ test('dashboard separates overnight indexes, market themes and star quotes with 
 test('dashboard keeps overnight layers stable across desktop and phone layouts', () => {
   assert.match(
     dashboardSource,
-    /\.overnight-index-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/s,
+    /\.overnight-index-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.overnight-index-grid \.overnight-quote\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*border-bottom:\s*1px solid/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.overnight-index-grid \.overnight-quote-name strong\s*\{[^}]*overflow:\s*visible;[^}]*text-overflow:\s*clip;[^}]*white-space:\s*normal;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.morning-block-head\s*\{[^}]*align-items:\s*center;[^}]*min-height:\s*28px;/s,
   )
   assert.match(
     dashboardSource,

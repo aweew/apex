@@ -1310,24 +1310,26 @@ onMounted(() => {
 
     <div class="two-col">
       <!-- ② 今日决策 -->
-      <section class="panel action-panel enter delay-1">
+      <section class="panel action-panel decision-action-panel enter delay-1">
         <div class="panel-head">
           <div>
             <h3>今日决策</h3>
             <p class="panel-desc">买入机会 Top3</p>
           </div>
-          <el-button link type="primary" @click="router.push('/decision')">全部</el-button>
+          <el-button class="panel-action-link" link type="primary" @click="router.push('/decision')">
+            全部决策 <span aria-hidden="true">→</span>
+          </el-button>
         </div>
 
         <div class="panel-meta">
           <div class="meta-line">
             <span class="meta-date">{{ decision?.actionDate || '-' }}</span>
-            <span v-if="decision?.hasToday" class="meta-counts">
-              买 {{ decision.buyCount ?? 0 }}
-              · 卖 {{ decision.sellCount ?? 0 }}
-              · 可执行 {{ decision.executableCount ?? 0 }}
-            </span>
-            <span v-else class="meta-counts">{{ loading || refreshing ? '加载中…' : '尚无清单' }}</span>
+            <template v-if="decision?.hasToday">
+              <span class="meta-stat is-buy"><em>买入</em><b>{{ decision.buyCount ?? 0 }}</b></span>
+              <span class="meta-stat is-sell"><em>卖出</em><b>{{ decision.sellCount ?? 0 }}</b></span>
+              <span class="meta-stat is-executable"><em>可执行</em><b>{{ decision.executableCount ?? 0 }}</b></span>
+            </template>
+            <span v-else class="meta-status">{{ loading || refreshing ? '加载中…' : '尚无清单' }}</span>
           </div>
           <p class="meta-note">
             {{
@@ -1468,22 +1470,22 @@ onMounted(() => {
       </section>
 
       <!-- ③ 持仓行动 -->
-      <section class="panel action-panel enter delay-2">
+      <section class="panel action-panel holding-action-panel enter delay-2">
         <div class="panel-head">
           <div>
             <h3>持仓行动</h3>
             <p class="panel-desc">止损止盈与策略卖出优先</p>
           </div>
-          <el-button link type="primary" @click="router.push('/portfolio')">我的组合</el-button>
+          <el-button class="panel-action-link" link type="primary" @click="router.push('/portfolio')">
+            查看组合 <span aria-hidden="true">→</span>
+          </el-button>
         </div>
 
         <div class="panel-meta">
           <div class="meta-line">
             <span class="meta-date">{{ decision?.actionDate || '-' }}</span>
-            <span class="meta-counts">
-              卖点 {{ topSells.length }}
-              · 优先风控 / 策略卖出
-            </span>
+            <span class="meta-stat is-sell"><em>卖点</em><b>{{ topSells.length }}</b></span>
+            <span class="meta-priority">风控 / 策略卖出优先</span>
           </div>
           <p class="meta-note">对照今日决策清单执行，卖出优先处理</p>
           <div class="val-dist val-dist-placeholder" aria-hidden="true" />
@@ -1687,62 +1689,153 @@ onMounted(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 14px;
-  align-items: stretch;
+  align-items: start;
 }
 
-.action-panel {
+.panel.action-panel {
   display: flex;
   flex-direction: column;
+  align-self: start;
   min-width: 0;
   min-height: 0;
+  padding: 14px 16px 16px;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 7px 20px rgba(15, 23, 42, 0.05);
 }
 
 .action-panel .panel-head {
   flex: 0 0 auto;
-  margin-bottom: 8px;
+  align-items: center;
+  min-height: 42px;
+  margin-bottom: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.action-panel .panel-head > div {
+  position: relative;
+  min-width: 0;
+  padding-left: 10px;
+}
+
+.action-panel .panel-head > div::before {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  content: '';
+}
+
+.holding-action-panel .panel-head > div::before {
+  background: var(--warn);
+}
+
+.action-panel .panel-head h3 {
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.action-panel .panel-desc {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.panel-action-link {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 2px;
+  font-size: 12px;
+}
+
+.panel-action-link :deep(span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .panel-meta {
   flex: 0 0 auto;
-  min-height: 72px;
-  margin-bottom: 10px;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 0 12px;
 }
 
 .meta-line {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 12px;
-  margin-bottom: 4px;
+  align-items: center;
+  gap: 5px 10px;
+  min-height: 22px;
+  margin-bottom: 5px;
 }
 
 .meta-date {
+  padding-right: 10px;
+  border-right: 1px solid rgba(15, 23, 42, 0.1);
   font-size: 12px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
 }
 
-.meta-counts {
-  font-size: 12px;
-  color: var(--slate);
+.meta-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.meta-note {
-  margin: 0 0 8px;
+.meta-stat em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.meta-stat b {
+  color: var(--ink-soft);
   font-size: 12px;
+  font-weight: 700;
+}
+
+.meta-stat.is-buy b { color: var(--up); }
+.meta-stat.is-sell b { color: var(--down); }
+.meta-stat.is-executable b { color: var(--accent); }
+
+.meta-status,
+.meta-priority {
+  color: var(--slate);
+  font-size: 11px;
+}
+
+.meta-note {
+  min-height: 0;
+  margin: 0;
+  font-size: 11px;
   line-height: 1.45;
   color: var(--muted);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 2.9em;
+}
+
+.panel-meta .val-dist {
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+}
+
+.panel-meta .val-dist-placeholder {
+  display: none;
 }
 
 .panel-body {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -3088,10 +3181,10 @@ onMounted(() => {
 
 .morning-block-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 24px;
+  min-height: 28px;
   margin-bottom: 12px;
 }
 
@@ -3150,7 +3243,7 @@ onMounted(() => {
 
 .overnight-index-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   width: 100%;
   overflow: hidden;
@@ -3159,28 +3252,25 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.42);
 }
 
-.china-assets-grid {
+.china-assets-grid,
+.china-concept-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.china-concept-grid .overnight-quote {
-  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
-}
-
-.china-concept-grid .overnight-quote:nth-child(3n) {
-  border-right: 0;
-}
-
-.china-concept-grid .overnight-quote:nth-last-child(-n + 3) {
-  border-bottom-color: transparent;
-}
-
-.china-assets-grid .overnight-quote,
-.china-concept-grid .overnight-quote {
+.overnight-index-grid.china-assets-grid .overnight-quote,
+.overnight-index-grid.china-concept-grid .overnight-quote {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   min-height: 58px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 0;
+}
+
+.overnight-index-grid.china-assets-grid .overnight-quote:nth-child(odd):not(:last-child),
+.overnight-index-grid.china-concept-grid .overnight-quote:nth-child(odd):not(:last-child) {
+  border-right: 1px solid rgba(15, 23, 42, 0.07);
 }
 
 .china-assets-grid .overnight-quote-name,
@@ -3194,6 +3284,7 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 6px;
+  line-height: 1.35;
   white-space: normal;
 }
 
@@ -3333,19 +3424,29 @@ onMounted(() => {
 }
 
 .overnight-index-grid .overnight-quote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
   min-height: 44px;
   padding: 0 10px;
-  border-right: 1px solid rgba(15, 23, 42, 0.07);
-  border-bottom: 0;
+  border-right: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
 }
 
 .overnight-index-grid .overnight-quote:last-child {
-  border-right: 0;
+  border-bottom-color: transparent;
 }
 
-.overnight-index-grid .overnight-quote:nth-last-child(-n + 3),
 .overnight-star-grid .overnight-quote:nth-last-child(-n + 2) {
   border-bottom-color: transparent;
+}
+
+.overnight-index-grid .overnight-quote-name strong {
+  overflow: visible;
+  line-height: 1.4;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .overnight-quote-name {
@@ -3969,10 +4070,9 @@ onMounted(() => {
   }
 
   .overnight-index-grid .overnight-quote {
-    align-items: flex-start;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
     padding: 6px 8px;
   }
 
@@ -3996,46 +4096,26 @@ onMounted(() => {
     border-bottom-color: transparent;
   }
 
-  .overnight-quote-name small {
+  .overnight-star-grid .overnight-quote-name small {
     display: none;
   }
 
   .china-concept-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .china-concept-grid .overnight-quote:nth-child(3n) {
-    border-right: 1px solid rgba(15, 23, 42, 0.07);
-  }
-
-  .china-concept-grid .overnight-quote:nth-child(2n) {
-    border-right: 0;
-  }
-
-  .china-concept-grid .overnight-quote:nth-last-child(-n + 3) {
-    border-bottom-color: rgba(15, 23, 42, 0.07);
-  }
-
-  .china-concept-grid .overnight-quote:nth-last-child(-n + 2) {
-    border-bottom-color: transparent;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .china-assets-grid .overnight-quote,
   .china-concept-grid .overnight-quote {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    align-items: start;
   }
 
   .overnight-quote-name small.china-asset-meta {
-    display: block;
+    display: flex;
     font-size: 10px;
     line-height: 1.3;
     white-space: normal;
-  }
-
-  .china-asset-price {
-    display: none;
   }
 
   .morning-news-lead {
@@ -4116,6 +4196,22 @@ onMounted(() => {
 
   .morning-context-head {
     align-items: center;
+  }
+
+  .china-assets-grid,
+  .china-concept-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .china-assets-grid .overnight-quote,
+  .china-concept-grid .overnight-quote {
+    border-right: 0;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  }
+
+  .china-assets-grid .overnight-quote:last-child,
+  .china-concept-grid .overnight-quote:last-child {
+    border-bottom-color: transparent;
   }
 
 }
@@ -4222,11 +4318,39 @@ onMounted(() => {
 .dash-table {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.45);
+  --el-table-header-bg-color: rgba(15, 23, 42, 0.035);
   --el-table-row-hover-bg-color: rgba(0, 113, 227, 0.05);
-  --el-table-border-color: rgba(0, 0, 0, 0.05);
+  --el-table-border-color: rgba(15, 23, 42, 0.07);
   border-radius: var(--radius-sm);
   overflow: hidden;
+}
+
+.action-panel .dash-table {
+  border-top: 1px solid var(--el-table-border-color);
+  border-bottom: 1px solid var(--el-table-border-color);
+  border-radius: 0;
+  overflow: visible;
+}
+
+.action-panel .dash-table :deep(.el-table__inner-wrapper::before) {
+  display: none;
+}
+
+.action-panel .dash-table :deep(th.el-table__cell) {
+  height: 36px;
+  padding: 0;
+  color: var(--slate);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.action-panel .dash-table :deep(td.el-table__cell) {
+  height: 50px;
+  padding: 5px 0;
+}
+
+.action-panel .dash-table :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) {
+  background: rgba(15, 23, 42, 0.018);
 }
 
 .dash-table :deep(.action-cues-col .cell) {

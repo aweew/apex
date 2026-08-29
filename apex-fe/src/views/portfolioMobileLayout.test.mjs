@@ -219,6 +219,10 @@ test('shared portfolios expose write controls when the backend marks them editab
 test('desktop portfolio actions use one grouped toolbar', () => {
   assert.match(portfolioSource, /class="portfolio-desktop-toolbar"/)
   assert.match(portfolioSource, /function handleDesktopToolbarAction\(command\)/)
+  assert.match(portfolioSource, /\.portfolio-desktop-toolbar :deep\(\.el-button\)\s*\{[\s\S]*?min-height:\s*32px;/)
+  assert.match(portfolioSource, /\.portfolio-desktop-toolbar :deep\(\.el-button\)\s*\{[\s\S]*?padding:\s*0 12px;/)
+  assert.match(portfolioSource, /\.portfolio-desktop-toolbar\s*\{[\s\S]*?gap:\s*4px;/)
+  assert.doesNotMatch(portfolioSource, /\.portfolio-desktop-toolbar\s*\{[^}]*box-shadow:/s)
   assert.doesNotMatch(portfolioSource, /class="actions desktop-header-actions"/)
   assert.doesNotMatch(portfolioSource, /class="actions detail-actions"/)
 })
