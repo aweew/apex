@@ -199,9 +199,25 @@ test('dashboard command band is two-column on desktop and safe on phone layouts'
     dashboardSource,
     /\.morning-context-grid\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*gap:\s*0;/s,
   )
-  assert.match(dashboardSource, /\.command-action\s*\{[^}]*min-height:\s*48px;/s)
+  assert.match(dashboardSource, /\.command-action\s*\{[^}]*min-height:\s*64px;/s)
   assert.match(dashboardSource, /\.command-action[^}]*overflow-wrap:\s*anywhere;/s)
   assert.doesNotMatch(dashboardSource, /\.command-(?:band|grid|column|action)\s*\{[^}]*(?<!-)height:\s*\d+px;/s)
+})
+
+test('dashboard gives the command summary more desktop width and top-aligns the guide content', () => {
+  assert.match(
+    dashboardSource,
+    /@media \(min-width: 1200px\)[\s\S]*?\.command-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.25fr\) minmax\(300px, 0\.85fr\);/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.command-guide\s*\{[^}]*align-self:\s*stretch;[^}]*justify-content:\s*flex-start;[^}]*border-left:\s*1px solid var\(--line\);/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.command-actions\s*\{[^}]*margin-top:\s*12px;[^}]*margin-bottom:\s*0;/s,
+  )
+  assert.doesNotMatch(dashboardSource, /\.command-actions\s*\{[^}]*margin-(?:top|bottom):\s*auto;/s)
 })
 
 test('dashboard morning context has a compact responsive layout', () => {
@@ -318,7 +334,7 @@ test('dashboard keeps dense briefing copy readable across desktop and mobile', (
   )
   assert.match(
     dashboardSource,
-    /\.command-action-copy\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.5;/s,
+    /\.command-action-copy\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.6;/s,
   )
   assert.match(
     dashboardSource,
@@ -416,7 +432,10 @@ test('dashboard morning context leads with a conclusion and keeps supporting evi
     dashboardSource,
     /\.morning-news-lead\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);[^}]*border-left:\s*2px solid/s,
   )
-  assert.match(dashboardSource, /\.morning-news-summary\s*\{[^}]*max-width:\s*78ch;/s)
+  assert.match(
+    dashboardSource,
+    /\.morning-news-summary\s*\{[^}]*max-width:\s*68ch;[^}]*line-height:\s*1\.75;/s,
+  )
   assert.match(dashboardSource, /\.morning-context-block\s*\{[^}]*align-self:\s*start;/s)
   assert.match(
     dashboardSource,
@@ -446,6 +465,22 @@ test('dashboard separates overnight indexes, market themes and star quotes with 
   assert.match(dashboardSource, /v-for="\(theme, index\) in overnightThemes"/)
   assert.match(dashboardSource, /v-for="quote in overnightStars"/)
   assert.doesNotMatch(dashboardSource, /绝对涨跌幅前八/)
+})
+
+test('dashboard benchmark index cards prioritize percentage changes over point values', () => {
+  const benchmarkStart = dashboardSource.indexOf('class="overnight-index-grid benchmark-index-grid"')
+  const benchmarkEnd = dashboardSource.indexOf('<p v-else class="morning-context-empty">', benchmarkStart)
+  const benchmarkMarkup = dashboardSource.slice(benchmarkStart, benchmarkEnd)
+
+  assert.ok(benchmarkStart > 0)
+  assert.match(dashboardSource, /<h5>三大指数<\/h5>[\s\S]{0,80}?<span>涨跌幅<\/span>/)
+  assert.match(benchmarkMarkup, /v-for="quote in overnightIndexes"/)
+  assert.match(benchmarkMarkup, /fmtIndexPct\(quote\.pctChg\)/)
+  assert.doesNotMatch(benchmarkMarkup, /latestPrice|fmtQuotePrice/)
+  assert.match(
+    dashboardSource,
+    /\.benchmark-index-grid \.overnight-quote > b\s*\{[^}]*font-size:\s*15px;[^}]*font-weight:\s*750;/s,
+  )
 })
 
 test('dashboard keeps overnight layers stable across desktop and phone layouts', () => {

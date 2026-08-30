@@ -827,7 +827,8 @@ onMounted(() => {
                   v-for="item in command.preMarketSummary.forecast.focusItems"
                   :key="`${item.name}-${item.reason}`"
                 >
-                  <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
+                  <b>{{ item.name }}</b>
+                  <span v-if="item.reason">{{ item.reason }}</span>
                   <small v-if="item.watchStocks?.length">候选 {{ item.watchStocks.join('、') }}</small>
                 </span>
               </div>
@@ -837,7 +838,8 @@ onMounted(() => {
                   v-for="item in command.preMarketSummary.forecast.riskItems"
                   :key="`${item.name}-${item.reason}`"
                 >
-                  <b>{{ item.name }}</b>{{ item.reason ? `：${item.reason}` : '' }}
+                  <b>{{ item.name }}</b>
+                  <span v-if="item.reason">{{ item.reason }}</span>
                 </span>
               </div>
             </div>
@@ -973,13 +975,12 @@ onMounted(() => {
           <div class="overnight-layer">
             <div class="overnight-layer-head">
               <h5>三大指数</h5>
-              <span>收盘表现</span>
+              <span>涨跌幅</span>
             </div>
-            <div v-if="overnightIndexes.length" class="overnight-index-grid">
+            <div v-if="overnightIndexes.length" class="overnight-index-grid benchmark-index-grid">
               <div v-for="quote in overnightIndexes" :key="quote.symbol" class="overnight-quote">
                 <div class="overnight-quote-name">
                   <strong>{{ quote.name || quote.symbol }}</strong>
-                  <small v-if="fmtQuotePrice(quote.latestPrice)">{{ fmtQuotePrice(quote.latestPrice) }}</small>
                 </div>
                 <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
               </div>
@@ -1689,13 +1690,13 @@ onMounted(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 14px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .panel.action-panel {
   display: flex;
   flex-direction: column;
-  align-self: start;
+  align-self: stretch;
   min-width: 0;
   min-height: 0;
   padding: 14px 16px 16px;
@@ -2624,10 +2625,9 @@ onMounted(() => {
 
 .command-band {
   min-width: 0;
-  margin: 0 0 14px;
-  padding: 18px 2px 20px;
+  margin: 0;
+  padding: 22px 2px 26px;
   border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
   letter-spacing: 0;
 }
 
@@ -2663,7 +2663,7 @@ onMounted(() => {
 }
 
 .command-head p {
-  margin: 4px 0 12px;
+  margin: 5px 0 16px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
@@ -2703,11 +2703,15 @@ onMounted(() => {
 
 .command-column {
   min-width: 0;
-  padding: 2px 18px 0 0;
+  padding: 2px 22px 0 0;
 }
 
 .command-guide {
-  padding: 2px 0 0 18px;
+  display: flex;
+  align-self: stretch;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 2px 0 0 22px;
   border-left: 1px solid var(--line);
 }
 
@@ -2716,7 +2720,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 9px;
+  margin-bottom: 12px;
 }
 
 .command-column-head h4 {
@@ -2744,37 +2748,43 @@ onMounted(() => {
 }
 
 .command-forecast {
-  margin-top: 10px;
-  padding: 9px 10px;
+  margin-top: 12px;
+  padding: 12px 14px 14px;
   border-left: 2px solid rgba(0, 113, 227, 0.5);
-  background: rgba(0, 113, 227, 0.04);
+  background: rgba(0, 113, 227, 0.035);
 }
 
 .command-forecast-label,
 .command-forecast-watch > span {
+  display: block;
   color: var(--accent);
   font-size: 11px;
   font-weight: 700;
 }
 
 .command-forecast > p {
-  margin: 3px 0 0;
+  max-width: 72ch;
+  margin: 5px 0 0;
   color: var(--ink-soft);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 13px;
+  font-weight: 520;
+  line-height: 1.75;
   overflow-wrap: anywhere;
 }
 
 .command-forecast-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-  margin-top: 8px;
+  gap: 24px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .command-forecast-direction {
   display: grid;
-  gap: 5px;
+  align-content: start;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -2783,9 +2793,14 @@ onMounted(() => {
 }
 
 .command-forecast-direction > span {
+  display: grid;
+  grid-template-columns: minmax(68px, max-content) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 3px;
   color: var(--slate);
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.65;
   overflow-wrap: anywhere;
 }
 
@@ -2797,7 +2812,7 @@ onMounted(() => {
 
 .command-forecast-direction > span small {
   display: block;
-  margin-top: 2px;
+  grid-column: 2;
   color: var(--accent);
   font-size: 11px;
 }
@@ -2806,16 +2821,16 @@ onMounted(() => {
 .command-forecast-direction.risk > strong { color: var(--up); }
 
 .command-forecast-watch {
-  margin-top: 8px;
-  padding-top: 7px;
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .command-forecast-watch p {
-  margin: 3px 0 0;
+  margin: 5px 0 0;
   color: var(--slate);
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.65;
   overflow-wrap: anywhere;
 }
 
@@ -2917,7 +2932,8 @@ onMounted(() => {
 }
 
 .command-actions {
-  margin-top: 8px;
+  margin-top: 12px;
+  margin-bottom: 0;
   border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
@@ -2925,12 +2941,12 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
-  min-height: 48px;
+  min-height: 64px;
   margin: 0;
-  padding: 9px 2px;
+  padding: 11px 4px;
   border: 0;
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
   background: transparent;
@@ -2971,10 +2987,11 @@ onMounted(() => {
 .command-action-copy {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   min-width: 0;
   color: var(--ink-soft);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .command-action-title {
@@ -3120,6 +3137,10 @@ onMounted(() => {
 }
 
 @media (min-width: 1200px) {
+  .command-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.85fr);
+  }
+
   .morning-context-grid.is-market-collapsed {
     grid-template-columns: minmax(0, 3fr) minmax(0, 5fr);
   }
@@ -3185,7 +3206,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 10px;
   min-height: 28px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .morning-block-head h4 {
@@ -3438,6 +3459,19 @@ onMounted(() => {
   border-bottom-color: transparent;
 }
 
+.benchmark-index-grid .overnight-quote {
+  min-height: 48px;
+}
+
+.benchmark-index-grid .overnight-quote-name strong {
+  font-size: 13px;
+}
+
+.benchmark-index-grid .overnight-quote > b {
+  font-size: 15px;
+  font-weight: 750;
+}
+
 .overnight-star-grid .overnight-quote:nth-last-child(-n + 2) {
   border-bottom-color: transparent;
 }
@@ -3617,9 +3651,9 @@ onMounted(() => {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
-  margin-bottom: 10px;
-  padding: 12px 14px;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
   border-left: 2px solid var(--accent);
   background: rgba(22, 105, 201, 0.045);
 }
@@ -3634,12 +3668,12 @@ onMounted(() => {
 }
 
 .morning-news-summary {
-  max-width: 78ch;
+  max-width: 68ch;
   margin: 0;
   color: var(--ink-soft);
   font-size: 13px;
   font-weight: 500;
-  line-height: 1.6;
+  line-height: 1.75;
   letter-spacing: 0;
 }
 
@@ -3648,7 +3682,7 @@ onMounted(() => {
 }
 
 .pre-market-event-impact {
-  margin: 12px 0;
+  margin: 14px 0;
   border-top: 1px solid rgba(15, 23, 42, 0.07);
 }
 
@@ -3674,7 +3708,7 @@ onMounted(() => {
 }
 
 .pre-market-event-item {
-  padding: 10px 0;
+  padding: 12px 0;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
@@ -4037,6 +4071,15 @@ onMounted(() => {
 
   .command-forecast-grid {
     grid-template-columns: 1fr;
+  }
+
+  .command-forecast-direction > span {
+    grid-template-columns: 1fr;
+    row-gap: 1px;
+  }
+
+  .command-forecast-direction > span small {
+    grid-column: 1;
   }
 
   .morning-context .morning-context-head {

@@ -42,15 +42,15 @@ test('desktop decision table reserves one complete flexible cue column for linka
 test('desktop action panels stay inside the dashboard container', () => {
   assert.match(
     dashboardSource,
-    /\.two-col\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*align-items:\s*start;/,
+    /\.two-col\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*align-items:\s*stretch;/,
   )
   assert.match(
     dashboardSource,
-    /\.panel\.action-panel\s*\{[^}]*align-self:\s*start;[^}]*min-width:\s*0;/,
+    /\.panel\.action-panel\s*\{[^}]*align-self:\s*stretch;[^}]*min-width:\s*0;/,
   )
 })
 
-test('action panels use compact hierarchy without reserving empty equal-height space', () => {
+test('action panels use compact hierarchy and share the row height', () => {
   assert.match(dashboardSource, /class="panel action-panel decision-action-panel enter delay-1"/)
   assert.match(dashboardSource, /class="panel action-panel holding-action-panel enter delay-2"/)
   assert.match(dashboardSource, /全部决策 <span aria-hidden="true">→<\/span>/)
