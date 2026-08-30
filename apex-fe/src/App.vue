@@ -107,6 +107,7 @@ const settingsDrawerSize = computed(() => (isMobileViewport.value ? '74%' : '380
 const COMMAND_ROUTE_ITEMS = [
   { to: '/dashboard', label: '看板', detail: '市场立场与今日指挥', keywords: '首页 工作台' },
   { to: '/pre-market-report', label: '盘前研报', detail: '盘前市场、主线与组合风险研判', keywords: '晨报 研报 市场判断' },
+  { to: '/weekend-report', label: '周末研报', detail: '上周走势、周末消息与下周主线', keywords: '周末 消息面 研报 主线 周日' },
   { to: '/decision', label: '智能决策', detail: '买卖清单与执行条件', keywords: '决策 买入 卖出' },
   { to: '/watchlist', label: '自选', detail: '维护关注标的', keywords: '股票 分组' },
   { to: '/observe', label: '观察池', detail: '跟踪触发条件', keywords: '提醒 观察' },
@@ -199,6 +200,7 @@ function resolveRouteLabel(pathname) {
   const routeLabels = [
     ['/dashboard', '看板'],
     ['/pre-market-report', '盘前研报'],
+    ['/weekend-report', '周末研报'],
     ['/decision', '智能决策'],
     ['/ai-center', '小灵'],
     ['/watchlist', '自选'],

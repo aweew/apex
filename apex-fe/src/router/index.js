@@ -28,6 +28,7 @@ const LoginView = () => import('../views/LoginView.vue')
 const RegisterView = () => import('../views/RegisterView.vue')
 const ApexAiView = () => import('../views/ApexAiView.vue')
 const PreMarketReportView = () => import('../views/PreMarketReportView.vue')
+const WeekendReportView = () => import('../views/WeekendReportView.vue')
 const UserUsageView = () => import('../views/UserUsageView.vue')
 
 const router = createRouter({
@@ -45,6 +46,7 @@ const router = createRouter({
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', name: 'dashboard', component: DashboardView },
     { path: '/pre-market-report', name: 'preMarketReport', component: PreMarketReportView },
+    { path: '/weekend-report', name: 'weekendReport', component: WeekendReportView },
     { path: '/ai-center', name: 'apexAi', component: ApexAiView },
     { path: '/decision', name: 'decision', component: DecisionView },
     { path: '/market', name: 'market', component: IndexBoardView },

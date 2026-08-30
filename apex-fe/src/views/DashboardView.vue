@@ -3,11 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { dashboardHome } from '../api/dashboard'
+import { fetchWeekendMarketReport } from '../api/weekendReport'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 import { publishDataFreshness, staleDataTime } from '../utils/dataFreshness.js'
+import IntradaySparkline from '../components/IntradaySparkline.vue'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v20'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v21'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
@@ -17,6 +19,7 @@ const morningMarketExpanded = ref(false)
 const morningNewsExpanded = ref(false)
 const opinionPreviewOpen = ref(false)
 const opinionPreview = ref(null)
+const weekendReport = ref(null)
 
 function readHomeCache() {
   try {
@@ -50,6 +53,12 @@ const hasExecutableNewPosition = computed(() => commandOperationItems.value.some
   (item) => item.code === 'BUY_CONDITIONALLY' && item.status === 'READY',
 ))
 const morningBriefing = computed(() => home.value?.morningBriefing || null)
+const weekendReportMeta = computed(() => {
+  if (!weekendReport.value) return '尚未生成'
+  const date = weekendReport.value.reportDate || weekendReport.value.generatedAt?.slice?.(0, 10)
+  const source = weekendReport.value.reportSource === 'AI' ? '智能研判' : '规则研判'
+  return [date, source].filter(Boolean).join(' · ') || '已生成'
+})
 const morningBriefingTime = computed(() => staleDataTime({
   tradeDate: morningBriefing.value?.tradeDate,
   updatedAt: morningBriefing.value?.generatedAt,
@@ -79,18 +88,6 @@ const overnightIndexes = computed(() => {
   return marketQuotes.filter((quote) => legacyIndexSymbols.has(quote.symbol))
 })
 const overnightThemes = computed(() => morningBriefing.value?.marketThemes || [])
-const chinaGoldenDragon = computed(() => (
-  morningBriefing.value?.chinaGoldenDragon
-  || (morningBriefing.value?.marketQuotes || []).find((quote) => quote.symbol === 'usHXC')
-  || null
-))
-const chinaConceptMovers = computed(() => {
-  const chinaConceptQuotes = morningBriefing.value?.chinaConceptQuotes || []
-  return [...chinaConceptQuotes]
-    .filter((quote) => quote?.pctChg != null)
-    .sort((left, right) => Math.abs(Number(right.pctChg)) - Math.abs(Number(left.pctChg)))
-    .slice(0, 6)
-})
 const asiaIndexes = computed(() => morningBriefing.value?.asiaQuotes || [])
 const openingAuction = computed(() => home.value?.openingAuction || null)
 const hasOpeningAuction = computed(() => Boolean(
@@ -101,6 +98,20 @@ const externalMarketAvailableCount = computed(
   () => externalMarketItems.value.filter((item) => item.available).length,
 )
 const ftseA50Future = computed(() => morningBriefing.value?.ftseA50Future || null)
+const chinaAssetIntradayPoints = computed(() => (
+  ftseA50Future.value?.intradayPoints
+  || ftseA50Future.value?.points
+  || []
+))
+const chinaAssetPreviousClose = computed(() => {
+  const quote = ftseA50Future.value
+  const latest = Number(quote?.latestPrice)
+  const pctChg = Number(quote?.pctChg)
+  if (Number.isFinite(latest) && Number.isFinite(pctChg) && pctChg !== -100) {
+    return latest / (1 + pctChg / 100)
+  }
+  return quote?.previousSettlement || quote?.previousClose || quote?.preClose || null
+})
 const overnightStars = computed(() => {
   const starQuotes = morningBriefing.value?.starQuotes
   if (Array.isArray(starQuotes)) return starQuotes
@@ -171,12 +182,6 @@ function fmtQuotePrice(v) {
   const n = Number(v)
   if (Number.isNaN(n)) return ''
   return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function fmtOvernightQuoteTime(quote) {
-  if (!quote?.quoteTime) return ''
-  const timezone = quote.symbol?.startsWith('us') ? '美东' : '北京'
-  return `源行情 ${timezone} ${String(quote.quoteTime).replace('T', ' ').slice(5, 16)}`
 }
 
 function fmtBriefingTime(v) {
@@ -473,6 +478,15 @@ async function load(opts = {}) {
   }
 }
 
+async function loadWeekendReport() {
+  try {
+    const response = await fetchWeekendMarketReport()
+    weekendReport.value = response.data
+  } catch {
+    // 周末研报为低频辅助入口，不影响看板主体加载。
+  }
+}
+
 onMounted(() => {
   const cached = readHomeCache()
   if (cached) {
@@ -482,6 +496,7 @@ onMounted(() => {
   } else {
     load()
   }
+  loadWeekendReport()
 })
 </script>
 
@@ -784,10 +799,10 @@ onMounted(() => {
       </div>
     </section>
 
-    <section v-if="command" class="command-band enter delay-1" aria-label="开盘准备">
+    <section v-if="command" class="command-band enter delay-1" aria-label="盘前决策">
       <div class="command-head">
         <div>
-          <h3>开盘准备</h3>
+          <h3>盘前决策</h3>
           <p>{{ commandDataTimeText }}</p>
         </div>
         <div class="command-head-actions">
@@ -916,6 +931,21 @@ onMounted(() => {
       </div>
     </section>
 
+    <section class="weekend-report-entry enter delay-1" aria-label="周末研报入口">
+      <div>
+        <span class="weekend-report-entry-kicker">周末消息面</span>
+        <h3>周末研报</h3>
+        <p>上周走势、周末消息与下周交易主线</p>
+      </div>
+      <div class="weekend-report-entry-meta">
+        <span>{{ weekendReportMeta }}</span>
+        <el-button link type="primary" @click="router.push('/weekend-report')">
+          查看周末研报
+          <span aria-hidden="true">→</span>
+        </el-button>
+      </div>
+    </section>
+
     <section id="pre-market-context" class="morning-context enter delay-1" aria-label="盘前依据">
       <div class="morning-context-head">
         <div class="morning-context-title">
@@ -993,45 +1023,24 @@ onMounted(() => {
           <div class="overnight-layer">
             <div class="overnight-layer-head">
               <h5>中国资产</h5>
-              <span>金龙指数与代表中概股</span>
+              <span>富时 A50 期指连续 · 涨跌幅</span>
             </div>
-            <div v-if="chinaGoldenDragon || ftseA50Future" class="overnight-index-grid china-assets-grid">
-              <div v-if="chinaGoldenDragon" class="overnight-quote">
-                <div class="overnight-quote-name">
-                  <strong>{{ chinaGoldenDragon.name || '纳斯达克中国金龙指数' }}</strong>
-                  <small class="china-asset-meta">
-                    <span v-if="fmtQuotePrice(chinaGoldenDragon.latestPrice)" class="china-asset-price">{{ fmtQuotePrice(chinaGoldenDragon.latestPrice) }}</span>
-                    <span v-if="fmtOvernightQuoteTime(chinaGoldenDragon)" class="china-asset-time">{{ fmtOvernightQuoteTime(chinaGoldenDragon) }}</span>
-                  </small>
-                </div>
-                <b :class="pctDir(chinaGoldenDragon.pctChg)">{{ fmtIndexPct(chinaGoldenDragon.pctChg) }}</b>
-              </div>
-              <div v-if="ftseA50Future" class="overnight-quote">
+            <div v-if="ftseA50Future" class="overnight-index-grid china-assets-grid">
+              <div class="overnight-quote">
                 <div class="overnight-quote-name">
                   <strong>富时 A50 期指连续</strong>
-                  <small class="china-asset-meta">
-                    <span v-if="fmtQuotePrice(ftseA50Future.latestPrice)" class="china-asset-price">{{ fmtQuotePrice(ftseA50Future.latestPrice) }}</span>
-                    <span v-if="fmtOvernightQuoteTime(ftseA50Future)" class="china-asset-time">{{ fmtOvernightQuoteTime(ftseA50Future) }}</span>
-                  </small>
                 </div>
                 <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
               </div>
-            </div>
-            <p v-if="!chinaGoldenDragon" class="morning-context-empty">纳斯达克中国金龙指数暂未获取</p>
-            <p v-if="!ftseA50Future" class="morning-context-empty">富时 A50 期指连续暂未获取</p>
-            <div v-if="chinaConceptMovers.length" class="overnight-index-grid china-concept-grid">
-              <div v-for="quote in chinaConceptMovers" :key="quote.symbol" class="overnight-quote">
-                <div class="overnight-quote-name">
-                  <strong>{{ quote.name || quote.symbol }}</strong>
-                  <small class="china-asset-meta">
-                    <span v-if="fmtQuotePrice(quote.latestPrice)" class="china-asset-price">{{ fmtQuotePrice(quote.latestPrice) }}</span>
-                    <span v-if="fmtOvernightQuoteTime(quote)" class="china-asset-time">{{ fmtOvernightQuoteTime(quote) }}</span>
-                  </small>
-                </div>
-                <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
+              <div class="china-asset-chart">
+                <IntradaySparkline
+                  :points="chinaAssetIntradayPoints"
+                  :previous-close="chinaAssetPreviousClose"
+                  label="富时 A50 期指连续日内走势"
+                />
               </div>
             </div>
-            <p v-else class="morning-context-empty">中概股代表行情暂未获取</p>
+            <p v-if="!ftseA50Future" class="morning-context-empty">富时 A50 期指连续暂未获取</p>
           </div>
 
           <button
@@ -1176,9 +1185,9 @@ onMounted(() => {
               </div>
               <a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
               <strong v-else>{{ item.title }}</strong>
-              <p v-if="morningNewsExpanded">{{ item.impactExplanation }}</p>
+              <p v-if="item.impactExplanation" class="pre-market-event-explanation">{{ item.impactExplanation }}</p>
               <div
-                v-if="morningNewsExpanded && (item.relatedCodes?.length || item.themes?.length)"
+                v-if="item.relatedCodes?.length || item.themes?.length"
                 class="pre-market-event-targets"
               >
                 <span v-for="code in item.relatedCodes || []" :key="code">{{ code }}</span>
@@ -1648,6 +1657,53 @@ onMounted(() => {
   padding: 1px 6px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.05);
+}
+
+.weekend-report-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  padding: 14px 18px;
+  border: 1px solid #dbe4eb;
+  background: #fbfcfd;
+}
+
+.weekend-report-entry-kicker {
+  color: #3977a6;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+
+.weekend-report-entry h3 {
+  display: inline;
+  margin: 0 0 0 10px;
+  color: #253a47;
+  font-size: 16px;
+}
+
+.weekend-report-entry p {
+  display: inline;
+  margin: 0 0 0 12px;
+  color: #87939b;
+  font-size: 12px;
+}
+
+.weekend-report-entry-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 16px;
+  color: #7b8992;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.weekend-report-entry-meta :deep(.el-button) {
+  margin: 0;
 }
 
 .dash-header .eyebrow {
@@ -2547,8 +2603,8 @@ onMounted(() => {
 
 .effect-strip {
   margin: 0 0 14px;
-  padding: 14px 16px 12px;
-  border-radius: var(--radius, 14px);
+  padding: 16px 18px 14px;
+  border-radius: var(--radius, 8px);
   border: 1px solid var(--glass-border, var(--line));
   background: var(--glass, rgba(255, 255, 255, 0.92));
   backdrop-filter: blur(var(--blur, 8px));
@@ -2557,21 +2613,34 @@ onMounted(() => {
 
 .effect-head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .effect-title {
-  font-size: 13px;
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 750;
   color: var(--ink);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.effect-title::before {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--accent);
+  content: '';
 }
 
 .effect-hint {
-  font-size: 12px;
+  min-width: 0;
+  font-size: 13px;
   color: var(--ink-soft, var(--muted));
   line-height: 1.4;
 }
@@ -2583,18 +2652,33 @@ onMounted(() => {
 .effect-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  border-radius: var(--radius-sm);
+  background: rgba(15, 23, 42, 0.022);
 }
 
 .effect-cell {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  justify-content: center;
+  gap: 7px;
   min-width: 0;
-  padding: 12px 11px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.03);
-  border: 1px solid transparent;
+  min-height: 72px;
+  box-sizing: border-box;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.effect-cell + .effect-cell {
+  border-left: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.effect-cell:nth-child(4) {
+  border-left-color: rgba(22, 105, 201, 0.2);
 }
 
 .effect-cell em {
@@ -2605,18 +2689,12 @@ onMounted(() => {
 }
 
 .effect-cell b {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-}
-
-.effect-cell.up,
-.effect-cell.down {
-  background: rgba(15, 23, 42, 0.03);
-  border-color: rgba(15, 23, 42, 0.06);
+  line-height: 1.1;
+  letter-spacing: 0;
 }
 
 .effect-cell.up b { color: var(--up); }
@@ -3273,44 +3351,20 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.42);
 }
 
-.china-assets-grid,
-.china-concept-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.china-assets-grid {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0 10px 8px;
 }
 
-.overnight-index-grid.china-assets-grid .overnight-quote,
-.overnight-index-grid.china-concept-grid .overnight-quote {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  min-height: 58px;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  border-bottom: 0;
+.china-assets-grid .overnight-quote {
+  padding: 0;
 }
 
-.overnight-index-grid.china-assets-grid .overnight-quote:nth-child(odd):not(:last-child),
-.overnight-index-grid.china-concept-grid .overnight-quote:nth-child(odd):not(:last-child) {
-  border-right: 1px solid rgba(15, 23, 42, 0.07);
-}
-
-.china-assets-grid .overnight-quote-name,
-.china-concept-grid .overnight-quote-name {
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.china-asset-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 6px;
-  line-height: 1.35;
-  white-space: normal;
-}
-
-.china-asset-time {
-  overflow-wrap: anywhere;
+.china-asset-chart {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-top: 5px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .opening-auction-grid {
@@ -4020,7 +4074,36 @@ onMounted(() => {
   overflow-wrap: anywhere;
 }
 
+@media (min-width: 561px) and (max-width: 900px) {
+  .effect-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .effect-cell:nth-child(4) {
+    border-left: 0;
+  }
+
+  .effect-cell:nth-child(n + 4) {
+    border-top: 1px solid rgba(15, 23, 42, 0.07);
+  }
+}
+
 @media (max-width: 560px) {
+  .weekend-report-entry {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .weekend-report-entry p {
+    display: block;
+    margin: 5px 0 0;
+  }
+
+  .weekend-report-entry-meta {
+    justify-content: flex-start;
+    white-space: normal;
+  }
+
   .observe-chips {
     grid-template-columns: 1fr;
   }
@@ -4036,14 +4119,29 @@ onMounted(() => {
     grid-template-columns: 1fr 1fr;
   }
 
+  .effect-strip {
+    padding: 14px 12px 12px;
+  }
+
+  .effect-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+
+  .effect-hint {
+    font-size: 12px;
+  }
+
   .effect-cell {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
     box-sizing: border-box;
-    min-height: 48px;
-    padding: 7px 10px;
+    min-height: 52px;
+    padding: 8px 10px;
   }
 
   .effect-cell em,
@@ -4057,12 +4155,17 @@ onMounted(() => {
   .effect-cell b {
     flex: 0 0 auto;
     justify-content: flex-end;
+    font-size: 17px;
     text-align: right;
     white-space: nowrap;
   }
 
-  .effect-cell:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
+  .effect-cell:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .effect-cell:nth-child(n + 3) {
+    border-top: 1px solid rgba(15, 23, 42, 0.07);
   }
 
   .command-directions {
@@ -4143,24 +4246,6 @@ onMounted(() => {
     display: none;
   }
 
-  .china-concept-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .china-assets-grid .overnight-quote,
-  .china-concept-grid .overnight-quote {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
-  }
-
-  .overnight-quote-name small.china-asset-meta {
-    display: flex;
-    font-size: 10px;
-    line-height: 1.3;
-    white-space: normal;
-  }
-
   .morning-news-lead {
     grid-template-columns: 1fr;
     gap: 4px;
@@ -4239,22 +4324,6 @@ onMounted(() => {
 
   .morning-context-head {
     align-items: center;
-  }
-
-  .china-assets-grid,
-  .china-concept-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .china-assets-grid .overnight-quote,
-  .china-concept-grid .overnight-quote {
-    border-right: 0;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.07);
-  }
-
-  .china-assets-grid .overnight-quote:last-child,
-  .china-concept-grid .overnight-quote:last-child {
-    border-bottom-color: transparent;
   }
 
 }

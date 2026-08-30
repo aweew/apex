@@ -15,7 +15,7 @@ test('dashboard places overnight market and news before action panels', () => {
 })
 
 test('dashboard uses command headline with legacy advice fallback and a new cache version', () => {
-  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v20'/)
+  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v21'/)
   assert.match(dashboardSource, /const command\s*=\s*computed\(\(\)\s*=>\s*home\.value\?\.command\s*\|\|\s*null\)/)
   assert.match(
     dashboardSource,
@@ -46,17 +46,18 @@ test('dashboard renders the structured forecast and only shows available opening
   assert.doesNotMatch(dashboardSource, /opening-auction-note/)
 })
 
-test('dashboard shows Golden Dragon and representative China concept stocks as core overnight data', () => {
-  assert.match(dashboardSource, /const chinaGoldenDragon\s*=\s*computed\(/)
-  assert.match(dashboardSource, /const chinaConceptMovers\s*=\s*computed\(/)
+test('dashboard keeps China assets focused on A50 percentage change only', () => {
   assert.match(dashboardSource, /<h5>中国资产<\/h5>/)
-  assert.match(dashboardSource, /morningBriefing\.value\?\.chinaGoldenDragon/)
-  assert.match(dashboardSource, /morningBriefing\.value\?\.chinaConceptQuotes/)
-  assert.match(dashboardSource, /v-for="quote in chinaConceptMovers"/)
-  assert.match(dashboardSource, /function fmtOvernightQuoteTime\(quote\)/)
-  assert.match(dashboardSource, /quote\.symbol\?\.startsWith\('us'\) \? '美东' : '北京'/)
-  assert.match(dashboardSource, /class="china-asset-time"/)
-  assert.match(dashboardSource, /纳斯达克中国金龙指数暂未获取/)
+  assert.match(dashboardSource, /<span>富时 A50 期指连续 · 涨跌幅<\/span>/)
+  assert.match(dashboardSource, /v-if="ftseA50Future" class="overnight-index-grid china-assets-grid"/)
+  assert.match(dashboardSource, /<strong>富时 A50 期指连续<\/strong>/)
+  assert.match(dashboardSource, /fmtIndexPct\(ftseA50Future\.pctChg\)/)
+  assert.doesNotMatch(dashboardSource, /chinaGoldenDragon|chinaConceptMovers|chinaConceptQuotes/)
+  assert.doesNotMatch(dashboardSource, /纳斯达克中国金龙指数|中概股代表行情|阿里巴巴|拼多多/)
+  const chinaAssetsStart = dashboardSource.indexOf('<h5>中国资产</h5>')
+  const chinaAssetsEnd = dashboardSource.indexOf('</div>\n\n          <button', chinaAssetsStart)
+  const chinaAssetsMarkup = dashboardSource.slice(chinaAssetsStart, chinaAssetsEnd)
+  assert.doesNotMatch(chinaAssetsMarkup, /latestPrice|fmtQuotePrice|quoteTime|源行情|china-asset-meta|china-asset-price|china-asset-time/)
   const chinaAssetsIndex = dashboardSource.indexOf('<h5>中国资产</h5>')
   const disclosureIndex = dashboardSource.indexOf('class="morning-disclosure"')
   const ftseA50Index = dashboardSource.indexOf('<strong>富时 A50 期指连续</strong>')
@@ -64,22 +65,6 @@ test('dashboard shows Golden Dragon and representative China concept stocks as c
   assert.ok(ftseA50Index > chinaAssetsIndex)
   assert.ok(ftseA50Index < disclosureIndex)
   assert.doesNotMatch(dashboardSource, /<h5>A股盘前<\/h5>/)
-  assert.match(
-    dashboardSource,
-    /\.china-assets-grid,[\s\S]*?\.china-concept-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s,
-  )
-  assert.match(
-    dashboardSource,
-    /\.overnight-index-grid\.china-assets-grid \.overnight-quote,[\s\S]*?\.overnight-index-grid\.china-concept-grid \.overnight-quote\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/s,
-  )
-  assert.match(
-    dashboardSource,
-    /@media \(max-width: 900px\)[\s\S]*?\.china-assets-grid,[\s\S]*?\.china-concept-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s,
-  )
-  assert.match(
-    dashboardSource,
-    /@media \(max-width: 560px\)[\s\S]*?\.overnight-quote-name small\.china-asset-meta\s*\{[^}]*display:\s*flex;/s,
-  )
 })
 
 test('dashboard separates external environment signals and explains their A-share impact', () => {
@@ -114,13 +99,13 @@ test('dashboard presents structured pre-market event impacts with evidence label
 
 test('dashboard places the command band after market effect and before pre-market context', () => {
   const effectIndex = dashboardSource.indexOf('aria-label="赚钱效应"')
-  const commandIndex = dashboardSource.indexOf('aria-label="开盘准备"')
+  const commandIndex = dashboardSource.indexOf('aria-label="盘前决策"')
   const contextIndex = dashboardSource.indexOf('aria-label="盘前依据"')
 
   assert.ok(effectIndex > 0)
   assert.ok(commandIndex > effectIndex)
   assert.ok(contextIndex > commandIndex)
-  assert.match(dashboardSource, /<section\s+v-if="command"[^>]+class="command-band[^>]+aria-label="开盘准备"/s)
+  assert.match(dashboardSource, /<section\s+v-if="command"[^>]+class="command-band[^>]+aria-label="盘前决策"/s)
   assert.match(dashboardSource, /const commandDataTimeText = computed/)
   assert.match(dashboardSource, /行情 \$\{compactUpdatedTime\} 更新/)
   assert.match(dashboardSource, /行情截至 \$\{command\.value\.marketDataAsOf\}/)
@@ -404,21 +389,22 @@ test('mobile market volume aligns the percentage sign independently from its dig
   assert.match(dashboardSource, /\.vol-sign\s*\{[^}]*transform:\s*translateY\(-1px\);/s)
 })
 
-test('mobile money effect cards stay compact and vertically center signed values', () => {
+test('mobile money effect band stays compact and vertically centers signed values', () => {
   const phoneStylesStart = dashboardSource.indexOf('@media (max-width: 560px) {')
   const phoneStylesEnd = dashboardSource.indexOf('@media (max-width: 900px) {', phoneStylesStart)
   const phoneStyles = dashboardSource.slice(phoneStylesStart, phoneStylesEnd)
 
   assert.match(
     phoneStyles,
-    /\.effect-cell\s*\{[^}]*flex-direction:\s*row;[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between;[^}]*min-height:\s*48px;/s,
+    /\.effect-cell\s*\{[^}]*flex-direction:\s*row;[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between;[^}]*min-height:\s*52px;/s,
   )
   assert.match(phoneStyles, /\.effect-cell em,\s*\.effect-cell b\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*min-height:\s*20px;/s)
   assert.match(phoneStyles, /\.effect-cell b\s*\{[^}]*justify-content:\s*flex-end;[^}]*text-align:\s*right;[^}]*white-space:\s*nowrap;/s)
   assert.match(
     phoneStyles,
-    /\.effect-cell:last-child:nth-child\(odd\)\s*\{[^}]*grid-column:\s*1 \/ -1;/s,
+    /\.effect-cell:nth-child\(odd\)\s*\{[^}]*border-left:\s*0;/s,
   )
+  assert.match(phoneStyles, /\.effect-cell:nth-child\(n \+ 3\)\s*\{[^}]*border-top:\s*1px solid/s)
   assert.match(dashboardSource, /const sign = n > 0 \? '\+' : n < 0 \? '−' : ''/)
   assert.match(dashboardSource, /`\$\{sign\}\$\{Math\.abs\(n\)\.toFixed\(2\)\}%`/)
 })
@@ -598,10 +584,10 @@ test('dashboard progressively discloses secondary pre-market evidence in both co
   assert.match(dashboardSource, /:aria-expanded="morningMarketExpanded"/)
   assert.match(dashboardSource, /aria-controls="morning-news-more"/)
   assert.match(dashboardSource, /:aria-expanded="morningNewsExpanded"/)
-  assert.match(dashboardSource, /<p v-if="morningNewsExpanded">\{\{ item\.impactExplanation \}\}<\/p>/)
+  assert.match(dashboardSource, /<p v-if="item\.impactExplanation" class="pre-market-event-explanation">\{\{ item\.impactExplanation \}\}<\/p>/)
   assert.match(
     dashboardSource,
-    /v-if="morningNewsExpanded && \(item\.relatedCodes\?\.length \|\| item\.themes\?\.length\)"/,
+    /v-if="item\.relatedCodes\?\.length \|\| item\.themes\?\.length"/,
   )
   assert.match(
     dashboardSource,
@@ -609,15 +595,18 @@ test('dashboard progressively discloses secondary pre-market evidence in both co
   )
 })
 
-test('dashboard avoids repeated auction state copy and keeps directional color on values', () => {
+test('dashboard uses one segmented money-effect band and keeps directional color on values', () => {
   assert.doesNotMatch(
     dashboardSource,
     /<p v-else class="morning-context-empty">\{\{ openingAuction\?\.stateDesc/,
   )
   assert.match(
     dashboardSource,
-    /\.effect-cell\.up,[\s\S]{0,80}?\.effect-cell\.down\s*\{[^}]*background:\s*rgba\(15, 23, 42, 0\.03\);/s,
+    /\.effect-grid\s*\{[^}]*gap:\s*0;[^}]*overflow:\s*hidden;[^}]*border:\s*1px solid[^}]*border-radius:\s*var\(--radius-sm\);/s,
   )
+  assert.match(dashboardSource, /\.effect-cell\s*\{[^}]*min-height:\s*72px;[^}]*border:\s*0;[^}]*background:\s*transparent;/s)
+  assert.match(dashboardSource, /\.effect-cell \+ \.effect-cell\s*\{[^}]*border-left:\s*1px solid/s)
+  assert.match(dashboardSource, /@media \(min-width: 561px\) and \(max-width: 900px\)[\s\S]*?\.effect-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s)
   assert.match(dashboardSource, /\.effect-cell\.up b \{ color: var\(--up\); \}/)
   assert.match(dashboardSource, /\.effect-cell\.down b \{ color: var\(--down\); \}/)
 })
