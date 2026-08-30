@@ -52,7 +52,41 @@ function scenarioTone(name) {
       </header>
 
       <div class="section-content">
-        <div v-if="section.opportunities?.length" class="opportunity-grid">
+        <div v-if="section.stockPicks?.length" class="stock-pick-list">
+          <article v-for="stockPick in section.stockPicks" :key="stockPick.code" class="stock-pick-card">
+            <header class="stock-pick-head">
+              <span class="stock-pick-rank">{{ String(stockPick.rank).padStart(2, '0') }}</span>
+              <div class="stock-pick-identity">
+                <h3>{{ stockPick.name }}</h3>
+                <span>{{ stockPick.code }}</span>
+              </div>
+              <strong>{{ stockPick.level }}</strong>
+              <span v-if="stockPick.weight" class="stock-pick-weight">建议仓位 {{ stockPick.weight }}</span>
+            </header>
+            <div class="stock-pick-body">
+              <div class="stock-pick-opinion">
+                <span>观点</span>
+                <p>{{ stockPick.opinion }}</p>
+              </div>
+              <dl class="stock-pick-conditions">
+                <div class="evidence-row">
+                  <dt>依据</dt>
+                  <dd>{{ stockPick.evidence }}</dd>
+                </div>
+                <div class="trigger-row">
+                  <dt>触发</dt>
+                  <dd>{{ stockPick.trigger }}</dd>
+                </div>
+                <div class="invalidation-row">
+                  <dt>失效</dt>
+                  <dd>{{ stockPick.invalidation }}</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+        </div>
+
+        <div v-else-if="section.opportunities?.length" class="opportunity-grid">
           <article v-for="opportunity in section.opportunities" :key="opportunity.rank" class="opportunity-card">
             <header>
               <span>{{ String(opportunity.rank).padStart(2, '0') }}</span>
@@ -215,6 +249,141 @@ function scenarioTone(name) {
   font-size: var(--body-size);
   font-weight: 560;
   line-height: 1.62;
+  overflow-wrap: anywhere;
+}
+
+.stock-pick-list {
+  display: grid;
+  gap: 12px;
+}
+
+.stock-pick-card {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #d8e0e4;
+  border-left: 4px solid #b17a27;
+  border-radius: 5px;
+  background: #ffffff;
+  break-inside: avoid;
+}
+
+.stock-pick-head {
+  display: grid;
+  align-content: start;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 7px 9px;
+  padding: 17px 16px;
+  background: #f5f7f8;
+}
+
+.stock-pick-rank {
+  padding-top: 4px;
+  color: #a7762f;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.stock-pick-identity {
+  min-width: 0;
+}
+
+.stock-pick-identity h3 {
+  margin: 0;
+  color: #1b2f3b;
+  font-size: 18px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.stock-pick-identity > span {
+  display: block;
+  margin-top: 3px;
+  color: #7f8c94;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-pick-head > strong,
+.stock-pick-weight {
+  grid-column: 2;
+  justify-self: start;
+}
+
+.stock-pick-head > strong {
+  padding: 3px 7px;
+  border-radius: 3px;
+  color: #8c5d19;
+  background: #f5ead6;
+  font-size: 10px;
+}
+
+.stock-pick-weight {
+  color: #596973;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.stock-pick-body {
+  min-width: 0;
+  padding: 15px 18px 14px;
+}
+
+.stock-pick-opinion {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid #e8edef;
+}
+
+.stock-pick-opinion span,
+.stock-pick-conditions dt {
+  padding-top: 2px;
+  color: #8b641f;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.stock-pick-opinion p {
+  margin: 0;
+  color: #263b47;
+  font-size: calc(var(--body-size) + 1px);
+  font-weight: 670;
+  line-height: 1.58;
+  overflow-wrap: anywhere;
+}
+
+.stock-pick-conditions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.stock-pick-conditions > div {
+  min-width: 0;
+  padding: 12px 14px 0 0;
+}
+
+.stock-pick-conditions > div + div {
+  padding-left: 14px;
+  border-left: 1px solid #edf1f3;
+}
+
+.stock-pick-conditions .trigger-row dt {
+  color: #257458;
+}
+
+.stock-pick-conditions .invalidation-row dt {
+  color: #b34d45;
+}
+
+.stock-pick-conditions dd {
+  margin: 5px 0 0;
+  color: #52616a;
+  font-size: calc(var(--body-size) - 1px);
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
@@ -502,6 +671,36 @@ function scenarioTone(name) {
   padding-block: 9px;
 }
 
+.is-compact .stock-pick-card {
+  grid-template-columns: 140px minmax(0, 1fr);
+}
+
+.is-compact .stock-pick-head {
+  padding: 11px 10px;
+}
+
+.is-compact .stock-pick-identity h3 {
+  font-size: 13px;
+}
+
+.is-compact .stock-pick-body {
+  padding: 9px 11px;
+}
+
+.is-compact .stock-pick-opinion {
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 6px;
+  padding-bottom: 7px;
+}
+
+.is-compact .stock-pick-conditions > div {
+  padding: 7px 8px 0 0;
+}
+
+.is-compact .stock-pick-conditions > div + div {
+  padding-left: 8px;
+}
+
 .is-compact .opportunity-grid,
 .is-compact .scenario-grid,
 .is-compact .holding-grid {
@@ -546,6 +745,23 @@ function scenarioTone(name) {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .stock-pick-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stock-pick-head {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+
+  .stock-pick-head > strong {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .stock-pick-weight {
+    grid-column: 2 / -1;
+  }
+
   .portfolio-risk-block {
     grid-template-columns: minmax(0, 1fr);
     gap: 9px;
@@ -555,6 +771,7 @@ function scenarioTone(name) {
 @media (max-width: 520px) {
   .fact-grid,
   .scenario-grid,
+  .stock-pick-conditions,
   .portfolio-risk-block ul {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -562,6 +779,12 @@ function scenarioTone(name) {
   .fact-item + .fact-item {
     padding-left: 0;
     border-top: 1px solid #e1e7ea;
+    border-left: 0;
+  }
+
+  .stock-pick-conditions > div + div {
+    padding-left: 0;
+    border-top: 1px solid #edf1f3;
     border-left: 0;
   }
 }

@@ -5,6 +5,7 @@ import {
   parseOpportunityLine,
   parsePreMarketReport,
   parseScenarioLine,
+  parseStockPickLine,
 } from './preMarketReport.js'
 
 const content = `今日投资机会｜算力硬件重回主线，开盘承接决定持续性
@@ -94,6 +95,39 @@ test('parses an opportunity into catalyst confirmation and invalidation fields',
       invalidation: '高开低走。',
     },
   )
+})
+
+test('parses an individual stock pick with opinion and execution boundaries', () => {
+  assert.deepEqual(
+    parseStockPickLine('1. 贵州茅台 600519｜级别：首选；观点：白酒主线与偏低估值共振，优先于普通反弹标的；依据：综合评分 86，策略 S2；触发：9:45 前强于沪深 300 且不跌破开盘价；失效：跌破 1450；仓位：10%。'),
+    {
+      rank: 1,
+      level: '首选',
+      name: '贵州茅台',
+      code: '600519',
+      opinion: '白酒主线与偏低估值共振，优先于普通反弹标的',
+      evidence: '综合评分 86，策略 S2',
+      trigger: '9:45 前强于沪深 300 且不跌破开盘价',
+      invalidation: '跌破 1450',
+      weight: '10%。',
+    },
+  )
+})
+
+test('enriches the stock recommendation section separately from theme opportunities', () => {
+  const report = parsePreMarketReport(`今日投资机会｜回踩结构 · 主线共振
+日期：2026-08-31
+核心观点：今日首选贵州茅台，主线和估值同时占优。
+首选个股：贵州茅台 600519。
+最大风险：白酒板块低开转弱。
+
+03｜个股推荐
+1. 贵州茅台 600519｜级别：首选；观点：白酒主线与偏低估值共振；依据：综合评分 86；触发：9:45 前强于沪深 300；失效：跌破开盘价。`)
+  const stockSection = report.sections.find((section) => section.number === '03')
+
+  assert.equal(report.priority, '贵州茅台 600519。')
+  assert.equal(stockSection.stockPicks[0].code, '600519')
+  assert.equal(stockSection.opportunities.length, 0)
 })
 
 test('parses opening scenarios into named conditions', () => {

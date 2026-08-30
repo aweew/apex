@@ -15,7 +15,9 @@ const props = defineProps({
 const rootRef = ref(null)
 const tradeDate = computed(() => props.report.tradeDate || props.document.date || '')
 const judgement = computed(() => props.document.judgement || props.report.marketJudgement || '')
-const reportTitle = computed(() => props.document.title.replace(/^今日投资机会[｜|]\s*/, '') || '今日投资机会')
+const hasStockPicks = computed(() => props.document.sections.some((section) => section.stockPicks?.length))
+const reportTitle = computed(() => props.document.title
+  .replace(/^今日(?:投资机会|个股观点)[｜|]\s*/, '') || '今日投资机会')
 const shareSectionNumbers = ['03', '04', '05']
 const shareSections = computed(() => props.document.sections
   .filter((section) => shareSectionNumbers.includes(section.number))
@@ -75,7 +77,7 @@ defineExpose({ getCaptureElement })
 
     <section v-if="document.priority || document.risk" class="decision-grid">
       <div v-if="document.priority">
-        <span>优先方向</span>
+        <span>{{ hasStockPicks ? '今日首选' : '优先方向' }}</span>
         <strong>{{ document.priority }}</strong>
       </div>
       <div v-if="document.risk">
@@ -84,7 +86,7 @@ defineExpose({ getCaptureElement })
       </div>
     </section>
 
-    <section v-if="report.focusChanges?.length" class="change-strip" aria-label="相比上一交易日的方向变化">
+    <section v-if="report.focusChanges?.length" class="change-strip" aria-label="相比上一交易日的个股或方向变化">
       <strong>较前日</strong>
       <span v-for="focusChange in report.focusChanges" :key="focusChange">{{ focusChange }}</span>
     </section>

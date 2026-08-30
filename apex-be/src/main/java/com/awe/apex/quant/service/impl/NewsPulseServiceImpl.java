@@ -213,7 +213,7 @@ public class NewsPulseServiceImpl implements INewsPulseService {
         List<PreMarketEventImpactResp> impacts = new ArrayList<>();
         for (NewsPulseCardResp card : cards) {
             PreMarketEventImpactResp impact = PreMarketEventHeuristics.toImpact(card);
-            if (Objects.nonNull(impact)) {
+            if (isUsefulEvent(impact)) {
                 impacts.add(impact);
             }
         }
@@ -225,6 +225,22 @@ public class NewsPulseServiceImpl implements INewsPulseService {
             return new ArrayList<>(impacts.subList(0, 5));
         }
         return impacts;
+    }
+
+    private boolean isUsefulEvent(PreMarketEventImpactResp impact) {
+        if (Objects.isNull(impact) || StringUtils.isBlank(impact.getTitle())) {
+            return false;
+        }
+        if ("ANNOUNCEMENT".equals(impact.getEventType())) {
+            return CollUtil.isNotEmpty(impact.getRelatedCodes());
+        }
+        if (CollUtil.isNotEmpty(impact.getRelatedCodes()) || CollUtil.isNotEmpty(impact.getThemes())) {
+            return true;
+        }
+        return "MARKET".equals(impact.getImpactScope())
+                && ("POLICY".equals(impact.getEventType()) || "EMERGENCY".equals(impact.getEventType()))
+                && Objects.nonNull(impact.getPriority())
+                && impact.getPriority() >= 4;
     }
 
     private String resolveLlmSummary(boolean force,

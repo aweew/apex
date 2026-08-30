@@ -20,7 +20,7 @@ import java.util.List;
  * 每日盘前研报生成上下文。
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class DailyPreMarketReportContextBO {
@@ -70,6 +70,12 @@ public class DailyPreMarketReportContextBO {
      */
     @Builder.Default
     private List<ObservePoolResp> observePool = new ArrayList<>();
+
+    /**
+     * 从当日决策和已触发观察候选中归一化的个股观点。
+     */
+    @Builder.Default
+    private List<PreMarketStockPickBO> stockPicks = new ArrayList<>();
 
     /**
      * 当前用户拥有的全部活跃组合及持仓；管理员可覆盖全部组合。

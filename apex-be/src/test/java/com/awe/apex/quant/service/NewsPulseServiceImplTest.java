@@ -92,4 +92,47 @@ class NewsPulseServiceImplTest {
         assertTrue(response.getEventImpacts().get(0).getThemes().contains("算力"));
         assertTrue(response.getEventImpacts().get(0).getImpactExplanation().contains("全球 AI"));
     }
+
+    @Test
+    void excludesUnmappedCompanyEventsFromPreMarketImpacts() {
+        MarketNews announcement = MarketNews.builder()
+                .id(4L)
+                .title("新能源车企业公告：财务总监拟减持不超过0.07%股份")
+                .summary("公司披露高管减持计划")
+                .source("eastmoney")
+                .sentiment("利空")
+                .publishedAt(LocalDateTime.now())
+                .build();
+        MarketNews earnings = MarketNews.builder()
+                .id(5L)
+                .title("广钢气体：半年度净利润同比增长17.73%")
+                .summary("公司披露半年度业绩")
+                .source("eastmoney")
+                .sentiment("利好")
+                .publishedAt(LocalDateTime.now().minusMinutes(1))
+                .build();
+        when(marketNewsMapper.selectList(any())).thenReturn(List.of(announcement, earnings));
+
+        NewsPulseResp response = service.pulse(6, false);
+
+        assertTrue(response.getEventImpacts().isEmpty());
+    }
+
+    @Test
+    void keepsHighPriorityMarketPolicyWithoutThemeMapping() {
+        MarketNews policy = MarketNews.builder()
+                .id(6L)
+                .title("国务院发布资本市场改革方案")
+                .summary("【要闻】明确市场改革重点与落地安排")
+                .source("cctv")
+                .sentiment("中性")
+                .publishedAt(LocalDateTime.now())
+                .build();
+        when(marketNewsMapper.selectList(any())).thenReturn(List.of(policy));
+
+        NewsPulseResp response = service.pulse(6, false);
+
+        assertEquals(1, response.getEventImpacts().size());
+        assertEquals("MARKET", response.getEventImpacts().get(0).getImpactScope());
+    }
 }

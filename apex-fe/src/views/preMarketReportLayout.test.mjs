@@ -40,6 +40,16 @@ test('pre-market report renders holding reminders as scannable visual cards', ()
   assert.match(sectionSource, /:priority="index \+ 1"/)
 })
 
+test('pre-market report renders stock recommendations as evidence-bearing research rows', () => {
+  assert.match(sectionSource, /section\.stockPicks/)
+  assert.match(sectionSource, /class="stock-pick-list"/)
+  assert.match(sectionSource, /class="stock-pick-opinion"/)
+  assert.match(sectionSource, />观点</)
+  assert.match(sectionSource, />依据</)
+  assert.match(sectionSource, />触发</)
+  assert.match(sectionSource, />失效</)
+})
+
 test('pre-market report keeps the full article readable and mobile safe', () => {
   assert.match(source, /class="report-article"/)
   assert.match(source, /overflow-wrap:\s*anywhere/)

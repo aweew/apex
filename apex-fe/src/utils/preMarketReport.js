@@ -65,6 +65,36 @@ export function parseOpportunityLine(line) {
   }
 }
 
+export function parseStockPickLine(line) {
+  const matchedLine = cleanLine(line).match(/^(\d+)[.、]\s*(.+?)[｜|](.+)$/)
+  if (!matchedLine) return null
+
+  const identityMatch = matchedLine[2].trim().match(/^(.+?)\s+([A-Za-z0-9.]+)$/)
+  if (!identityMatch) return null
+  const stockPickParts = matchedLine[3]
+    .split(/[；;]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const level = labelledValue(stockPickParts, '级别：')
+  const opinion = labelledValue(stockPickParts, '观点：')
+  const evidence = labelledValue(stockPickParts, '依据：')
+  const trigger = labelledValue(stockPickParts, '触发：')
+  const invalidation = labelledValue(stockPickParts, '失效：')
+  if (!level || !opinion || !evidence || !trigger || !invalidation) return null
+
+  return {
+    rank: Number.parseInt(matchedLine[1], 10),
+    level,
+    name: identityMatch[1].trim(),
+    code: identityMatch[2].trim(),
+    opinion,
+    evidence,
+    trigger,
+    invalidation,
+    weight: labelledValue(stockPickParts, '仓位：'),
+  }
+}
+
 export function parseScenarioLine(line) {
   const fact = parseFactLine(line)
   if (!fact.label || !fact.value) return null
@@ -125,6 +155,7 @@ export function parsePreMarketReport(content) {
         title: sectionMatch[2].trim(),
         lines: [],
         facts: [],
+        stockPicks: [],
         opportunities: [],
         holdings: [],
         portfolioRisks: [],
@@ -135,10 +166,10 @@ export function parsePreMarketReport(content) {
     }
 
     if (!currentSection) {
-      if (!parsedReport.title && line.startsWith('今日投资机会｜')) parsedReport.title = line
+      if (!parsedReport.title && /^今日(?:投资机会|个股观点)[｜|]/.test(line)) parsedReport.title = line
       parsedReport.date ||= fieldValue(line, '日期：')
       parsedReport.judgement ||= fieldValue(line, '核心观点：') || fieldValue(line, '今日判断：')
-      parsedReport.priority ||= fieldValue(line, '优先看：')
+      parsedReport.priority ||= fieldValue(line, '首选个股：') || fieldValue(line, '优先看：')
       parsedReport.risk ||= fieldValue(line, '最大风险：')
       continue
     }
@@ -152,14 +183,17 @@ export function parsePreMarketReport(content) {
         currentSection.portfolioRisks.push(parseFactLine(line).value)
       }
     }
-    parsedReport.priority ||= fieldValue(line, '优先看：')
+    parsedReport.priority ||= fieldValue(line, '首选个股：') || fieldValue(line, '优先看：')
     parsedReport.risk ||= fieldValue(line, '最大风险：')
   }
 
   parsedReport.sections = parsedReport.sections.filter((section) => section.lines.length > 0)
   for (const section of parsedReport.sections) {
     if (section.number === '03') {
-      section.opportunities = section.lines.map(parseOpportunityLine).filter(Boolean)
+      section.stockPicks = section.lines.map(parseStockPickLine).filter(Boolean)
+      if (!section.stockPicks.length) {
+        section.opportunities = section.lines.map(parseOpportunityLine).filter(Boolean)
+      }
     } else if (section.number === '05') {
       section.scenarios = section.lines.map(parseScenarioLine).filter(Boolean)
     } else if (section.number !== '04') {

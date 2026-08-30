@@ -12,7 +12,7 @@ import java.util.List;
  * 今日消息面总览
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class NewsPulseResp {

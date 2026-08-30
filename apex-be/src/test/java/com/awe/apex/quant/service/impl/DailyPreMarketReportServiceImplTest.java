@@ -6,15 +6,19 @@ import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.common.util.SpringUtils;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.dto.DailyPreMarketReportResp;
+import com.awe.apex.quant.domain.dto.DecisionItemResp;
+import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.DashboardHomeResp;
 import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
+import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.dto.PreMarketEventImpactResp;
 import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.service.IDashboardService;
+import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IPortfolioService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -33,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -43,6 +48,7 @@ class DailyPreMarketReportServiceImplTest {
 
     private final ApexUserContext userContext = mock(ApexUserContext.class);
     private final IDashboardService dashboardService = mock(IDashboardService.class);
+    private final IDecisionService decisionService = mock(IDecisionService.class);
     private final IPortfolioService portfolioService = mock(IPortfolioService.class);
     private final KimiChatClient kimiChatClient = mock(KimiChatClient.class);
     private final RedisCacheService redisCacheService = mock(RedisCacheService.class);
@@ -57,6 +63,7 @@ class DailyPreMarketReportServiceImplTest {
         new SpringUtils().setApplicationContext(applicationContext);
         ReflectionTestUtils.setField(service, "userContext", userContext);
         ReflectionTestUtils.setField(service, "dashboardService", dashboardService);
+        ReflectionTestUtils.setField(service, "decisionService", decisionService);
         ReflectionTestUtils.setField(service, "portfolioService", portfolioService);
         ReflectionTestUtils.setField(service, "kimiChatClient", kimiChatClient);
         ReflectionTestUtils.setField(service, "redisCacheService", redisCacheService);
@@ -180,6 +187,312 @@ class DailyPreMarketReportServiceImplTest {
     }
 
     @Test
+    void recommendsSpecificStocksWithOpinionEvidenceTriggerAndInvalidation() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 31);
+        DashboardHomeResp.HomeActionItem topBuy = DashboardHomeResp.HomeActionItem.builder()
+                .code("600519")
+                .name("贵州茅台")
+                .action("BUY")
+                .strategyId("S2")
+                .score(new BigDecimal("86"))
+                .suggestedWeight(new BigDecimal("0.10"))
+                .mainlineMatch(true)
+                .mainlineName("白酒")
+                .valuationLabel("估值偏低")
+                .executableHint(true)
+                .reason("盈利质量稳定，回调结构满足策略条件")
+                .linkHint("主线、估值与回调信号形成共振")
+                .exitRule("收盘跌破 1450 元离场")
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(tradeDate.minusDays(3))
+                        .dataLevel("GREEN")
+                        .volumeTrend("缩量")
+                        .breadthUp(2800)
+                        .breadthDown(2200)
+                        .limitUpCount(60)
+                        .limitDownCount(8)
+                        .hotThemes(List.of("白酒"))
+                        .build())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(tradeDate)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DashboardHomeResp.DecisionBlock.builder()
+                        .actionDate(tradeDate)
+                        .hasToday(true)
+                        .topBuys(List.of(topBuy))
+                        .build())
+                .observeAlerts(List.of())
+                .build();
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(false);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertTrue(report.getContent().startsWith("今日投资机会｜缩量轮动 · 强势延续"));
+        assertFalse(report.getContent().lines().findFirst().orElse("").contains("贵州茅台"));
+        assertTrue(report.getContent().contains("首选个股：贵州茅台 600519"));
+        assertTrue(report.getContent().contains("03｜个股推荐"));
+        assertTrue(report.getContent().contains("1. 贵州茅台 600519｜级别：首选"));
+        assertTrue(report.getContent().contains("观点："));
+        assertTrue(report.getContent().contains("依据："));
+        assertTrue(report.getContent().contains("触发："));
+        assertTrue(report.getContent().contains("失效：收盘跌破 1450 元离场"));
+        assertTrue(report.getContent().contains("仓位：10%"));
+    }
+
+    @Test
+    void onlyUsesFreshDecisionObserveCandidatesAsStockPickSupplements() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 31);
+        DashboardHomeResp.HomeActionItem topBuy = DashboardHomeResp.HomeActionItem.builder()
+                .code("600519")
+                .name("贵州茅台")
+                .action("BUY")
+                .reason("当日决策首选")
+                .build();
+        ObservePoolResp freshCandidate = ObservePoolResp.builder()
+                .code("300750")
+                .name("宁德时代")
+                .side("BUY")
+                .status("TRIGGERED")
+                .reason("回踩关键支撑后重新转强")
+                .triggerLabel("站上 520 元")
+                .stopLoss(new BigDecimal("498"))
+                .setupStyle("回调买入")
+                .decisionUpdatedAt(tradeDate.atTime(8, 10))
+                .build();
+        ObservePoolResp staleCandidate = ObservePoolResp.builder()
+                .code("000001")
+                .name("平安银行")
+                .side("BUY")
+                .status("TRIGGERED")
+                .reason("旧决策遗留观察")
+                .decisionUpdatedAt(tradeDate.minusDays(3).atTime(15, 0))
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(tradeDate.minusDays(3))
+                        .dataLevel("GREEN")
+                        .build())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(tradeDate)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DashboardHomeResp.DecisionBlock.builder()
+                        .actionDate(tradeDate)
+                        .hasToday(true)
+                        .topBuys(List.of(topBuy))
+                        .build())
+                .observeAlerts(List.of(freshCandidate, staleCandidate))
+                .build();
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(false);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertTrue(report.getContent().contains("2. 宁德时代 300750｜级别：触发"));
+        assertTrue(report.getContent().contains("依据：回踩关键支撑后重新转强"));
+        assertTrue(report.getContent().contains("触发：9:45 前确认：站上 520 元"));
+        assertTrue(report.getContent().contains("失效：跌破止损价 498"));
+        assertFalse(report.getContent().contains("平安银行"));
+    }
+
+    @Test
+    void usesLastCompletedTradingDayDecisionAsWeekendObservationPicks() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 31);
+        LocalDate marketDataDate = LocalDate.of(2026, 8, 28);
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(marketDataDate)
+                        .dataLevel("GREEN")
+                        .volumeTrend("缩量")
+                        .breadthUp(2892)
+                        .breadthDown(2325)
+                        .limitUpCount(83)
+                        .limitDownCount(3)
+                        .build())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(tradeDate)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DashboardHomeResp.DecisionBlock.builder()
+                        .actionDate(LocalDate.of(2026, 8, 30))
+                        .hasToday(false)
+                        .topBuys(List.of())
+                        .build())
+                .observeAlerts(List.of())
+                .build();
+        DecisionItemResp previousBuy = DecisionItemResp.builder()
+                .actionDate(marketDataDate)
+                .code("688575")
+                .name("亚辉龙")
+                .action("BUY")
+                .strategyId("S3")
+                .score(new BigDecimal("92.81"))
+                .suggestedWeight(BigDecimal.ZERO)
+                .valuationLabel("数据不足")
+                .reason("20 日新高且量比大于 1.5，两个策略共振")
+                .exitRule("跌破突破日低点离场")
+                .executableHint(false)
+                .build();
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(decisionService.today(marketDataDate, "我的自选")).thenReturn(DecisionTodayResp.builder()
+                .actionDate(marketDataDate)
+                .generated(true)
+                .buys(List.of(previousBuy))
+                .build());
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(false);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertTrue(report.getContent().startsWith("今日投资机会｜缩量轮动 · 强势延续"));
+        assertFalse(report.getContent().lines().findFirst().orElse("").contains("亚辉龙"));
+        assertTrue(report.getContent().contains("1. 亚辉龙 688575｜级别：观察首选"));
+        assertTrue(report.getContent().contains("依据：决策日 2026-08-28，20 日新高且量比大于 1.5，两个策略共振"));
+        assertTrue(report.getContent().contains("核心观点：情绪偏强但量能收缩，预计以结构性轮动为主；高开不追，放量承接才算主线确认。"));
+        String coreView = report.getContent().lines()
+                .filter(contentLine -> contentLine.startsWith("核心观点："))
+                .findFirst().orElse("");
+        assertFalse(coreView.contains("亚辉龙"));
+        assertFalse(coreView.contains("688575"));
+        assertTrue(report.getContent().contains("触发：9:45 后仍不破开盘价且持续强于沪深 300，再纳入开仓候选"));
+        assertFalse(report.getContent().contains("盘前观察排序"));
+        assertFalse(report.getContent().contains("开仓门禁"));
+        assertFalse(report.getContent().contains("决策评分"));
+        assertFalse(report.getContent().contains("仓位：0%"));
+        assertFalse(report.getContent().contains("数据不足提供安全边际"));
+        assertFalse(report.getContent().contains("依据：决策日 2026-08-28，数据不足"));
+        verify(decisionService).today(marketDataDate, "我的自选");
+    }
+
+    @Test
+    void acceptsAiReportWhenEveryStockPickFactMatchesTheNormalizedCandidate() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 31);
+        DashboardHomeResp.HomeActionItem topBuy = DashboardHomeResp.HomeActionItem.builder()
+                .code("600519")
+                .name("贵州茅台")
+                .action("BUY")
+                .score(new BigDecimal("86"))
+                .executableHint(true)
+                .reason("回调结构满足策略条件")
+                .exitRule("收盘跌破 1450 元离场")
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(tradeDate.minusDays(3))
+                        .dataLevel("GREEN")
+                        .build())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(tradeDate)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DashboardHomeResp.DecisionBlock.builder()
+                        .actionDate(tradeDate)
+                        .hasToday(true)
+                        .topBuys(List.of(topBuy))
+                        .build())
+                .build();
+        String validAiReport = "今日投资机会｜回踩结构 · 主线共振\n"
+                + "日期：2026-08-31\n"
+                + "核心观点：市场仍在轮动，今天不追一致性高开，只做放量承接。\n"
+                + "首选个股：贵州茅台 600519。\n"
+                + "最大风险：贵州茅台未满足执行条件。\n"
+                + "01｜市场状态\n盘面风险偏好中性。\n"
+                + "03｜个股推荐\n"
+                + "1. 贵州茅台 600519｜级别：首选；观点：当日买入候选中优先级靠前，只做确认后的强势延续，不提前赌开盘方向；"
+                + "依据：回调结构满足策略条件，综合评分 86；"
+                + "触发：9:45 后仍不破开盘价且持续强于沪深 300；"
+                + "失效：收盘跌破 1450 元离场。\n"
+                + "05｜开盘剧本\n"
+                + "偏强｜上涨家数扩大。\n震荡｜指数横盘。\n转弱｜下跌家数扩大。";
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(true);
+        String stockCentricAiReport = validAiReport.replace(
+                "核心观点：市场仍在轮动，今天不追一致性高开，只做放量承接。",
+                "核心观点：贵州茅台（600519）是今日首选，确认后执行。");
+        when(kimiChatClient.chat(anyString(), anyString(), eq(2600)))
+                .thenReturn(validAiReport, stockCentricAiReport);
+
+        DailyPreMarketReportResp report = service.latest(false);
+        DailyPreMarketReportResp rejectedReport = service.latest(true);
+
+        assertEquals("AI", report.getReportSource());
+        assertEquals(validAiReport, report.getContent());
+        assertEquals("RULE", rejectedReport.getReportSource());
+        String rejectedCoreView = rejectedReport.getContent().lines()
+                .filter(contentLine -> contentLine.startsWith("核心观点："))
+                .findFirst().orElse("");
+        assertFalse(rejectedCoreView.contains("贵州茅台"));
+        assertFalse(rejectedCoreView.contains("600519"));
+    }
+
+    @Test
+    void fallsBackWhenAiInventsAStockOutsideTheNormalizedCandidates() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 31);
+        DashboardHomeResp.HomeActionItem topBuy = DashboardHomeResp.HomeActionItem.builder()
+                .code("600519")
+                .name("贵州茅台")
+                .action("BUY")
+                .score(new BigDecimal("86"))
+                .executableHint(true)
+                .reason("回调结构满足策略条件")
+                .exitRule("收盘跌破 1450 元离场")
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(tradeDate.minusDays(3))
+                        .dataLevel("GREEN")
+                        .build())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(tradeDate)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DashboardHomeResp.DecisionBlock.builder()
+                        .actionDate(tradeDate)
+                        .hasToday(true)
+                        .topBuys(List.of(topBuy))
+                        .build())
+                .build();
+        String inventedStockReport = "今日个股观点｜平安银行优先\n"
+                + "日期：2026-08-31\n"
+                + "核心观点：今日首选平安银行。\n"
+                + "首选个股：平安银行 000001。\n"
+                + "最大风险：跌破开盘价。\n"
+                + "01｜市场状态\n盘面震荡。\n"
+                + "03｜个股推荐\n"
+                + "1. 平安银行 000001｜级别：首选；观点：银行主线占优；依据：综合评分 90；"
+                + "触发：9:45 前强于沪深 300；失效：跌破开盘价。\n"
+                + "05｜开盘剧本\n"
+                + "偏强｜上涨家数扩大。\n震荡｜指数横盘。\n转弱｜下跌家数扩大。";
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(true);
+        when(kimiChatClient.chat(anyString(), anyString(), eq(2600))).thenReturn(inventedStockReport);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertEquals("RULE", report.getReportSource());
+        assertTrue(report.getContent().contains("贵州茅台 600519"));
+        assertFalse(report.getContent().contains("平安银行 000001"));
+    }
+
+    @Test
     void reportsDirectionChangesAgainstPreviousTradingReport() {
         DailyPreMarketReportResp previousReport = DailyPreMarketReportResp.builder()
                 .tradeDate(LocalDate.of(2026, 8, 28))
@@ -216,12 +529,33 @@ class DailyPreMarketReportServiceImplTest {
 
         DailyPreMarketReportResp report = service.latest(true);
 
-        assertTrue(report.getFocusChanges().contains("新增：地产"));
-        assertTrue(report.getFocusChanges().contains("延续：算力"));
-        assertTrue(report.getFocusChanges().contains("降级：消费"));
+        assertTrue(report.getFocusChanges().contains("新增方向：地产"));
+        assertTrue(report.getFocusChanges().contains("延续方向：算力"));
+        assertTrue(report.getFocusChanges().contains("降级方向：消费"));
         assertTrue(report.getContent().contains("9:45 前"));
         assertTrue(report.getContent().contains("较昨日同期放大 20%"));
         verify(redisCacheService).put(anyString(), eq(report), any());
+    }
+
+    @Test
+    void labelsStockRecommendationChangesExplicitly() {
+        DailyPreMarketReportResp previousReport = DailyPreMarketReportResp.builder()
+                .tradeDate(LocalDate.of(2026, 8, 28))
+                .content("今日个股观点｜旧报告\n03｜个股推荐\n"
+                        + "1. 宁德时代 300750｜级别：首选；观点：旧观点；依据：旧依据；触发：旧触发；失效：旧失效。\n"
+                        + "2. 平安银行 000001｜级别：备选；观点：旧观点；依据：旧依据；触发：旧触发；失效：旧失效。")
+                .build();
+        String currentContent = "今日个股观点｜新报告\n03｜个股推荐\n"
+                + "1. 中际旭创 300308｜级别：首选；观点：新观点；依据：新依据；触发：新触发；失效：新失效。\n"
+                + "2. 宁德时代 300750｜级别：备选；观点：延续观点；依据：延续依据；触发：延续触发；失效：延续失效。";
+
+        List<String> focusChanges = ReflectionTestUtils.invokeMethod(service, "resolveFocusChanges",
+                previousReport, currentContent, LocalDate.of(2026, 8, 31));
+
+        assertEquals(List.of(
+                "新增推荐：中际旭创 300308",
+                "延续推荐：宁德时代 300750",
+                "退出推荐：平安银行 000001"), focusChanges);
     }
 
     @Test
@@ -298,7 +632,12 @@ class DailyPreMarketReportServiceImplTest {
 
         DailyPreMarketReportResp report = service.latest(false);
 
-        assertTrue(report.getContent().contains("核心观点：今日先交易“英伟达发布最新季度财报”"));
+        assertTrue(report.getContent().contains(
+                "核心观点：算力受隔夜事件催化，但市场仍按结构性机会定价；只有板块成交与个股扩散共振，催化才算主线。"));
+        String coreView = report.getContent().lines()
+                .filter(contentLine -> contentLine.startsWith("核心观点："))
+                .findFirst().orElse("");
+        assertFalse(coreView.contains("英伟达"));
         assertTrue(report.getContent().contains("1. 算力｜催化：英伟达发布最新季度财报"));
         String opportunitySection = report.getContent().substring(
                 report.getContent().indexOf("03｜投资机会"),
@@ -306,6 +645,113 @@ class DailyPreMarketReportServiceImplTest {
         assertEquals(opportunitySection.indexOf("英伟达发布最新季度财报"),
                 opportunitySection.lastIndexOf("英伟达发布最新季度财报"));
         assertFalse(report.getContent().contains("机器人"));
+    }
+
+    @Test
+    void rejectsUnrelatedStockAnnouncementAsCoreView() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 31);
+        String announcementTitle = "凌霄泵业：财务总监陆凤娟拟减持不超过0.07%股份";
+        PreMarketEventImpactResp unrelatedAnnouncement = PreMarketEventImpactResp.builder()
+                .eventType("ANNOUNCEMENT")
+                .impactScope("STOCK")
+                .direction("利空")
+                .priority(5)
+                .title(announcementTitle)
+                .relatedCodes(List.of("002884"))
+                .officialSource(true)
+                .build();
+        MorningBriefingResp morning = MorningBriefingResp.builder()
+                .tradeDate(tradeDate)
+                .dataLevel("GREEN")
+                .newsPulse(NewsPulseResp.builder().eventImpacts(List.of(unrelatedAnnouncement)).build())
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(LocalDate.of(2026, 8, 28))
+                        .stance("均衡")
+                        .dataLevel("GREEN")
+                        .hotThemeItems(List.of(MarketHotThemeItem.builder().name("科技巨头").build()))
+                        .build())
+                .morningBriefing(morning)
+                .build();
+        String invalidAiReport = "今日投资机会｜凌霄泵业减持影响定价\n"
+                + "日期：2026-08-31\n"
+                + "核心观点：今日先交易“" + announcementTitle + "”带来的预期变化。\n"
+                + "最大风险：开盘走势与判断背离。\n"
+                + "01｜市场状态\n盘面均衡。\n"
+                + "03｜投资机会\n"
+                + "1. 科技巨头｜催化：盘前信号居前；确认：9:45 前强于沪深 300；失效：跌破开盘价。\n"
+                + "05｜开盘剧本\n"
+                + "偏强｜上涨家数扩大。\n震荡｜指数横盘。\n转弱｜下跌家数扩大。";
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of());
+        when(kimiChatClient.available()).thenReturn(true);
+        when(kimiChatClient.chat(anyString(), anyString(), eq(2600))).thenReturn(invalidAiReport);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        assertEquals("RULE", report.getReportSource());
+        assertFalse(report.getContent().contains(announcementTitle));
+        assertFalse(report.getContent().contains("今日先交易“凌霄泵业"));
+        verify(kimiChatClient).chat(anyString(), argThat(prompt -> !prompt.contains(announcementTitle)), eq(2600));
+    }
+
+    @Test
+    void keepsHeldStockAnnouncementInTheReport() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 31);
+        String announcementTitle = "润泽科技发布重大合同公告";
+        PreMarketEventImpactResp holdingAnnouncement = PreMarketEventImpactResp.builder()
+                .eventType("ANNOUNCEMENT")
+                .impactScope("STOCK")
+                .direction("利好")
+                .priority(4)
+                .title(announcementTitle)
+                .relatedCodes(List.of("300442"))
+                .build();
+        DashboardHomeResp dashboard = DashboardHomeResp.builder()
+                .market(DashboardHomeResp.MarketBlock.builder()
+                        .asOf(LocalDate.of(2026, 8, 28))
+                        .stance("均衡")
+                        .dataLevel("GREEN")
+                        .build())
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(tradeDate)
+                        .dataLevel("GREEN")
+                        .newsPulse(NewsPulseResp.builder().eventImpacts(List.of(holdingAnnouncement)).build())
+                        .build())
+                .build();
+        PortfolioSummaryResp portfolioItem = PortfolioSummaryResp.builder()
+                .id(11L)
+                .name("我的持仓")
+                .editable(true)
+                .build();
+        PortfolioSummaryResp portfolio = PortfolioSummaryResp.builder()
+                .id(11L)
+                .name("我的持仓")
+                .holdings(List.of(PortfolioHolding.builder()
+                        .code("300442")
+                        .name("润泽科技")
+                        .build()))
+                .build();
+        when(userContext.currentUserId()).thenReturn(7L);
+        when(redisCacheService.get(anyString(), eq(DailyPreMarketReportResp.class))).thenReturn(null);
+        when(dashboardService.home(null, "我的自选", false)).thenReturn(dashboard);
+        when(portfolioService.listPortfolios(false)).thenReturn(List.of(portfolioItem));
+        when(portfolioService.detail(11L)).thenReturn(portfolio);
+        when(kimiChatClient.available()).thenReturn(false);
+
+        DailyPreMarketReportResp report = service.latest(false);
+
+        String coreView = report.getContent().lines()
+                .filter(contentLine -> contentLine.startsWith("核心观点："))
+                .findFirst().orElse("");
+        assertFalse(coreView.contains("润泽科技"));
+        assertFalse(coreView.contains("300442"));
+        assertFalse(coreView.contains(announcementTitle));
+        assertTrue(report.getContent().contains(announcementTitle));
+        assertTrue(report.getContent().contains("润泽科技 300442"));
     }
 
     @Test
@@ -397,6 +843,8 @@ class DailyPreMarketReportServiceImplTest {
         LocalDate tradeDate = LocalDate.of(2026, 8, 28);
         PreMarketEventImpactResp event = PreMarketEventImpactResp.builder()
                 .eventType("EARNINGS")
+                .impactScope("THEME")
+                .priority(5)
                 .title("英伟达发布季度财报")
                 .themes(List.of("算力"))
                 .build();
@@ -438,6 +886,8 @@ class DailyPreMarketReportServiceImplTest {
         LocalDate tradeDate = LocalDate.of(2026, 8, 28);
         PreMarketEventImpactResp event = PreMarketEventImpactResp.builder()
                 .eventType("EARNINGS")
+                .impactScope("THEME")
+                .priority(5)
                 .title("英伟达发布季度财报")
                 .themes(List.of("算力", "半导体"))
                 .build();

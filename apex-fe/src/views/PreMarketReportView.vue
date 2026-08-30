@@ -21,7 +21,9 @@ const copyingImage = ref(false)
 const downloadingImage = ref(false)
 const shareSheetRef = ref(null)
 const reportDocument = computed(() => parsePreMarketReport(report.value?.content))
-const reportTitle = computed(() => reportDocument.value.title.replace(/^今日投资机会[｜|]\s*/, '') || '今日投资机会')
+const hasStockPicks = computed(() => reportDocument.value.sections.some((section) => section.stockPicks?.length))
+const reportTitle = computed(() => reportDocument.value.title
+  .replace(/^今日(?:投资机会|个股观点)[｜|]\s*/, '') || '今日投资机会')
 const sentimentWidth = computed(() => Math.min(Math.max(report.value?.sentimentScore || 0, 0), 100))
 
 const generatedTime = computed(() => {
@@ -218,7 +220,7 @@ onMounted(loadReport)
 
         <dl v-if="reportDocument.priority || reportDocument.risk" class="decision-lines">
           <div v-if="reportDocument.priority" class="priority-line">
-            <dt>优先方向</dt>
+            <dt>{{ hasStockPicks ? '今日首选' : '优先方向' }}</dt>
             <dd>{{ reportDocument.priority }}</dd>
           </div>
           <div v-if="reportDocument.risk" class="risk-line">
@@ -227,7 +229,7 @@ onMounted(loadReport)
           </div>
         </dl>
 
-        <section v-if="report.focusChanges?.length" class="focus-change-strip" aria-label="相比上一交易日的方向变化">
+        <section v-if="report.focusChanges?.length" class="focus-change-strip" aria-label="相比上一交易日的个股或方向变化">
           <strong>较前日</strong>
           <span v-for="focusChange in report.focusChanges" :key="focusChange">{{ focusChange }}</span>
         </section>

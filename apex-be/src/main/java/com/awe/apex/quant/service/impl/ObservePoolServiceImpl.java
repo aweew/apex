@@ -218,16 +218,34 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             if (StringUtils.isBlank(name) && Objects.nonNull(basic)) {
                 name = basic.getName();
             }
+            String strategyId = extractStrategyId(row);
             ready.add(ObservePoolResp.builder()
                     .id(row.getId())
                     .code(row.getCode())
                     .name(name)
                     .market(row.getMarket())
                     .side(resolveSide(row.getSide(), row.getTags(), row.getReason()))
+                    .reason(row.getReason())
+                    .guideText(row.getGuideText())
+                    .triggerType(row.getTriggerType())
+                    .triggerExpr(row.getTriggerExpr())
+                    .triggerPrice(row.getTriggerPrice())
+                    .stopLoss(row.getStopLoss())
+                    .targetPrice(row.getTargetPrice())
                     .priority(row.getPriority())
                     .status(status)
+                    .triggeredAt(row.getTriggeredAt())
+                    .decisionUpdatedAt(row.getDecisionUpdatedAt())
+                    .updateTime(row.getUpdateTime())
                     .latestPrice(latest)
                     .pctChg(Objects.nonNull(basic) ? basic.getPctChg() : null)
+                    .statusHint(buildHint(row, latest, pctDistance(latest,
+                            effectiveTriggerPrice(row, latest)), status))
+                    .triggerLabel(triggerLabel(row))
+                    .strategyId(strategyId)
+                    .strategyName(strategyLabel(strategyId))
+                    .setupStyle(setupStyleOf(resolveSide(row.getSide(), row.getTags(), row.getReason()),
+                            strategyId, row.getReason()))
                     .build());
         }
         ready.sort((a, b) -> {

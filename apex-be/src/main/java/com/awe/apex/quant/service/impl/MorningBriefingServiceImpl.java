@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 public class MorningBriefingServiceImpl implements IMorningBriefingService {
 
-    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest:v3";
+    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest:v4";
     private static final Duration BRIEFING_CACHE_TTL = Duration.ofHours(30);
     private static final ExecutorService MORNING_BRIEFING_REFRESH_POOL = Executors.newSingleThreadExecutor(runnable -> {
         Thread refreshThread = new Thread(runnable, "morning-briefing-refresh");

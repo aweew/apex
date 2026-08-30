@@ -8,15 +8,20 @@ import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.context.ApexUserContext;
 import com.awe.apex.quant.domain.bo.DailyPreMarketReportContextBO;
+import com.awe.apex.quant.domain.bo.PreMarketStockPickBO;
 import com.awe.apex.quant.domain.dto.DailyPreMarketReportResp;
 import com.awe.apex.quant.domain.dto.CommandDirectionItemResp;
 import com.awe.apex.quant.domain.dto.DashboardCommandResp;
 import com.awe.apex.quant.domain.dto.DashboardHomeResp;
+import com.awe.apex.quant.domain.dto.DecisionItemResp;
+import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.ExternalMarketItemResp;
 import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
+import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.OvernightMarketTheme;
+import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.PortfolioBriefResp;
 import com.awe.apex.quant.domain.dto.PortfolioSummaryResp;
 import com.awe.apex.quant.domain.dto.PreMarketEventImpactResp;
@@ -24,6 +29,7 @@ import com.awe.apex.quant.domain.entity.PortfolioHolding;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.IDailyPreMarketReportService;
 import com.awe.apex.quant.service.IDashboardService;
+import com.awe.apex.quant.service.IDecisionService;
 import com.awe.apex.quant.service.IPortfolioService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +54,7 @@ import java.util.Objects;
 @Service
 public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportService {
 
-    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v6:";
+    private static final String CACHE_KEY_PREFIX = "apex:daily-pre-market-report:latest:v14:";
     private static final Duration CACHE_TTL = Duration.ofDays(7);
     private static final String DEFAULT_WATCHLIST_GROUP = "我的自选";
     private static final String DATA_MISSING = "数据暂缺";
@@ -58,6 +64,9 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
 
     @Resource
     private IDashboardService dashboardService;
+
+    @Resource
+    private IDecisionService decisionService;
 
     @Resource
     private IPortfolioService portfolioService;
@@ -114,6 +123,7 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         int holdingCount = countHoldings(portfolios);
         Integer sentimentScore = calculateSentimentScore(dashboard);
         List<PortfolioSummaryResp> focusPortfolios = selectFocusPortfolios(portfolios, dashboard);
+        List<PreMarketStockPickBO> stockPicks = buildStockPicks(dashboard, tradeDate);
         DailyPreMarketReportContextBO reportContext = DailyPreMarketReportContextBO.builder()
                 .tradeDate(tradeDate)
                 .generatedAt(generatedAt)
@@ -125,6 +135,7 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                 .decision(Objects.nonNull(dashboard) ? dashboard.getDecision() : null)
                 .observePool(Objects.nonNull(dashboard) && CollUtil.isNotEmpty(dashboard.getObserveAlerts())
                         ? dashboard.getObserveAlerts() : List.of())
+                .stockPicks(stockPicks)
                 .portfolios(focusPortfolios)
                 .missingData(missingData)
                 .build();
@@ -134,8 +145,9 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         String reportSource = "RULE";
         if (kimiChatClient.available()) {
             try {
+                DailyPreMarketReportContextBO aiReportContext = buildAiReportContext(reportContext);
                 String userPrompt = "以下 JSON 是本次研报唯一允许使用的事实与数据上下文：\n"
-                        + JsonUtils.toJsonString(reportContext);
+                        + JsonUtils.toJsonString(aiReportContext);
                 String modelContent = kimiChatClient.chat(loadSystemPrompt(), userPrompt, 2600);
                 modelContent = normalizeModelContent(modelContent);
                 if (isCompleteReport(modelContent, reportContext)) {
@@ -174,9 +186,198 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                 .content(reportContent)
                 .build();
         redisCacheService.put(buildCacheKey(userId, tradeDate), report, CACHE_TTL);
-        log.info("盘前研报生成完成，用户编号={}，交易日={}，来源={}，数据等级={}，组合数={}，持仓数={}",
-                userId, tradeDate, reportSource, dataLevel, portfolios.size(), holdingCount);
+        log.info("盘前研报生成完成，用户编号={}，交易日={}，来源={}，数据等级={}，个股观点数={}，组合数={}，持仓数={}",
+                userId, tradeDate, reportSource, dataLevel, stockPicks.size(), portfolios.size(), holdingCount);
         return report;
+    }
+
+    private List<PreMarketStockPickBO> buildStockPicks(DashboardHomeResp dashboard, LocalDate tradeDate) {
+        List<PreMarketStockPickBO> stockPicks = new ArrayList<>();
+
+        // 1. 目标交易日决策优先；尚未生成时，只允许前一交易日决策作为盘前观察排序。
+        DashboardHomeResp.DecisionBlock decision = Objects.nonNull(dashboard) ? dashboard.getDecision() : null;
+        boolean currentDecision = Objects.nonNull(decision) && Boolean.TRUE.equals(decision.getHasToday())
+                && Objects.nonNull(decision.getActionDate()) && decision.getActionDate().equals(tradeDate);
+        boolean referenceDecision = false;
+        if (!currentDecision) {
+            LocalDate marketDataDate = Objects.nonNull(dashboard) && Objects.nonNull(dashboard.getMarket())
+                    ? dashboard.getMarket().getAsOf() : null;
+            boolean latestCompletedTradingDay = Objects.nonNull(marketDataDate)
+                    && marketDataDate.equals(TradingCalendar.prevTradingDay(tradeDate));
+            if (latestCompletedTradingDay) {
+                try {
+                    DecisionTodayResp previousDecision = decisionService.today(marketDataDate, resolveWatchlistGroup());
+                    if (Objects.nonNull(previousDecision) && Boolean.TRUE.equals(previousDecision.getGenerated())
+                            && marketDataDate.equals(previousDecision.getActionDate())
+                            && CollUtil.isNotEmpty(previousDecision.getBuys())) {
+                        List<DashboardHomeResp.HomeActionItem> referenceBuys = new ArrayList<>();
+                        for (DecisionItemResp buyItem : previousDecision.getBuys()) {
+                            if (Objects.isNull(buyItem) || !"BUY".equalsIgnoreCase(buyItem.getAction())
+                                    || StringUtils.isBlank(buyItem.getCode())
+                                    || StringUtils.isBlank(buyItem.getName())) {
+                                continue;
+                            }
+                            referenceBuys.add(DashboardHomeResp.HomeActionItem.builder()
+                                    .code(buyItem.getCode())
+                                    .name(buyItem.getName())
+                                    .action(buyItem.getAction())
+                                    .strategyId(buyItem.getStrategyId())
+                                    .score(buyItem.getScore())
+                                    .suggestedWeight(buyItem.getSuggestedWeight())
+                                    .mainlineMatch(buyItem.getMainlineMatch())
+                                    .mainlineName(buyItem.getMainlineName())
+                                    .valuationLevel(buyItem.getValuationLevel())
+                                    .valuationLabel(buyItem.getValuationLabel())
+                                    .executableHint(buyItem.getExecutableHint())
+                                    .linkHint(buyItem.getLinkHint())
+                                    .reason(buyItem.getReason())
+                                    .exitRule(buyItem.getExitRule())
+                                    .build());
+                            if (referenceBuys.size() >= 3) {
+                                break;
+                            }
+                        }
+                        if (CollUtil.isNotEmpty(referenceBuys)) {
+                            decision = DashboardHomeResp.DecisionBlock.builder()
+                                    .actionDate(marketDataDate)
+                                    .hasToday(true)
+                                    .topBuys(referenceBuys)
+                                    .build();
+                            referenceDecision = true;
+                        }
+                    }
+                } catch (Exception ex) {
+                    log.warn("盘前研报读取上一交易日决策失败，决策日={}，原因={}", marketDataDate, ex.getMessage());
+                }
+            }
+        }
+        if ((currentDecision || referenceDecision) && CollUtil.isNotEmpty(decision.getTopBuys())) {
+            for (DashboardHomeResp.HomeActionItem buyItem : decision.getTopBuys()) {
+                if (Objects.isNull(buyItem) || !"BUY".equalsIgnoreCase(buyItem.getAction())
+                        || StringUtils.isBlank(buyItem.getCode()) || StringUtils.isBlank(buyItem.getName())) {
+                    continue;
+                }
+                String opinion;
+                boolean usefulValuation = isUsefulText(buyItem.getValuationLabel())
+                        && !buyItem.getValuationLabel().contains("数据不足");
+                if (Boolean.TRUE.equals(buyItem.getMainlineMatch())
+                        && usefulValuation) {
+                    opinion = defaultText(buyItem.getMainlineName(), "当日主线") + "与"
+                            + buyItem.getValuationLabel() + "形成共振，优先于仅靠短线反弹的候选";
+                } else if (Boolean.TRUE.equals(buyItem.getMainlineMatch())) {
+                    opinion = defaultText(buyItem.getMainlineName(), "当日主线")
+                            + "内的买入候选，优先看板块强度能否向个股扩散";
+                } else if (usefulValuation) {
+                    opinion = buyItem.getValuationLabel() + "提供安全边际，但只执行量价确认后的机会";
+                } else if (referenceDecision) {
+                    opinion = "量价信号领先，只看强势延续，不接低开转弱";
+                } else {
+                    opinion = "当日买入候选中优先级靠前，只做确认后的强势延续，不提前赌开盘方向";
+                }
+
+                List<String> evidenceItems = new ArrayList<>();
+                if (referenceDecision) {
+                    evidenceItems.add("决策日 " + decision.getActionDate());
+                }
+                evidenceItems.add(buyItem.getReason());
+                if (Objects.nonNull(buyItem.getScore())) {
+                    evidenceItems.add("综合评分 " + formatNumber(buyItem.getScore()));
+                }
+                if (Boolean.TRUE.equals(buyItem.getMainlineMatch())) {
+                    evidenceItems.add(defaultText(buyItem.getMainlineName(), "当日主线") + "主线匹配");
+                }
+                if (usefulValuation) {
+                    evidenceItems.add(buyItem.getValuationLabel());
+                }
+                evidenceItems.add(buyItem.getLinkHint());
+                if (CollUtil.isEmpty(distinctTexts(evidenceItems))) {
+                    evidenceItems.add("当日买入候选排名靠前");
+                }
+
+                boolean executable = !referenceDecision && Boolean.TRUE.equals(buyItem.getExecutableHint());
+                String trigger = executable
+                        ? "9:45 后仍不破开盘价且持续强于沪深 300"
+                        : "9:45 后仍不破开盘价且持续强于沪深 300，再纳入开仓候选";
+                String invalidation = StringUtils.isNotBlank(buyItem.getExitRule())
+                        ? buyItem.getExitRule() : "9:45 前跌破开盘价且相对沪深 300 转弱";
+                BigDecimal suggestedWeight = Objects.nonNull(buyItem.getSuggestedWeight())
+                        && buyItem.getSuggestedWeight().compareTo(BigDecimal.ZERO) > 0 && !referenceDecision
+                        ? buyItem.getSuggestedWeight() : null;
+                stockPicks.add(PreMarketStockPickBO.builder()
+                        .rank(stockPicks.size() + 1)
+                        .level(referenceDecision
+                                ? (stockPicks.isEmpty() ? "观察首选" : "观察备选")
+                                : (stockPicks.isEmpty() ? "首选" : "备选"))
+                        .code(buyItem.getCode())
+                        .name(buyItem.getName())
+                        .direction(Boolean.TRUE.equals(buyItem.getMainlineMatch()) ? buyItem.getMainlineName() : null)
+                        .opinion(opinion)
+                        .evidence(String.join("，", distinctTexts(evidenceItems)))
+                        .trigger(trigger)
+                        .invalidation(invalidation)
+                        .suggestedWeight(suggestedWeight)
+                        .build());
+                if (stockPicks.size() >= 3) {
+                    return stockPicks;
+                }
+            }
+        }
+
+        // 2. 当日决策不足三只时，只用已触发或接近触发的 BUY 观察候选补充。
+        List<ObservePoolResp> observeAlerts = Objects.nonNull(dashboard) ? dashboard.getObserveAlerts() : List.of();
+        if (CollUtil.isEmpty(observeAlerts)) {
+            return stockPicks;
+        }
+        for (ObservePoolResp observeAlert : observeAlerts) {
+            if (Objects.isNull(observeAlert) || !"BUY".equalsIgnoreCase(observeAlert.getSide())
+                    || (!"TRIGGERED".equals(observeAlert.getStatus()) && !"NEAR".equals(observeAlert.getStatus()))
+                    || StringUtils.isBlank(observeAlert.getCode()) || StringUtils.isBlank(observeAlert.getName())
+                    || Objects.isNull(observeAlert.getDecisionUpdatedAt())
+                    || !tradeDate.equals(observeAlert.getDecisionUpdatedAt().toLocalDate())
+                    || (StringUtils.isBlank(observeAlert.getReason())
+                    && StringUtils.isBlank(observeAlert.getGuideText()))) {
+                continue;
+            }
+            boolean duplicated = false;
+            for (PreMarketStockPickBO stockPick : stockPicks) {
+                if (observeAlert.getCode().equals(stockPick.getCode())) {
+                    duplicated = true;
+                    break;
+                }
+            }
+            if (duplicated) {
+                continue;
+            }
+
+            List<String> evidenceItems = new ArrayList<>();
+            evidenceItems.add(observeAlert.getReason());
+            evidenceItems.add(observeAlert.getGuideText());
+            evidenceItems.add(observeAlert.getTechSummary());
+            evidenceItems.add(observeAlert.getValuationLabel());
+            evidenceItems.add(observeAlert.getStatusHint());
+            String setupStyle = defaultText(observeAlert.getSetupStyle(), "策略观察");
+            String opinion = "TRIGGERED".equals(observeAlert.getStatus())
+                    ? setupStyle + "条件已经触发，优先等待开盘确认而不是追高"
+                    : setupStyle + "接近触发，只有条件兑现才进入交易候选";
+            String trigger = "9:45 前确认：" + (StringUtils.isNotBlank(observeAlert.getTriggerLabel())
+                    ? observeAlert.getTriggerLabel() : defaultText(observeAlert.getGuideText(), "观察条件转为已触发"));
+            String invalidation = Objects.nonNull(observeAlert.getStopLoss())
+                    ? "跌破止损价 " + formatNumber(observeAlert.getStopLoss()) : "触发条件撤销或相对强度转弱";
+            stockPicks.add(PreMarketStockPickBO.builder()
+                    .rank(stockPicks.size() + 1)
+                    .level("TRIGGERED".equals(observeAlert.getStatus()) ? "触发" : "观察")
+                    .code(observeAlert.getCode())
+                    .name(observeAlert.getName())
+                    .opinion(opinion)
+                    .evidence(String.join("，", distinctTexts(evidenceItems)))
+                    .trigger(trigger)
+                    .invalidation(invalidation)
+                    .build());
+            if (stockPicks.size() >= 3) {
+                break;
+            }
+        }
+        return stockPicks;
     }
 
     private List<PortfolioSummaryResp> loadPortfolios(List<String> missingData) {
@@ -336,17 +537,38 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
     private String buildRuleReport(DailyPreMarketReportContextBO context, String marketJudgement) {
         StringBuilder report = new StringBuilder();
         List<String> focusDirectionNames = collectFocusDirectionNames(context);
+        if (CollUtil.isNotEmpty(context.getStockPicks())) {
+            List<String> stockDirectionNames = new ArrayList<>();
+            for (PreMarketStockPickBO stockPick : context.getStockPicks()) {
+                addDirectionName(stockDirectionNames, stockPick.getDirection());
+            }
+            if (CollUtil.isNotEmpty(stockDirectionNames)) {
+                focusDirectionNames = stockDirectionNames;
+            }
+        }
         report.append(buildReportTitle(context, focusDirectionNames)).append("\n")
                 .append("日期：").append(context.getTradeDate()).append("\n")
                 .append("核心观点：").append(marketJudgement).append("\n");
-        if (CollUtil.isNotEmpty(focusDirectionNames)) {
+        if (CollUtil.isNotEmpty(context.getStockPicks())) {
+            report.append("首选个股：");
+            List<String> stockIdentities = new ArrayList<>();
+            for (PreMarketStockPickBO stockPick : context.getStockPicks()) {
+                stockIdentities.add(stockPick.getName() + " " + stockPick.getCode());
+            }
+            report.append(String.join("、", stockIdentities)).append("。\n");
+        }
+        if (CollUtil.isEmpty(context.getStockPicks()) && CollUtil.isNotEmpty(focusDirectionNames)) {
             report.append("优先看：").append(String.join("、", focusDirectionNames)).append("。\n");
         }
         report.append("最大风险：").append(resolvePrimaryRisk(context)).append("\n");
 
         appendMarketState(report, context);
         appendCapitalStyle(report, context, focusDirectionNames);
-        appendInvestmentOpportunities(report, context, focusDirectionNames);
+        if (CollUtil.isNotEmpty(context.getStockPicks())) {
+            appendStockPicks(report, context.getStockPicks());
+        } else {
+            appendInvestmentOpportunities(report, context, focusDirectionNames);
+        }
         appendPortfolioSection(report, context);
         report.append("\n05｜开盘剧本\n")
                 .append("偏强｜核心方向放量、上涨家数继续扩大，核心股保住大部分高开涨幅。\n")
@@ -357,6 +579,9 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
     }
 
     private String buildReportTitle(DailyPreMarketReportContextBO context, List<String> focusDirectionNames) {
+        if (isShrinkingVolume(context.getMarket())) {
+            return "今日投资机会｜缩量轮动 · 强势延续";
+        }
         if (CollUtil.isNotEmpty(focusDirectionNames)) {
             String primaryDirection = focusDirectionNames.get(0);
             PreMarketEventImpactResp event = findDirectionEvent(context, primaryDirection);
@@ -372,6 +597,24 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             return "今日投资机会｜弱势先控仓，只做逆势走强方向";
         }
         return "今日投资机会｜震荡轮动，先等主线走出来";
+    }
+
+    private void appendStockPicks(StringBuilder report, List<PreMarketStockPickBO> stockPicks) {
+        report.append("\n03｜个股推荐\n");
+        for (PreMarketStockPickBO stockPick : stockPicks) {
+            report.append(stockPick.getRank()).append(". ")
+                    .append(stockPick.getName()).append(" ").append(stockPick.getCode())
+                    .append("｜级别：").append(reportField(stockPick.getLevel()))
+                    .append("；观点：").append(reportField(stockPick.getOpinion()))
+                    .append("；依据：").append(reportField(stockPick.getEvidence()))
+                    .append("；触发：").append(reportField(stockPick.getTrigger()))
+                    .append("；失效：").append(reportField(stockPick.getInvalidation()));
+            if (Objects.nonNull(stockPick.getSuggestedWeight())) {
+                report.append("；仓位：")
+                        .append(formatPercent(stockPick.getSuggestedWeight().multiply(BigDecimal.valueOf(100))));
+            }
+            report.append("。\n");
+        }
     }
 
     private void appendMarketState(StringBuilder report, DailyPreMarketReportContextBO context) {
@@ -702,15 +945,6 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
     }
 
     private String buildMarketJudgement(DailyPreMarketReportContextBO context) {
-        List<PreMarketEventImpactResp> events = morningEvents(context.getMorningBriefing());
-        if (CollUtil.isNotEmpty(events) && StringUtils.isNotBlank(events.get(0).getTitle())) {
-            PreMarketEventImpactResp topEvent = events.get(0);
-            String directionText = StringUtils.isNotBlank(topEvent.getDirection())
-                    && !"待验证".equals(topEvent.getDirection())
-                    ? "当前影响偏" + topEvent.getDirection() : "方向由开盘承接确认";
-            return "今日先交易“" + topEvent.getTitle() + "”带来的预期变化，而不是追随昨日涨幅；"
-                    + directionText + "。";
-        }
         DashboardHomeResp.MarketBlock market = context.getMarket();
         Integer sentimentScore = context.getSentimentScore();
         if (Objects.nonNull(sentimentScore) && sentimentScore >= 60) {
@@ -720,6 +954,12 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         }
         if (Objects.nonNull(sentimentScore) && sentimentScore <= 40) {
             return "情绪偏弱，今天先控制回撤；只有缩量止跌并出现明确主线，才考虑提高进攻性。";
+        }
+        List<PreMarketEventImpactResp> events = reportEvents(context);
+        if (CollUtil.isNotEmpty(events) && CollUtil.isNotEmpty(events.get(0).getThemes())) {
+            String primaryDirection = events.get(0).getThemes().get(0);
+            return primaryDirection + "受隔夜事件催化，但市场仍按结构性机会定价；"
+                    + "只有板块成交与个股扩散共振，催化才算主线。";
         }
         String commandJudgement = resolveMarketJudgement(context.getCommand(), market);
         if (isUsefulText(commandJudgement)) {
@@ -737,10 +977,14 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                         + formatPercent(brief.getMaxWeightPct()) + "，判断错误会放大组合回撤。";
             }
         }
+        if (CollUtil.isNotEmpty(context.getStockPicks())) {
+            PreMarketStockPickBO primaryStockPick = context.getStockPicks().get(0);
+            return primaryStockPick.getName() + "未满足执行条件，或" + primaryStockPick.getInvalidation() + "。";
+        }
         if (isShrinkingVolume(context.getMarket())) {
             return "缩量环境下，昨日强势方向高开低走，情绪分数与价格表现背离。";
         }
-        List<PreMarketEventImpactResp> events = morningEvents(context.getMorningBriefing());
+        List<PreMarketEventImpactResp> events = reportEvents(context);
         if (CollUtil.isNotEmpty(events) && "待验证".equals(events.get(0).getDirection())) {
             return "最重要事件尚未形成明确交易方向，盘前映射可能被市场反向解读。";
         }
@@ -749,7 +993,7 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
 
     private List<String> collectFocusDirectionNames(DailyPreMarketReportContextBO context) {
         List<String> names = new ArrayList<>();
-        for (PreMarketEventImpactResp event : morningEvents(context.getMorningBriefing())) {
+        for (PreMarketEventImpactResp event : reportEvents(context)) {
             addDirectionNames(names, event.getThemes());
             if (names.size() >= 3) {
                 return names;
@@ -818,7 +1062,7 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
     }
 
     private PreMarketEventImpactResp findDirectionEvent(DailyPreMarketReportContextBO context, String directionName) {
-        for (PreMarketEventImpactResp event : morningEvents(context.getMorningBriefing())) {
+        for (PreMarketEventImpactResp event : reportEvents(context)) {
             if (CollUtil.isNotEmpty(event.getThemes()) && event.getThemes().contains(directionName)) {
                 return event;
             }
@@ -873,6 +1117,86 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         return investmentEvents;
     }
 
+    private List<PreMarketEventImpactResp> reportEvents(DailyPreMarketReportContextBO context) {
+        List<PreMarketEventImpactResp> relevantEvents = new ArrayList<>();
+        for (PreMarketEventImpactResp event : morningEvents(context.getMorningBriefing())) {
+            if (isReportRelevantEvent(event, context)) {
+                relevantEvents.add(event);
+            }
+        }
+        return relevantEvents;
+    }
+
+    private DailyPreMarketReportContextBO buildAiReportContext(DailyPreMarketReportContextBO context) {
+        MorningBriefingResp morningBriefing = context.getMorningBriefing();
+        if (Objects.isNull(morningBriefing) || Objects.isNull(morningBriefing.getNewsPulse())) {
+            return context;
+        }
+        NewsPulseResp newsPulse = morningBriefing.getNewsPulse().toBuilder()
+                .eventImpacts(reportEvents(context))
+                .build();
+        return context.toBuilder()
+                .morningBriefing(morningBriefing.toBuilder().newsPulse(newsPulse).build())
+                .build();
+    }
+
+    private boolean isReportRelevantEvent(PreMarketEventImpactResp event,
+                                          DailyPreMarketReportContextBO context) {
+        if (CollUtil.isNotEmpty(event.getRelatedCodes())) {
+            for (PreMarketStockPickBO stockPick : context.getStockPicks()) {
+                if (event.getRelatedCodes().contains(stockPick.getCode())) {
+                    return true;
+                }
+            }
+            for (PortfolioSummaryResp portfolio : context.getPortfolios()) {
+                if (CollUtil.isEmpty(portfolio.getHoldings())) {
+                    continue;
+                }
+                for (PortfolioHolding holding : portfolio.getHoldings()) {
+                    if (Objects.nonNull(holding) && event.getRelatedCodes().contains(holding.getCode())) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if (CollUtil.isNotEmpty(event.getThemes())) {
+            for (PreMarketStockPickBO stockPick : context.getStockPicks()) {
+                if (StringUtils.isNotBlank(stockPick.getDirection())
+                        && event.getThemes().contains(stockPick.getDirection())) {
+                    return true;
+                }
+            }
+            for (PortfolioSummaryResp portfolio : context.getPortfolios()) {
+                if (CollUtil.isEmpty(portfolio.getHoldings())) {
+                    continue;
+                }
+                for (PortfolioHolding holding : portfolio.getHoldings()) {
+                    if (Objects.nonNull(holding) && matchesHoldingDirection(holding, event.getThemes())) {
+                        return true;
+                    }
+                }
+            }
+            return !"ANNOUNCEMENT".equals(event.getEventType())
+                    && Objects.nonNull(event.getPriority()) && event.getPriority() >= 4;
+        }
+        return "MARKET".equals(event.getImpactScope())
+                && Objects.nonNull(event.getPriority()) && event.getPriority() >= 4;
+    }
+
+    private boolean mentionsIrrelevantEvent(String content, DailyPreMarketReportContextBO context) {
+        List<PreMarketEventImpactResp> relevantEvents = reportEvents(context);
+        for (PreMarketEventImpactResp event : morningEvents(context.getMorningBriefing())) {
+            if (relevantEvents.contains(event)) {
+                continue;
+            }
+            if (StringUtils.isNotBlank(event.getTitle()) && content.contains(event.getTitle())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean isShrinkingVolume(DashboardHomeResp.MarketBlock market) {
         return Objects.nonNull(market) && ("缩量".equals(market.getVolumeTrend())
                 || (StringUtils.isNotBlank(market.getVolumeLabel()) && market.getVolumeLabel().contains("缩量")));
@@ -912,10 +1236,13 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
     private boolean isCompleteReport(String content, DailyPreMarketReportContextBO context) {
         if (StringUtils.isBlank(content) || content.length() > 3000
                 || content.contains(DATA_MISSING) || content.contains("未获取")
-                || content.contains("暂不据此")) {
+                || content.contains("暂不据此") || content.contains("盘前观察排序")
+                || content.contains("开仓门禁") || content.contains("决策评分")
+                || mentionsIrrelevantEvent(content, context)) {
             return false;
         }
-        if (!content.startsWith("今日投资机会｜") || content.contains("关键变量")
+        if (!content.startsWith("今日投资机会｜")
+                || content.contains("关键变量")
                 || content.contains("S 级") || content.contains("A 级") || content.contains("B 级")) {
             return false;
         }
@@ -932,7 +1259,82 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                 return false;
             }
         }
-        if (CollUtil.isNotEmpty(collectFocusDirectionNames(context))) {
+        String reportTitle = content.lines().findFirst().orElse("");
+        String coreView = "";
+        for (String contentLine : content.split("\\R")) {
+            if (contentLine.startsWith("核心观点：")) {
+                coreView = contentLine.substring(5);
+                break;
+            }
+        }
+        if (StringUtils.isBlank(coreView)
+                || containsKnownStock(reportTitle, context) || containsKnownStock(coreView, context)
+                || containsEventHeadline(reportTitle, context) || containsEventHeadline(coreView, context)) {
+            return false;
+        }
+        if (CollUtil.isNotEmpty(context.getStockPicks())) {
+            if (!reportTitle.startsWith("今日投资机会｜") || !reportTitle.contains(" · ")
+                    || !content.contains("首选个股：")
+                    || !content.contains("03｜个股推荐")) {
+                return false;
+            }
+            int stockPickStart = content.indexOf("03｜个股推荐");
+            int stockPickEnd = content.indexOf("04｜持仓应对", stockPickStart);
+            if (stockPickEnd < 0) {
+                stockPickEnd = content.indexOf("05｜开盘剧本", stockPickStart);
+            }
+            String stockPickContent = content.substring(stockPickStart,
+                    stockPickEnd > stockPickStart ? stockPickEnd : content.length());
+            for (PreMarketStockPickBO stockPick : context.getStockPicks()) {
+                String matchedStockLine = null;
+                for (String stockPickLine : stockPickContent.split("\\R")) {
+                    String stockPickBody = stockPickLine.replaceFirst("^\\d+[.、]\\s*", "");
+                    if (!stockPickBody.equals(stockPickLine)
+                            && (stockPickBody.startsWith(stockPick.getName() + " " + stockPick.getCode() + "｜")
+                            || stockPickBody.startsWith(stockPick.getName() + " " + stockPick.getCode() + "|"))) {
+                        matchedStockLine = stockPickLine;
+                        break;
+                    }
+                }
+                if (StringUtils.isBlank(matchedStockLine)
+                        || !matchedStockLine.contains("级别：" + reportField(stockPick.getLevel()))
+                        || !matchedStockLine.contains("观点：" + reportField(stockPick.getOpinion()))
+                        || !matchedStockLine.contains("依据：" + reportField(stockPick.getEvidence()))
+                        || !matchedStockLine.contains("触发：" + reportField(stockPick.getTrigger()))
+                        || !matchedStockLine.contains("失效：" + reportField(stockPick.getInvalidation()))) {
+                    return false;
+                }
+                if (Objects.nonNull(stockPick.getSuggestedWeight())
+                        && !matchedStockLine.contains("仓位：" + formatPercent(
+                        stockPick.getSuggestedWeight().multiply(BigDecimal.valueOf(100))))) {
+                    return false;
+                }
+            }
+            int stockPickLineCount = 0;
+            for (String stockPickLine : stockPickContent.split("\\R")) {
+                if (!stockPickLine.matches("^\\d+[.、].+")) {
+                    continue;
+                }
+                stockPickLineCount++;
+                boolean knownStock = false;
+                for (PreMarketStockPickBO stockPick : context.getStockPicks()) {
+                    String stockPickBody = stockPickLine.replaceFirst("^\\d+[.、]\\s*", "");
+                    if (stockPickBody.startsWith(stockPick.getName() + " " + stockPick.getCode() + "｜")
+                            || stockPickBody.startsWith(stockPick.getName() + " " + stockPick.getCode() + "|")) {
+                        knownStock = true;
+                        break;
+                    }
+                }
+                if (!knownStock || !stockPickLine.contains("级别：") || !stockPickLine.contains("观点：")
+                        || !stockPickLine.contains("依据：") || !stockPickLine.contains("触发：")
+                        || !stockPickLine.contains("失效：")) {
+                    return false;
+                }
+            }
+            if (stockPickLineCount != context.getStockPicks().size()) {
+                return false;
+            }
+        } else if (CollUtil.isNotEmpty(collectFocusDirectionNames(context))) {
             if (!content.contains("03｜投资机会")
                     || !content.contains("确认：") || !content.contains("失效：")) {
                 return false;
@@ -974,6 +1376,36 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             }
         }
         return true;
+    }
+
+    private boolean containsKnownStock(String reportText, DailyPreMarketReportContextBO context) {
+        for (PreMarketStockPickBO stockPick : context.getStockPicks()) {
+            if (reportText.contains(stockPick.getName()) || reportText.contains(stockPick.getCode())) {
+                return true;
+            }
+        }
+        for (PortfolioSummaryResp portfolio : context.getPortfolios()) {
+            if (CollUtil.isEmpty(portfolio.getHoldings())) {
+                continue;
+            }
+            for (PortfolioHolding holding : portfolio.getHoldings()) {
+                if (Objects.nonNull(holding)
+                        && ((StringUtils.isNotBlank(holding.getName()) && reportText.contains(holding.getName()))
+                        || (StringUtils.isNotBlank(holding.getCode()) && reportText.contains(holding.getCode())))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean containsEventHeadline(String reportText, DailyPreMarketReportContextBO context) {
+        for (PreMarketEventImpactResp event : reportEvents(context)) {
+            if (StringUtils.isNotBlank(event.getTitle()) && reportText.contains(event.getTitle())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String resolveDataLevel(DashboardHomeResp dashboard, List<String> missingData) {
@@ -1077,14 +1509,22 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         }
 
         List<String> focusChanges = new ArrayList<>();
+        boolean currentStockPicks = currentContent.contains("03｜个股推荐")
+                || currentContent.contains("03|个股推荐");
+        boolean previousStockPicks = StringUtils.isNotBlank(previousReport.getContent())
+                && (previousReport.getContent().contains("03｜个股推荐")
+                || previousReport.getContent().contains("03|个股推荐"));
         if (CollUtil.isNotEmpty(newDirections)) {
-            focusChanges.add("新增：" + String.join("、", newDirections));
+            focusChanges.add((currentStockPicks ? "新增推荐：" : "新增方向：")
+                    + String.join("、", newDirections));
         }
         if (CollUtil.isNotEmpty(continuedDirections)) {
-            focusChanges.add("延续：" + String.join("、", continuedDirections));
+            focusChanges.add((currentStockPicks ? "延续推荐：" : "延续方向：")
+                    + String.join("、", continuedDirections));
         }
         if (CollUtil.isNotEmpty(downgradedDirections)) {
-            focusChanges.add("降级：" + String.join("、", downgradedDirections));
+            focusChanges.add((previousStockPicks ? "退出推荐：" : "降级方向：")
+                    + String.join("、", downgradedDirections));
         }
         return focusChanges;
     }
@@ -1134,6 +1574,19 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
             }
         }
         return distinctTexts;
+    }
+
+    private String reportField(String value) {
+        if (StringUtils.isBlank(value)) {
+            return "当日系统筛选事实";
+        }
+        return value.replace('\n', ' ')
+                .replace('\r', ' ')
+                .replace('；', '，')
+                .replace(';', '，')
+                .replace('｜', '，')
+                .replace('|', '，')
+                .trim();
     }
 
     private String holdingStatus(PortfolioHolding holding) {
