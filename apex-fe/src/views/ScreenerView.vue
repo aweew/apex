@@ -12,7 +12,6 @@ import {
   MoreFilled,
   Plus,
   Rank,
-  Refresh,
   RefreshRight,
   Search,
   VideoPlay,
@@ -23,7 +22,6 @@ import {
   createScreenerStrategy,
   deleteScreenerStrategy,
   fetchScreenerMarket,
-  fetchScreenerMeta,
   fetchScreenerStrategies,
   reorderScreenerStrategies,
   runScreener,
@@ -145,13 +143,6 @@ function newStrategyRule(ruleType = 'PCT_CHG') {
 function syncViewportWidth() {
   viewportWidth.value = window.innerWidth
 }
-
-const meta = ref({
-  marketCount: null,
-  universeCount: null,
-  universeBatchNo: null,
-  note: '',
-})
 
 function emptyForm() {
   return {
@@ -313,15 +304,6 @@ function formatCircMv(value) {
 function resolveGroupName() {
   if (form.value.scope === '__MARKET__') return '__MARKET__'
   return String(form.value.groupName || '').trim() || '我的自选'
-}
-
-async function loadMeta() {
-  try {
-    const res = await fetchScreenerMeta()
-    meta.value = res.data || meta.value
-  } catch {
-    // 摘要失败不阻断选股
-  }
 }
 
 async function loadStrategies(preserveSelection = true) {
@@ -712,9 +694,8 @@ async function onRun() {
     })
     rows.value = res.data || []
     screeningActive.value = true
-    const scopeLabel = form.value.scope === '__MARKET__' ? '全市场' : `自选「${resolveGroupName()}」`
+    const scopeLabel = form.value.scope === '__MARKET__' ? '全部股票' : `自选「${resolveGroupName()}」`
     ElMessage.success(`${scopeLabel}选出 ${rows.value.length} 只`)
-    loadMeta()
   } catch (e) {
     ElMessage.error(e.message || '选股失败')
   } finally {
@@ -729,7 +710,7 @@ function onReset() {
   screeningActive.value = false
   rows.value = []
   batchRows.value = []
-  ElMessage.info('已清空条件，默认全市场')
+  ElMessage.info('已清空条件，默认显示全部股票')
   loadMarket(true)
 }
 
@@ -760,7 +741,7 @@ async function loadMarket(resetPage = false) {
   } catch (e) {
     marketRows.value = []
     marketTotal.value = 0
-    ElMessage.error(e.message || '加载全市场失败')
+    ElMessage.error(e.message || '加载股票列表失败')
   } finally {
     marketLoading.value = false
   }
@@ -784,7 +765,7 @@ async function addObserve(row) {
       name: row.name || '',
       status: 'WATCHING',
       reason: activeMode.value === 'strategy' ? `策略选股：${selectedStrategy.value?.name || ''}`
-        : screeningActive.value ? '条件选股' : '全市场浏览',
+        : screeningActive.value ? '条件选股' : '全部股票浏览',
       tags: activeMode.value === 'strategy' ? 'strategy-screener'
         : screeningActive.value ? 'screener' : 'market',
     })
@@ -820,7 +801,6 @@ async function onBatchBacktest() {
 }
 
 onMounted(() => {
-  loadMeta()
   if (activeMode.value === 'strategy') loadStrategies(true)
   else loadMarket(true)
   window.addEventListener('resize', syncViewportWidth)
@@ -837,23 +817,6 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">Screener</p>
         <h1>{{ isMobileViewport ? '股票筛选' : '股票' }}</h1>
-        <p class="meta-line">
-          <span class="chip">全市场 <b>{{ meta.marketCount ?? '—' }}</b></span>
-          <span class="chip pool">股票池 <b>{{ meta.universeCount ?? '—' }}</b></span>
-          <span v-if="meta.universeBatchNo" class="muted meta-batch">批次 {{ meta.universeBatchNo }}</span>
-        </p>
-        <p v-if="meta.note" class="hint">{{ meta.note }}</p>
-      </div>
-      <div class="actions header-refresh-actions">
-        <el-button
-          v-if="isMobileViewport"
-          class="mobile-refresh-button"
-          :icon="Refresh"
-          aria-label="刷新股票数量"
-          title="刷新股票数量"
-          @click="loadMeta"
-        />
-        <el-button v-else @click="loadMeta">刷新数量</el-button>
       </div>
     </header>
 
@@ -867,7 +830,7 @@ onBeforeUnmount(() => {
         <div>
           <h2>股票列表</h2>
           <span class="muted">
-            {{ screeningActive ? `筛选结果 ${displayRows.length} 只` : `共 ${marketTotal} 只` }} · 池内标「池」
+            {{ screeningActive ? `筛选结果 ${displayRows.length} 只股票` : `共 ${marketTotal} 只股票` }}
           </span>
         </div>
         <div class="actions row-actions">
@@ -883,10 +846,7 @@ onBeforeUnmount(() => {
         </el-form-item>
         <el-form-item label="范围">
           <el-select v-model="form.scope" style="width: 120px">
-            <el-option
-              :label="meta.marketCount != null ? `全部市场 (${meta.marketCount})` : '全部市场'"
-              value="__MARKET__"
-            />
+            <el-option label="全部股票" value="__MARKET__" />
             <el-option label="自选分组" value="__WATCH__" />
           </el-select>
         </el-form-item>
@@ -954,7 +914,7 @@ onBeforeUnmount(() => {
                 :class="{ 'is-active': form.scope === '__MARKET__' }"
                 :aria-pressed="form.scope === '__MARKET__'"
                 @click="form.scope = '__MARKET__'"
-              >全市场</button>
+              >全部股票</button>
               <button
                 type="button"
                 :class="{ 'is-active': form.scope === '__WATCH__' }"
@@ -1342,12 +1302,6 @@ onBeforeUnmount(() => {
             />
           </template>
         </el-table-column>
-        <el-table-column v-if="activeMode === 'free' && !screeningActive" label="股票池" width="74">
-          <template #default="{ row }">
-            <el-tag v-if="row.inUniverse" size="small" type="success" effect="plain">池</el-tag>
-            <span v-else class="muted">—</span>
-          </template>
-        </el-table-column>
         <el-table-column prop="latestPrice" label="现价" min-width="84" />
         <el-table-column prop="pctChg" label="今日%" min-width="80">
           <template #default="{ row }">
@@ -1416,8 +1370,7 @@ onBeforeUnmount(() => {
           <span>
             {{ activeMode === 'strategy'
               ? strategyHasRun ? `命中 ${strategyRunResult.matchedCount} 只` : '请选择并运行策略'
-              : screeningActive ? `筛选结果 ${displayRows.length} 只` : `共 ${marketTotal} 只` }}
-            <template v-if="activeMode === 'free' && !screeningActive"> · 池内标「池」</template>
+              : screeningActive ? `筛选结果 ${displayRows.length} 只股票` : `共 ${marketTotal} 只股票` }}
           </span>
         </div>
         <el-button
@@ -1441,7 +1394,6 @@ onBeforeUnmount(() => {
           <span class="mobile-stock-heading">
             <span class="mobile-stock-identity">
               <StockIdentity :security="row" include-main compact />
-              <span v-if="activeMode === 'free' && !screeningActive && row.inUniverse" class="universe-badge">池</span>
             </span>
             <span class="mobile-stock-quote">
               <strong :class="trendClass(row.pctChg)">{{ formatPct(row.pctChg) }}</strong>
@@ -2337,39 +2289,6 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
-.meta-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin: 6px 0 0;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  font-size: 13px;
-}
-
-.chip.pool {
-  background: color-mix(in srgb, #16a34a 14%, transparent);
-}
-
-.chip b {
-  font-variant-numeric: tabular-nums;
-}
-
-.hint {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--muted, #888);
-  max-width: 720px;
-}
-
 .muted {
   color: var(--muted, #888);
   font-size: 12px;
@@ -2429,59 +2348,12 @@ onBeforeUnmount(() => {
 
   .screener-header {
     position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px;
-    gap: 10px;
+    display: block;
     margin-bottom: 12px;
   }
 
   .screener-header > div:first-child {
     min-width: 0;
-  }
-
-  .header-refresh-actions {
-    width: 44px !important;
-    align-self: start;
-  }
-
-  .screener-page .screener-header > .header-refresh-actions > :deep(.mobile-refresh-button) {
-    width: 44px !important;
-    min-width: 44px;
-    min-height: 44px;
-    margin: 0;
-    padding: 0;
-    border-radius: 8px;
-  }
-
-  .meta-line {
-    flex-wrap: nowrap;
-    gap: 6px;
-    min-width: 0;
-    margin-top: 6px;
-  }
-
-  .chip {
-    flex: 0 0 auto;
-    padding: 3px 8px;
-    border-radius: 6px;
-    font-size: 12px;
-  }
-
-  .meta-batch {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .hint {
-    display: -webkit-box;
-    margin-top: 5px;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    font-size: 11px;
-    line-height: 1.45;
   }
 
   .mobile-filter-surface {
@@ -2822,19 +2694,6 @@ onBeforeUnmount(() => {
     color: var(--muted);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
-  }
-
-  .universe-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    background: rgba(42, 157, 143, 0.1);
-    color: #16775d;
-    font-size: 10px;
-    font-weight: 750;
   }
 
   .mobile-stock-quote {

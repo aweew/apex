@@ -28,7 +28,7 @@ test('stock screener uses a dedicated mobile filter surface with progressive dis
 test('mobile screener flattens primary filtering into search scope conditions and one submit action', () => {
   assert.doesNotMatch(mobileFreeFilterSource, /class="mobile-filter-heading"|<h2>筛选条件<\/h2>/)
   assert.match(mobileFreeFilterSource, /class="mobile-filter-controls"/)
-  assert.match(mobileFreeFilterSource, /class="mobile-segmented"[\s\S]*?>全市场<[\s\S]*?>自选</)
+  assert.match(mobileFreeFilterSource, /class="mobile-segmented"[\s\S]*?>全部股票<[\s\S]*?>自选</)
   assert.match(mobileFreeFilterSource, /class="advanced-filter-toggle"[\s\S]*?<Filter \/>[\s\S]*?<span>条件<\/span>/)
   assert.match(mobileFreeFilterSource, /class="mobile-filter-reset"[\s\S]*?:icon="RefreshRight"[\s\S]*?aria-label="重置筛选条件"/)
   assert.match(screenerSource, /\.mobile-filter-controls\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 92px;/)
@@ -46,6 +46,13 @@ test('desktop form and table remain separate from mobile controls and results', 
 test('desktop screener uses the shared stock identity hierarchy with market badges', () => {
   assert.match(desktopTableSource, /<el-table-column prop="name" label="股票"[\s\S]*?<StockIdentity[\s\S]*?:security="row"[\s\S]*?include-main[\s\S]*?compact/)
   assert.doesNotMatch(desktopTableSource, /<el-table-column prop="code" label="代码"/)
+})
+
+test('screener presents one human-readable stock universe without internal pool metadata', () => {
+  assert.match(screenerSource, /`共 \$\{marketTotal\} 只股票`/)
+  assert.match(screenerSource, /`筛选结果 \$\{displayRows\.length\} 只股票`/)
+  assert.doesNotMatch(screenerSource, /池内标|label="股票池"|class="universe-badge"/)
+  assert.doesNotMatch(screenerSource, /fetchScreenerMeta|meta\.universeCount|meta\.universeBatchNo|meta\.note/)
 })
 
 test('mobile screener reuses market badges including Shanghai and Shenzhen', () => {
@@ -113,7 +120,7 @@ test('mobile strategy header keeps the shared page-title treatment', () => {
   assert.doesNotMatch(screenerSource, /--page-title-size:/)
   assert.doesNotMatch(screenerSource, /\.screener-header > div:first-child > \.eyebrow\s*\{[\s\S]*?display:\s*none !important;/)
   assert.doesNotMatch(screenerSource, /\.screener-header h1::after\s*\{[\s\S]*?display:\s*none;/)
-  assert.match(screenerSource, /\.screener-page \.screener-header > \.header-refresh-actions > :deep\(\.mobile-refresh-button\)\s*\{[\s\S]*?width:\s*44px !important;[\s\S]*?min-width:\s*44px;/)
+  assert.match(screenerSource, /\.screener-header\s*\{[\s\S]*?display:\s*block;[\s\S]*?margin-bottom:\s*12px;/)
 })
 
 test('mobile strategy selector stays full width without opening a search keyboard or zooming the viewport', () => {
