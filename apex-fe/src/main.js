@@ -16,3 +16,9 @@ app.component('ScoreBar', ScoreBar)
 app.component('StockIdentity', StockIdentity)
 app.component('StockDetailCard', StockDetailCard)
 app.use(createPinia()).use(router).use(ElementPlus).mount('#app')
+
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {})
+  })
+}
