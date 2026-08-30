@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildPortfolioIntradaySeries } from './portfolioIntraday.js'
+import { buildPortfolioIntradaySeries, shouldShowPortfolioIntraday } from './portfolioIntraday.js'
+
+test('shows intraday return only when the authoritative calendar does not mark a non-trading day', () => {
+  assert.equal(shouldShowPortfolioIntraday({ tradingDay: true }), true)
+  assert.equal(shouldShowPortfolioIntraday({ tradingDay: false }), false)
+  assert.equal(shouldShowPortfolioIntraday(undefined), true)
+  assert.equal(shouldShowPortfolioIntraday(null), true)
+})
 
 test('builds intraday return curve summary from valid five-minute points', () => {
   const result = buildPortfolioIntradaySeries([

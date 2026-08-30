@@ -3,7 +3,16 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ElMessage, ElNotification } from 'element-plus'
-import { EditPen, Minus, MoreFilled, Plus, View, WarningFilled } from '@element-plus/icons-vue'
+import {
+  EditPen,
+  MagicStick,
+  Minus,
+  MoreFilled,
+  Plus,
+  Refresh,
+  View,
+  WarningFilled,
+} from '@element-plus/icons-vue'
 import { listHoldings, refreshHoldingQuotes, saveHolding, tradeHolding } from '../api/holding'
 import { saveObserve } from '../api/observe'
 import {
@@ -210,22 +219,18 @@ function notifyNewRiskAlerts() {
   const newAlerts = riskAlertSummary.value.items.filter((alert) => !announcedRiskAlerts.has(riskAlertKey(alert)))
   if (!newAlerts.length) return
   for (const alert of newAlerts) announcedRiskAlerts.add(riskAlertKey(alert))
+  if (window.innerWidth <= 900) return
 
-  const hasStopLoss = newAlerts.some((alert) => alert.type === HOLDING_ALERT_TYPE.STOP_LOSS)
-  const message = newAlerts
-    .slice(0, 4)
-    .map((alert) => {
-      const securityName = alert.name || alert.code
-      const action = alert.type === HOLDING_ALERT_TYPE.STOP_LOSS ? '已触发止损' : '已触发止盈'
-      return `${securityName} ${action}`
-    })
-    .join('；')
-  const remaining = newAlerts.length > 4 ? `；另有 ${newAlerts.length - 4} 只` : ''
+  const stopLossCount = newAlerts.filter((alert) => alert.type === HOLDING_ALERT_TYPE.STOP_LOSS).length
+  const takeProfitCount = newAlerts.length - stopLossCount
+  const riskCountParts = []
+  if (stopLossCount > 0) riskCountParts.push(`止损 ${stopLossCount} 只`)
+  if (takeProfitCount > 0) riskCountParts.push(`止盈 ${takeProfitCount} 只`)
   ElNotification({
-    title: '止盈止损提醒',
-    message: `${message}${remaining}。请核对行情后及时处理。`,
-    type: hasStopLoss ? 'error' : 'warning',
-    duration: 8000,
+    title: '持仓风险提醒',
+    message: `${newAlerts.length} 只持仓已到达设定价位（${riskCountParts.join('，')}）。请在页面风险提醒中查看并核对行情。`,
+    type: stopLossCount > 0 ? 'error' : 'warning',
+    duration: 5000,
     position: 'top-right',
   })
 }
@@ -803,22 +808,21 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">Holding</p>
         <h1>真实持仓</h1>
-        <p>手动维护；决策卖出/持有读这里。日常点「刷新行情+日线」更新价格与 K 线。亦可在「组合」中查看默认仓。</p>
+        <p>持仓数据用于生成卖出与持有建议。点击「更新行情」同步最新价格与 K 线。</p>
       </div>
       <div class="actions">
         <el-button type="primary" :icon="Plus" @click="openCreate">买入</el-button>
         <el-button
           plain
+          :icon="Refresh"
           :loading="refreshing"
           :disabled="!rows.length"
           @click="onRefreshQuotes(true)"
         >
-          刷新行情+日线
+          更新行情
         </el-button>
-        <el-button plain @click="router.push('/portfolio')">组合</el-button>
-        <el-button plain @click="router.push('/decision')">智能决策</el-button>
-        <el-button plain @click="router.push('/observe')">观察池</el-button>
-        <el-button text :loading="loading" @click="load()">重载列表</el-button>
+        <el-button plain :icon="MagicStick" @click="router.push('/decision')">智能决策</el-button>
+        <el-button plain :icon="View" @click="router.push('/observe')">观察池</el-button>
       </div>
     </header>
 

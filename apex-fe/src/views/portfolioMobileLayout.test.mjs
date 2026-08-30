@@ -13,6 +13,23 @@ test('mobile portfolio controls share one compact list toolbar', () => {
   assert.match(portfolioSource, /\.mobile-list-toolbar\.can-sort\s*\{[\s\S]*?grid-template-columns:\s*minmax\(72px, 1fr\) auto auto auto 44px;/)
   assert.doesNotMatch(portfolioSource, /class="mobile-header-actions"/)
   assert.match(portfolioSource, /\.portfolio-page \.portfolio-header\s*\{\s*display:\s*none;/)
+  assert.match(portfolioSource, /<strong>组合<\/strong>/)
+  assert.doesNotMatch(portfolioSource, /<strong>共享组合<\/strong>/)
+})
+
+test('mobile portfolio cards expose access, size, freshness, and row actions', () => {
+  assert.match(portfolioSource, /class="pf-mobile-meta"/)
+  assert.match(portfolioSource, /class="pf-access"/)
+  assert.match(portfolioSource, /class="pf-freshness"/)
+  assert.match(portfolioSource, /class="pf-mobile-card-actions"/)
+  assert.match(portfolioSource, /handlePortfolioCardAction\(row, command\)/)
+})
+
+test('mobile portfolio list clears the fixed bottom navigation', () => {
+  assert.match(
+    portfolioSource,
+    /\.portfolio-page:not\(\.mobile-detail-open\) \.side\s*\{[\s\S]*?padding-bottom:\s*calc\(76px \+ env\(safe-area-inset-bottom\)\);/,
+  )
 })
 
 test('mobile portfolio rows keep today performance beside the portfolio name', () => {
@@ -43,6 +60,13 @@ test('portfolio detail exposes a responsive intraday return curve with five-minu
   assert.match(portfolioSource, /日内振幅/)
   assert.match(portfolioSource, /setInterval\([\s\S]*?5 \* 60 \* 1000/)
   assert.match(portfolioSource, /@media \(max-width: 820px\) \{[\s\S]*?\.intraday-summary\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+})
+
+test('portfolio detail hides intraday return on non-trading days', () => {
+  assert.match(portfolioSource, /import \{ tradingCalendar \} from '\.\.\/utils\/dataFreshness\.js'/)
+  assert.match(portfolioSource, /const showIntradayPanel = computed\(\(\) => shouldShowPortfolioIntraday\(tradingCalendar\.value\)\)/)
+  assert.match(portfolioSource, /v-if="rows\.length && !sharingCapture && showIntradayPanel" class="intraday-panel"/)
+  assert.match(portfolioSource, /activeId\.value && showIntradayPanel\.value\) loadIntraday/)
 })
 
 test('portfolio theme pie keeps theme names beside the chart instead of a separate row', () => {
@@ -77,6 +101,34 @@ test('mobile portfolio detail exposes buy and per-holding actions in the first v
   assert.match(portfolioSource, /v-if="!sharingCapture && !isMobileViewport"[\s\S]*?label="操作"/)
   assert.match(portfolioSource, /@media \(max-width: 820px\) \{[\s\S]*?\.portfolio-stock-cell\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 44px;/)
   assert.match(portfolioSource, /@media \(max-width: 820px\) \{[\s\S]*?\.portfolio-row-actions-trigger\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/)
+})
+
+test('holding action group keeps four icon-led primary workflows', () => {
+  const actionGroup = holdingSource.slice(
+    holdingSource.indexOf('<div class="actions">'),
+    holdingSource.indexOf('</header>'),
+  )
+
+  assert.match(actionGroup, /:icon="Plus"[^>]*>买入<\/el-button>/)
+  assert.match(actionGroup, /:icon="Refresh"[\s\S]*?>\s*更新行情\s*<\/el-button>/)
+  assert.match(actionGroup, /:icon="MagicStick"[^>]*>智能决策<\/el-button>/)
+  assert.match(actionGroup, /:icon="View"[^>]*>观察池<\/el-button>/)
+  assert.doesNotMatch(actionGroup, />组合<\/el-button>|>重载列表<\/el-button>|刷新行情\+日线/)
+  assert.match(holdingSource, /持仓数据用于生成卖出与持有建议。点击「更新行情」同步最新价格与 K 线。/)
+  assert.doesNotMatch(holdingSource, /手动维护|亦可在「组合」中查看默认仓/)
+})
+
+test('holding risk notification stays out of the mobile first viewport', () => {
+  const notificationFlow = holdingSource.slice(
+    holdingSource.indexOf('function notifyNewRiskAlerts()'),
+    holdingSource.indexOf('function positionWeightPct(row)'),
+  )
+
+  assert.match(notificationFlow, /for \(const alert of newAlerts\) announcedRiskAlerts\.add\(riskAlertKey\(alert\)\)/)
+  assert.match(notificationFlow, /if \(window\.innerWidth <= 900\) return/)
+  assert.match(notificationFlow, /`\$\{newAlerts\.length\} 只持仓已到达设定价位/)
+  assert.match(notificationFlow, /duration:\s*5000/)
+  assert.doesNotMatch(notificationFlow, /securityName|slice\(0, 4\)|另有/)
 })
 
 test('portfolio summary keeps only action-oriented metrics', () => {
@@ -190,7 +242,7 @@ test('mobile portfolio ordering uses direct up and down controls while desktop k
   assert.match(portfolioSource, /class="pf-mobile-sort-controls"/)
   assert.match(portfolioSource, /aria-label="上移组合"/)
   assert.match(portfolioSource, /aria-label="下移组合"/)
-  assert.match(portfolioSource, /grid-template-columns:\s*76px minmax\(48px, 1fr\) auto 18px;/)
+  assert.match(portfolioSource, /grid-template-columns:\s*76px minmax\(48px, 1fr\) auto 62px;/)
   assert.match(portfolioSource, /width: 36px;/)
   assert.match(portfolioSource, /height: 44px;/)
   assert.match(portfolioSource, /v-if="!isMobileViewport && canSortPortfolios"[\s\S]*?class="pf-sort-handle"/)
@@ -202,7 +254,8 @@ test('mobile portfolio ordering uses direct up and down controls while desktop k
 
 test('shared portfolios expose write controls when the backend marks them editable', () => {
   assert.match(portfolioSource, /const activeEditable = computed\(\(\) => activeSummary\.value\?\.editable === true\)/)
-  assert.match(portfolioSource, /<strong>共享组合<\/strong>/)
+  assert.match(portfolioSource, /class="pf-access"/)
+  assert.match(portfolioSource, /function portfolioAccessLabel\(row\)/)
   assert.match(portfolioSource, /v-else-if="row\.editable"[\s\S]*?class="pf-card-menu"/)
   assert.match(portfolioSource, /<el-dropdown-item v-if="detail\.editable" command="edit">编辑组合<\/el-dropdown-item>/)
   assert.match(portfolioSource, /<el-dropdown-item v-if="detail\.editable" command="import">导入持仓<\/el-dropdown-item>/)

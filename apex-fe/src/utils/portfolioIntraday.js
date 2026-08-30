@@ -1,4 +1,14 @@
 /**
+ * 判断是否展示组合盘中收益。
+ *
+ * @param {object|null|undefined} calendar A 股交易日历
+ * @returns {boolean} 日历明确为非交易日时隐藏
+ */
+export function shouldShowPortfolioIntraday(calendar) {
+  return calendar?.tradingDay !== false
+}
+
+/**
  * 整理盘中收益点并计算页面摘要。
  *
  * @param {Array<object>} rows 后端盘中快照

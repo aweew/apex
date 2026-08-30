@@ -61,7 +61,8 @@ import HoldingTradeDialog from '../components/HoldingTradeDialog.vue'
 import PortfolioImportDialog from '../components/PortfolioImportDialog.vue'
 import { availablePeMetrics } from '../utils/valuationMetrics.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
-import { buildPortfolioIntradaySeries } from '../utils/portfolioIntraday.js'
+import { tradingCalendar } from '../utils/dataFreshness.js'
+import { buildPortfolioIntradaySeries, shouldShowPortfolioIntraday } from '../utils/portfolioIntraday.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -406,6 +407,24 @@ function fmtSignedMoney(v) {
   return '0'
 }
 
+function formatPortfolioTime(value) {
+  const text = String(value || '').replace('T', ' ')
+  return text.length >= 16 ? text.slice(5, 16) : text
+}
+
+function portfolioFreshness(row) {
+  const missingQuoteCount = Number(row?.missingQuoteCount || 0)
+  if (missingQuoteCount > 0) return `${missingQuoteCount}只行情缺失`
+  const quoteTime = row?.quoteTime || row?.updateTime
+  if (row?.quoteTime) return `行情 ${formatPortfolioTime(quoteTime)}`
+  return quoteTime ? `更新 ${formatPortfolioTime(quoteTime)}` : '行情待更新'
+}
+
+function portfolioAccessLabel(row) {
+  if (row?.isDefault) return '我的组合'
+  return row?.editable === true ? '可编辑' : '只读共享'
+}
+
 function rowWeight(row) {
   const mv = Number(row.marketValue)
   const costMv = Number(row.costPrice) * Number(row.quantity || 0)
@@ -470,6 +489,7 @@ const totalTodayPct = computed(() => {
   return (totalTodayPnl.value / preMv) * 100
 })
 const intradaySeries = computed(() => buildPortfolioIntradaySeries(intradayRows.value))
+const showIntradayPanel = computed(() => shouldShowPortfolioIntraday(tradingCalendar.value))
 
 const industryDist = computed(() => {
   const map = new Map()
@@ -830,6 +850,16 @@ watch(mobileDetailOpen, async (open) => {
   await nextTick()
   renderPies()
   renderDailyChart()
+  renderIntradayChart()
+})
+
+watch(showIntradayPanel, async (visible) => {
+  if (!visible) {
+    intradayChart?.dispose()
+    intradayChart = null
+    return
+  }
+  await nextTick()
   renderIntradayChart()
 })
 
@@ -1569,7 +1599,7 @@ onMounted(async () => {
   await loadList(true)
   window.addEventListener('resize', onResize)
   intradayRefreshTimer = window.setInterval(() => {
-    if (!document.hidden && activeId.value) loadIntraday(activeId.value, true)
+    if (!document.hidden && activeId.value && showIntradayPanel.value) loadIntraday(activeId.value, true)
   }, 5 * 60 * 1000)
 })
 
@@ -1652,7 +1682,7 @@ onBeforeUnmount(() => {
           :class="{ 'can-sort': canSortPortfolios }"
         >
           <div class="mobile-list-heading">
-            <strong>共享组合</strong>
+            <strong>组合</strong>
             <span>{{ list.length }} 组</span>
           </div>
           <el-checkbox v-model="includeArchived" size="small">含归档</el-checkbox>
@@ -1781,7 +1811,30 @@ onBeforeUnmount(() => {
                 <b>{{ fmtSignedMoney(row.todayPnl) }}</b>
                 <small v-if="row.todayPct != null">{{ fmtSignedPct(row.todayPct) }}</small>
               </span>
-              <el-icon v-if="isMobileViewport" class="pf-card-arrow"><ArrowRight /></el-icon>
+              <div v-if="isMobileViewport" class="pf-mobile-card-actions" @click.stop>
+                <el-dropdown
+                  v-if="row.editable"
+                  trigger="click"
+                  placement="bottom-end"
+                  @command="(command) => handlePortfolioCardAction(row, command)"
+                >
+                  <button
+                    type="button"
+                    class="pf-card-menu-trigger"
+                    :aria-label="`${row.name}更多操作`"
+                    title="更多操作"
+                  >
+                    <el-icon><MoreFilled /></el-icon>
+                  </button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="edit">编辑组合</el-dropdown-item>
+                      <el-dropdown-item command="remove" :disabled="row.systemDefault" divided>删除组合</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+                <el-icon class="pf-card-arrow"><ArrowRight /></el-icon>
+              </div>
               <el-dropdown
                 v-else-if="row.editable"
                 class="pf-card-menu"
@@ -1807,6 +1860,11 @@ onBeforeUnmount(() => {
                 </template>
               </el-dropdown>
               <span v-else-if="!isMobileViewport" class="pf-card-menu-placeholder" aria-hidden="true"></span>
+            </div>
+            <div v-if="isMobileViewport" class="pf-mobile-meta-line">
+              <span class="pf-mobile-meta">{{ row.positionCount || 0 }} 只持仓</span>
+              <span class="pf-access">{{ portfolioAccessLabel(row) }}</span>
+              <span class="pf-freshness">{{ portfolioFreshness(row) }}</span>
             </div>
             <div v-if="!isMobileViewport" class="pf-summary">
               <span class="pf-meta">{{ row.positionCount || 0 }} 只</span>
@@ -1872,10 +1930,14 @@ onBeforeUnmount(() => {
           <div class="detail-title">
             <p class="eyebrow share-hide-meta">{{ detail.isDefault ? 'Holding' : 'Track' }}</p>
             <h2>{{ detail.name }}</h2>
-            <p v-if="detail.ownerLabel || detail.note" class="detail-sub share-hide-meta">
+            <p class="detail-sub share-hide-meta">
               <template v-if="detail.ownerLabel">{{ detail.ownerLabel }}</template>
               <template v-if="detail.ownerLabel && detail.note"> · </template>
               <template v-if="detail.note">{{ detail.note }}</template>
+              <template v-if="detail.ownerLabel || detail.note"> · </template>
+              <span class="detail-access">{{ portfolioAccessLabel(detail) }}</span>
+              <span class="detail-separator" aria-hidden="true"> · </span>
+              <span class="detail-freshness">{{ portfolioFreshness(detail) }}</span>
             </p>
           </div>
         </header>
@@ -1927,7 +1989,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <section v-if="rows.length && !sharingCapture" class="intraday-panel">
+        <section v-if="rows.length && !sharingCapture && showIntradayPanel" class="intraday-panel">
           <div class="theme-panel-head intraday-head">
             <div class="theme-panel-title">
               <h3>盘中收益</h3>
@@ -2622,6 +2684,17 @@ onBeforeUnmount(() => {
   font-size: 13px;
   line-height: 1.4;
   max-width: 46em;
+}
+.detail-access,
+.detail-freshness {
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.detail-separator {
+  color: var(--muted);
+}
+.detail-freshness {
+  color: var(--muted);
 }
 .header {
   display: flex;
@@ -3900,6 +3973,10 @@ onBeforeUnmount(() => {
     background: transparent;
   }
 
+  .portfolio-page:not(.mobile-detail-open) .side {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+
   .mobile-list-toolbar {
     display: grid;
     grid-template-columns: minmax(72px, 1fr) auto auto 44px;
@@ -3998,7 +4075,7 @@ onBeforeUnmount(() => {
 
   .pf-top {
     display: grid;
-    grid-template-columns: minmax(56px, 1fr) auto 18px;
+    grid-template-columns: minmax(56px, 1fr) auto 62px;
     min-height: 32px;
     gap: 8px;
     padding-right: 0;
@@ -4011,7 +4088,20 @@ onBeforeUnmount(() => {
   }
 
   .pf-top.is-mobile-sort {
-    grid-template-columns: 76px minmax(48px, 1fr) auto 18px;
+    grid-template-columns: 76px minmax(48px, 1fr) auto 62px;
+  }
+
+  .pf-mobile-card-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .pf-mobile-card-actions .pf-card-menu-trigger {
+    width: 40px;
+    height: 40px;
   }
 
   .pf-mobile-sort-controls {
@@ -4063,6 +4153,37 @@ onBeforeUnmount(() => {
     margin-left: 0;
     color: var(--muted);
     font-size: 16px;
+  }
+
+  .pf-mobile-meta-line {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 7px;
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 16px;
+    white-space: nowrap;
+  }
+
+  .pf-mobile-meta,
+  .pf-access,
+  .pf-freshness {
+    min-width: 0;
+    overflow: hidden;
+    color: #667085;
+    text-overflow: ellipsis;
+  }
+
+  .pf-access {
+    flex: 0 0 auto;
+    padding-left: 7px;
+    border-left: 1px solid var(--line);
+  }
+
+  .pf-freshness {
+    margin-left: auto;
+    text-align: right;
   }
 
   .pf-mobile-pnl {
@@ -4222,6 +4343,14 @@ onBeforeUnmount(() => {
 
   .pf-mobile-pnl-label,
   .pf-mobile-pnl small {
+    display: none;
+  }
+
+  .pf-mobile-meta-line {
+    padding-right: 0;
+  }
+
+  .pf-access {
     display: none;
   }
 }
