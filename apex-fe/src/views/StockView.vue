@@ -3562,9 +3562,35 @@ function dash(v) {
 }
 
 .tabs {
-  margin-top: 18px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 0;
+}
+
+.tabs :deep(.el-tabs__header) {
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+  background: transparent;
+}
+
+.tabs :deep(.el-tabs__item) {
+  height: 36px;
+  padding: 0 13px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 36px;
+}
+
+.tabs :deep(.el-tabs__item.is-active) {
+  color: var(--ink);
+}
+
+.tabs :deep(.el-tabs__active-bar) {
+  height: 2px;
 }
 
 .fund-note {
@@ -3606,6 +3632,15 @@ function dash(v) {
 }
 
 @media (max-width: 820px) {
+  .tabs :deep(.el-tabs__nav-wrap) {
+    overflow-x: auto;
+  }
+
+  .tabs :deep(.el-tabs__item) {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
   .market-overview {
     grid-template-columns: minmax(0, 1fr);
     margin-right: -2px;

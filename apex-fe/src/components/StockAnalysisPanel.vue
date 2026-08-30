@@ -116,7 +116,7 @@ const techHitRate = computed(() => {
   return Math.round((hit / total) * 100)
 })
 
-const radarDirectionLabel = computed(() => (side.value === 'SELL' ? '空头风险' : '多头机会'))
+const radarDirectionLabel = computed(() => (side.value === 'SELL' ? '空头/风险' : '多头/机会'))
 
 const radarResultText = computed(() => {
   const loadedSide = String(data.value?.tech?.side || '').toUpperCase()
@@ -174,7 +174,7 @@ const todayRadarItems = computed(() => {
       tone: newsCount ? 'active' : 'quiet',
     },
     {
-      label: '估值洼地',
+      label: '估值',
       value: valuationUnknown ? '数据不足' : valuationCheap ? '存在洼地' : '未处洼地',
       detail: valuationFacts.join(' · ') || '缺少可核验估值数据',
       tone: valuationCheap ? 'good' : valuationUnknown ? 'quiet' : 'neutral',
@@ -534,8 +534,8 @@ defineExpose({ reload: () => loadRules() })
           <span class="analysis-mode-result" aria-live="polite">{{ radarResultText }}</span>
         </div>
         <el-radio-group v-model="side" class="analysis-direction" aria-label="技术信号方向">
-          <el-radio-button value="BUY">多头机会</el-radio-button>
-          <el-radio-button value="SELL">空头风险</el-radio-button>
+          <el-radio-button value="BUY">多头/机会</el-radio-button>
+          <el-radio-button value="SELL">空头/风险</el-radio-button>
         </el-radio-group>
       </div>
 
@@ -703,7 +703,7 @@ defineExpose({ reload: () => loadRules() })
       <div class="grid-2 tone-grid">
         <section class="card tone-bull">
           <header class="card-head">
-            <h3>多头</h3>
+            <h3>多头/机会</h3>
             <span class="count-badge bull">{{ bullTop.length }}</span>
           </header>
           <ul v-if="bullTop.length" class="point-list">
@@ -716,7 +716,7 @@ defineExpose({ reload: () => loadRules() })
         </section>
         <section class="card tone-bear">
           <header class="card-head">
-            <h3>空头 / 风险</h3>
+            <h3>空头/风险</h3>
             <span class="count-badge bear">{{ bearTop.length }}</span>
           </header>
           <ul v-if="bearTop.length" class="point-list">
@@ -766,7 +766,7 @@ defineExpose({ reload: () => loadRules() })
         <section class="card dim-val">
           <header class="card-head stacked">
             <div class="title-row">
-              <h3><TermTip term="pe_ttm">估值洼地</TermTip></h3>
+              <h3><TermTip term="pe_ttm">估值</TermTip></h3>
               <span class="pill val">{{ data.valuation?.levelLabel || '-' }}</span>
             </div>
             <div class="mini-bar val" :title="`估值分 ${fmtNum(data.valuation?.score, 1)}`">
@@ -880,28 +880,29 @@ defineExpose({ reload: () => loadRules() })
 }
 
 .analysis-toolbar {
-  display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr);
-  gap: 12px;
-  align-items: stretch;
-  margin-bottom: 14px;
-  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
   border: 1px solid rgba(20, 38, 64, 0.1);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(248, 250, 252, 0.86);
 }
 
 .analysis-mode {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
 }
 
 .analysis-mode-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -923,11 +924,12 @@ defineExpose({ reload: () => loadRules() })
 
 .analysis-direction {
   display: flex;
-  width: 100%;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: #f3f6fa;
+  flex: 0 1 264px;
+  width: 264px;
+  padding: 2px;
+  border: 1px solid rgba(20, 38, 64, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
   box-sizing: border-box;
 }
 
@@ -938,9 +940,9 @@ defineExpose({ reload: () => loadRules() })
 .analysis-direction :deep(.el-radio-button__inner) {
   display: inline-grid;
   width: 100%;
-  min-height: 34px;
+  min-height: 30px;
   place-items: center;
-  padding: 0 12px;
+  padding: 0 10px;
   border: 0 !important;
   border-radius: 5px !important;
   background: transparent;
@@ -957,23 +959,27 @@ defineExpose({ reload: () => loadRules() })
   color: var(--accent);
 }
 
+.analysis-direction :deep(.el-radio-button:first-child .el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  color: #c62828;
+}
+
+.analysis-direction :deep(.el-radio-button:last-child .el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  color: #1b7f37;
+}
+
 .analysis-actions {
   display: flex;
   gap: 8px;
   align-items: end;
   justify-content: flex-end;
-  justify-self: end;
   min-width: max-content;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f3f6fa;
+  padding: 0;
 }
 
 .analysis-actions :deep(.el-button) {
   width: auto;
   min-width: 0;
-  height: 36px;
+  height: 32px;
   margin: 0;
   padding: 0 10px;
   border-radius: 5px;
@@ -1595,13 +1601,13 @@ defineExpose({ reload: () => loadRules() })
 }
 
 .tone-bull {
-  background: linear-gradient(160deg, rgba(52, 199, 89, 0.12), #fff 48%);
-  border-color: rgba(52, 199, 89, 0.18);
+  background: linear-gradient(160deg, rgba(255, 59, 48, 0.1), #fff 48%);
+  border-color: rgba(255, 59, 48, 0.16);
 }
 
 .tone-bear {
-  background: linear-gradient(160deg, rgba(255, 59, 48, 0.1), #fff 48%);
-  border-color: rgba(255, 59, 48, 0.16);
+  background: linear-gradient(160deg, rgba(52, 199, 89, 0.12), #fff 48%);
+  border-color: rgba(52, 199, 89, 0.18);
 }
 
 .dim-tech {
@@ -1632,13 +1638,13 @@ defineExpose({ reload: () => loadRules() })
 }
 
 .count-badge.bull {
-  background: rgba(52, 199, 89, 0.18);
-  color: #1b7f37;
+  background: rgba(255, 59, 48, 0.14);
+  color: #c62828;
 }
 
 .count-badge.bear {
-  background: rgba(255, 59, 48, 0.14);
-  color: #c62828;
+  background: rgba(52, 199, 89, 0.18);
+  color: #1b7f37;
 }
 
 .point-list {
@@ -1669,11 +1675,11 @@ defineExpose({ reload: () => loadRules() })
 }
 
 .tone-bull .point-list li::before {
-  background: #34c759;
+  background: #ff3b30;
 }
 
 .tone-bear .point-list li::before {
-  background: #ff3b30;
+  background: #34c759;
 }
 
 .point-main {
@@ -1751,11 +1757,15 @@ defineExpose({ reload: () => loadRules() })
   right: 6px;
   top: 50%;
   transform: translateY(-50%);
+  z-index: 1;
+  padding: 0 3px;
+  border-radius: 3px;
   font-style: normal;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  line-height: 14px;
+  color: var(--slate);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .kpi-row {
@@ -2071,7 +2081,15 @@ defineExpose({ reload: () => loadRules() })
 
 @media (max-width: 900px) {
   .analysis-toolbar {
-    grid-template-columns: 1fr;
+    flex-wrap: wrap;
+  }
+
+  .analysis-mode {
+    flex: 1 1 100%;
+  }
+
+  .analysis-actions {
+    margin-left: auto;
   }
 
   .grid-2 {
@@ -2089,6 +2107,7 @@ defineExpose({ reload: () => loadRules() })
 
 @media (max-width: 560px) {
   .analysis-toolbar {
+    display: grid;
     grid-template-columns: 1fr;
     gap: 10px;
     padding: 0 0 12px;
@@ -2099,6 +2118,7 @@ defineExpose({ reload: () => loadRules() })
   }
 
   .analysis-mode {
+    display: grid;
     gap: 7px;
   }
 
@@ -2109,6 +2129,11 @@ defineExpose({ reload: () => loadRules() })
   .analysis-direction :deep(.el-radio-button__inner) {
     min-height: 44px;
     font-size: 14px;
+  }
+
+  .analysis-direction {
+    flex: none;
+    width: 100%;
   }
 
   .analysis-actions {

@@ -5,11 +5,21 @@ import test from 'node:test'
 const source = await readFile(new URL('./StockAnalysisPanel.vue', import.meta.url), 'utf8')
 
 test('stock analysis direction names describe the result that changes', () => {
-  assert.match(source, /value="BUY">多头机会<\/el-radio-button>/)
-  assert.match(source, /value="SELL">空头风险<\/el-radio-button>/)
+  assert.match(source, /value="BUY">多头\/机会<\/el-radio-button>/)
+  assert.match(source, /value="SELL">空头\/风险<\/el-radio-button>/)
+  assert.match(source, /<h3>多头\/机会<\/h3>/)
+  assert.match(source, /<h3>空头\/风险<\/h3>/)
   assert.match(source, /const radarDirectionLabel = computed/)
   assert.match(source, /const radarResultText = computed/)
   assert.match(source, /class="analysis-mode-result"[\s\S]*?aria-live="polite"/)
+})
+
+test('stock analysis uses market direction colors and readable progress values', () => {
+  assert.match(source, /\.tone-bull\s*\{[\s\S]*rgba\(255, 59, 48, 0\.1\)/)
+  assert.match(source, /\.tone-bear\s*\{[\s\S]*rgba\(52, 199, 89, 0\.12\)/)
+  assert.match(source, /\.tone-bull \.point-list li::before\s*\{[\s\S]*background: #ff3b30;/)
+  assert.match(source, /\.tone-bear \.point-list li::before\s*\{[\s\S]*background: #34c759;/)
+  assert.match(source, /\.mini-bar em\s*\{[\s\S]*color: var\(--slate\);[\s\S]*background: rgba\(255, 255, 255, 0\.88\);/)
 })
 
 test('stock analysis ignores stale direction responses', () => {
@@ -35,14 +45,14 @@ test('today radar summarizes technical news valuation and market evidence withou
   assert.match(source, /const todayRadarItems = computed/)
   assert.match(source, /label: '技术信号'/)
   assert.match(source, /label: '个股消息'/)
-  assert.match(source, /label: '估值洼地'/)
+  assert.match(source, /label: '估值'/)
   assert.match(source, /label: '盘面热点'/)
   assert.match(source, /\['UNDERVALUED', 'SLIGHTLY_CHEAP'\]\.includes/)
   assert.match(source, /valuationLevel === 'UNKNOWN'/)
   assert.match(source, /analysis\.capital\?\.hotHit/)
   assert.match(source, /class="today-radar"/)
   assert.match(source, /v-for="item in todayRadarItems"/)
-  assert.match(source, /<h3><TermTip term="pe_ttm">估值洼地<\/TermTip><\/h3>/)
+  assert.match(source, /<h3><TermTip term="pe_ttm">估值<\/TermTip><\/h3>/)
   assert.match(source, /<h3>盘面热点<\/h3>/)
 })
 
@@ -56,7 +66,7 @@ test('opening the radar does not automatically trigger slow AI refresh', () => {
 test('desktop stock analysis commands use content width instead of filling the toolbar', () => {
   assert.match(
     source,
-    /\.analysis-actions\s*\{[^}]*display:\s*flex;[^}]*gap:\s*8px;[^}]*align-items:\s*end;[^}]*justify-content:\s*flex-end;[^}]*justify-self:\s*end;/s,
+    /\.analysis-actions\s*\{[^}]*display:\s*flex;[^}]*gap:\s*8px;[^}]*align-items:\s*end;[^}]*justify-content:\s*flex-end;/s,
   )
   assert.match(
     source,
