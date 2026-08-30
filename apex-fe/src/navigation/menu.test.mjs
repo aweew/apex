@@ -75,7 +75,7 @@ test('mobile bottom navigation exposes the five primary touch destinations', () 
       ['/market', '行情', 'TrendCharts'],
       ['/screener', '股票', 'Histogram'],
       ['/portfolio', '组合', 'Briefcase'],
-      ['menu', '我的', 'User'],
+      ['/holding', '我的', 'User'],
     ],
   )
 })

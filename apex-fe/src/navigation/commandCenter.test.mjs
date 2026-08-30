@@ -98,10 +98,21 @@ test('desktop stock search uses a navigation dropdown while mobile keeps the ful
   assert.match(appSource, /\.search-panel\s*\{[\s\S]*?background:\s*#fff;/)
 })
 
-test('navigation renders the current page data freshness instead of only service health', () => {
-  assert.match(appSource, /dataFreshness/)
-  assert.match(appSource, /data-status/)
-  assert.match(appSource, /dataFreshness\.label/)
+test('navigation keeps data freshness in settings instead of the top-right actions', () => {
+  const desktopActions = appSource.slice(
+    appSource.indexOf('<div class="nav-actions desktop-nav-actions">'),
+    appSource.indexOf('<div\n        class="app-activity"'),
+  )
+  const settingsDrawer = appSource.slice(
+    appSource.indexOf('<el-drawer'),
+    appSource.indexOf('</el-drawer>'),
+  )
+
+  assert.doesNotMatch(desktopActions, /dataFreshness|data-status|class="health"/)
+  assert.match(settingsDrawer, /id="system-status-settings-title">系统状态</)
+  assert.match(settingsDrawer, /dataFreshness\.label/)
+  assert.match(settingsDrawer, /dataFreshness\.detail/)
+  assert.match(settingsDrawer, /class="settings-status"/)
 })
 
 test('desktop account menu uses a compact icon while keeping identity inside the dropdown', () => {

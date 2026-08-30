@@ -294,7 +294,6 @@ function openSettings() {
 }
 
 function isBottomNavActive(item) {
-  if (item.action === 'menu') return mobileMenuActive.value
   return item.activePaths.some((path) => route.path === path || route.path.startsWith(`${path}/`))
 }
 
@@ -903,38 +902,10 @@ onBeforeUnmount(() => {
             <Setting aria-hidden="true" />
             <span>设置</span>
           </button>
-          <RouterLink
-            v-if="dataFreshness"
-            class="data-status"
-            :class="dataFreshnessClass()"
-            :to="dataFreshness.route"
-            :title="dataFreshness.detail || dataFreshness.label"
-          >
-            <i class="dot" />
-            {{ dataFreshness.label }}
-          </RouterLink>
-          <span v-else class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
-            <i class="dot" />
-            {{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '检测中…' }}
-          </span>
           <button v-if="currentUser" type="button" class="mobile-action-btn mobile-logout-btn" @click="logoutCurrentUser">退出登录</button>
         </div>
       </div>
       <div class="nav-actions desktop-nav-actions">
-        <RouterLink
-          v-if="dataFreshness"
-          class="data-status"
-          :class="dataFreshnessClass()"
-          :to="dataFreshness.route"
-          :title="dataFreshness.detail || dataFreshness.label"
-        >
-          <i class="dot" />
-          <span>{{ dataFreshness.label }}</span>
-        </RouterLink>
-        <span v-else class="health" :class="healthOk === false ? 'down' : healthOk ? 'up' : ''">
-          <i class="dot" />
-          {{ healthOk === false ? '离线' : healthOk ? '在线' : '…' }}
-        </span>
         <label class="desktop-stock-search" title="支持代码、名称或拼音缩写">
           <Search aria-hidden="true" />
           <input
@@ -1035,6 +1006,36 @@ onBeforeUnmount(() => {
       append-to-body
     >
       <div class="settings-panel">
+        <section class="settings-section" aria-labelledby="system-status-settings-title">
+          <h3 id="system-status-settings-title">系统状态</h3>
+          <RouterLink
+            v-if="dataFreshness"
+            class="settings-status"
+            :class="dataFreshnessClass()"
+            :to="dataFreshness.route"
+            @click="settingsOpen = false"
+          >
+            <span class="settings-status-dot" aria-hidden="true" />
+            <span class="settings-row-copy">
+              <strong>{{ dataFreshness.label }}</strong>
+              <small>{{ dataFreshness.detail || '当前页面数据状态' }}</small>
+            </span>
+            <ArrowRight aria-hidden="true" />
+          </RouterLink>
+          <div
+            v-else
+            class="settings-status"
+            :class="healthOk === false ? 'is-red' : healthOk ? 'is-green' : 'is-pending'"
+            role="status"
+          >
+            <span class="settings-status-dot" aria-hidden="true" />
+            <span class="settings-row-copy">
+              <strong>{{ healthOk === false ? '服务离线' : healthOk ? '服务在线' : '正在检测服务' }}</strong>
+              <small>后端服务连接状态</small>
+            </span>
+          </div>
+        </section>
+
         <section class="settings-section" aria-labelledby="display-settings-title">
           <h3 id="display-settings-title">显示</h3>
           <div class="settings-row">
@@ -1214,9 +1215,8 @@ onBeforeUnmount(() => {
       :inert="mobileMenuOpen || searchOpen || settingsOpen"
       :aria-hidden="mobileMenuOpen || searchOpen || settingsOpen ? 'true' : undefined"
     >
-      <template v-for="item in MOBILE_BOTTOM_NAV_ITEMS" :key="item.to || item.action">
+      <template v-for="item in MOBILE_BOTTOM_NAV_ITEMS" :key="item.to">
         <RouterLink
-          v-if="item.to"
           class="mobile-bottom-nav__item"
           :class="{ 'is-active': isBottomNavActive(item) }"
           :to="item.to"
@@ -1227,20 +1227,6 @@ onBeforeUnmount(() => {
           </span>
           <span>{{ item.label }}</span>
         </RouterLink>
-        <button
-          v-else
-          type="button"
-          class="mobile-bottom-nav__item"
-          :class="{ 'is-active': isBottomNavActive(item) }"
-          aria-controls="mobile-navigation"
-          :aria-expanded="mobileMenuOpen"
-          @click="setMobileMenu(true)"
-        >
-          <span class="mobile-bottom-nav__icon">
-            <component :is="bottomNavIcons[item.icon]" aria-hidden="true" />
-          </span>
-          <span>{{ item.label }}</span>
-        </button>
       </template>
     </nav>
   </div>
@@ -1498,67 +1484,6 @@ onBeforeUnmount(() => {
   gap: 6px;
   flex: 0 0 auto;
   margin-left: auto;
-}
-
-.health,
-.data-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--slate);
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.45);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  white-space: nowrap;
-}
-
-.data-status {
-  max-width: 188px;
-  color: var(--ink-soft);
-  text-decoration: none;
-}
-
-.data-status:hover {
-  border-color: var(--line-strong);
-  background: #f8fafc;
-}
-
-.data-status.is-green .dot {
-  background: #34c759;
-}
-
-.data-status.is-yellow .dot {
-  background: #ff9f0a;
-}
-
-.data-status.is-red .dot {
-  background: #ff3b30;
-}
-
-.health .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #c7c7cc;
-}
-
-.health.up {
-  color: #248a3d;
-}
-
-.health.up .dot {
-  background: #34c759;
-}
-
-.health.down {
-  color: #d70015;
-}
-
-.health.down .dot {
-  background: #ff3b30;
 }
 
 .links {
@@ -1902,6 +1827,52 @@ onBeforeUnmount(() => {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.settings-status {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 18px;
+  width: 100%;
+  min-height: 62px;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.settings-status:hover {
+  color: var(--accent);
+}
+
+.settings-status:focus-visible {
+  outline: 2px solid rgba(0, 113, 227, 0.34);
+  outline-offset: 2px;
+}
+
+.settings-status-dot {
+  width: 8px;
+  height: 8px;
+  justify-self: center;
+  border-radius: 50%;
+  background: #c7c7cc;
+}
+
+.settings-status.is-green .settings-status-dot {
+  background: #34c759;
+}
+
+.settings-status.is-yellow .settings-status-dot {
+  background: #ff9f0a;
+}
+
+.settings-status.is-red .settings-status-dot {
+  background: #ff3b30;
+}
+
+.settings-status > svg {
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
 }
 
 .settings-link {
@@ -2470,7 +2441,6 @@ onBeforeUnmount(() => {
   }
 
   .mobile-menu-actions .app-settings-trigger {
-    grid-column: 1 / -1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2484,23 +2454,6 @@ onBeforeUnmount(() => {
   .mobile-menu-actions .app-settings-trigger svg {
     width: 18px;
     height: 18px;
-  }
-
-  .mobile-menu-actions .health {
-    justify-content: center;
-    min-height: 44px;
-    border-radius: 8px;
-    background: #f8fafc;
-  }
-
-  .mobile-menu-actions .data-status {
-    justify-content: center;
-    min-height: 44px;
-    max-width: none;
-    overflow: hidden;
-    border-radius: 8px;
-    background: #f8fafc;
-    text-overflow: ellipsis;
   }
 
   .mobile-action-btn {
@@ -2634,6 +2587,7 @@ onBeforeUnmount(() => {
 
   .search-layer {
     inset: 0;
+    z-index: 101;
     box-sizing: border-box;
     height: 100dvh;
     align-items: flex-start;

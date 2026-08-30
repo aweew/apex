@@ -41,9 +41,9 @@ export const MOBILE_BOTTOM_NAV_ITEMS = [
     to: '/portfolio',
     label: '组合',
     icon: 'Briefcase',
-    activePaths: ['/portfolio', '/paper', '/holding', '/trades'],
+    activePaths: ['/portfolio', '/paper', '/trades'],
   },
-  { action: 'menu', label: '我的', icon: 'User' },
+  { to: '/holding', label: '我的', icon: 'User', activePaths: ['/holding'] },
 ]
 
 export const PRIMARY_SHORTCUTS = {
