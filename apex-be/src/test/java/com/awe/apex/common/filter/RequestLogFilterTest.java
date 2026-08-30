@@ -87,12 +87,13 @@ class RequestLogFilterTest {
         }
 
         List<ILoggingEvent> events = appender.list;
-        assertEquals(4, events.size());
+        assertEquals(1, events.size());
         assertTrue(events.stream().allMatch(event -> "trace_20260817".equals(event.getMDCPropertyMap().get(Constants.TRACE_ID))));
         assertTrue(events.stream().allMatch(event -> "138****5678".equals(event.getMDCPropertyMap().get(Constants.LOG_USER))));
         assertEquals("trace_20260817", response.getHeader(Constants.TRACE_ID));
         String messages = messages(events);
-        assertTrue(messages.contains("参数类型[json]"));
+        assertTrue(messages.contains("HTTP请求完成 | POST /api/auth/login | 状态=200 | 耗时="));
+        assertTrue(messages.contains("| 参数(json)="));
         assertTrue(messages.contains("新能源"));
         assertTrue(messages.contains("[已脱敏]"));
         assertFalse(messages.contains("13812345678"));
@@ -124,11 +125,10 @@ class RequestLogFilterTest {
         assertTrue(events.stream().allMatch(event -> traceId.equals(event.getMDCPropertyMap().get(Constants.TRACE_ID))));
         assertTrue(events.stream().allMatch(event -> "量化用户(139****4321)".equals(
                 event.getMDCPropertyMap().get(Constants.LOG_USER))));
-        assertEquals(Level.INFO, events.get(0).getLevel());
-        assertEquals(Level.INFO, events.get(1).getLevel());
-        assertEquals(Level.WARN, events.get(2).getLevel());
-        assertEquals(Level.WARN, events.get(3).getLevel());
-        assertTrue(messages(events).contains("状态[404]"));
+        assertEquals(1, events.size());
+        assertEquals(Level.WARN, events.get(0).getLevel());
+        assertTrue(messages(events).contains("HTTP请求告警 | GET /api/stocks/search | 状态=404 | 耗时="));
+        assertTrue(messages(events).contains("| 参数(param)={\"keyword\":\"光伏\"}"));
         verifyNoInteractions(userService);
     }
 
@@ -147,6 +147,7 @@ class RequestLogFilterTest {
             });
         }
 
+        assertEquals(1, appender.list.size());
         assertTrue(appender.list.stream().allMatch(event -> "Awe(138****5678)".equals(
                 event.getMDCPropertyMap().get(Constants.LOG_USER))));
     }
@@ -165,9 +166,10 @@ class RequestLogFilterTest {
         }
 
         List<ILoggingEvent> events = appender.list;
-        assertEquals(Level.ERROR, events.get(2).getLevel());
-        assertEquals(Level.ERROR, events.get(3).getLevel());
-        assertTrue(messages(events).contains("异常[ServletException]"));
+        assertEquals(1, events.size());
+        assertEquals(Level.ERROR, events.get(0).getLevel());
+        assertTrue(messages(events).contains("HTTP请求失败 | GET /api/failure | 状态=200 | 耗时="));
+        assertTrue(messages(events).contains("| 参数=无 | 异常=ServletException"));
         assertNull(MDC.get(Constants.TRACE_ID));
         assertNull(MDC.get(Constants.LOG_USER));
     }
@@ -184,8 +186,9 @@ class RequestLogFilterTest {
         }
 
         assertEquals(200, response.getStatus());
-        assertEquals(Level.WARN, appender.list.get(2).getLevel());
-        assertEquals(Level.WARN, appender.list.get(3).getLevel());
+        assertEquals(1, appender.list.size());
+        assertEquals(Level.WARN, appender.list.get(0).getLevel());
+        assertTrue(messages(appender.list).contains("HTTP请求告警 | POST /api/portfolio | 状态=200 | 耗时="));
     }
 
     @Test

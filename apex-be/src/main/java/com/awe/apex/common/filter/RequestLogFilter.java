@@ -47,8 +47,6 @@ public class RequestLogFilter extends OncePerRequestFilter {
     private static final String HEALTH_ENDPOINT = "/api/health";
     private static final String READINESS_ENDPOINT = HEALTH_ENDPOINT + "/ready";
     private static final String MASKED_VALUE = "[已脱敏]";
-    private static final String REQUEST_START = "====================[请求开始]====================";
-    private static final String REQUEST_END = "====================[请求结束]====================";
     private static final Pattern TRACE_ID_PATTERN = Pattern.compile("[A-Za-z0-9._-]{8,64}");
 
     @Resource
@@ -71,7 +69,7 @@ public class RequestLogFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 记录请求开始与结束，并保证请求体可由后续 Controller 正常读取。
+     * 记录请求结果，并保证请求体可由后续 Controller 正常读取。
      *
      * @param request     HTTP 请求
      * @param response    HTTP 响应
@@ -92,7 +90,6 @@ public class RequestLogFilter extends OncePerRequestFilter {
         response.setHeader(Constants.TRACE_ID, traceId);
 
         Throwable requestFailure = null;
-        logRequestStart(requestForChain);
         try {
             filterChain.doFilter(requestForChain, response);
         } catch (IOException | ServletException | RuntimeException exception) {
@@ -245,20 +242,6 @@ public class RequestLogFilter extends OncePerRequestFilter {
             }
         }
         return null;
-    }
-
-    private void logRequestStart(HttpServletRequest request) {
-        log.info("请求开始：{}", REQUEST_START);
-        String url = request.getMethod() + " " + request.getRequestURI();
-        if (isJsonRequest(request)) {
-            log.info("开始请求 => URL[{}], 参数类型[json], 参数: [{}]", url, jsonParameters(request));
-            return;
-        }
-        if (!request.getParameterMap().isEmpty()) {
-            log.info("开始请求 => URL[{}], 参数类型[param], 参数: [{}]", url, requestParameters(request));
-            return;
-        }
-        log.info("开始请求 => URL[{}], 无参数", url);
     }
 
     private String jsonParameters(HttpServletRequest request) {
@@ -415,22 +398,27 @@ public class RequestLogFilter extends OncePerRequestFilter {
                                Throwable requestFailure) {
         String url = request.getMethod() + " " + request.getRequestURI();
         long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+        String parameterSummary = "参数=无";
+        if (isJsonRequest(request)) {
+            parameterSummary = "参数(json)=" + jsonParameters(request);
+        } else if (!request.getParameterMap().isEmpty()) {
+            parameterSummary = "参数(param)=" + requestParameters(request);
+        }
         String markedLevel = Objects.toString(request.getAttribute(Constants.REQUEST_LOG_LEVEL), "");
         if (Objects.nonNull(requestFailure) || Constants.LOG_LEVEL_ERROR.equals(markedLevel)
                 || response.getStatus() >= 500) {
             String exceptionName = Objects.nonNull(requestFailure)
                     ? requestFailure.getClass().getSimpleName() : "-";
-            log.error("结束请求 => URL[{}], 状态[{}], 耗时[{} ms], 异常[{}]",
-                    url, response.getStatus(), durationMs, exceptionName, requestFailure);
-            log.error("请求结束：{}", REQUEST_END);
+            log.error("HTTP请求失败 | {} | 状态={} | 耗时={}ms | {} | 异常={}",
+                    url, response.getStatus(), durationMs, parameterSummary, exceptionName, requestFailure);
             return;
         }
         if (Constants.LOG_LEVEL_WARN.equals(markedLevel) || response.getStatus() >= 400) {
-            log.warn("结束请求 => URL[{}], 状态[{}], 耗时[{} ms]", url, response.getStatus(), durationMs);
-            log.warn("请求结束：{}", REQUEST_END);
+            log.warn("HTTP请求告警 | {} | 状态={} | 耗时={}ms | {}",
+                    url, response.getStatus(), durationMs, parameterSummary);
             return;
         }
-        log.info("结束请求 => URL[{}], 状态[{}], 耗时[{} ms]", url, response.getStatus(), durationMs);
-        log.info("请求结束：{}", REQUEST_END);
+        log.info("HTTP请求完成 | {} | 状态={} | 耗时={}ms | {}",
+                url, response.getStatus(), durationMs, parameterSummary);
     }
 }
