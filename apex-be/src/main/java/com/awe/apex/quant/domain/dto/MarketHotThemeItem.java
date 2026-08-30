@@ -32,6 +32,16 @@ public class MarketHotThemeItem {
     private BigDecimal pctChg;
 
     /**
+     * 近3日涨跌幅 %
+     */
+    private BigDecimal pctChg3d;
+
+    /**
+     * 近5日涨跌幅 %
+     */
+    private BigDecimal pctChg5d;
+
+    /**
      * 板块类型 INDUSTRY/CONCEPT/THEME
      */
     private String boardType;

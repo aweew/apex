@@ -98,8 +98,12 @@ class DashboardCommandServiceImplTest {
                 .build();
         MarketBriefingResp marketBriefing = market(PREVIOUS_TRADE_DATE, "GREEN", List.of("煤炭开采", "保险Ⅱ"));
         marketBriefing.setHotThemeItems(List.of(
-                MarketHotThemeItem.builder().name("煤炭开采").pctChg(new BigDecimal("2.17")).build(),
-                MarketHotThemeItem.builder().name("保险Ⅱ").pctChg(new BigDecimal("1.23")).build()
+                MarketHotThemeItem.builder().name("煤炭开采").pctChg(new BigDecimal("2.17"))
+                        .pctChg3d(new BigDecimal("3.40")).pctChg5d(new BigDecimal("4.12")).build(),
+                MarketHotThemeItem.builder().name("保险Ⅱ").pctChg(new BigDecimal("1.23"))
+                        .pctChg3d(new BigDecimal("2.11")).pctChg5d(new BigDecimal("2.80")).build(),
+                MarketHotThemeItem.builder().name("半导体").pctChg(new BigDecimal("-1.10"))
+                        .pctChg3d(new BigDecimal("-2.40")).pctChg5d(new BigDecimal("-3.20")).build()
         ));
         DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
                 .currentTime(TRADE_DATE.atTime(8, 10))
@@ -130,11 +134,44 @@ class DashboardCommandServiceImplTest {
     }
 
     @Test
+    void shouldNotTurnSingleDayThemeMovesIntoFocusOrRiskDirection() {
+        MarketBriefingResp marketBriefing = market(PREVIOUS_TRADE_DATE, "GREEN",
+                List.of("粮食概念", "科技成长"));
+        marketBriefing.setHotThemeItems(List.of(
+                MarketHotThemeItem.builder().name("粮食概念").pctChg(new BigDecimal("3.07")).build(),
+                MarketHotThemeItem.builder().name("科技成长").pctChg(new BigDecimal("-2.10")).build()
+        ));
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(8, 10))
+                .marketBriefing(marketBriefing)
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .indexQuotes(List.of(quote("usIXIC", "纳斯达克", "-0.30")))
+                        .asiaQuotes(List.of(quote("hkHSTECH", "恒生科技", "-3.61")))
+                        .build())
+                .decision(DecisionTodayResp.builder()
+                        .actionDate(TRADE_DATE)
+                        .dataAsOf(PREVIOUS_TRADE_DATE)
+                        .generated(true)
+                        .build())
+                .build());
+
+        assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().isEmpty());
+        assertTrue(command.getPreMarketSummary().getForecast().getRiskItems().stream()
+                .noneMatch(item -> "科技成长".equals(item.getName())));
+        assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().stream()
+                .anyMatch(item -> "方向持续性".equals(item.getTitle())));
+    }
+
+    @Test
     void shouldUseFreshIntradayMarketDataInsteadOfPreviousCloseForecast() {
         MarketBriefingResp marketBriefing = market(TRADE_DATE, "GREEN", List.of("液冷服务器"));
         marketBriefing.setMarketDataUpdatedAt(TRADE_DATE.atTime(13, 42));
         marketBriefing.setHotThemeItems(List.of(
-                MarketHotThemeItem.builder().name("液冷服务器").pctChg(new BigDecimal("2.23")).build()
+                MarketHotThemeItem.builder().name("液冷服务器").pctChg(new BigDecimal("2.23"))
+                        .pctChg3d(new BigDecimal("3.10")).pctChg5d(new BigDecimal("4.20")).build()
         ));
 
         DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()

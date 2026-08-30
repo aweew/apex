@@ -2363,6 +2363,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                                 .code(item.getCode())
                                 .name(item.getName())
                                 .pctChg(scalePct(item.getPctChg()))
+                                .pctChg3d(scalePct(item.getPctChg3d()))
+                                .pctChg5d(scalePct(item.getPctChg5d()))
                                 .boardType(item.getBoardType())
                                 .build());
                     }
@@ -2401,6 +2403,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                     .code(q.getCode())
                     .name(q.getName())
                     .pctChg(scalePct(q.getPctChg()))
+                    .pctChg3d(scalePct(q.getPctChg3d()))
+                    .pctChg5d(scalePct(q.getPctChg5d()))
                     .boardType(q.getBoardType())
                     .build());
             if (themes.size() >= 5) {

@@ -15,7 +15,6 @@ import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.ObservePoolResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
-import com.awe.apex.quant.domain.dto.OvernightMarketTheme;
 import com.awe.apex.quant.domain.dto.OperationGuideItemResp;
 import com.awe.apex.quant.domain.dto.PreMarketSummaryResp;
 import com.awe.apex.quant.domain.dto.TodayOperationGuideResp;
@@ -355,13 +354,20 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 && overnightAverage.compareTo(OVERNIGHT_WEAK_THRESHOLD) <= 0;
         boolean overnightStrong = Objects.nonNull(overnightAverage)
                 && overnightAverage.compareTo(OVERNIGHT_STRONG_THRESHOLD) >= 0;
-        boolean technologyPressure = asiaWeak || hasWeakTechnologyTheme(morningBriefing);
+        // 单日外部波动只作为背景，只有 A 股科技题材的 3/5 日趋势同时走弱才形成回避方向。
+        boolean technologyPressure = hasSustainedTechnologyWeakness(marketBriefing);
         List<MarketForecastDirectionResp> focusItems = buildForecastFocusItems(marketBriefing,
                 context.getDecision(), decisionFresh, technologyPressure, useFreshIntradayMarketData);
         List<MarketForecastDirectionResp> riskItems = buildForecastRiskItems(marketBriefing,
                 morningBriefing, asiaWeak, technologyPressure, useFreshIntradayMarketData);
         List<CommandWatchConditionResp> watchConditions = buildForecastWatchConditions(marketBriefing,
-                asiaWeak, overnightWeak, useFreshIntradayMarketData);
+                asiaWeak, overnightWeak, technologyPressure, useFreshIntradayMarketData);
+        if (focusItems.isEmpty() && watchConditions.size() < 2) {
+            watchConditions.add(CommandWatchConditionResp.builder()
+                    .title("方向持续性")
+                    .condition("题材至少同时满足当日、近3日和近5日趋势，再列入关注或回避")
+                    .build());
+        }
 
         String marketOutlook;
         if (useFreshIntradayMarketData) {
@@ -375,10 +381,12 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             }
         } else if (asiaWeak) {
             marketOutlook = "预计开盘承压后分化，A 股" + marketBriefing.getStance()
-                    + "基线不变；亚太均值" + formatPercent(asiaAverage) + "限制科技开盘节奏。";
+                    + "基线不变；亚太均值" + formatPercent(asiaAverage)
+                    + "仅作开盘扰动，科技方向仍需 3/5 日趋势确认。";
         } else if (overnightWeak) {
             marketOutlook = "预计低开后分化，A 股" + marketBriefing.getStance()
-                    + "基线不变；隔夜指数均值" + formatPercent(overnightAverage) + "形成扰动。";
+                    + "基线不变；隔夜指数均值" + formatPercent(overnightAverage)
+                    + "仅作开盘扰动，不单独改变方向。";
         } else if (overnightStrong) {
             marketOutlook = "预计偏强开盘后分化，A 股" + marketBriefing.getStance()
                     + "基线不变；外盘修复不等于直接追高。";
@@ -412,19 +420,20 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         }
         for (MarketHotThemeItem hotThemeItem : hotThemeItems) {
             if (Objects.isNull(hotThemeItem) || StringUtils.isBlank(hotThemeItem.getName())
-                    || Objects.nonNull(hotThemeItem.getPctChg()) && hotThemeItem.getPctChg().signum() <= 0
+                    || !isSustainedPositiveTheme(hotThemeItem)
                     || technologyPressure && isTechnologyTheme(hotThemeItem.getName())) {
                 continue;
             }
             String themeName = hotThemeItem.getName().trim();
             List<String> watchStocks = findMatchingStocks(decision, decisionFresh, themeName);
-            String reason = freshIntradayMarketData && Objects.nonNull(hotThemeItem.getPctChg())
+            String periodLabel = "近3日 " + formatPercent(hotThemeItem.getPctChg3d())
+                    + "、近5日 " + formatPercent(hotThemeItem.getPctChg5d());
+            String reason = freshIntradayMarketData
                     ? "盘中截至 " + formatMarketDataTime(marketBriefing.getMarketDataUpdatedAt())
-                    + " 涨幅 " + formatPercent(hotThemeItem.getPctChg()) + "，为当前相对强势方向"
-                    : Objects.nonNull(hotThemeItem.getPctChg())
-                    ? "昨日收盘 " + formatPercent(hotThemeItem.getPctChg()) + "，位于 "
-                    + marketBriefing.getStance() + " 基线下的相对强势方向"
-                    : "昨日收盘热点，需由开盘承接确认强度";
+                    + " 涨幅 " + formatPercent(hotThemeItem.getPctChg()) + "，" + periodLabel
+                    + "，短中期趋势一致"
+                    : "昨日收盘 " + formatPercent(hotThemeItem.getPctChg()) + "，" + periodLabel
+                    + "，短中期趋势一致";
             focusItems.add(MarketForecastDirectionResp.builder()
                     .name(themeName)
                     .reason(reason)
@@ -447,9 +456,10 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         if (technologyPressure) {
             BigDecimal asiaAverage = Objects.nonNull(morningBriefing)
                     ? averageQuotePctChg(morningBriefing.getAsiaQuotes()) : null;
-            String reason = asiaWeak
-                    ? "亚太科技指数均值 " + formatPercent(asiaAverage) + "，开盘情绪偏弱"
-                    : "隔夜 AI 与芯片主题走弱，未确认前不按反弹处理";
+            String reason = "科技题材近3日与近5日趋势均偏弱";
+            if (asiaWeak) {
+                reason += "，亚太科技指数均值 " + formatPercent(asiaAverage) + "进一步承压";
+            }
             riskItems.add(MarketForecastDirectionResp.builder()
                     .name("科技成长")
                     .reason(reason)
@@ -475,6 +485,7 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
     private List<CommandWatchConditionResp> buildForecastWatchConditions(MarketBriefingResp marketBriefing,
                                                                             boolean asiaWeak,
                                                                             boolean overnightWeak,
+                                                                            boolean technologyPressure,
                                                                             boolean freshIntradayMarketData) {
         List<CommandWatchConditionResp> watchConditions = new ArrayList<>();
         if (Objects.nonNull(marketBriefing.getBreadthUp()) && Objects.nonNull(marketBriefing.getBreadthDown())) {
@@ -494,10 +505,10 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                     .condition(condition)
                     .build());
         }
-        if (asiaWeak || overnightWeak) {
+        if (technologyPressure) {
             watchConditions.add(CommandWatchConditionResp.builder()
                     .title("外部扰动")
-                    .condition("科技成长开盘后不能继续放大跌幅，否则停止新增仓")
+                    .condition("科技成长需先修复近3日与近5日趋势，且开盘后不能继续放大跌幅")
                     .build());
         }
         return watchConditions;
@@ -523,24 +534,40 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         return watchStocks;
     }
 
-    private boolean hasWeakTechnologyTheme(MorningBriefingResp morningBriefing) {
-        if (Objects.isNull(morningBriefing) || CollUtil.isEmpty(morningBriefing.getMarketThemes())) {
+    private boolean hasSustainedTechnologyWeakness(MarketBriefingResp marketBriefing) {
+        if (Objects.isNull(marketBriefing) || CollUtil.isEmpty(marketBriefing.getHotThemeItems())) {
             return false;
         }
-        for (OvernightMarketTheme marketTheme : morningBriefing.getMarketThemes()) {
-            if (Objects.nonNull(marketTheme) && StringUtils.isNotBlank(marketTheme.getCode())
-                    && (marketTheme.getCode().contains("CHIP") || marketTheme.getCode().contains("SEMICONDUCTOR"))
-                    && Objects.nonNull(marketTheme.getMedianPctChg())
-                    && marketTheme.getMedianPctChg().compareTo(OVERNIGHT_WEAK_THRESHOLD) <= 0) {
+        for (MarketHotThemeItem hotThemeItem : marketBriefing.getHotThemeItems()) {
+            if (Objects.nonNull(hotThemeItem) && StringUtils.isNotBlank(hotThemeItem.getName())
+                    && isTechnologyTheme(hotThemeItem.getName())
+                    && isNegative(hotThemeItem.getPctChg3d())
+                    && isNegative(hotThemeItem.getPctChg5d())) {
                 return true;
             }
         }
         return false;
     }
 
+    private boolean isSustainedPositiveTheme(MarketHotThemeItem hotThemeItem) {
+        return Objects.nonNull(hotThemeItem)
+                && isPositive(hotThemeItem.getPctChg())
+                && isPositive(hotThemeItem.getPctChg3d())
+                && isPositive(hotThemeItem.getPctChg5d());
+    }
+
+    private boolean isPositive(BigDecimal value) {
+        return Objects.nonNull(value) && value.signum() > 0;
+    }
+
+    private boolean isNegative(BigDecimal value) {
+        return Objects.nonNull(value) && value.signum() < 0;
+    }
+
     private boolean isTechnologyTheme(String themeName) {
-        return themeName.contains("半导体") || themeName.contains("芯片") || themeName.contains("算力")
-                || themeName.contains("人工智能") || themeName.contains("AI") || themeName.contains("通信");
+        return StringUtils.isNotBlank(themeName)
+                && (themeName.contains("科技") || themeName.contains("半导体") || themeName.contains("芯片")
+                || themeName.contains("人工智能") || themeName.contains("AI") || themeName.contains("通信"));
     }
 
     private BigDecimal averageQuotePctChg(List<OvernightMarketQuote> marketQuotes) {
