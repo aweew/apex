@@ -60,6 +60,17 @@ public class DailyPreMarketReportResp {
     private String reportSource;
 
     /**
+     * 正文质量等级，FULL 表示通过事实校验，DEGRADED 表示仅保留有限证据。
+     */
+    private String contentLevel;
+
+    /**
+     * 面向用户的正文质量提示。
+     */
+    @Builder.Default
+    private List<String> qualityWarnings = new ArrayList<>();
+
+    /**
      * 本次纳入分析的组合数量。
      */
     private Integer portfolioCount;

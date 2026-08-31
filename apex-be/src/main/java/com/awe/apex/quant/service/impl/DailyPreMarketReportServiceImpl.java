@@ -163,6 +163,17 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
         if (StringUtils.isBlank(reportContent)) {
             reportContent = buildRuleReport(reportContext, marketJudgement);
         }
+        boolean fullContent = "AI".equals(reportSource)
+                || (Objects.nonNull(reportContext.getMarket())
+                && (CollUtil.isNotEmpty(stockPicks) || CollUtil.isNotEmpty(collectFocusDirectionNames(reportContext))
+                || CollUtil.isNotEmpty(reportContext.getPortfolios())));
+        if (!fullContent) {
+            reportContent = buildDegradedReport(reportContext, marketJudgement);
+        }
+        List<String> qualityWarnings = new ArrayList<>();
+        if (!fullContent) {
+            qualityWarnings.add("有效证据不足，正文仅保留市场状态、风险和可验证条件");
+        }
 
         DashboardHomeResp.MarketBlock market = Objects.nonNull(dashboard) ? dashboard.getMarket() : null;
         String dataLevel = resolveDataLevel(dashboard, missingData);
@@ -179,6 +190,8 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                 .marketJudgement(marketJudgement)
                 .dataLevel(dataLevel)
                 .reportSource(reportSource)
+                .contentLevel(fullContent ? "FULL" : "DEGRADED")
+                .qualityWarnings(qualityWarnings)
                 .portfolioCount(portfolios.size())
                 .holdingCount(holdingCount)
                 .focusChanges(focusChanges)
@@ -574,6 +587,21 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                 .append("偏强｜核心方向放量、上涨家数继续扩大，核心股保住大部分高开涨幅。\n")
                 .append("震荡｜指数横盘、量能没有放大，资金在两三个方向间快速轮动。\n")
                 .append("转弱｜核心方向高开低走、下跌家数持续扩大，跌停数量同步增加。\n")
+                .append("仅供研究，不构成投资建议。");
+        return report.toString();
+    }
+
+    private String buildDegradedReport(DailyPreMarketReportContextBO context, String marketJudgement) {
+        StringBuilder report = new StringBuilder();
+        report.append("今日投资机会｜证据不足 · 控制暴露\n")
+                .append("日期：").append(context.getTradeDate()).append('\n')
+                .append("核心观点：").append(defaultText(marketJudgement, "当前证据不足，不形成方向性结论。")).append('\n')
+                .append("最大风险：关键市场数据不足，盘中波动可能放大判断误差。\n");
+        appendMarketState(report, context);
+        report.append("\n05｜开盘剧本\n")
+                .append("偏强｜只有市场宽度和成交额同步改善，才提高风险暴露。\n")
+                .append("震荡｜数据未形成一致方向，维持低暴露。\n")
+                .append("转弱｜上涨家数收缩且核心方向跌破开盘价，优先防守。\n")
                 .append("仅供研究，不构成投资建议。");
         return report.toString();
     }
@@ -1238,7 +1266,9 @@ public class DailyPreMarketReportServiceImpl implements IDailyPreMarketReportSer
                 || content.contains(DATA_MISSING) || content.contains("未获取")
                 || content.contains("暂不据此") || content.contains("盘前观察排序")
                 || content.contains("开仓门禁") || content.contains("决策评分")
-                || mentionsIrrelevantEvent(content, context)) {
+                || mentionsIrrelevantEvent(content, context)
+                || content.contains("建议关注") || content.contains("有望受益")
+                || content.contains("保持强势") || content.contains("成交放大")) {
             return false;
         }
         if (!content.startsWith("今日投资机会｜")

@@ -201,7 +201,13 @@ onMounted(loadReport)
             >
               {{ metaItem }}
             </span>
+            <el-tag v-if="report.contentLevel" size="small" effect="plain" :type="report.contentLevel === 'FULL' ? 'success' : 'warning'">
+              {{ report.contentLevel === 'FULL' ? '正文已核验' : '证据版正文' }}
+            </el-tag>
           </div>
+          <p v-if="report.qualityWarnings?.length" class="report-quality-warning">
+            {{ report.qualityWarnings.join('；') }}
+          </p>
 
           <section class="report-thesis" aria-label="核心观点">
             <span>核心观点</span>
@@ -385,6 +391,12 @@ onMounted(loadReport)
   padding: 15px 18px;
   border-left: 4px solid #b47b27;
   background: #f6f3ed;
+}
+
+.report-quality-warning {
+  margin: 10px 0 0;
+  color: #9a6a16;
+  font-size: 12px;
 }
 
 .report-thesis > span {

@@ -184,6 +184,20 @@ public class WeekendMarketReportServiceImpl implements IWeekendMarketReportServi
             }
         }
         WeekendMarketReportResp report = context.toBuilder().reportSource(reportSource).content(content).build();
+        List<String> qualityWarnings = new ArrayList<>();
+        boolean fullContent = "AI".equals(reportSource)
+                || (CollUtil.isNotEmpty(context.getTradingThemes())
+                && !"本周末无新增主线".equals(context.getTradingThemes().get(0).getTheme()));
+        if (!fullContent) {
+            qualityWarnings.add(CollUtil.isEmpty(context.getTradingThemes())
+                    || "本周末无新增主线".equals(context.getTradingThemes().get(0).getTheme())
+                    ? "周末证据未形成板块级新增主线"
+                    : "AI 正文未通过事实校验，已切换为证据版正文");
+        }
+        report = report.toBuilder()
+                .contentLevel(fullContent ? "FULL" : "DEGRADED")
+                .qualityWarnings(qualityWarnings)
+                .build();
         redisCacheService.put(CACHE_KEY, report, CACHE_TTL);
         log.info("周末研报生成完成，报告日期={}，最后交易日={}，来源={}，数据等级={}，新闻数={}，观点数={}",
                 report.getReportDate(), lastTradeDate, reportSource, report.getDataLevel(), weekendNews.size(), marketOpinions.size());
@@ -638,7 +652,9 @@ public class WeekendMarketReportServiceImpl implements IWeekendMarketReportServi
 
     private boolean isCompleteReport(String content, WeekendMarketReportResp context) {
         if (StringUtils.isBlank(content) || content.length() > 6000 || content.contains("未提供事实")
-                || content.contains("无法核验") || content.contains("编造")) {
+                || content.contains("无法核验") || content.contains("编造")
+                || content.contains("建议关注") || content.contains("有望受益")
+                || content.contains("保持强势")) {
             return false;
         }
         for (String section : List.of("01｜上周走势", "02｜周五收盘", "03｜周末消息", "04｜机构与大 V 观点",
@@ -677,6 +693,12 @@ public class WeekendMarketReportServiceImpl implements IWeekendMarketReportServi
         }
         for (WeekendTradingThemeResp tradingTheme : context.getTradingThemes()) {
             if (StringUtils.isBlank(tradingTheme.getTheme()) || !content.contains(tradingTheme.getTheme())) {
+                return false;
+            }
+        }
+        Set<String> catalysts = new HashSet<>();
+        for (WeekendTradingThemeResp tradingTheme : context.getTradingThemes()) {
+            if (StringUtils.isNotBlank(tradingTheme.getCatalyst()) && !catalysts.add(tradingTheme.getCatalyst())) {
                 return false;
             }
         }

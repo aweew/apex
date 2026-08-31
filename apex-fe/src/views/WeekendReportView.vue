@@ -137,7 +137,13 @@ onMounted(loadReport)
               {{ dataLevelLabel(report.dataLevel) }}
             </el-tag>
             <span>{{ sourceLabel }}</span>
+            <el-tag v-if="report.contentLevel" size="small" effect="plain" :type="report.contentLevel === 'FULL' ? 'success' : 'warning'">
+              {{ report.contentLevel === 'FULL' ? '正文已核验' : '证据版正文' }}
+            </el-tag>
           </div>
+          <p v-if="report.qualityWarnings?.length" class="weekend-quality-warning">
+            {{ report.qualityWarnings.join('；') }}
+          </p>
         </div>
         <aside class="weekend-lead-status" aria-label="报告状态">
           <span>本周研判</span>
@@ -293,6 +299,7 @@ onMounted(loadReport)
 .weekend-kicker { margin: 0 0 12px; color: #3977a6; font-size: 11px; font-weight: 750; letter-spacing: .08em; }
 .weekend-report-lead h1 { margin: 0; color: #142733; font-size: 40px; font-weight: 780; line-height: 1.2; letter-spacing: 0; overflow-wrap: anywhere; }
 .weekend-subtitle { margin: 9px 0 0; color: #667782; font-size: 14px; line-height: 1.6; }
+.weekend-quality-warning { margin: 10px 0 0; color: #9a6a16; font-size: 12px; }
 .weekend-meta-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 14px; margin-top: 16px; color: #647580; font-size: 12px; line-height: 1.5; }
 .weekend-meta-strip span { overflow-wrap: anywhere; }
 .weekend-lead-status { align-self: start; padding: 5px 0 0 20px; border-left: 1px solid #d9e1e5; }

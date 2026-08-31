@@ -55,6 +55,7 @@ defineExpose({ getCaptureElement })
       <span v-if="report.marketDataAsOf">行情截至 {{ report.marketDataAsOf }}</span>
       <span v-if="generatedTime">生成于 {{ generatedTime.slice(5, 16) }}</span>
       <span>{{ dataLevelLabel }}</span>
+      <strong v-if="report.contentLevel === 'DEGRADED'">证据版正文</strong>
     </div>
 
     <div class="headline-block">

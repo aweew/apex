@@ -43,6 +43,13 @@ public class WeekendMarketReportResp {
     /** 生成来源 AI/RULE。 */
     private String reportSource;
 
+    /** 正文质量等级，FULL 表示通过事实校验，DEGRADED 表示仅保留有限证据。 */
+    private String contentLevel;
+
+    /** 面向用户的正文质量提示。 */
+    @Builder.Default
+    private List<String> qualityWarnings = new ArrayList<>();
+
     /** 核心观点。 */
     private String coreView;
 
