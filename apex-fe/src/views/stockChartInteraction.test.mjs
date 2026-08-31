@@ -19,10 +19,21 @@ test('horizontal chart gestures stay inside the chart while vertical page scroll
   assert.doesNotMatch(stockSource, /touch-action:\s*manipulation;/)
   assert.match(
     stockSource,
-    /type:\s*'inside',[\s\S]*?zoomOnMouseWheel:\s*'ctrl',[\s\S]*?moveOnMouseWheel:\s*false,/,
+    /type:\s*'inside',[\s\S]*?zoomOnMouseWheel:\s*'ctrl',[\s\S]*?moveOnMouseWheel:\s*false,[\s\S]*?moveOnMouseMove:\s*!isMobileChart\.value,[\s\S]*?preventDefaultMouseMove:\s*!isMobileChart\.value,/,
   )
   assert.match(stockSource, /bindChartWheelScroll\(chart\.getDom\(\)\)/)
   assert.match(stockSource, /function unbindChartWheel\(\)/)
+})
+
+test('mobile pinch zoom is damped and merged by animation frame', () => {
+  assert.match(stockSource, /const MOBILE_PINCH_SENSITIVITY = 0\.45/)
+  assert.match(stockSource, /onPinchStart:\s*startMobilePinch/)
+  assert.match(stockSource, /onPinch:\s*queueMobilePinch/)
+  assert.match(stockSource, /onPinchEnd:\s*finishMobilePinch/)
+  assert.match(stockSource, /requestAnimationFrame\(applyMobilePinch\)/)
+  assert.match(stockSource, /pinchKlineZoomRange\([\s\S]*?MOBILE_PINCH_SENSITIVITY/s)
+  assert.match(stockSource, /if \(!mobilePinchState\) updateVisibleWindow\(\)/)
+  assert.match(stockSource, /function finishMobilePinch\(\)[\s\S]*?updateVisibleWindow\(\)/s)
 })
 
 test('stock indicators start collapsed instead of restoring an expanded state', () => {
@@ -198,5 +209,26 @@ test('mobile K-line zoom controls keep stable touch targets', () => {
   assert.match(
     stockSource,
     /@media \(max-width: 820px\)[\s\S]*?\.chart-zoom-controls\s*\{[^}]*order:\s*2;[^}]*justify-self:\s*end;/s,
+  )
+})
+
+test('mobile K-line tooltip lingers, fades, and uses a compact translucent card', () => {
+  assert.match(
+    stockSource,
+    /bindLongPress\(\{[\s\S]*?onDeactivate:[\s\S]*?deactivateDelay:\s*500,/s,
+  )
+  assert.match(stockSource, /transitionDuration:\s*isMobileChart\.value \? 0\.36 : 0,/)
+  assert.match(stockSource, /transition:opacity 0\.18s ease,visibility 0\.18s ease;/)
+  assert.match(
+    stockSource,
+    /@media \(max-width: 820px\)[\s\S]*?\.kline-tip__card\s*\{[^}]*width:\s*min\(232px, calc\(100vw - 24px\)\);[^}]*padding:\s*8px 10px 7px;[^}]*background:\s*rgba\(255, 255, 255, 0\.92\);[^}]*font-size:\s*10px;[^}]*line-height:\s*1\.2;/s,
+  )
+  assert.match(
+    stockSource,
+    /@media \(max-width: 820px\)[\s\S]*?\.kline-tip__price\s*\{[^}]*font-size:\s*18px;/s,
+  )
+  assert.match(
+    stockSource,
+    /@media \(max-width: 820px\)[\s\S]*?\.kline-tip__chip\s*\{[^}]*padding:\s*2px 5px;[^}]*font-size:\s*9px;/s,
   )
 })

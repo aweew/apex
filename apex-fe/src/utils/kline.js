@@ -80,6 +80,46 @@ export function nextKlineZoomRange(
   }
 }
 
+/** 根据双指起始距离计算阻尼缩放窗口，并固定手势开始时的中心锚点。 */
+export function pinchKlineZoomRange(
+  barCount,
+  startPct,
+  endPct,
+  pinchScale,
+  anchorRatio = 0.5,
+  minVisibleBars = 12,
+  sensitivity = 0.45,
+) {
+  const count = Number(barCount)
+  if (!Number.isFinite(count) || count <= 0) return { start: 0, end: 100 }
+  const start = Math.max(0, Math.min(100, Number(startPct) || 0))
+  const end = Math.max(start, Math.min(100, Number(endPct) || 0))
+  const scale = Math.max(0.1, Math.min(100, Number(pinchScale) || 1))
+  const anchor = Math.max(0, Math.min(1, Number(anchorRatio) || 0))
+  const minimumBars = Math.min(count, Math.max(1, Number(minVisibleBars) || 12))
+  const minimumWidth = (minimumBars / count) * 100
+  const currentWidth = end - start
+  const nextWidth = Math.max(
+    minimumWidth,
+    Math.min(100, currentWidth / Math.pow(scale, sensitivity)),
+  )
+  const anchorValue = start + currentWidth * anchor
+  let nextStart = anchorValue - nextWidth * anchor
+  let nextEnd = nextStart + nextWidth
+  if (nextStart < 0) {
+    nextEnd -= nextStart
+    nextStart = 0
+  }
+  if (nextEnd > 100) {
+    nextStart -= nextEnd - 100
+    nextEnd = 100
+  }
+  return {
+    start: Number(Math.max(0, nextStart).toFixed(3)),
+    end: Number(Math.min(100, nextEnd).toFixed(3)),
+  }
+}
+
 /** 交易日归属桶：日 / 自然周(周一) / 月 */
 export function periodBucket(tradeDate, period) {
   const text = String(tradeDate || '')

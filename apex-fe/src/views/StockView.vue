@@ -28,6 +28,7 @@ import {
   aggregateBars,
   defaultVisibleStart,
   nextKlineZoomRange,
+  pinchKlineZoomRange,
   spaceChartSignals,
   tdSequential,
   visibleBarCount,
@@ -93,6 +94,7 @@ const tdShowMode = ref('key')
 const isMobileChart = ref(window.matchMedia('(max-width: 820px)').matches)
 const BAR_LIMIT = 500
 const MIN_VISIBLE_BARS = 12
+const MOBILE_PINCH_SENSITIVITY = 0.45
 const CHART_PREF_KEY = 'apex.stock.chartPrefs'
 const metaExpanded = ref(false)
 
@@ -132,6 +134,9 @@ let chartPayload = null
 let compactPriceLabelsMode = null
 let chartPressCleanup = null
 let chartWheelCleanup = null
+let mobilePinchState = null
+let mobilePinchFrame = null
+let pendingMobilePinch = null
 
 const isIntraday = computed(() => klinePeriod.value === 'intraday')
 const intradayDataTime = computed(() => {
@@ -223,10 +228,70 @@ function toggleChartLegend(item) {
 }
 
 function unbindChartPress() {
+  cancelMobilePinch()
   if (chartPressCleanup) {
     chartPressCleanup()
     chartPressCleanup = null
   }
+}
+
+function startMobilePinch({ clientX }) {
+  if (!chart || isIntraday.value || !chartBars.value.length) return
+  captureZoom()
+  const rect = chart.getDom().getBoundingClientRect()
+  const anchorRatio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+  mobilePinchState = {
+    start: savedZoom.value.start,
+    end: savedZoom.value.end,
+    anchorRatio,
+  }
+  pendingMobilePinch = null
+}
+
+function applyMobilePinch() {
+  mobilePinchFrame = null
+  if (!chart || !mobilePinchState || !pendingMobilePinch) return
+  const nextZoom = pinchKlineZoomRange(
+    chartBars.value.length,
+    mobilePinchState.start,
+    mobilePinchState.end,
+    pendingMobilePinch.scale,
+    mobilePinchState.anchorRatio,
+    MIN_VISIBLE_BARS,
+    MOBILE_PINCH_SENSITIVITY,
+  )
+  pendingMobilePinch = null
+  if (
+    Math.abs(nextZoom.start - savedZoom.value.start) < 0.08
+    && Math.abs(nextZoom.end - savedZoom.value.end) < 0.08
+  ) return
+  savedZoom.value = nextZoom
+  chart.dispatchAction({ type: 'dataZoom', start: nextZoom.start, end: nextZoom.end })
+}
+
+function queueMobilePinch(payload) {
+  if (!mobilePinchState) return
+  pendingMobilePinch = payload
+  if (mobilePinchFrame == null) mobilePinchFrame = requestAnimationFrame(applyMobilePinch)
+}
+
+function finishMobilePinch() {
+  if (!mobilePinchState) return
+  if (mobilePinchFrame != null) {
+    cancelAnimationFrame(mobilePinchFrame)
+    mobilePinchFrame = null
+  }
+  if (pendingMobilePinch) applyMobilePinch()
+  mobilePinchState = null
+  pendingMobilePinch = null
+  updateVisibleWindow()
+}
+
+function cancelMobilePinch() {
+  if (mobilePinchFrame != null) cancelAnimationFrame(mobilePinchFrame)
+  mobilePinchFrame = null
+  mobilePinchState = null
+  pendingMobilePinch = null
 }
 
 function unbindChartWheel() {
@@ -254,6 +319,10 @@ function bindMobileChartPress() {
     onActivate: showTip,
     onUpdate: showTip,
     onDeactivate: () => chart?.dispatchAction({ type: 'hideTip' }),
+    onPinchStart: startMobilePinch,
+    onPinch: queueMobilePinch,
+    onPinchEnd: finishMobilePinch,
+    deactivateDelay: 500,
   })
 }
 
@@ -732,7 +801,7 @@ function bindChartEvents() {
   chart.off('datazoom')
   chart.off('legendselectchanged')
   chart.on('datazoom', () => {
-    updateVisibleWindow()
+    if (!mobilePinchState) updateVisibleWindow()
   })
   chart.on('legendselectchanged', (evt) => {
     const selected = evt?.selected || {}
@@ -1208,13 +1277,13 @@ async function renderChart(list) {
       enterable: false,
       appendToBody: !isMobileChart.value,
       position: isMobileChart.value ? mobileTooltipPosition : undefined,
-      transitionDuration: 0,
+      transitionDuration: isMobileChart.value ? 0.36 : 0,
       className: 'kline-tip',
       borderWidth: 0,
       backgroundColor: 'transparent',
       padding: 0,
       extraCssText:
-        'box-shadow:none;background:transparent;border:none;padding:0;backdrop-filter:none;',
+        `box-shadow:none;background:transparent;border:none;padding:0;backdrop-filter:none;${isMobileChart.value ? 'transition:opacity 0.18s ease,visibility 0.18s ease;' : ''}`,
       formatter(params) {
         const items = Array.isArray(params) ? params : [params]
         const idx = items[0]?.dataIndex
@@ -1426,6 +1495,8 @@ async function renderChart(list) {
         minValueSpan: Math.min(MIN_VISIBLE_BARS, list.length),
         zoomOnMouseWheel: 'ctrl',
         moveOnMouseWheel: false,
+        moveOnMouseMove: !isMobileChart.value,
+        preventDefaultMouseMove: !isMobileChart.value,
       },
       {
         show: true,
@@ -4236,16 +4307,115 @@ function dash(v) {
 
 @media (max-width: 820px) {
   .kline-tip__card {
-    width: min(280px, calc(100vw - 32px));
-    max-height: min(420px, calc(100dvh - 32px));
+    width: min(232px, calc(100vw - 24px));
+    max-height: min(340px, calc(100dvh - 24px));
     overflow-y: auto;
-    padding: 10px 12px 9px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.96);
+    padding: 8px 10px 7px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
     border-color: rgba(0, 0, 0, 0.08);
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
-    backdrop-filter: blur(12px) saturate(1.2);
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.13);
+    backdrop-filter: blur(10px) saturate(1.15);
+    -webkit-backdrop-filter: blur(10px) saturate(1.15);
+    font-size: 10px;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  .kline-tip__head {
+    gap: 3px 5px;
+    margin-bottom: 4px;
+  }
+
+  .kline-tip__date {
+    font-size: 10px;
+  }
+
+  .kline-tip__badge {
+    padding: 1px 5px;
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+
+  .kline-tip__price-row {
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .kline-tip__price {
+    font-size: 18px;
+    letter-spacing: 0;
+  }
+
+  .kline-tip__day {
+    gap: 4px;
+    font-size: 10px;
+  }
+
+  .kline-tip__metrics {
+    gap: 5px;
+    margin-bottom: 5px;
+  }
+
+  .kline-tip__metric,
+  .kline-tip__periods {
+    font-size: 10px;
+  }
+
+  .kline-tip__metric em {
+    margin-right: 2px;
+  }
+
+  .kline-tip__ohlc {
+    gap: 3px 10px;
+    margin-bottom: 5px;
+    font-size: 10px;
+  }
+
+  .kline-tip__vol {
+    gap: 3px 10px;
+    margin-bottom: 5px;
+    padding-top: 5px;
+    font-size: 10px;
+  }
+
+  .kline-tip__ohlc em,
+  .kline-tip__vol em {
+    font-size: 9px;
+  }
+
+  .kline-tip__row {
+    gap: 3px;
+    margin-top: 3px;
+  }
+
+  .kline-tip__chip {
+    gap: 4px;
+    padding: 2px 5px;
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+
+  .kline-tip__chip i {
+    font-size: 9px;
+  }
+
+  .kline-tip__trades {
+    gap: 3px;
+    margin-top: 5px;
+    padding-top: 5px;
+  }
+
+  .kline-tip__trade-row {
+    grid-template-columns: 16px minmax(56px, 1fr) auto;
+    gap: 4px;
+    font-size: 9px;
+  }
+
+  .kline-tip__trade-side {
+    width: 16px;
+    height: 16px;
+    font-size: 9px;
   }
 }
 </style>

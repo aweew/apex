@@ -5,6 +5,7 @@ import {
   defaultVisibleStart,
   nextKlineZoomRange,
   periodBucket,
+  pinchKlineZoomRange,
   spaceChartSignals,
   tdSequential,
   visibleBarCount,
@@ -32,6 +33,27 @@ test('K-line zoom stops at twelve bars and the full data range', () => {
   assert.deepEqual(nextKlineZoomRange(100, 88, 100, 'in'), { start: 88, end: 100 })
   assert.deepEqual(nextKlineZoomRange(100, 94, 100, 'in'), { start: 94, end: 100 })
   assert.deepEqual(nextKlineZoomRange(100, 0, 100, 'out'), { start: 0, end: 100 })
+})
+
+test('pinch zoom uses damped scaling around the gesture anchor', () => {
+  const zoomedIn = pinchKlineZoomRange(500, 88, 100, 2, 0.5, 12)
+  const directScaleWidth = (100 - 88) / 2
+
+  assert.ok(zoomedIn.end - zoomedIn.start > directScaleWidth)
+  assert.ok(Math.abs((zoomedIn.start + zoomedIn.end) / 2 - 94) < 0.01)
+
+  const zoomedOut = pinchKlineZoomRange(500, 88, 100, 0.5, 0.5, 12)
+  assert.ok(zoomedOut.end - zoomedOut.start < 24)
+  assert.ok(zoomedOut.end - zoomedOut.start > 12)
+})
+
+test('pinch zoom respects the minimum visible bars and chart boundaries', () => {
+  const minimumWindow = pinchKlineZoomRange(500, 88, 100, 100, 0.5, 12)
+  assert.equal(visibleBarCount(500, minimumWindow.start, minimumWindow.end), 12)
+
+  const leftBoundary = pinchKlineZoomRange(500, 0, 12, 0.5, 0, 12)
+  assert.equal(leftBoundary.start, 0)
+  assert.ok(leftBoundary.end <= 100)
 })
 
 test('dense chart signals keep the latest marker and leave enough K-line spacing', () => {
