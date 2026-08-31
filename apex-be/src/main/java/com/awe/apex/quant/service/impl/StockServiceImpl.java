@@ -194,7 +194,7 @@ public class StockServiceImpl implements IStockService {
         }
 
         LocalDate lastBarDate = bars.isEmpty() ? null : bars.get(bars.size() - 1).getTradeDate();
-        LocalDate expectedTradeDate = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
+        LocalDate expectedTradeDate = TradingCalendar.latestCompletedTradingDay();
         String barStatus = "READY";
         String missingDataReason = null;
         if (bars.isEmpty()) {

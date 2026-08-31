@@ -3,6 +3,7 @@ package com.awe.apex.quant.market;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,6 +38,24 @@ class TradingCalendarTest {
         assertEquals(LocalDate.of(2026, 7, 31), TradingCalendar.latestTradingDayOnOrBefore(sat));
         assertEquals(LocalDate.of(2026, 7, 31), TradingCalendar.prevTradingDay(sat));
         assertEquals(LocalDate.of(2026, 8, 3), TradingCalendar.nextTradingDay(sat));
+    }
+
+    @Test
+    void latestCompletedTradingDayUsesPreviousSessionBeforeClose() {
+        LocalDateTime mondayMorning = LocalDateTime.of(2026, 8, 31, 8, 0);
+        LocalDateTime mondayTrading = LocalDateTime.of(2026, 8, 31, 14, 59);
+
+        assertEquals(LocalDate.of(2026, 8, 28), TradingCalendar.latestCompletedTradingDay(mondayMorning));
+        assertEquals(LocalDate.of(2026, 8, 28), TradingCalendar.latestCompletedTradingDay(mondayTrading));
+    }
+
+    @Test
+    void latestCompletedTradingDayIncludesCurrentSessionAfterClose() {
+        LocalDateTime mondayClose = LocalDateTime.of(2026, 8, 31, 15, 0);
+        LocalDateTime saturdayMorning = LocalDateTime.of(2026, 9, 5, 8, 0);
+
+        assertEquals(LocalDate.of(2026, 8, 31), TradingCalendar.latestCompletedTradingDay(mondayClose));
+        assertEquals(LocalDate.of(2026, 9, 4), TradingCalendar.latestCompletedTradingDay(saturdayMorning));
     }
 
     @Test

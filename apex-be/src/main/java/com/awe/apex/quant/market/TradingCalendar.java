@@ -2,6 +2,9 @@ package com.awe.apex.quant.market;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -12,6 +15,8 @@ import java.util.Set;
  */
 public final class TradingCalendar {
 
+    private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 0);
     private static final Set<LocalDate> HOLIDAYS = new HashSet<>();
 
     static {
@@ -100,6 +105,29 @@ public final class TradingCalendar {
             cursor = cursor.minusDays(1);
         }
         return cursor;
+    }
+
+    /**
+     * 最近一个已经收盘的交易日
+     *
+     * @return 已收盘交易日
+     */
+    public static LocalDate latestCompletedTradingDay() {
+        return latestCompletedTradingDay(LocalDateTime.now(SHANGHAI_ZONE));
+    }
+
+    /**
+     * 根据指定时间查询最近一个已经收盘的交易日
+     *
+     * @param dateTime 上海市场时间
+     * @return 已收盘交易日
+     */
+    public static LocalDate latestCompletedTradingDay(LocalDateTime dateTime) {
+        LocalDate currentDate = dateTime.toLocalDate();
+        if (isTradingDay(currentDate) && dateTime.toLocalTime().isBefore(MARKET_CLOSE_TIME)) {
+            return prevTradingDay(currentDate);
+        }
+        return latestTradingDayOnOrBefore(currentDate);
     }
 
     /**

@@ -152,7 +152,7 @@ public class StockAnalysisServiceImpl implements IStockAnalysisService {
             evalSide = "BUY";
         }
         int limit = Objects.nonNull(barLimit) ? Math.max(60, Math.min(barLimit, 250)) : 120;
-        LocalDate expectedTradeDate = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
+        LocalDate expectedTradeDate = TradingCalendar.latestCompletedTradingDay();
 
         boolean quoteRefreshed = false;
         boolean barsSynced = false;

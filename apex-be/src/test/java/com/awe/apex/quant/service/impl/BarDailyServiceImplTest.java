@@ -272,7 +272,7 @@ class BarDailyServiceImplTest {
         BarDailyMapper barDailyMapper = mock(BarDailyMapper.class);
         StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
         DataSyncLogMapper dataSyncLogMapper = mock(DataSyncLogMapper.class);
-        LocalDate latestTradingDay = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
+        LocalDate latestTradingDay = TradingCalendar.latestCompletedTradingDay();
         when(barDailyMapper.selectMaps(any())).thenReturn(List.of(Map.of(
                 "code", "600000",
                 "tradeDate", latestTradingDay.toString(),

@@ -226,7 +226,7 @@ public class BarDailyServiceImpl extends ServiceImpl<BarDailyMapper, BarDaily> i
                 barCountMap.put(code, Integer.parseInt(String.valueOf(count)));
             }
         }
-        LocalDate sessionDay = TradingCalendar.latestTradingDayOnOrBefore(LocalDate.now());
+        LocalDate sessionDay = TradingCalendar.latestCompletedTradingDay();
         List<String> staleCodes = new ArrayList<>();
         for (String code : codes) {
             int count = barCountMap.getOrDefault(code, 0);
