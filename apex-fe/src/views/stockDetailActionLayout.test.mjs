@@ -17,13 +17,15 @@ test('stock detail opens the decision radar as the first-level default view', ()
   assert.match(source, /今日雷达 · 个股消息 · 估值 · 行情/)
 })
 
-test('stock detail keeps the market label aligned inside the stock identity title', () => {
+test('stock detail keeps the requested stock summary order on one line', () => {
   assert.match(source, /class="stock-heading"[\s\S]*?<p class="eyebrow">Stock<\/p>[\s\S]*?<StockIdentity[\s\S]*?:show-code="false"/)
-  assert.match(source, /class="stock-heading-code">\{\{ basic\?\.code \|\| code \}\}<\/span>/)
+  assert.match(
+    source,
+    /class="stock-summary-line"[\s\S]*?<h1>[\s\S]*?<\/h1>\s*<span class="stock-heading-code">[\s\S]*?<span class="stock-heading-change"[\s\S]*?<span class="stock-heading-pct"[\s\S]*?<span class="stock-heading-classification"/,
+  )
   assert.match(source, /\.header \.stock-heading\s*\{[^}]*display:\s*grid;[^}]*grid-template-areas:/s)
-  assert.match(source, /\.header \.stock-heading\s*\{[^}]*align-items:\s*center;/s)
-  assert.match(source, /\.header \.stock-heading > \.eyebrow\s*\{[^}]*align-self:\s*center;[^}]*color:\s*var\(--accent\);/s)
-  assert.doesNotMatch(source, /\.header \.stock-heading > h1::after\s*\{[^}]*content:\s*none/s)
+  assert.match(source, /\.stock-summary-line\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;[^}]*white-space:\s*nowrap;/s)
+  assert.match(source, /\.stock-heading-classification\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/s)
 })
 
 test('stock detail keeps only the compact high-value action toolbar', () => {
@@ -41,6 +43,7 @@ test('stock detail keeps only the compact high-value action toolbar', () => {
 test('mobile stock detail actions stay on one stable touch-friendly row', () => {
   const mobileStyles = source.slice(source.indexOf('@media (max-width: 820px)'))
 
+  assert.match(mobileStyles, /\.header \.stock-heading\s*\{[^}]*flex:\s*0 1 auto;/)
   assert.match(mobileStyles, /\.stock-action-toolbar\s*\{[^}]*grid-template-columns:\s*44px 44px repeat\(2, minmax\(0, 1fr\)\);/)
   assert.match(mobileStyles, /\.stock-action-toolbar :deep\(\.el-button\)\s*\{[^}]*min-height:\s*44px;/)
   assert.match(mobileStyles, /\.stock-action-toolbar :deep\(\.stock-icon-action\)\s*\{[^}]*width:\s*44px;[^}]*min-width:\s*44px;/)

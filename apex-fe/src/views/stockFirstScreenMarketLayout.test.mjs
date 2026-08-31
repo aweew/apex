@@ -26,9 +26,12 @@ test('market overview combines quote snapshot and the primary chart', () => {
   assert.match(source, /if \(basic\.value\?\.pctChg == null\) return ''/)
 })
 
-test('quote primary values share a stable top-aligned two-column layout', () => {
-  assert.match(source, /\.quote-primary\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;[^}]*align-items:\s*start;/s)
-  assert.match(source, /\.quote-primary > div\s*\{[^}]*align-content:\s*start;[^}]*justify-items:\s*end;[^}]*min-width:\s*72px;/s)
+test('quote primary keeps the latest price after summary values move to the heading', () => {
+  const quoteSnapshot = source.slice(source.indexOf('class="quote-snapshot"'), source.indexOf('class="quote-metrics"'))
+
+  assert.match(source, /\.quote-primary\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline;/s)
+  assert.match(quoteSnapshot, /class="quote-primary"[\s\S]*?basic\?\.latestPrice/)
+  assert.doesNotMatch(quoteSnapshot, /priceChange|basic\?\.pctChg|quote-industry/)
 })
 
 test('mobile first-screen market layout stays compact and overflow-safe', () => {

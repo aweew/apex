@@ -1739,6 +1739,32 @@ const visibleConcepts = computed(() => {
   return list.slice(0, 12)
 })
 
+const stockIndustry = computed(() => (
+  profile.value?.industryL2 || basic.value?.industry || basic.value?.market || '-'
+))
+
+const NON_CORE_CONCEPT_PATTERN =
+  /融资融券|深股通|沪股通|HS300|中证|创业|基金重仓|股权激励|证金|富时|MSCI|中盘|预增|AH股|深成|上证|机构重仓|央视|专精特新|深圳特区|西部大开发|海南|股权转让|回购/
+
+const stockCoreTheme = computed(() => {
+  const industry = String(stockIndustry.value).trim()
+  const industryKeyword = industry.replace(/[ⅠⅡⅢIV]+$/u, '')
+  const concepts = Array.isArray(profile.value?.conceptList)
+    ? profile.value.conceptList.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  const industryTheme = concepts.find((concept) => {
+    const conceptKeyword = concept.replace(/概念$/u, '')
+    return conceptKeyword === industryKeyword
+      || conceptKeyword.includes(industryKeyword)
+      || industryKeyword.includes(conceptKeyword)
+  })
+  if (industryTheme) return industryTheme
+  for (const concept of concepts) {
+    if (!NON_CORE_CONCEPT_PATTERN.test(concept)) return concept
+  }
+  return '-'
+})
+
 const profileText = computed(() => {
   const text = profile.value?.orgProfile || ''
   if (profileExpand.value || text.length <= 220) return text
@@ -1984,16 +2010,27 @@ function dash(v) {
     <header class="header">
       <div class="stock-heading">
         <p class="eyebrow">Stock</p>
-        <h1>
-          <StockIdentity
-            :security="basic || { code }"
-            :name="basic?.name || '股票详情'"
-            :code="basic?.code || code"
-            prominent
-            :show-code="false"
-          />
-        </h1>
-        <span class="stock-heading-code">{{ basic?.code || code }}</span>
+        <div class="stock-summary-line">
+          <h1>
+            <StockIdentity
+              :security="basic || { code }"
+              :name="basic?.name || '股票详情'"
+              :code="basic?.code || code"
+              prominent
+              :show-code="false"
+            />
+          </h1>
+          <span class="stock-heading-code">{{ basic?.code || code }}</span>
+          <span class="stock-heading-change" :class="quoteDirectionClass">
+            {{ priceChange != null ? (priceChange > 0 ? '+' : '') + fmtNum(priceChange) : '-' }}
+          </span>
+          <span class="stock-heading-pct" :class="quoteDirectionClass">
+            {{ basic?.pctChg != null ? (Number(basic.pctChg) > 0 ? '+' : '') + Number(basic.pctChg).toFixed(2) + '%' : '-' }}
+          </span>
+          <span class="stock-heading-classification" :title="`${stockIndustry}｜${stockCoreTheme}`">
+            <span>{{ stockIndustry }}</span><span aria-hidden="true">｜</span><span>{{ stockCoreTheme }}</span>
+          </span>
+        </div>
         <p class="stock-note">{{ note || '今日雷达 · 个股消息 · 估值 · 行情' }}</p>
       </div>
       <div class="actions">
@@ -2046,12 +2083,7 @@ function dash(v) {
           <strong :class="quoteDirectionClass">
             {{ fmtNum(basic?.latestPrice) }}
           </strong>
-          <div :class="quoteDirectionClass">
-            <span>{{ priceChange != null ? (priceChange > 0 ? '+' : '') + fmtNum(priceChange) : '-' }}</span>
-            <span>{{ basic?.pctChg != null ? (Number(basic.pctChg) > 0 ? '+' : '') + Number(basic.pctChg).toFixed(2) + '%' : '-' }}</span>
-          </div>
         </div>
-        <p class="quote-industry">{{ profile?.industryL2 || basic?.industry || basic?.market || '行业待补充' }}</p>
         <div class="quote-metrics">
           <div><label>今开</label><b>{{ fmtNum(latestDailyBar?.openPrice) }}</b></div>
           <div><label>昨收</label><b>{{ fmtNum(previousClose) }}</b></div>
@@ -2656,19 +2688,32 @@ function dash(v) {
 <style scoped>
 .header .stock-heading {
   display: grid;
-  grid-template-columns: max-content max-content;
+  flex: 1 1 620px;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    'title module'
-    'code code'
-    'note note';
-  align-items: center;
-  column-gap: 8px;
+    'module'
+    'summary'
+    'note';
+  align-items: start;
+  row-gap: 4px;
   min-width: 0;
 }
 
-.header .stock-heading > h1 {
-  grid-area: title;
+.stock-summary-line {
+  display: flex;
+  grid-area: summary;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
   min-width: 0;
+  white-space: nowrap;
+}
+
+.stock-summary-line > h1 {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
 }
 
 .stock-heading :deep(.stock-identity.is-prominent .stock-identity__name) {
@@ -2679,15 +2724,10 @@ function dash(v) {
 
 .header .stock-heading > .eyebrow {
   grid-area: module;
-  align-self: center;
   margin: 0 !important;
   color: var(--accent);
   font-size: 0.72em;
   line-height: 1;
-}
-
-.header .stock-heading > .stock-heading-code {
-  grid-area: code;
 }
 
 .header .stock-heading > .stock-note {
@@ -2695,13 +2735,32 @@ function dash(v) {
 }
 
 .stock-heading-code {
-  display: block;
-  margin-top: 3px;
+  flex: 0 0 auto;
   color: var(--accent);
   font-size: 13px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   line-height: 18px;
+}
+
+.stock-heading-change,
+.stock-heading-pct {
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+
+.stock-heading-classification {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header .actions {
@@ -3043,11 +3102,10 @@ function dash(v) {
 }
 
 .quote-primary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 12px;
+  display: flex;
+  align-items: baseline;
   min-width: 0;
+  margin-bottom: 14px;
 }
 
 .quote-primary > strong {
@@ -3055,30 +3113,6 @@ function dash(v) {
   font-size: 34px;
   font-weight: 760;
   line-height: 1.05;
-}
-
-.quote-primary > div {
-  display: grid;
-  align-content: start;
-  justify-items: end;
-  flex: 0 0 auto;
-  min-width: 72px;
-  padding-top: 3px;
-  gap: 3px;
-  text-align: right;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.quote-industry {
-  margin: 8px 0 14px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .quote-metrics {
@@ -3653,22 +3687,8 @@ function dash(v) {
     border-bottom: 1px solid var(--line);
   }
 
-  .quote-primary {
-    justify-content: flex-start;
-  }
-
   .quote-primary > strong {
     font-size: 30px;
-  }
-
-  .quote-primary > div {
-    display: flex;
-    gap: 8px;
-    text-align: left;
-  }
-
-  .quote-industry {
-    margin-bottom: 8px;
   }
 
   .quote-metrics {
@@ -3730,9 +3750,28 @@ function dash(v) {
     margin-bottom: 12px;
   }
 
-  .stock-heading {
+  .header .stock-heading {
+    flex: 0 1 auto;
     width: 100%;
     min-width: 0;
+  }
+
+  .stock-summary-line {
+    gap: 6px;
+  }
+
+  .stock-summary-line > h1 {
+    max-width: 96px;
+  }
+
+  .stock-heading-code {
+    font-size: 11px;
+  }
+
+  .stock-heading-change,
+  .stock-heading-pct,
+  .stock-heading-classification {
+    font-size: 12px;
   }
 
   .header .eyebrow {
