@@ -62,11 +62,27 @@ test('portfolio detail exposes a responsive intraday return curve with five-minu
   assert.match(portfolioSource, /@media \(max-width: 820px\) \{[\s\S]*?\.intraday-summary\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
 })
 
-test('portfolio detail hides intraday return on non-trading days', () => {
+test('portfolio detail collapses intraday return on non-trading days', () => {
   assert.match(portfolioSource, /import \{ tradingCalendar \} from '\.\.\/utils\/dataFreshness\.js'/)
   assert.match(portfolioSource, /const showIntradayPanel = computed\(\(\) => shouldShowPortfolioIntraday\(tradingCalendar\.value\)\)/)
-  assert.match(portfolioSource, /v-if="rows\.length && !sharingCapture && showIntradayPanel" class="intraday-panel"/)
+  assert.match(portfolioSource, /v-if="rows\.length && !sharingCapture" class="intraday-panel"/)
+  assert.match(portfolioSource, /showIntradayPanel \? '5 分钟更新' : '非交易日'/)
+  assert.match(portfolioSource, /showIntradayPanel \? '暂无盘中快照' : '非交易日暂无盘中收益'/)
+  assert.match(portfolioSource, /const isIntradayPanelExpanded = computed\(\(\) =>[\s\S]*?showIntradayPanel\.value && intradaySeries\.value\.times\.length > 0/)
   assert.match(portfolioSource, /activeId\.value && showIntradayPanel\.value\) loadIntraday/)
+})
+
+test('portfolio return panels collapse by default without data and expose disclosure controls', () => {
+  assert.match(portfolioSource, /const isDailyPanelExpanded = computed\(\(\) =>[\s\S]*?dailyRows\.value\.length > 0/)
+  assert.match(portfolioSource, /class="theme-panel-head portfolio-panel-disclosure"[\s\S]*?:aria-expanded="isDailyPanelExpanded"/)
+  assert.match(portfolioSource, /class="theme-panel-head portfolio-panel-disclosure intraday-head"[\s\S]*?:aria-expanded="isIntradayPanelExpanded"/)
+  assert.match(portfolioSource, /class="daily-panel"[\s\S]*?'is-collapsed': !isDailyPanelExpanded && !sharingCapture/)
+  assert.match(portfolioSource, /class="intraday-panel" :class="\{ 'is-collapsed': !isIntradayPanelExpanded \}"/)
+})
+
+test('portfolio daily return chart colors negative bars green', () => {
+  assert.match(portfolioSource, /const pctBars = pcts\.map\(\(value\) =>[\s\S]*?value < 0 \? '#23855a' : '#e5484d'/)
+  assert.match(portfolioSource, /name: '当日涨跌%', type: 'bar', data: pctBars/)
 })
 
 test('portfolio theme pie keeps theme names beside the chart instead of a separate row', () => {

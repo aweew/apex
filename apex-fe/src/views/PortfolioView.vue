@@ -203,6 +203,14 @@ function toggleSide() {
   nextTick(() => onResize())
 }
 
+function toggleDailyPanel() {
+  dailyPanelExpanded.value = !isDailyPanelExpanded.value
+}
+
+function toggleIntradayPanel() {
+  intradayPanelExpanded.value = !isIntradayPanelExpanded.value
+}
+
 function displayTechHits(row) {
   const hits = hitTech(row)
   if (!sharingCapture.value) return hits
@@ -490,6 +498,14 @@ const totalTodayPct = computed(() => {
 })
 const intradaySeries = computed(() => buildPortfolioIntradaySeries(intradayRows.value))
 const showIntradayPanel = computed(() => shouldShowPortfolioIntraday(tradingCalendar.value))
+const dailyPanelExpanded = ref(null)
+const intradayPanelExpanded = ref(null)
+const isDailyPanelExpanded = computed(() =>
+  dailyPanelExpanded.value ?? dailyRows.value.length > 0,
+)
+const isIntradayPanelExpanded = computed(() =>
+  intradayPanelExpanded.value ?? (showIntradayPanel.value && intradaySeries.value.times.length > 0),
+)
 
 const industryDist = computed(() => {
   const map = new Map()
@@ -831,6 +847,8 @@ function handlePortfolioCardAction(row, command) {
 }
 
 watch(activeId, (id) => {
+  dailyPanelExpanded.value = null
+  intradayPanelExpanded.value = null
   if (id) loadDetail(id)
 })
 
@@ -857,6 +875,30 @@ watch(showIntradayPanel, async (visible) => {
   if (!visible) {
     intradayChart?.dispose()
     intradayChart = null
+    return
+  }
+  await nextTick()
+  renderIntradayChart()
+})
+
+watch(isDailyPanelExpanded, async (expanded) => {
+  if (!expanded) {
+    chart?.clear()
+    return
+  }
+  await nextTick()
+  renderDailyChart()
+})
+
+watch(sharingCapture, async (capturing) => {
+  if (!capturing) return
+  await nextTick()
+  renderDailyChart()
+})
+
+watch(isIntradayPanelExpanded, async (expanded) => {
+  if (!expanded) {
+    intradayChart?.clear()
     return
   }
   await nextTick()
@@ -965,9 +1007,17 @@ function renderDailyChart() {
   const dates = dailyRows.value.map((x) => x.tradeDate)
   const pcts = dailyRows.value.map((x) => (x.todayPct != null ? Number(x.todayPct) : null))
   const mvs = dailyRows.value.map((x) => (x.marketValue != null ? Number(x.marketValue) : null))
+  const pctBars = pcts.map((value) =>
+    value == null
+      ? null
+      : {
+          value,
+          itemStyle: { color: value < 0 ? '#23855a' : '#e5484d' },
+        },
+  )
   chart.setOption(
     {
-      color: ['#c23a3a', '#0071e3'],
+      color: ['#e5484d', '#0071e3'],
       tooltip: { trigger: 'axis' },
       legend: { data: ['当日涨跌%', '市值'], top: 0 },
       grid: { left: 48, right: 56, top: 36, bottom: 28 },
@@ -982,7 +1032,7 @@ function renderDailyChart() {
         { type: 'value', name: '市值', axisLabel: { color: '#86868b' }, splitLine: { show: false } },
       ],
       series: [
-        { name: '当日涨跌%', type: 'bar', data: pcts, barMaxWidth: 18 },
+        { name: '当日涨跌%', type: 'bar', data: pctBars, barMaxWidth: 18 },
         { name: '市值', type: 'line', yAxisIndex: 1, smooth: true, data: mvs, showSymbol: false },
       ],
     },
@@ -1989,40 +2039,54 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <section v-if="rows.length && !sharingCapture && showIntradayPanel" class="intraday-panel">
-          <div class="theme-panel-head intraday-head">
+        <section v-if="rows.length && !sharingCapture" class="intraday-panel" :class="{ 'is-collapsed': !isIntradayPanelExpanded }">
+          <button
+            type="button"
+            class="theme-panel-head portfolio-panel-disclosure intraday-head"
+            :aria-expanded="isIntradayPanelExpanded"
+            aria-controls="portfolio-intraday-content"
+            @click="toggleIntradayPanel"
+          >
             <div class="theme-panel-title">
               <h3>盘中收益</h3>
-              <span class="muted">5 分钟更新</span>
+              <span class="muted">{{ showIntradayPanel ? '5 分钟更新' : '非交易日' }}</span>
             </div>
-            <span v-if="intradaySeries.times.length" class="intraday-updated">
-              更新至 {{ intradaySeries.times[intradaySeries.times.length - 1] }}
+            <span class="portfolio-panel-actions">
+              <span v-if="intradaySeries.times.length" class="intraday-updated">
+                更新至 {{ intradaySeries.times[intradaySeries.times.length - 1] }}
+              </span>
+              <span class="portfolio-panel-toggle">
+                <span>{{ isIntradayPanelExpanded ? '收起' : '展开' }}</span>
+                <el-icon aria-hidden="true"><ArrowDown /></el-icon>
+              </span>
             </span>
-          </div>
-          <div v-if="intradaySeries.times.length" class="intraday-summary">
-            <div>
-              <span>最新收益</span>
-              <b :class="intradaySeries.latestReturnRate >= 0 ? 'up' : 'down'">
-                {{ fmtSignedPct(intradaySeries.latestReturnRate) }}
-              </b>
-              <small>{{ fmtSignedMoney(intradaySeries.latestPnl) }}</small>
+          </button>
+          <div id="portfolio-intraday-content" v-show="isIntradayPanelExpanded">
+            <div v-if="intradaySeries.times.length" class="intraday-summary">
+              <div>
+                <span>最新收益</span>
+                <b :class="intradaySeries.latestReturnRate >= 0 ? 'up' : 'down'">
+                  {{ fmtSignedPct(intradaySeries.latestReturnRate) }}
+                </b>
+                <small>{{ fmtSignedMoney(intradaySeries.latestPnl) }}</small>
+              </div>
+              <div>
+                <span>盘中最高</span>
+                <b class="up">{{ fmtSignedPct(intradaySeries.highestReturnRate) }}</b>
+              </div>
+              <div>
+                <span>盘中最低</span>
+                <b class="down">{{ fmtSignedPct(intradaySeries.lowestReturnRate) }}</b>
+              </div>
+              <div>
+                <span>日内振幅</span>
+                <b>{{ intradaySeries.amplitude.toFixed(2) }}%</b>
+              </div>
             </div>
-            <div>
-              <span>盘中最高</span>
-              <b class="up">{{ fmtSignedPct(intradaySeries.highestReturnRate) }}</b>
+            <div v-show="intradaySeries.times.length" ref="intradayChartRef" class="intraday-chart" />
+            <div v-if="!intradaySeries.times.length" class="intraday-empty">
+              {{ showIntradayPanel ? '暂无盘中快照' : '非交易日暂无盘中收益' }}
             </div>
-            <div>
-              <span>盘中最低</span>
-              <b class="down">{{ fmtSignedPct(intradaySeries.lowestReturnRate) }}</b>
-            </div>
-            <div>
-              <span>日内振幅</span>
-              <b>{{ intradaySeries.amplitude.toFixed(2) }}%</b>
-            </div>
-          </div>
-          <div v-show="intradaySeries.times.length" ref="intradayChartRef" class="intraday-chart" />
-          <div v-if="!intradaySeries.times.length" class="intraday-empty">
-            暂无盘中快照
           </div>
         </section>
 
@@ -2394,14 +2458,32 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-show="dailyRows.length" class="daily-panel">
-          <div class="theme-panel-head">
+        <section
+          v-if="rows.length && (dailyRows.length || !sharingCapture)"
+          class="daily-panel"
+          :class="{ 'is-collapsed': !isDailyPanelExpanded && !sharingCapture }"
+        >
+          <button
+            v-show="!sharingCapture"
+            type="button"
+            class="theme-panel-head portfolio-panel-disclosure"
+            :aria-expanded="isDailyPanelExpanded"
+            aria-controls="portfolio-daily-content"
+            @click="toggleDailyPanel"
+          >
             <div class="theme-panel-title">
               <h3>收益快照</h3>
               <span class="muted">记录每日涨跌与组合市值</span>
             </div>
+            <span class="portfolio-panel-toggle">
+              <span>{{ isDailyPanelExpanded ? '收起' : '展开' }}</span>
+              <el-icon aria-hidden="true"><ArrowDown /></el-icon>
+            </span>
+          </button>
+          <div id="portfolio-daily-content" v-show="sharingCapture || isDailyPanelExpanded">
+            <div v-if="dailyRows.length" ref="chartRef" class="daily-chart" />
+            <div v-else class="chart-empty">暂无收益快照</div>
           </div>
-          <div ref="chartRef" class="daily-chart" />
         </section>
         <BrandShareFoot
           v-show="sharingCapture"
@@ -3458,6 +3540,48 @@ onBeforeUnmount(() => {
 }
 .intraday-head {
   margin-bottom: 6px;
+}
+.portfolio-panel-disclosure {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.portfolio-panel-disclosure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.portfolio-panel-actions,
+.portfolio-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+}
+.portfolio-panel-actions {
+  gap: 12px;
+}
+.portfolio-panel-toggle {
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.portfolio-panel-toggle .el-icon {
+  transition: transform 160ms ease;
+}
+.portfolio-panel-disclosure[aria-expanded='true'] .portfolio-panel-toggle .el-icon {
+  transform: rotate(180deg);
+}
+.daily-panel.is-collapsed,
+.intraday-panel.is-collapsed {
+  padding-bottom: 12px;
+}
+.daily-panel.is-collapsed .portfolio-panel-disclosure,
+.intraday-panel.is-collapsed .portfolio-panel-disclosure {
+  margin-bottom: 0;
 }
 .intraday-updated {
   color: var(--muted);
