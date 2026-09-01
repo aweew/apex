@@ -8,7 +8,7 @@ import com.awe.apex.quant.domain.dto.WeekendMarketReportResp;
 public interface IWeekendMarketReportService {
 
     /**
-     * 读取最新周末研报；缓存未命中时按最近完整交易周生成。
+     * 读取可见窗口内的最新周末研报；窗口外不返回报告。
      *
      * @param forceRefresh 是否强制重新生成
      * @return 周末研报
@@ -23,7 +23,7 @@ public interface IWeekendMarketReportService {
     WeekendMarketReportResp generate();
 
     /**
-     * 刷新资讯和公开观点后重新生成周末研报。
+     * 在周日 21:00 至周一 09:30 可见窗口内刷新资讯和公开观点后重新生成周末研报。
      *
      * @return 周末研报
      */

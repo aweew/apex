@@ -3,6 +3,14 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const sectorSource = await readFile(new URL('./SectorBoardView.vue', import.meta.url), 'utf8')
+const sectorApiSource = await readFile(new URL('../api/sector.js', import.meta.url), 'utf8')
+
+test('sector rotation requests and labels five trading days', () => {
+  assert.match(sectorSource, /const ROTATION_DAY_COUNT = 5/)
+  assert.match(sectorSource, /fetchSectorRotation\(\{ days: ROTATION_DAY_COUNT, type: activeTab\.value \}\)/)
+  assert.match(sectorSource, /近 5 个交易日 Top5/)
+  assert.match(sectorApiSource, /fetchSectorRotation\(\{ days = 5, type = 'INDUSTRY' \} = \{\}\)/)
+})
 
 test('sector page provides a dedicated mobile filter surface', () => {
   assert.match(sectorSource, /class="sector-mobile-filters"/)

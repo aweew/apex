@@ -32,9 +32,11 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -139,13 +141,33 @@ class WeekendMarketReportServiceImplTest {
     void shouldUseLatestCacheWithoutGenerating() {
         WeekendMarketReportResp cached = WeekendMarketReportResp.builder()
                 .reportDate(LocalDate.now())
-                .weekEndDate(previousCompletedFriday(LocalDate.now()))
+                .weekEndDate(LocalDate.of(2026, 8, 28))
                 .build();
         when(redisCacheService.get(WeekendMarketReportServiceImpl.CACHE_KEY, WeekendMarketReportResp.class)).thenReturn(cached);
 
-        WeekendMarketReportResp report = service.latest(false);
+        WeekendMarketReportResp report = service.latest(false, LocalDateTime.of(2026, 8, 30, 21, 5));
 
         assertEquals(cached, report);
+    }
+
+    @Test
+    void shouldOnlyExposeReportFromSundayNightUntilMondayMarketOpen() {
+        assertFalse(WeekendMarketReportServiceImpl.isVisibleWindow(LocalDateTime.of(2026, 8, 30, 20, 59)));
+        assertTrue(WeekendMarketReportServiceImpl.isVisibleWindow(LocalDateTime.of(2026, 8, 30, 21, 0)));
+        assertTrue(WeekendMarketReportServiceImpl.isVisibleWindow(LocalDateTime.of(2026, 8, 31, 9, 29)));
+        assertFalse(WeekendMarketReportServiceImpl.isVisibleWindow(LocalDateTime.of(2026, 8, 31, 9, 30)));
+        assertFalse(WeekendMarketReportServiceImpl.isVisibleWindow(LocalDateTime.of(2026, 9, 1, 12, 0)));
+    }
+
+    @Test
+    void shouldNotReadOrGenerateReportOutsideVisibleWindow() {
+        WeekendMarketReportResp report = service.latest(false, LocalDateTime.of(2026, 8, 31, 9, 30));
+        WeekendMarketReportResp refreshed = service.refresh(LocalDateTime.of(2026, 8, 31, 9, 30));
+
+        assertNull(report);
+        assertNull(refreshed);
+        verifyNoInteractions(redisCacheService, indexBarMapper, marketNewsMapper, marketOpinionMapper,
+                newsService, marketOpinionService);
     }
 
     @Test
@@ -445,7 +467,7 @@ class WeekendMarketReportServiceImplTest {
         doThrow(new IllegalStateException("news unavailable")).when(newsService).refresh(any(), any());
         doThrow(new IllegalStateException("opinion unavailable")).when(marketOpinionService).refresh();
 
-        WeekendMarketReportResp report = service.refresh();
+        WeekendMarketReportResp report = service.refresh(LocalDateTime.of(2026, 8, 30, 21, 5));
 
         assertEquals("YELLOW", report.getDataLevel());
         assertTrue(report.getMissingData().contains("周末资讯刷新失败"));

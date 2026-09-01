@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const componentSource = await readFile(new URL('./IntradaySparkline.vue', import.meta.url), 'utf8')
+const klineComponentSource = await readFile(new URL('./IntradayKlineThumbnail.vue', import.meta.url), 'utf8')
 const dashboardSource = await readFile(new URL('../views/DashboardView.vue', import.meta.url), 'utf8')
 
 test('intraday sparkline accepts generic price points and exposes an accessible SVG', () => {
@@ -13,12 +14,23 @@ test('intraday sparkline accepts generic price points and exposes an accessible 
   assert.match(componentSource, /暂无日内走势/)
 })
 
-test('dashboard applies the reusable sparkline to China assets without inventing missing data', () => {
+test('intraday K-line thumbnail renders accessible red-green candle bodies and wicks', () => {
+  assert.match(klineComponentSource, /role="img"/)
+  assert.match(klineComponentSource, /class="intraday-kline-wick"/)
+  assert.match(klineComponentSource, /class="intraday-kline-body"/)
+  assert.match(klineComponentSource, /#d6495f/)
+  assert.match(klineComponentSource, /#16866a/)
+})
+
+test('dashboard applies real intraday K-line thumbnails to US indexes and China assets', () => {
   assert.match(
     dashboardSource,
-    /import IntradaySparkline from ['"]\.\.\/components\/IntradaySparkline\.vue['"]/
+    /import IntradayKlineThumbnail from ['"]\.\.\/components\/IntradayKlineThumbnail\.vue['"]/
   )
-  assert.match(dashboardSource, /const chinaAssetIntradayPoints = computed\(/)
-  assert.match(dashboardSource, /:points="chinaAssetIntradayPoints"/)
-  assert.match(dashboardSource, /label="富时 A50 期指连续日内走势"/)
+  assert.match(dashboardSource, /quote\.intradayBars\?\.length/)
+  assert.match(dashboardSource, /:bars="quote\.intradayBars"/)
+  assert.match(dashboardSource, /:previous-close="quote\.previousClose"/)
+  assert.match(dashboardSource, /ftseA50Future\.intradayBars\?\.length/)
+  assert.match(dashboardSource, /:bars="ftseA50Future\.intradayBars"/)
+  assert.match(dashboardSource, /label="富时 A50 期指连续日内 K 线"/)
 })

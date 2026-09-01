@@ -14,8 +14,8 @@ export function menuSwipeProgress(startProgress, deltaX, drawerWidth) {
   return Math.min(1, Math.max(0, startProgress + deltaX / drawerWidth))
 }
 
-export function menuContentOffset(progress, viewportWidth) {
-  const width = Math.max(0, Number(viewportWidth) || 0)
+export function menuContentOffset(progress, drawerWidth) {
+  const width = Math.max(0, Number(drawerWidth) || 0)
   const boundedProgress = Math.min(1, Math.max(0, Number(progress) || 0))
   return boundedProgress * width
 }

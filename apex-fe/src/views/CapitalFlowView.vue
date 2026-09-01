@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, SortDown, SortUp } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getCurrentUser } from '../api/auth'
 import { fetchCapitalFlowOverview, refreshCapitalFlow } from '../api/capitalFlow'
@@ -10,8 +10,9 @@ import {
   formatCapitalAmount,
   formatCapitalPercent,
   formatCapitalPrice,
-  formatNorthboundAmount,
   resolveCapitalClass,
+  sortDragonTigerItems,
+  sortStockFlowItems,
 } from '../utils/capitalFlow.js'
 import { staleDataTime } from '../utils/dataFreshness.js'
 
@@ -27,28 +28,81 @@ const isAdmin = computed(() => currentUser?.role === 'ADMIN')
 const loading = ref(false)
 const refreshingMode = ref('')
 const overview = ref({})
+const dragonTigerSort = ref({ prop: 'netBuyAmount', order: 'descending' })
+const stockFlowSort = ref({ prop: 'mainNetInflow', order: 'descending' })
+const dragonTigerSortOptions = [
+  { value: 'netBuyAmount', label: '净买额' },
+  { value: 'pctChg', label: '涨跌幅' },
+  { value: 'turnoverRate', label: '换手率' },
+  { value: 'amount', label: '成交额' },
+  { value: 'buyAmount', label: '买入额' },
+  { value: 'sellAmount', label: '卖出额' },
+  { value: 'closePrice', label: '收盘价' },
+  { value: 'name', label: '股票名称' },
+]
+const stockFlowSortOptions = [
+  { value: 'mainNetInflow', label: '主力净流入' },
+  { value: 'mainNetInflowPct', label: '主力占比' },
+  { value: 'pctChg', label: '涨跌幅' },
+  { value: 'superLargeNetInflow', label: '超大单' },
+  { value: 'largeNetInflow', label: '大单' },
+  { value: 'mediumNetInflow', label: '中单' },
+  { value: 'smallNetInflow', label: '小单' },
+  { value: 'name', label: '股票名称' },
+]
 
-const northboundFlow = computed(() => overview.value?.northboundFlow || null)
 const stockFlows = computed(() => overview.value?.stockFlows || [])
 const industryFlows = computed(() => overview.value?.industryFlows?.items || [])
 const conceptFlows = computed(() => overview.value?.conceptFlows?.items || [])
 const dragonTigerItems = computed(() => overview.value?.dragonTigerItems || [])
+const sortedDragonTigerItems = computed(() => sortDragonTigerItems(
+  dragonTigerItems.value,
+  dragonTigerSort.value.prop,
+  dragonTigerSort.value.order,
+))
+const sortedStockFlows = computed(() => sortStockFlowItems(
+  stockFlows.value,
+  stockFlowSort.value.prop,
+  stockFlowSort.value.order,
+))
+const dragonTigerSortIcon = computed(() => (
+  dragonTigerSort.value.order === 'descending' ? SortDown : SortUp
+))
+const stockFlowSortIcon = computed(() => (
+  stockFlowSort.value.order === 'descending' ? SortDown : SortUp
+))
 
 function snapshotMeta(tradeDate, syncedAt, intraday = false) {
   if (!tradeDate && !syncedAt) return '暂无快照'
   return staleDataTime({ tradeDate, updatedAt: syncedAt, intraday })
 }
 
-function northboundStatus(status) {
-  if (!status) return ''
-  if (status === 'NOT_DISCLOSED') return '当前不再公开披露净买入'
-  if (['AVAILABLE', 'PUBLISHED', 'SUCCESS'].includes(status)) return '已披露'
-  if (['UNAVAILABLE', 'NO_PUBLIC_DATA'].includes(status)) return '暂无公开数据'
-  return status
-}
-
 function openStock(stock) {
   if (stock?.code) router.push(`/stock/${stock.code}`)
+}
+
+function onDragonTigerSortChange({ prop, order }) {
+  if (!prop || !order) return
+  dragonTigerSort.value = { prop, order }
+}
+
+function toggleDragonTigerSortOrder() {
+  dragonTigerSort.value = {
+    ...dragonTigerSort.value,
+    order: dragonTigerSort.value.order === 'descending' ? 'ascending' : 'descending',
+  }
+}
+
+function onStockFlowSortChange({ prop, order }) {
+  if (!prop || !order) return
+  stockFlowSort.value = { prop, order }
+}
+
+function toggleStockFlowSortOrder() {
+  stockFlowSort.value = {
+    ...stockFlowSort.value,
+    order: stockFlowSort.value.order === 'descending' ? 'ascending' : 'descending',
+  }
 }
 
 async function loadOverview() {
@@ -86,7 +140,7 @@ onMounted(loadOverview)
       <div>
         <p class="eyebrow">Capital Flow</p>
         <h1>资金面</h1>
-        <p>北向披露、主力净流入、板块资金与龙虎榜的本地快照</p>
+        <p>主力净流入、板块资金与龙虎榜的本地快照</p>
       </div>
       <div v-if="isAdmin" class="actions">
         <el-dropdown :disabled="Boolean(refreshingMode)" @command="onRefresh">
@@ -112,7 +166,7 @@ onMounted(loadOverview)
     <section v-else class="capital-flow-embedded-header" aria-label="资金流">
       <div>
         <h2>资金流</h2>
-        <p>北向披露、主力净流入、板块资金与龙虎榜的本地快照</p>
+        <p>主力净流入、板块资金与龙虎榜的本地快照</p>
       </div>
       <div v-if="isAdmin" class="actions">
         <el-dropdown :disabled="Boolean(refreshingMode)" @command="onRefresh">
@@ -136,7 +190,7 @@ onMounted(loadOverview)
       </div>
     </section>
 
-    <section class="flow-section dragon-tiger-section" aria-labelledby="dragon-tiger-title">
+    <section id="dragon-tiger" class="flow-section dragon-tiger-section" aria-labelledby="dragon-tiger-title">
       <div class="section-heading">
         <div>
           <h2 id="dragon-tiger-title">龙虎榜</h2>
@@ -144,24 +198,52 @@ onMounted(loadOverview)
             {{ snapshotMeta(overview.dragonTigerTradeDate, overview.dragonTigerSyncedAt) }}
           </p>
         </div>
-        <span class="row-count">{{ dragonTigerItems.length }} 只</span>
+        <div class="dragon-heading-actions">
+          <div class="dragon-sort-mobile" aria-label="龙虎榜排序">
+            <el-select v-model="dragonTigerSort.prop" size="small" aria-label="排序字段">
+              <el-option
+                v-for="option in dragonTigerSortOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+            <el-tooltip :content="dragonTigerSort.order === 'descending' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'">
+              <el-button
+                :icon="dragonTigerSortIcon"
+                circle
+                size="small"
+                :aria-label="dragonTigerSort.order === 'descending' ? '切换为升序' : '切换为降序'"
+                @click="toggleDragonTigerSortOrder"
+              />
+            </el-tooltip>
+          </div>
+          <span class="row-count">{{ dragonTigerItems.length }} 只</span>
+        </div>
       </div>
-      <el-table v-if="dragonTigerItems.length" class="desktop-flow-table" :data="dragonTigerItems" stripe>
-        <el-table-column label="股票" min-width="150">
+      <el-table
+        v-if="dragonTigerItems.length"
+        class="desktop-flow-table"
+        :data="sortedDragonTigerItems"
+        :default-sort="dragonTigerSort"
+        stripe
+        @sort-change="onDragonTigerSortChange"
+      >
+        <el-table-column prop="name" label="股票" min-width="150" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }"><StockIdentity :security="row" :interactive="true" @select="openStock" /></template>
         </el-table-column>
-        <el-table-column label="收盘价" width="84" align="right"><template #default="{ row }">{{ formatCapitalPrice(row.closePrice) }}</template></el-table-column>
-        <el-table-column label="涨跌幅" width="92" align="right"><template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template></el-table-column>
-        <el-table-column label="换手率" width="88" align="right"><template #default="{ row }">{{ formatCapitalPercent(row.turnoverRate) }}</template></el-table-column>
-        <el-table-column label="净买额" min-width="108" align="right"><template #default="{ row }"><span :class="resolveCapitalClass(row.netBuyAmount)">{{ formatCapitalAmount(row.netBuyAmount) }}</span></template></el-table-column>
-        <el-table-column label="买入额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.buyAmount) }}</template></el-table-column>
-        <el-table-column label="卖出额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.sellAmount) }}</template></el-table-column>
-        <el-table-column label="成交额" min-width="104" align="right"><template #default="{ row }">{{ formatCapitalAmount(row.amount) }}</template></el-table-column>
+        <el-table-column prop="closePrice" label="收盘价" width="84" align="right" sortable="custom" :sort-orders="['descending', 'ascending']"><template #default="{ row }">{{ formatCapitalPrice(row.closePrice) }}</template></el-table-column>
+        <el-table-column prop="pctChg" label="涨跌幅" width="92" align="right" sortable="custom" :sort-orders="['descending', 'ascending']"><template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template></el-table-column>
+        <el-table-column prop="turnoverRate" label="换手率" width="88" align="right" sortable="custom" :sort-orders="['descending', 'ascending']"><template #default="{ row }">{{ formatCapitalPercent(row.turnoverRate) }}</template></el-table-column>
+        <el-table-column prop="netBuyAmount" label="净买额" min-width="108" align="right" sortable="custom" :sort-orders="['descending', 'ascending']"><template #default="{ row }"><span :class="resolveCapitalClass(row.netBuyAmount)">{{ formatCapitalAmount(row.netBuyAmount) }}</span></template></el-table-column>
+        <el-table-column prop="buyAmount" label="买入额" min-width="104" align="right" sortable="custom" :sort-orders="['descending', 'ascending']"><template #default="{ row }">{{ formatCapitalAmount(row.buyAmount) }}</template></el-table-column>
+        <el-table-column prop="sellAmount" label="卖出额" min-width="104" align="right" sortable="custom" :sort-orders="['descending', 'ascending']"><template #default="{ row }">{{ formatCapitalAmount(row.sellAmount) }}</template></el-table-column>
+        <el-table-column prop="amount" label="成交额" min-width="104" align="right" sortable="custom" :sort-orders="['descending', 'ascending']"><template #default="{ row }">{{ formatCapitalAmount(row.amount) }}</template></el-table-column>
         <el-table-column prop="reason" label="上榜原因" min-width="220" show-overflow-tooltip />
       </el-table>
       <div v-if="dragonTigerItems.length" class="mobile-flow-list">
         <article
-          v-for="row in dragonTigerItems"
+          v-for="row in sortedDragonTigerItems"
           :key="`${row.code}-${row.tradeDate}-${row.reason}`"
           class="flow-card dragon-tiger-card"
           :class="`dragon-${resolveCapitalClass(row.netBuyAmount)}`"
@@ -254,39 +336,6 @@ onMounted(loadOverview)
       </div>
     </section>
 
-    <section class="northbound-summary" aria-labelledby="northbound-title">
-      <div class="section-heading">
-        <div>
-          <h2 id="northbound-title">北向资金</h2>
-          <p v-if="snapshotMeta(northboundFlow?.tradeDate, northboundFlow?.syncedAt)">
-            {{ snapshotMeta(northboundFlow?.tradeDate, northboundFlow?.syncedAt) }}
-          </p>
-        </div>
-        <span v-if="northboundFlow?.dataStatus" class="dataset-status">
-          {{ northboundStatus(northboundFlow.dataStatus) }}
-        </span>
-      </div>
-      <div v-if="northboundFlow" class="northbound-metrics">
-        <div class="northbound-metric">
-          <span>当日净买额</span>
-          <strong :class="resolveCapitalClass(northboundFlow.netBuyAmount)">{{ formatNorthboundAmount(northboundFlow.netBuyAmount) }}</strong>
-        </div>
-        <div class="northbound-metric">
-          <span>买入额</span>
-          <strong>{{ formatCapitalAmount(northboundFlow.buyAmount) }}</strong>
-        </div>
-        <div class="northbound-metric">
-          <span>卖出额</span>
-          <strong>{{ formatCapitalAmount(northboundFlow.sellAmount) }}</strong>
-        </div>
-        <div class="northbound-metric">
-          <span>累计净买额</span>
-          <strong :class="resolveCapitalClass(northboundFlow.cumulativeNetBuyAmount)">{{ formatNorthboundAmount(northboundFlow.cumulativeNetBuyAmount) }}</strong>
-        </div>
-      </div>
-      <el-empty v-else :image-size="64" description="暂无北向资金快照" />
-    </section>
-
     <section class="flow-section stock-flow-section" aria-labelledby="stock-flow-title">
       <div class="section-heading">
         <div>
@@ -295,38 +344,66 @@ onMounted(loadOverview)
             {{ snapshotMeta(overview.stockTradeDate, overview.stockSyncedAt, true) }}
           </p>
         </div>
-        <span class="row-count">{{ stockFlows.length }} 只</span>
+        <div class="stock-heading-actions">
+          <div class="stock-sort-mobile" aria-label="个股主力流入排序">
+            <el-select v-model="stockFlowSort.prop" size="small" aria-label="排序字段">
+              <el-option
+                v-for="option in stockFlowSortOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+            <el-tooltip :content="stockFlowSort.order === 'descending' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'">
+              <el-button
+                :icon="stockFlowSortIcon"
+                circle
+                size="small"
+                :aria-label="stockFlowSort.order === 'descending' ? '切换为升序' : '切换为降序'"
+                @click="toggleStockFlowSortOrder"
+              />
+            </el-tooltip>
+          </div>
+          <span class="row-count">{{ stockFlows.length }} 只</span>
+        </div>
       </div>
-      <el-table v-if="stockFlows.length" class="desktop-flow-table" :data="stockFlows" stripe>
-        <el-table-column label="股票" min-width="150">
+      <el-table
+        v-if="stockFlows.length"
+        class="desktop-flow-table"
+        :data="sortedStockFlows"
+        :default-sort="stockFlowSort"
+        stripe
+        @sort-change="onStockFlowSortChange"
+      >
+        <el-table-column prop="name" label="股票" min-width="150" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }">
             <StockIdentity :security="row" :interactive="true" @select="openStock" />
           </template>
         </el-table-column>
-        <el-table-column label="涨跌幅" width="92" align="right">
+        <el-table-column prop="pctChg" label="涨跌幅" width="92" align="right" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }"><span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span></template>
         </el-table-column>
-        <el-table-column label="主力净流入" min-width="112" align="right">
+        <el-table-column prop="mainNetInflow" label="主力净流入" min-width="112" align="right" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }"><span :class="resolveCapitalClass(row.mainNetInflow)">{{ formatCapitalAmount(row.mainNetInflow) }}</span></template>
         </el-table-column>
-        <el-table-column label="主力占比" width="98" align="right">
+        <el-table-column prop="mainNetInflowPct" label="主力占比" width="98" align="right" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }">{{ formatCapitalPercent(row.mainNetInflowPct) }}</template>
         </el-table-column>
-        <el-table-column label="超大单" min-width="104" align="right">
+        <el-table-column prop="superLargeNetInflow" label="超大单" min-width="104" align="right" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }">{{ formatCapitalAmount(row.superLargeNetInflow) }}</template>
         </el-table-column>
-        <el-table-column label="大单" min-width="104" align="right">
+        <el-table-column prop="largeNetInflow" label="大单" min-width="104" align="right" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }">{{ formatCapitalAmount(row.largeNetInflow) }}</template>
         </el-table-column>
-        <el-table-column label="中单" min-width="104" align="right">
+        <el-table-column prop="mediumNetInflow" label="中单" min-width="104" align="right" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }">{{ formatCapitalAmount(row.mediumNetInflow) }}</template>
         </el-table-column>
-        <el-table-column label="小单" min-width="104" align="right">
+        <el-table-column prop="smallNetInflow" label="小单" min-width="104" align="right" sortable="custom" :sort-orders="['descending', 'ascending']">
           <template #default="{ row }">{{ formatCapitalAmount(row.smallNetInflow) }}</template>
         </el-table-column>
       </el-table>
       <div v-if="stockFlows.length" class="mobile-flow-list">
-        <article v-for="row in stockFlows" :key="row.code" class="flow-card">
+        <article v-for="row in sortedStockFlows" :key="row.code" class="flow-card">
           <div class="flow-card-head">
             <StockIdentity :security="row" :interactive="true" @select="openStock" />
             <span :class="resolveCapitalClass(row.pctChg)">{{ formatCapitalPercent(row.pctChg) }}</span>
@@ -391,6 +468,22 @@ onMounted(loadOverview)
   margin-bottom: 12px;
 }
 
+.dragon-tiger-section {
+  scroll-margin-top: 80px;
+}
+
+.dragon-heading-actions,
+.stock-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dragon-sort-mobile,
+.stock-sort-mobile {
+  display: none;
+}
+
 .section-heading h2,
 .subsection-heading h3 {
   margin: 0;
@@ -408,48 +501,9 @@ onMounted(loadOverview)
   font-variant-numeric: tabular-nums;
 }
 
-.dataset-status,
 .row-count {
   color: var(--slate);
   font-size: 12px;
-}
-
-.northbound-summary {
-  margin-bottom: 24px;
-  padding: 18px 0;
-  border-top: 1px solid var(--line-strong);
-  border-bottom: 1px solid var(--line-strong);
-}
-
-.northbound-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  background: var(--line);
-}
-
-.northbound-metric {
-  min-width: 0;
-  padding: 14px 16px;
-  background: #fff;
-}
-
-.northbound-metric span {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.northbound-metric strong {
-  display: block;
-  margin-top: 7px;
-  overflow-wrap: anywhere;
-  font-size: 19px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 650;
 }
 
 .flow-section {
@@ -482,13 +536,37 @@ onMounted(loadOverview)
   color: var(--slate);
 }
 
-@media (max-width: 900px) {
-  .northbound-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 720px) {
+  .dragon-tiger-section .section-heading,
+  .stock-flow-section .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dragon-heading-actions,
+  .stock-heading-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .dragon-sort-mobile,
+  .stock-sort-mobile {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dragon-sort-mobile :deep(.el-select),
+  .stock-sort-mobile :deep(.el-select) {
+    width: 112px;
+  }
+
+  .dragon-sort-mobile :deep(.el-button),
+  .stock-sort-mobile :deep(.el-button) {
+    width: 32px;
+    height: 32px;
+  }
+
   .capital-flow-embedded-header {
     align-items: flex-start;
   }
@@ -510,19 +588,6 @@ onMounted(loadOverview)
 
   .refresh-label {
     display: none;
-  }
-
-  .northbound-summary {
-    margin-bottom: 22px;
-    padding: 14px 0;
-  }
-
-  .northbound-metric {
-    padding: 12px;
-  }
-
-  .northbound-metric strong {
-    font-size: 16px;
   }
 
   .sector-flow-grid {
@@ -733,9 +798,4 @@ onMounted(loadOverview)
   }
 }
 
-@media (max-width: 390px) {
-  .northbound-metrics {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 </style>

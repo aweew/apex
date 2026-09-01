@@ -146,8 +146,6 @@ function syncViewportWidth() {
 
 function emptyForm() {
   return {
-    scope: '__MARKET__',
-    groupName: '我的自选',
     peMin: '',
     peMax: '',
     pbMin: '',
@@ -245,7 +243,6 @@ const mobilePageRange = computed(() => {
 })
 
 function hasAdvancedFilters() {
-  if (form.value.scope !== '__MARKET__') return true
   if (form.value.excludeLimitUp || form.value.excludeLimitDown) return true
   if (Number(form.value.limit || 50) !== 50) return true
   return [
@@ -299,11 +296,6 @@ function formatCircMv(value) {
   const marketValue = Number(value)
   if (Number.isNaN(marketValue)) return String(value)
   return `${(marketValue / 1e8).toFixed(1)}亿`
-}
-
-function resolveGroupName() {
-  if (form.value.scope === '__MARKET__') return '__MARKET__'
-  return String(form.value.groupName || '').trim() || '我的自选'
 }
 
 async function loadStrategies(preserveSelection = true) {
@@ -669,7 +661,7 @@ async function onRun() {
   loading.value = true
   try {
     const res = await runScreener({
-      groupName: resolveGroupName(),
+      groupName: '__MARKET__',
       peMin: numOrNull(form.value.peMin),
       peMax: numOrNull(form.value.peMax),
       pbMin: numOrNull(form.value.pbMin),
@@ -694,8 +686,7 @@ async function onRun() {
     })
     rows.value = res.data || []
     screeningActive.value = true
-    const scopeLabel = form.value.scope === '__MARKET__' ? '全部股票' : `自选「${resolveGroupName()}」`
-    ElMessage.success(`${scopeLabel}选出 ${rows.value.length} 只`)
+    ElMessage.success(`选出 ${rows.value.length} 只股票`)
   } catch (e) {
     ElMessage.error(e.message || '选股失败')
   } finally {
@@ -844,15 +835,6 @@ onBeforeUnmount(() => {
         <el-form-item label="代码/名称">
           <el-input v-model="marketKeyword" clearable style="width: 140px" @keyup.enter="onQuery" />
         </el-form-item>
-        <el-form-item label="范围">
-          <el-select v-model="form.scope" style="width: 120px">
-            <el-option label="全部股票" value="__MARKET__" />
-            <el-option label="自选分组" value="__WATCH__" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="form.scope === '__WATCH__'" label="分组">
-          <el-input v-model="form.groupName" style="width: 120px" placeholder="我的自选" clearable />
-        </el-form-item>
         <el-form-item label="PE≥"><el-input v-model="form.peMin" clearable style="width: 70px" /></el-form-item>
         <el-form-item label="PE≤"><el-input v-model="form.peMax" clearable style="width: 70px" /></el-form-item>
         <el-form-item label="PB≥"><el-input v-model="form.pbMin" clearable style="width: 70px" /></el-form-item>
@@ -894,36 +876,17 @@ onBeforeUnmount(() => {
 
     <section v-else class="mobile-filter-surface" aria-label="股票筛选条件">
       <form class="mobile-filter-form" @submit.prevent="onQuery">
-        <label class="mobile-field mobile-keyword-field">
-          <span class="mobile-control-label">代码或名称</span>
-          <el-input
-            v-model="marketKeyword"
-            clearable
-            :prefix-icon="Search"
-            placeholder="搜索代码或股票名称"
-            inputmode="search"
-          />
-        </label>
-
-        <div class="mobile-filter-controls">
-          <fieldset class="mobile-scope-field">
-            <legend class="mobile-control-label">筛选范围</legend>
-            <div class="mobile-segmented" role="group" aria-label="筛选范围">
-              <button
-                type="button"
-                :class="{ 'is-active': form.scope === '__MARKET__' }"
-                :aria-pressed="form.scope === '__MARKET__'"
-                @click="form.scope = '__MARKET__'"
-              >全部股票</button>
-              <button
-                type="button"
-                :class="{ 'is-active': form.scope === '__WATCH__' }"
-                :aria-pressed="form.scope === '__WATCH__'"
-                @click="form.scope = '__WATCH__'"
-              >自选</button>
-            </div>
-          </fieldset>
-
+        <div class="mobile-search-row">
+          <label class="mobile-field mobile-keyword-field">
+            <span class="mobile-control-label">代码或名称</span>
+            <el-input
+              v-model="marketKeyword"
+              clearable
+              :prefix-icon="Search"
+              placeholder="搜索代码或股票名称"
+              inputmode="search"
+            />
+          </label>
           <button
             type="button"
             class="advanced-filter-toggle"
@@ -937,11 +900,6 @@ onBeforeUnmount(() => {
             <small v-if="mobileAdvancedFilterCount">{{ mobileAdvancedFilterCount }}</small>
           </button>
         </div>
-
-        <label v-if="form.scope === '__WATCH__'" class="mobile-field">
-          <span>自选分组</span>
-          <el-input v-model="form.groupName" clearable placeholder="我的自选" />
-        </label>
 
         <div v-show="mobileAdvancedOpen" id="mobile-screener-advanced" class="mobile-advanced-filters">
           <section class="mobile-filter-group">
@@ -1718,13 +1676,18 @@ onBeforeUnmount(() => {
 }
 
 .screener-mode-switch :deep(.el-segmented) {
-  width: 260px;
+  width: max-content;
+  max-width: 100%;
   margin-bottom: -1px;
   padding: 3px;
   border: 1px solid var(--line);
   border-bottom-color: var(--paper);
   border-radius: 7px 7px 0 0;
   background: var(--paper-deep);
+}
+
+.screener-mode-switch :deep(.el-segmented__item) {
+  min-width: 96px;
 }
 
 .strategy-panel {
@@ -2440,49 +2403,16 @@ onBeforeUnmount(() => {
     white-space: nowrap;
   }
 
-  .mobile-filter-controls {
+  .mobile-search-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 92px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
     gap: 8px;
     min-width: 0;
   }
 
-  .mobile-scope-field {
+  .mobile-keyword-field {
     min-width: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-
-  .mobile-segmented {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2px;
-    padding: 2px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--paper-deep);
-  }
-
-  .mobile-segmented button {
-    min-width: 0;
-    min-height: 44px;
-    padding: 0 10px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--slate);
-    font: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-
-  .mobile-segmented button.is-active {
-    background: var(--glass-strong);
-    color: var(--accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, var(--line)) inset;
   }
 
   .advanced-filter-toggle {
@@ -2491,9 +2421,9 @@ onBeforeUnmount(() => {
     align-items: center;
     justify-content: center;
     gap: 5px;
-    width: 100%;
-    min-height: 48px;
-    padding: 0 9px;
+    width: auto;
+    min-height: 44px;
+    padding: 0 12px;
     border: 1px solid var(--line-strong);
     border-radius: 8px;
     background: var(--paper);
@@ -2591,13 +2521,13 @@ onBeforeUnmount(() => {
   }
 
   .mobile-filter-actions {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px;
+    display: flex;
+    align-items: center;
     gap: 8px;
   }
 
   .mobile-filter-actions :deep(.el-button) {
-    width: 100%;
+    width: auto;
     min-height: 44px;
     margin: 0;
     border-radius: 8px;
@@ -2651,7 +2581,6 @@ onBeforeUnmount(() => {
   }
 
   .screener-mobile-card:focus-visible,
-  .mobile-segmented button:focus-visible,
   .advanced-filter-toggle:focus-visible {
     outline: 3px solid rgba(0, 113, 227, 0.2);
     outline-offset: 1px;
@@ -2903,7 +2832,8 @@ onBeforeUnmount(() => {
   }
 
   .screener-mode-switch :deep(.el-segmented) {
-    width: 100%;
+    width: max-content;
+    max-width: 100%;
     min-height: 44px;
   }
 

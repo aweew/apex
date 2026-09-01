@@ -1,11 +1,19 @@
 package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.domain.dto.SectorConstituentResp;
+import com.awe.apex.quant.domain.dto.SectorRotationResp;
 import com.awe.apex.quant.domain.entity.SectorBasic;
 import com.awe.apex.quant.domain.entity.SectorConstituent;
+import com.awe.apex.quant.domain.entity.SectorQuote;
 import com.awe.apex.quant.mapper.SectorBasicMapper;
 import com.awe.apex.quant.mapper.SectorConstituentMapper;
+import com.awe.apex.quant.mapper.SectorQuoteMapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -13,8 +21,11 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SectorBoardServiceImplTest {
@@ -66,5 +77,39 @@ class SectorBoardServiceImplTest {
         assertEquals(cachedTradeDate, response.getTradeDate());
         assertEquals(1, response.getItems().size());
         assertEquals("300313", response.getItems().get(0).getCode());
+    }
+
+    @Test
+    void shouldQueryFiveDistinctTradingDaysForRotation() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), SectorQuote.class);
+        SectorBoardServiceImpl service = new SectorBoardServiceImpl();
+        SectorQuoteMapper sectorQuoteMapper = mock(SectorQuoteMapper.class);
+        List<SectorQuote> dateRows = List.of(
+                sectorQuote(LocalDate.of(2026, 8, 31), "视频媒体", "20.00"),
+                sectorQuote(LocalDate.of(2026, 8, 28), "氮肥", "7.33"),
+                sectorQuote(LocalDate.of(2026, 8, 27), "教育运营", "7.64"),
+                sectorQuote(LocalDate.of(2026, 8, 26), "电子化学品", "6.52"),
+                sectorQuote(LocalDate.of(2026, 8, 25), "半导体设备", "6.18")
+        );
+        when(sectorQuoteMapper.selectList(any())).thenReturn(dateRows, dateRows);
+        ReflectionTestUtils.setField(service, "sectorQuoteMapper", sectorQuoteMapper);
+
+        SectorRotationResp response = service.rotation("INDUSTRY", null, 5);
+
+        assertEquals(5, response.getDays().size());
+        assertEquals("INDUSTRY 轮动 · 近 5 日 Top5", response.getMessage());
+        ArgumentCaptor<Wrapper<SectorQuote>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(sectorQuoteMapper, times(2)).selectList(queryCaptor.capture());
+        assertTrue(queryCaptor.getAllValues().get(0).getSqlSegment().contains("GROUP BY trade_date"));
+    }
+
+    private SectorQuote sectorQuote(LocalDate tradeDate, String name, String pctChg) {
+        return SectorQuote.builder()
+                .code(name)
+                .name(name)
+                .boardType("INDUSTRY")
+                .tradeDate(tradeDate)
+                .pctChg(new BigDecimal(pctChg))
+                .build();
     }
 }

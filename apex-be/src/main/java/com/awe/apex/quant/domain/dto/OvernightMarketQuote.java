@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 隔夜市场报价。
@@ -41,4 +42,14 @@ public class OvernightMarketQuote {
      * 行情时间。
      */
     private LocalDateTime quoteTime;
+
+    /**
+     * 上一交易日收盘价。
+     */
+    private BigDecimal previousClose;
+
+    /**
+     * 日内 K 线缩略图数据。
+     */
+    private List<IntradayKlineBar> intradayBars;
 }

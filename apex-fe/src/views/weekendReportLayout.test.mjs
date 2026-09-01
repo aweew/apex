@@ -41,6 +41,14 @@ test('weekend report keeps long evidence and controls safe on mobile', () => {
   assert.match(viewSource, /grid-template-columns:\s*minmax\(0, 1fr\)/)
 })
 
+test('weekend report is hidden outside the Sunday night to Monday open window', () => {
+  assert.match(viewSource, /isWeekendReportVisible/)
+  assert.match(viewSource, /v-if="reportWindowOpen && report"/)
+  assert.match(viewSource, /router\.replace\('\/dashboard'\)/)
+  assert.match(dashboardSource, /v-if="weekendReportVisible"/)
+  assert.match(appSource, /item\.to !== '\/weekend-report' \|\| isWeekendReportVisible/)
+})
+
 test('dashboard and command search expose weekend report without adding main navigation', () => {
   assert.match(appSource, /to: '\/weekend-report', label: '周末研报'/)
   assert.match(appSource, /\['\/weekend-report', '周末研报'\]/)

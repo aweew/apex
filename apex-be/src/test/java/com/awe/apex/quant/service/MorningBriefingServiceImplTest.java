@@ -7,6 +7,9 @@ import com.awe.apex.quant.domain.dto.ExternalMarketItemResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
+import com.awe.apex.quant.domain.dto.GlobalMarketIntradayResp;
+import com.awe.apex.quant.domain.dto.IntradayKlineBar;
+import com.awe.apex.quant.market.GlobalMarketIntradayClient;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.market.GlobalFuturesQuoteClient;
 import com.awe.apex.quant.market.ExternalMarketIndicatorEnum;
@@ -40,6 +43,7 @@ class MorningBriefingServiceImplTest {
     private MorningBriefingServiceImpl service;
     private UsMarketQuoteClient usMarketQuoteClient;
     private GlobalFuturesQuoteClient globalFuturesQuoteClient;
+    private GlobalMarketIntradayClient globalMarketIntradayClient;
     private ExternalMarketQuoteClient externalMarketQuoteClient;
     private INewsPulseService newsPulseService;
     private IMarketOpinionService marketOpinionService;
@@ -51,6 +55,7 @@ class MorningBriefingServiceImplTest {
         service = new MorningBriefingServiceImpl();
         usMarketQuoteClient = mock(UsMarketQuoteClient.class);
         globalFuturesQuoteClient = mock(GlobalFuturesQuoteClient.class);
+        globalMarketIntradayClient = mock(GlobalMarketIntradayClient.class);
         externalMarketQuoteClient = mock(ExternalMarketQuoteClient.class);
         newsPulseService = mock(INewsPulseService.class);
         marketOpinionService = mock(IMarketOpinionService.class);
@@ -59,6 +64,7 @@ class MorningBriefingServiceImplTest {
         ReflectionTestUtils.setField(service, "properties", properties);
         ReflectionTestUtils.setField(service, "marketQuoteClient", usMarketQuoteClient);
         ReflectionTestUtils.setField(service, "globalFuturesQuoteClient", globalFuturesQuoteClient);
+        ReflectionTestUtils.setField(service, "globalMarketIntradayClient", globalMarketIntradayClient);
         ReflectionTestUtils.setField(service, "externalMarketQuoteClient", externalMarketQuoteClient);
         ReflectionTestUtils.setField(service, "newsPulseService", newsPulseService);
         ReflectionTestUtils.setField(service, "marketOpinionService", marketOpinionService);
@@ -117,6 +123,36 @@ class MorningBriefingServiceImplTest {
     }
 
     @Test
+    void attachesIntradayBarsToUsIndexesAndFtseA50() {
+        OvernightMarketQuote nasdaqQuote = quote("usIXIC", "纳斯达克", "-0.52");
+        OvernightMarketQuote ftseA50Quote = quote("hf_CHA50CFD", "富时中国A50期货", "0.13");
+        IntradayKlineBar intradayBar = IntradayKlineBar.builder()
+                .datetime("2026-08-31 21:30")
+                .openPrice(new BigDecimal("100"))
+                .closePrice(new BigDecimal("101"))
+                .highPrice(new BigDecimal("102"))
+                .lowPrice(new BigDecimal("99"))
+                .build();
+        when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of(nasdaqQuote));
+        when(globalFuturesQuoteClient.fetch("hf_CHA50CFD")).thenReturn(ftseA50Quote);
+        when(globalMarketIntradayClient.fetch("usIXIC")).thenReturn(GlobalMarketIntradayResp.builder()
+                .previousClose(new BigDecimal("102"))
+                .bars(List.of(intradayBar))
+                .build());
+        when(globalMarketIntradayClient.fetch("hf_CHA50CFD")).thenReturn(GlobalMarketIntradayResp.builder()
+                .previousClose(new BigDecimal("98"))
+                .bars(List.of(intradayBar))
+                .build());
+
+        MorningBriefingResp response = service.generate();
+
+        assertEquals(new BigDecimal("102"), response.getIndexQuotes().get(0).getPreviousClose());
+        assertEquals(List.of(intradayBar), response.getIndexQuotes().get(0).getIntradayBars());
+        assertEquals(new BigDecimal("98"), response.getFtseA50Future().getPreviousClose());
+        assertEquals(List.of(intradayBar), response.getFtseA50Future().getIntradayBars());
+    }
+
+    @Test
     void summarizesUsMarketAndOvernightNews() {
         when(usMarketQuoteClient.fetch(anyList())).thenReturn(List.of(
                 OvernightMarketQuote.builder().symbol("usIXIC").name("纳斯达克")
@@ -139,7 +175,7 @@ class MorningBriefingServiceImplTest {
         assertTrue(response.getSummary().contains("AI"));
         assertEquals(List.of("美联储公布最新经济数据"), response.getNewsTitles());
         assertSame(newsPulse, response.getNewsPulse());
-        verify(redisCacheService).put(eq("apex:morning-briefing:latest:v4"), eq(response), any());
+        verify(redisCacheService).put(eq("apex:morning-briefing:latest:v6"), eq(response), any());
     }
 
     @Test
@@ -407,7 +443,7 @@ class MorningBriefingServiceImplTest {
                 .generatedAt(LocalDateTime.of(2026, 8, 18, 6, 35))
                 .dataLevel("GREEN")
                 .build();
-        when(redisCacheService.get("apex:morning-briefing:latest:v4", MorningBriefingResp.class))
+        when(redisCacheService.get("apex:morning-briefing:latest:v6", MorningBriefingResp.class))
                 .thenReturn(cached);
 
         MorningBriefingResp response = service.latest();

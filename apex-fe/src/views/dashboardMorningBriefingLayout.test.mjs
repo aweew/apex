@@ -15,7 +15,7 @@ test('dashboard places overnight market and news before action panels', () => {
 })
 
 test('dashboard uses command headline with legacy advice fallback and a new cache version', () => {
-  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v21'/)
+  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v23'/)
   assert.match(dashboardSource, /const command\s*=\s*computed\(\(\)\s*=>\s*home\.value\?\.command\s*\|\|\s*null\)/)
   assert.match(
     dashboardSource,
@@ -48,7 +48,7 @@ test('dashboard renders the structured forecast and only shows available opening
 
 test('dashboard keeps China assets focused on A50 percentage change only', () => {
   assert.match(dashboardSource, /<h5>中国资产<\/h5>/)
-  assert.match(dashboardSource, /<span>富时 A50 期指连续 · 涨跌幅<\/span>/)
+  assert.doesNotMatch(dashboardSource, /<span>富时 A50 期指连续 · 涨跌幅<\/span>/)
   assert.match(dashboardSource, /v-if="ftseA50Future" class="overnight-index-grid china-assets-grid"/)
   assert.match(dashboardSource, /<strong>富时 A50 期指连续<\/strong>/)
   assert.match(dashboardSource, /fmtIndexPct\(ftseA50Future\.pctChg\)/)
@@ -90,7 +90,10 @@ test('dashboard separates external environment signals and explains their A-shar
 
 test('dashboard presents structured pre-market event impacts with evidence labels', () => {
   assert.match(dashboardSource, /const preMarketEventImpacts\s*=\s*computed\(/)
+  assert.match(dashboardSource, /const visiblePreMarketEventImpacts\s*=\s*computed\(\(\)\s*=>\s*\([\s\S]*?preMarketEventImpacts\.value\.slice\(0,\s*3\)/)
+  assert.doesNotMatch(dashboardSource, /morningNewsExpanded\.value\s*\?\s*preMarketEventImpacts\.value/)
   assert.match(dashboardSource, /<h5>盘前事件影响<\/h5>/)
+  assert.match(dashboardSource, /重要度与A股相关性 Top 3/)
   assert.match(dashboardSource, /v-for="item in visiblePreMarketEventImpacts"/)
   assert.match(dashboardSource, /item\.impactScope/)
   assert.match(dashboardSource, /item\.verificationStatus/)
@@ -99,10 +102,13 @@ test('dashboard presents structured pre-market event impacts with evidence label
 
 test('dashboard places the command band after market effect and before pre-market context', () => {
   const effectIndex = dashboardSource.indexOf('aria-label="赚钱效应"')
+  const mainlineIndex = dashboardSource.indexOf('<h3>主线与情绪</h3>')
   const commandIndex = dashboardSource.indexOf('aria-label="盘前决策"')
   const contextIndex = dashboardSource.indexOf('aria-label="盘前依据"')
 
   assert.ok(effectIndex > 0)
+  assert.ok(mainlineIndex > effectIndex)
+  assert.ok(commandIndex > mainlineIndex)
   assert.ok(commandIndex > effectIndex)
   assert.ok(contextIndex > commandIndex)
   assert.match(dashboardSource, /<section\s+v-if="command"[^>]+class="command-band[^>]+aria-label="盘前决策"/s)
@@ -459,14 +465,26 @@ test('dashboard benchmark index cards prioritize percentage changes over point v
   const benchmarkMarkup = dashboardSource.slice(benchmarkStart, benchmarkEnd)
 
   assert.ok(benchmarkStart > 0)
-  assert.match(dashboardSource, /<h5>三大指数<\/h5>[\s\S]{0,80}?<span>涨跌幅<\/span>/)
+  assert.match(dashboardSource, /<h5>隔夜美股<\/h5>/)
+  assert.doesNotMatch(dashboardSource, /<h5>三大指数<\/h5>/)
   assert.match(benchmarkMarkup, /v-for="quote in overnightIndexes"/)
   assert.match(benchmarkMarkup, /fmtIndexPct\(quote\.pctChg\)/)
+  assert.match(benchmarkMarkup, /IntradayKlineThumbnail/)
+  assert.match(benchmarkMarkup, /:class="\{ 'has-intraday-chart': quote\.intradayBars\?\.length \}"/)
   assert.doesNotMatch(benchmarkMarkup, /latestPrice|fmtQuotePrice/)
   assert.match(
     dashboardSource,
     /\.benchmark-index-grid \.overnight-quote > b\s*\{[^}]*font-size:\s*15px;[^}]*font-weight:\s*750;/s,
   )
+  assert.match(
+    dashboardSource,
+    /\.benchmark-index-grid \.overnight-quote\.has-intraday-chart\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(88px,\s*128px\) auto;/s,
+  )
+})
+
+test('dashboard omits redundant overnight market headings', () => {
+  assert.doesNotMatch(dashboardSource, /<h4>开盘影响<\/h4>/)
+  assert.doesNotMatch(dashboardSource, /竞价确认与外盘锚|<span>外盘锚<\/span>/)
 })
 
 test('dashboard keeps overnight layers stable across desktop and phone layouts', () => {
@@ -539,7 +557,10 @@ test('dashboard theme ranking exposes breadth without relying on color alone', (
 
 test('dashboard renders the pre-market breadth forecast as a red-green tug of war with backtest truth', () => {
   assert.match(dashboardSource, /const breadthForecast\s*=\s*computed\(/)
+  assert.match(dashboardSource, /const visibleBreadthForecastReasons\s*=\s*computed\(/)
   assert.match(dashboardSource, /class="breadth-forecast\s+enter\s+delay-1"/)
+  assert.doesNotMatch(dashboardSource, /<p>平盘剔除/)
+  assert.match(dashboardSource, /v-for="reason in visibleBreadthForecastReasons"/)
   assert.match(dashboardSource, /预测上涨/)
   assert.match(dashboardSource, /预测下跌/)
   assert.match(dashboardSource, /class="breadth-forecast-track"/)

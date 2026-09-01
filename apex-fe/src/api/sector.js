@@ -43,6 +43,6 @@ export function refreshSectorConstituents(code, type = 'INDUSTRY') {
   )
 }
 
-export function fetchSectorRotation({ days = 10, type = 'INDUSTRY' } = {}) {
+export function fetchSectorRotation({ days = 5, type = 'INDUSTRY' } = {}) {
   return http.get('/api/sector/rotation', { params: { days, type } })
 }

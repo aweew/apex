@@ -1,12 +1,17 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { DocumentCopy, Refresh } from '@element-plus/icons-vue'
 import { fetchWeekendMarketReport, refreshWeekendMarketReport } from '../api/weekendReport'
+import { isWeekendReportVisible } from '../utils/weekendReportVisibility.js'
 
+const router = useRouter()
 const loading = ref(false)
 const refreshing = ref(false)
 const report = ref(null)
+const reportClock = ref(new Date())
+let reportClockTimer
 
 const reportDate = computed(() => report.value?.reportDate || report.value?.generatedAt?.slice?.(0, 10) || '')
 const generatedAt = computed(() => formatDateTime(report.value?.generatedAt))
@@ -25,6 +30,7 @@ const tradingThemes = computed(() => report.value?.tradingThemes || report.value
 const scenarios = computed(() => report.value?.marketScenarios || report.value?.scenarios || [])
 const missingData = computed(() => report.value?.missingData || [])
 const sourceLabel = computed(() => report.value?.reportSource === 'AI' ? '智能研判' : '规则研判')
+const reportWindowOpen = computed(() => isWeekendReportVisible(reportClock.value))
 
 function formatDateTime(value) {
   if (!value) return ''
@@ -103,12 +109,31 @@ async function copyReport() {
   }
 }
 
-onMounted(loadReport)
+function syncReportVisibility() {
+  const wasVisible = reportWindowOpen.value
+  reportClock.value = new Date()
+  if (reportWindowOpen.value) {
+    if (!wasVisible) void loadReport()
+    return
+  }
+  report.value = null
+  if (wasVisible) void router.replace('/dashboard')
+}
+
+onMounted(() => {
+  if (reportWindowOpen.value) void loadReport()
+  else void router.replace('/dashboard')
+  reportClockTimer = window.setInterval(syncReportVisibility, 30000)
+})
+
+onBeforeUnmount(() => {
+  if (reportClockTimer) window.clearInterval(reportClockTimer)
+})
 </script>
 
 <template>
   <div class="page weekend-report-page" v-loading="loading">
-    <header class="weekend-toolbar">
+    <header v-if="reportWindowOpen" class="weekend-toolbar">
       <div class="weekend-toolbar-copy">
         <span>周末消息面</span>
         <strong v-if="reportDate">{{ reportDate }}</strong>
@@ -123,7 +148,7 @@ onMounted(loadReport)
       </div>
     </header>
 
-    <article v-if="report" class="weekend-report-article" aria-label="周末消息面专题研报">
+    <article v-if="reportWindowOpen && report" class="weekend-report-article" aria-label="周末消息面专题研报">
       <header class="weekend-report-lead">
         <div>
           <p class="weekend-kicker">APEX WEEKEND MARKET RESEARCH</p>
@@ -280,7 +305,7 @@ onMounted(loadReport)
       <div v-if="report.content" class="sr-only" aria-label="可复制研报正文">{{ report.content }}</div>
     </article>
 
-    <div v-else-if="!loading" class="page-empty">
+    <div v-else-if="reportWindowOpen && !loading" class="page-empty">
       <h3>周末研报尚未生成</h3>
       <el-button type="primary" :icon="Refresh" :loading="refreshing" @click="refreshReport">生成研报</el-button>
     </div>

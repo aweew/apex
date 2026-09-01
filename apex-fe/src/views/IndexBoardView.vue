@@ -508,6 +508,12 @@ function onResize() {
   chart?.resize()
 }
 
+async function scrollToMarketSection() {
+  if (!['#heatmap', '#dragon-tiger'].includes(route.hash)) return
+  await nextTick()
+  document.getElementById(route.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 watch(detailBars, async () => {
   await nextTick()
   if (!chartRef.value) {
@@ -541,6 +547,8 @@ watch(marketTab, async () => {
     renderChart()
   }
 })
+
+watch(() => route.hash, scrollToMarketSection)
 
 function revokeSharePreview() {
   if (sharePreviewObjectUrl) {
@@ -677,10 +685,7 @@ onMounted(async () => {
   await load()
   marketSessionTimer = window.setInterval(syncActiveMarket, 30 * 1000)
   window.addEventListener('resize', onResize)
-  if (route.hash === '#heatmap') {
-    await nextTick()
-    document.getElementById('heatmap')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  await scrollToMarketSection()
 })
 
 onBeforeUnmount(() => {

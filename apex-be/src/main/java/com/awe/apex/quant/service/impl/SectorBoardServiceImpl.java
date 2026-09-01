@@ -443,15 +443,16 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
         if (!VALID_TYPES.contains(type)) {
             type = "INDUSTRY";
         }
-        int dayCount = Objects.isNull(days) || days <= 0 ? 10 : Math.min(days, 30);
+        int dayCount = Objects.isNull(days) || days <= 0 ? 5 : Math.min(days, 30);
         int top = Objects.isNull(topN) || topN <= 0 ? 5 : Math.min(topN, 15);
 
         List<SectorQuote> dateRows = sectorQuoteMapper.selectList(Wrappers.<SectorQuote>lambdaQuery()
                 .select(SectorQuote::getTradeDate)
                 .eq(SectorQuote::getBoardType, type)
                 .isNotNull(SectorQuote::getTradeDate)
+                .groupBy(SectorQuote::getTradeDate)
                 .orderByDesc(SectorQuote::getTradeDate)
-                .last("LIMIT " + (dayCount * 120)));
+                .last("LIMIT " + Math.min(dayCount * 2 + 10, 70)));
         LinkedHashMap<LocalDate, Boolean> seen = new LinkedHashMap<>();
         for (SectorQuote row : dateRows) {
             LocalDate tradeDate = row.getTradeDate();

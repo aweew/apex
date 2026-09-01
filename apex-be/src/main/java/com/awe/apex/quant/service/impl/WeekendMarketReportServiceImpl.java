@@ -36,9 +36,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -58,6 +60,9 @@ public class WeekendMarketReportServiceImpl implements IWeekendMarketReportServi
 
     static final String CACHE_KEY = "apex:weekend-market-report:latest:v2";
     static final Duration CACHE_TTL = Duration.ofDays(14);
+    private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final LocalTime WEEKEND_REPORT_VISIBLE_TIME = LocalTime.of(21, 0);
+    private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 30);
     private static final int MAX_NEWS_COUNT = 8;
     private static final List<String> INDEX_CODES = List.of("CN_SH", "CN_SZ", "CN_CYB", "CN_KC50", "CN_BJ50");
     private static final List<String> NEWS_SOURCES = List.of("eastmoney", "cls", "ths", "sina");
@@ -107,9 +112,16 @@ public class WeekendMarketReportServiceImpl implements IWeekendMarketReportServi
      */
     @Override
     public WeekendMarketReportResp latest(boolean forceRefresh) {
+        return latest(forceRefresh, LocalDateTime.now(SHANGHAI_ZONE));
+    }
+
+    WeekendMarketReportResp latest(boolean forceRefresh, LocalDateTime currentTime) {
+        if (!isVisibleWindow(currentTime)) {
+            return null;
+        }
         if (!forceRefresh) {
             WeekendMarketReportResp cachedReport = redisCacheService.get(CACHE_KEY, WeekendMarketReportResp.class);
-            LocalDate expectedLastTradeDate = resolveLastCompletedTradeDate(LocalDate.now());
+            LocalDate expectedLastTradeDate = resolveLastCompletedTradeDate(currentTime.toLocalDate());
             if (Objects.nonNull(cachedReport) && expectedLastTradeDate.equals(cachedReport.getWeekEndDate())) {
                 return cachedReport;
             }
@@ -128,7 +140,7 @@ public class WeekendMarketReportServiceImpl implements IWeekendMarketReportServi
     }
 
     private WeekendMarketReportResp generate(List<String> initialMissingData) {
-        LocalDateTime generatedAt = LocalDateTime.now();
+        LocalDateTime generatedAt = LocalDateTime.now(SHANGHAI_ZONE);
         LocalDate lastTradeDate = resolveLastCompletedTradeDate(generatedAt.toLocalDate());
         LocalDateTime reportCutoff = resolveReportCutoff(lastTradeDate, generatedAt);
         List<LocalDate> weekDates = resolveWeekDates(lastTradeDate);
@@ -211,6 +223,14 @@ public class WeekendMarketReportServiceImpl implements IWeekendMarketReportServi
      */
     @Override
     public WeekendMarketReportResp refresh() {
+        return refresh(LocalDateTime.now(SHANGHAI_ZONE));
+    }
+
+    WeekendMarketReportResp refresh(LocalDateTime currentTime) {
+        if (!isVisibleWindow(currentTime)) {
+            log.info("周末研报刷新跳过：当前不在周日 21:00 至周一 09:30 可见窗口");
+            return null;
+        }
         List<String> refreshMissingData = new ArrayList<>();
         try {
             newsService.refresh("eastmoney,cls,ths,sina", 80);
@@ -972,6 +992,16 @@ public class WeekendMarketReportServiceImpl implements IWeekendMarketReportServi
         }
         LocalDateTime sundayCutoff = sunday.atTime(21, 0);
         return generatedAt.isBefore(sundayCutoff) ? generatedAt : sundayCutoff;
+    }
+
+    static boolean isVisibleWindow(LocalDateTime currentTime) {
+        if (Objects.isNull(currentTime)) {
+            return false;
+        }
+        DayOfWeek dayOfWeek = currentTime.getDayOfWeek();
+        LocalTime time = currentTime.toLocalTime();
+        return (dayOfWeek == DayOfWeek.SUNDAY && !time.isBefore(WEEKEND_REPORT_VISIBLE_TIME))
+                || (dayOfWeek == DayOfWeek.MONDAY && time.isBefore(MARKET_OPEN_TIME));
     }
 
     private String loadSystemPrompt() {

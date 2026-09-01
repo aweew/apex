@@ -27,8 +27,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -82,19 +84,9 @@ public class NewsPulseServiceImpl implements INewsPulseService {
                     .last("LIMIT 200"));
         }
 
-        int bull = 0;
-        int bear = 0;
-        int neutral = 0;
         List<NewsPulseCardResp> scored = new ArrayList<>();
         for (MarketNews row : todayRows) {
             String sentiment = StringUtils.isBlank(row.getSentiment()) ? "中性" : row.getSentiment().trim();
-            if ("利好".equals(sentiment)) {
-                bull++;
-            } else if ("利空".equals(sentiment)) {
-                bear++;
-            } else {
-                neutral++;
-            }
             boolean yaowen = isYaowen(row.getSummary(), row.getContent());
             String summaryText = cleanSummary(row.getSummary(), row.getContent());
             int stars = NewsPulseHeuristics.estimateStars(
@@ -115,12 +107,34 @@ public class NewsPulseServiceImpl implements INewsPulseService {
                     .build());
         }
 
-        scored.sort(Comparator
-                .comparing((NewsPulseCardResp c) -> Objects.isNull(c.getStars()) ? 0 : c.getStars())
-                .reversed()
-                .thenComparing(NewsPulseCardResp::getPublishedAt, Comparator.nullsLast(Comparator.reverseOrder())));
-        List<NewsPulseCardResp> cards = scored.size() > limit ? scored.subList(0, limit) : scored;
         List<PreMarketEventImpactResp> eventImpacts = buildPreMarketEventImpacts(scored);
+        List<NewsPulseCardResp> cards = new ArrayList<>();
+        int visibleCardLimit = Math.min(limit, 3);
+        for (PreMarketEventImpactResp impact : eventImpacts) {
+            for (NewsPulseCardResp card : scored) {
+                if (Objects.equals(impact.getTitle(), card.getTitle())
+                        && Objects.equals(impact.getSource(), card.getSource())) {
+                    cards.add(card);
+                    break;
+                }
+            }
+            if (cards.size() >= visibleCardLimit) {
+                break;
+            }
+        }
+
+        int bull = 0;
+        int bear = 0;
+        int neutral = 0;
+        for (PreMarketEventImpactResp impact : eventImpacts) {
+            if ("利好".equals(impact.getDirection())) {
+                bull++;
+            } else if ("利空".equals(impact.getDirection())) {
+                bear++;
+            } else {
+                neutral++;
+            }
+        }
 
         MarketBriefingResp briefing = null;
         try {
@@ -164,14 +178,17 @@ public class NewsPulseServiceImpl implements INewsPulseService {
         if (Objects.nonNull(briefing) && Objects.nonNull(briefing.getEffect())) {
             effectHint = briefing.getEffect().getHint();
         }
-        String biasLabel = resolveBiasLabel(bull, bear, marketStance, effectHint);
+        String biasLabel = resolveBiasLabel(bull, bear);
 
         String summarySource = "rule";
-        String executive = buildRuleSummary(bull, bear, cards, hotThemes, biasLabel, marketStance, effectHint);
+        String executive = buildRuleSummary(eventImpacts);
         boolean llmOk = kimiChatClient.available();
         if (llmOk) {
-            String llm = resolveLlmSummary(forceLlm, bull, bear, cards, hotThemes, biasLabel, marketStance, effectHint);
-            if (StringUtils.isNotBlank(llm)) {
+            String llm = resolveLlmSummary(forceLlm, bull, bear, eventImpacts, biasLabel);
+            if (StringUtils.isNotBlank(llm)
+                    && llm.contains("首要变量：")
+                    && llm.contains("A股映射：")
+                    && llm.contains("开盘验证：")) {
                 executive = llm;
                 summarySource = "llm";
             }
@@ -213,46 +230,34 @@ public class NewsPulseServiceImpl implements INewsPulseService {
         List<PreMarketEventImpactResp> impacts = new ArrayList<>();
         for (NewsPulseCardResp card : cards) {
             PreMarketEventImpactResp impact = PreMarketEventHeuristics.toImpact(card);
-            if (isUsefulEvent(impact)) {
+            if (PreMarketEventHeuristics.isRelevant(impact)) {
                 impacts.add(impact);
             }
         }
         impacts.sort(Comparator
-                .comparing(PreMarketEventImpactResp::getPriority, Comparator.nullsLast(Comparator.reverseOrder()))
+                .comparingInt(PreMarketEventHeuristics::relevanceScore)
+                .reversed()
                 .thenComparing(PreMarketEventImpactResp::getPublishedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())));
-        if (impacts.size() > 5) {
-            return new ArrayList<>(impacts.subList(0, 5));
+        List<PreMarketEventImpactResp> distinctImpacts = new ArrayList<>();
+        Set<String> topicKeys = new HashSet<>();
+        for (PreMarketEventImpactResp impact : impacts) {
+            if (topicKeys.add(PreMarketEventHeuristics.topicKey(impact))) {
+                distinctImpacts.add(impact);
+            }
+            if (distinctImpacts.size() >= 3) {
+                break;
+            }
         }
-        return impacts;
-    }
-
-    private boolean isUsefulEvent(PreMarketEventImpactResp impact) {
-        if (Objects.isNull(impact) || StringUtils.isBlank(impact.getTitle())) {
-            return false;
-        }
-        if ("ANNOUNCEMENT".equals(impact.getEventType())) {
-            return CollUtil.isNotEmpty(impact.getRelatedCodes());
-        }
-        if (CollUtil.isNotEmpty(impact.getRelatedCodes()) || CollUtil.isNotEmpty(impact.getThemes())) {
-            return true;
-        }
-        return "MARKET".equals(impact.getImpactScope())
-                && ("POLICY".equals(impact.getEventType()) || "EMERGENCY".equals(impact.getEventType()))
-                && Objects.nonNull(impact.getPriority())
-                && impact.getPriority() >= 4;
+        return distinctImpacts;
     }
 
     private String resolveLlmSummary(boolean force,
                                      int bull,
                                      int bear,
-                                     List<NewsPulseCardResp> cards,
-                                     List<String> hotThemes,
-                                     String biasLabel,
-                                     String marketStance,
-                                     String effectHint) {
-        String cacheKey = LocalDate.now() + "|" + bull + "|" + bear + "|" + cards.size()
-                + "|" + (cards.isEmpty() ? "" : cards.get(0).getId());
+                                     List<PreMarketEventImpactResp> impacts,
+                                     String biasLabel) {
+        String cacheKey = LocalDate.now() + "|" + bull + "|" + bear + "|" + impacts.hashCode();
         CachedSummary cached = summaryCache.get();
         int ttl = Math.max(60, aiChatProperties.getSummaryCacheSeconds());
         if (!force && Objects.nonNull(cached)
@@ -264,26 +269,29 @@ public class NewsPulseServiceImpl implements INewsPulseService {
 
         StringBuilder lines = new StringBuilder();
         int i = 1;
-        for (NewsPulseCardResp card : cards) {
+        for (PreMarketEventImpactResp impact : impacts) {
             lines.append(i++).append(". [")
-                    .append(card.getSentiment()).append("][★").append(card.getStars()).append("] ")
-                    .append(card.getTitle());
-            if (CollUtil.isNotEmpty(card.getThemes())) {
-                lines.append(" | 题材:").append(String.join("/", card.getThemes()));
+                    .append(impact.getDirection()).append("][重要度")
+                    .append(impact.getPriority()).append("] ")
+                    .append(impact.getTitle());
+            if (CollUtil.isNotEmpty(impact.getRelatedCodes())) {
+                lines.append(" | 代码:").append(String.join("/", impact.getRelatedCodes()));
             }
+            if (CollUtil.isNotEmpty(impact.getThemes())) {
+                lines.append(" | 题材:").append(String.join("/", impact.getThemes()));
+            }
+            lines.append(" | 传导:").append(impact.getImpactExplanation());
             lines.append('\n');
         }
 
-        String system = "你是 A 股盘前消息面分析助手。只根据给定新闻列表归纳，禁止编造未出现的事件或数据。"
-                + "输出一段中文（80-140字），格式："
-                + "利好方向：…；承压方向：…；整体…。"
-                + "语气简洁专业，不要用 markdown。";
+        String system = "你是 A 股券商晨会编辑。只根据给定的高相关事件归纳，禁止补充列表之外的事件或数据。"
+                + "必须输出一段中文（90-160字），严格使用格式："
+                + "首要变量：…；A股映射：…；开盘验证：…。"
+                + "首要变量只能写最重要事件，A股映射必须写明确板块或代码，开盘验证必须写可观察条件。"
+                + "不要引用新闻数量、市场立场或赚钱效应充当结论，不要使用 markdown。";
         String user = "统计：利好 " + bull + " 条，利空 " + bear + " 条，综合标签「"
                 + (StringUtils.isBlank(biasLabel) ? "中性" : biasLabel) + "」。\n"
-                + "市场立场：" + (StringUtils.isBlank(marketStance) ? "未知" : marketStance) + "\n"
-                + "赚钱效应：" + (StringUtils.isBlank(effectHint) ? "未知" : effectHint) + "\n"
-                + "热点主题：" + (CollUtil.isEmpty(hotThemes) ? "无" : String.join("、", hotThemes)) + "\n"
-                + "新闻列表：\n" + lines;
+                + "高相关事件 Top 3：\n" + lines;
 
         String text = kimiChatClient.chat(system, user, 512);
         if (StringUtils.isNotBlank(text)) {
@@ -293,85 +301,56 @@ public class NewsPulseServiceImpl implements INewsPulseService {
         return null;
     }
 
-    private String buildRuleSummary(int bull,
-                                    int bear,
-                                    List<NewsPulseCardResp> cards,
-                                    List<String> hotThemes,
-                                    String biasLabel,
-                                    String marketStance,
-                                    String effectHint) {
-        List<String> bullThemes = new ArrayList<>();
-        List<String> bearThemes = new ArrayList<>();
-        for (NewsPulseCardResp card : cards) {
-            if (CollUtil.isEmpty(card.getThemes())) {
-                continue;
-            }
-            if ("利好".equals(card.getSentiment())) {
-                for (String t : card.getThemes()) {
-                    if (!bullThemes.contains(t) && bullThemes.size() < 4) {
-                        bullThemes.add(t);
+    private String buildRuleSummary(List<PreMarketEventImpactResp> impacts) {
+        if (CollUtil.isEmpty(impacts)) {
+            return "首要变量：暂无可验证的高相关事件；A股映射：当前没有明确指向板块或个股的新增线索；"
+                    + "开盘验证：等待权威政策、公司公告或量价反馈。";
+        }
+        PreMarketEventImpactResp primaryImpact = impacts.get(0);
+        List<String> targets = new ArrayList<>();
+        for (PreMarketEventImpactResp impact : impacts) {
+            if (CollUtil.isNotEmpty(impact.getRelatedCodes())) {
+                for (String code : impact.getRelatedCodes()) {
+                    if (!targets.contains(code) && targets.size() < 4) {
+                        targets.add(code);
                     }
                 }
-            } else if ("利空".equals(card.getSentiment())) {
-                for (String t : card.getThemes()) {
-                    if (!bearThemes.contains(t) && bearThemes.size() < 3) {
-                        bearThemes.add(t);
+            }
+            if (CollUtil.isNotEmpty(impact.getThemes())) {
+                for (String theme : impact.getThemes()) {
+                    if (!targets.contains(theme) && targets.size() < 4) {
+                        targets.add(theme);
                     }
                 }
             }
         }
-        StringBuilder sb = new StringBuilder();
-        sb.append("利好方向：");
-        if (CollUtil.isNotEmpty(bullThemes)) {
-            sb.append(String.join("+", bullThemes));
-        } else if (CollUtil.isNotEmpty(hotThemes)) {
-            sb.append(String.join("+", hotThemes.subList(0, Math.min(3, hotThemes.size()))));
+        String transmission = CollUtil.isNotEmpty(targets)
+                ? "优先观察" + String.join("、", targets)
+                : "先看大盘风险偏好与政策受益方向";
+        String primaryTitle = primaryImpact.getTitle();
+        if (primaryTitle.length() > 52) {
+            primaryTitle = primaryTitle.substring(0, 52) + "…";
+        }
+        String openingValidation;
+        if ("EARNINGS".equals(primaryImpact.getEventType())) {
+            openingValidation = "对照业绩预期与指引，观察关联标的竞价和成交反馈";
+        } else if ("POLICY".equals(primaryImpact.getEventType())) {
+            openingValidation = "核对正式文件，并观察受益方向竞价强度与量能";
+        } else if ("ANNOUNCEMENT".equals(primaryImpact.getEventType())) {
+            openingValidation = "核对公告规模、条件和落地进度，再看关联个股竞价";
         } else {
-            sb.append(bull > 0 ? "外围/政策偏暖线索" : "暂无明显主线");
+            openingValidation = "先核验权威来源与持续性，再观察相关资产价格响应";
         }
-        sb.append("；承压方向：");
-        if (CollUtil.isNotEmpty(bearThemes)) {
-            sb.append(String.join("、", bearThemes));
-        } else {
-            sb.append(bear > 0 ? "个别利空扰动" : "暂无显著利空");
-        }
-        sb.append("。整体");
-        if (StringUtils.isNotBlank(biasLabel)) {
-            sb.append(biasLabel);
-        } else {
-            sb.append("中性观望");
-        }
-        if (StringUtils.isNotBlank(marketStance)) {
-            sb.append("，行情立场偏").append(marketStance);
-        }
-        if (StringUtils.isNotBlank(effectHint)) {
-            sb.append("（").append(effectHint).append("）");
-        }
-        sb.append("。");
-        return sb.toString();
+        return "首要变量：" + primaryTitle + "；A股映射：" + transmission
+                + "；开盘验证：" + openingValidation + "。";
     }
 
-    private String resolveBiasLabel(int bull, int bear, String marketStance, String effectHint) {
-        if (StringUtils.isNotBlank(effectHint)) {
-            if (effectHint.contains("强") || effectHint.contains("偏多") || effectHint.contains("赚钱")) {
-                return "涨稍多";
-            }
-            if (effectHint.contains("弱") || effectHint.contains("偏空") || effectHint.contains("亏钱")) {
-                return "跌稍多";
-            }
+    private String resolveBiasLabel(int bull, int bear) {
+        if (bull > bear) {
+            return "消息偏多";
         }
-        if ("进攻".equals(marketStance)) {
-            return "涨稍多";
-        }
-        if ("防守".equals(marketStance)) {
-            return "跌稍多";
-        }
-        int diff = bull - bear;
-        if (diff >= 2) {
-            return "涨稍多";
-        }
-        if (diff <= -2) {
-            return "跌稍多";
+        if (bear > bull) {
+            return "消息偏空";
         }
         return "中性";
     }

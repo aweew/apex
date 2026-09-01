@@ -30,6 +30,8 @@ import {
 import { getCurrentUser, logout } from './api/auth'
 import { recordPageView } from './api/usage.js'
 import { resolveUsageModule } from './utils/userUsage.js'
+import { isWeekendReportVisible } from './utils/weekendReportVisibility.js'
+import { isPostMarketReportVisible } from './utils/postMarketReportVisibility.js'
 import {
   chinaMarketDate,
   clearDataFreshness,
@@ -52,6 +54,7 @@ const settingsOpen = ref(false)
 const mobileMenuOpen = ref(false)
 const mobileMenuProgress = ref(0)
 const mobileMenuDragging = ref(false)
+const MOBILE_MENU_RIGHT_GAP = 16
 const isMobileViewport = ref(window.innerWidth <= 900)
 const mobileViewportWidth = ref(window.innerWidth)
 const query = ref('')
@@ -68,6 +71,7 @@ const mobileMenuCloseRef = ref(null)
 const appActivityVisible = ref(false)
 const appActivityFinishing = ref(false)
 const mobileModuleTitle = ref('')
+const weekendReportClock = ref(new Date())
 const mobileBackPath = ref('')
 const mobileBackLabel = ref('')
 const currentUser = ref(getCurrentUser())
@@ -100,7 +104,13 @@ const mobileMenuDrawerStyle = computed(() => (isMobileViewport.value
   ? { transform: `translate3d(${(mobileMenuProgress.value - 1) * 100}%, 0, 0)` }
   : undefined))
 const mobileMenuShellStyle = computed(() => (isMobileViewport.value
-  ? { '--mobile-menu-page-offset': `${menuContentOffset(mobileMenuProgress.value, mobileViewportWidth.value)}px` }
+  ? {
+      '--mobile-menu-right-gap': `${MOBILE_MENU_RIGHT_GAP}px`,
+      '--mobile-menu-page-offset': `${menuContentOffset(
+        mobileMenuProgress.value,
+        Math.max(0, mobileViewportWidth.value - MOBILE_MENU_RIGHT_GAP),
+      )}px`,
+    }
   : undefined))
 const settingsDrawerDirection = computed(() => (isMobileViewport.value ? 'btt' : 'rtl'))
 const settingsDrawerSize = computed(() => (isMobileViewport.value ? '74%' : '380px'))
@@ -108,6 +118,7 @@ const COMMAND_ROUTE_ITEMS = [
   { to: '/dashboard', label: '看板', detail: '市场立场与今日指挥', keywords: '首页 工作台' },
   { to: '/pre-market-report', label: '盘前研报', detail: '盘前市场、主线与组合风险研判', keywords: '晨报 研报 市场判断' },
   { to: '/weekend-report', label: '周末研报', detail: '上周走势、周末消息与下周主线', keywords: '周末 消息面 研报 主线 周日' },
+  { to: '/post-market-report', label: '盘后总结', detail: '大盘、板块、主线、明星个股与游资动向', keywords: '收盘 复盘 龙虎榜 资金 席位' },
   { to: '/decision', label: '智能决策', detail: '买卖清单与执行条件', keywords: '决策 买入 卖出' },
   { to: '/watchlist', label: '自选', detail: '维护关注标的', keywords: '股票 分组' },
   { to: '/observe', label: '观察池', detail: '跟踪触发条件', keywords: '提醒 观察' },
@@ -124,6 +135,8 @@ const filteredRouteCommands = computed(() => {
   const keyword = String(query.value || '').trim().toLowerCase()
   return COMMAND_ROUTE_ITEMS
     .filter((item) => !(item.adminOnly && !isAdmin.value))
+    .filter((item) => item.to !== '/weekend-report' || isWeekendReportVisible(weekendReportClock.value))
+    .filter((item) => item.to !== '/post-market-report' || isPostMarketReportVisible(weekendReportClock.value, tradingCalendar.value))
     .filter((item) => `${item.label} ${item.detail} ${item.keywords}`.toLowerCase().includes(keyword))
     .slice(0, keyword ? COMMAND_ROUTE_ITEMS.length : 6)
     .map((item) => ({ ...item, kind: 'route' }))
@@ -201,6 +214,7 @@ function resolveRouteLabel(pathname) {
     ['/dashboard', '看板'],
     ['/pre-market-report', '盘前研报'],
     ['/weekend-report', '周末研报'],
+    ['/post-market-report', '盘后总结'],
     ['/decision', '智能决策'],
     ['/ai-center', '小灵'],
     ['/watchlist', '自选'],
@@ -735,7 +749,10 @@ watch(
 onMounted(() => {
   pingHealth()
   void syncTradingCalendar()
-  healthTimer = setInterval(pingHealth, 30000)
+  healthTimer = setInterval(() => {
+    pingHealth()
+    weekendReportClock.value = new Date()
+  }, 30000)
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('resize', closeMobileMenuOnDesktop)
   window.addEventListener('resize', scheduleMobileModuleTitle)
@@ -2254,7 +2271,7 @@ onBeforeUnmount(() => {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 102;
-    width: 100vw;
+    width: calc(100vw - var(--mobile-menu-right-gap, 16px));
     max-width: none;
     height: 100vh;
     height: 100dvh;

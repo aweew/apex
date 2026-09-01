@@ -77,6 +77,7 @@ const TAB_META = {
 
 const TYPE_LABEL = { INDUSTRY: '行业', CONCEPT: '概念', THEME: '题材' }
 const RANKING_PAGE_SIZE = 50
+const ROTATION_DAY_COUNT = 5
 const MOBILE_PRIMARY_SORTS = [
   { label: '涨跌', fullLabel: '涨跌幅', value: 'pctChg' },
   { label: '3日', fullLabel: '3日涨幅', value: 'pctChg3d' },
@@ -192,7 +193,7 @@ async function loadMainline(date) {
 async function loadRotation() {
   rotationLoading.value = true
   try {
-    const res = await fetchSectorRotation({ days: 10, type: activeTab.value })
+    const res = await fetchSectorRotation({ days: ROTATION_DAY_COUNT, type: activeTab.value })
     rotation.value = res.data
   } catch {
     rotation.value = null
@@ -644,7 +645,7 @@ onBeforeUnmount(() => {
     <section v-loading="rotationLoading" class="rotation">
       <div class="rotation-head">
         <h3><TermTip term="theme_rotation">轮动时间轴</TermTip></h3>
-        <span class="muted">{{ rotation?.message || '近10日行业涨幅 Top' }}</span>
+        <span class="muted">{{ rotation?.message || '近 5 个交易日 Top5' }}</span>
       </div>
       <div v-if="rotation?.days?.length" class="rotation-viewport">
         <div class="rotation-track">

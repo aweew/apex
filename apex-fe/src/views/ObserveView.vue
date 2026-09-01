@@ -1650,15 +1650,15 @@ onBeforeUnmount(() => {
   }
 
   .page .header > .actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
+    display: flex;
+    width: auto;
+    max-width: 100%;
     gap: 8px;
   }
 
   .page .header > .actions .btn {
     min-height: 42px;
-    padding: 8px 10px;
+    padding: 8px 14px;
     text-align: center;
     justify-content: center;
   }

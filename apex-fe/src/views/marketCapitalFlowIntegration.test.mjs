@@ -21,6 +21,12 @@ test('legacy capital flow links redirect into the market capital-flow tab', () =
   assert.match(routerSource, /path: '\/capital-flow',[\s\S]*?redirect: \(to\) => \(\{[\s\S]*?path: '\/market',[\s\S]*?tab: 'capital-flow'/)
 })
 
+test('market center supports direct navigation to the dragon tiger section', () => {
+  assert.match(capitalFlowSource, /id="dragon-tiger"/)
+  assert.match(marketSource, /'#dragon-tiger'/)
+  assert.match(marketSource, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/)
+})
+
 test('market center contains the complete sector board as a tab', () => {
   assert.match(marketSource, /import SectorBoardView from '\.\/SectorBoardView\.vue'/)
   assert.match(marketSource, /marketTab === 'sector'/)

@@ -17,7 +17,7 @@ test('main navigation keeps only the consolidated high-frequency entries', () =>
         label: '工作台',
         items: [
           ['/dashboard', '看板'],
-          ['/decision', '决策'],
+          ['/decision', '智能决策'],
           ['/watchlist', '自选'],
           ['/observe', '观察池'],
           ['/portfolio', '组合'],

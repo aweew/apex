@@ -27,9 +27,10 @@ test('observe filtering visibly confirms card changes without ignoring reduced-m
   assert.match(observeSource, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.observe-card-enter-active,[\s\S]*?transition:\s*none;/)
 })
 
-test('mobile observe actions use a balanced grid for all four frequent controls', () => {
+test('mobile observe actions keep frequent controls compact and touch-friendly', () => {
   assert.match(
     observeSource,
-    /@media \(max-width: 560px\)[\s\S]*?\.page \.header > \.actions\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+    /@media \(max-width: 560px\)[\s\S]*?\.page \.header > \.actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?width:\s*auto;[\s\S]*?max-width:\s*100%;/,
   )
+  assert.match(observeSource, /\.page \.header > \.actions \.btn\s*\{[\s\S]*?min-height:\s*42px;/)
 })

@@ -25,15 +25,21 @@ test('stock screener uses a dedicated mobile filter surface with progressive dis
   assert.match(screenerSource, /mobileAdvancedFilterCount/)
 })
 
-test('mobile screener flattens primary filtering into search scope conditions and one submit action', () => {
+test('mobile screener searches the full market with compact condition and submit actions', () => {
   assert.doesNotMatch(mobileFreeFilterSource, /class="mobile-filter-heading"|<h2>筛选条件<\/h2>/)
-  assert.match(mobileFreeFilterSource, /class="mobile-filter-controls"/)
-  assert.match(mobileFreeFilterSource, /class="mobile-segmented"[\s\S]*?>全部股票<[\s\S]*?>自选</)
+  assert.match(mobileFreeFilterSource, /class="mobile-search-row"/)
+  assert.doesNotMatch(mobileFreeFilterSource, /class="mobile-scope-field"|class="mobile-segmented"|>全部股票<|>自选</)
   assert.match(mobileFreeFilterSource, /class="advanced-filter-toggle"[\s\S]*?<Filter \/>[\s\S]*?<span>条件<\/span>/)
   assert.match(mobileFreeFilterSource, /class="mobile-filter-reset"[\s\S]*?:icon="RefreshRight"[\s\S]*?aria-label="重置筛选条件"/)
-  assert.match(screenerSource, /\.mobile-filter-controls\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 92px;/)
-  assert.match(screenerSource, /\.mobile-filter-actions\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 44px;/)
+  assert.match(screenerSource, /\.mobile-search-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto;/)
+  assert.match(screenerSource, /\.mobile-filter-actions\s*\{[\s\S]*?display:\s*flex;/)
+  assert.match(screenerSource, /\.mobile-filter-actions :deep\(\.el-button\)\s*\{[\s\S]*?width:\s*auto;/)
   assert.match(screenerSource, /\.mobile-filter-surface\s*\{[\s\S]*?box-shadow:\s*none;/)
+})
+
+test('free screener always queries the full market while watchlist stays outside this page', () => {
+  assert.match(screenerSource, /groupName:\s*'__MARKET__'/)
+  assert.doesNotMatch(screenerSource, /v-model="form\.scope"|v-model="form\.groupName"|function resolveGroupName/)
 })
 
 test('desktop form and table remain separate from mobile controls and results', () => {
@@ -66,8 +72,8 @@ test('mobile screener uses compact actions and pagination', () => {
   assert.match(screenerSource, /class="mobile-batch-results"/)
   assert.match(screenerSource, /\.mobile-filter-actions :deep\(\.el-button\)[\s\S]*?min-height:\s*44px;/)
   assert.match(screenerSource, /\.mobile-pager-button\s*\{[\s\S]*?min-height:\s*44px;/)
-  assert.match(screenerSource, /\.advanced-filter-toggle\s*\{[\s\S]*?min-height:\s*48px;/)
-  assert.match(screenerSource, /\.mobile-segmented button\s*\{[\s\S]*?min-height:\s*44px;/)
+  assert.match(screenerSource, /\.advanced-filter-toggle\s*\{[\s\S]*?width:\s*auto;[\s\S]*?min-height:\s*44px;/)
+  assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.screener-mode-switch :deep\(\.el-segmented\)\s*\{[\s\S]*?width:\s*max-content;[\s\S]*?max-width:\s*100%;/)
 })
 
 test('mobile stock cards keep key metrics in stable responsive tracks', () => {

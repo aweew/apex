@@ -1,15 +1,18 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { dashboardHome } from '../api/dashboard'
 import { fetchWeekendMarketReport } from '../api/weekendReport'
+import { fetchPostMarketReport } from '../api/postMarketReport'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
-import { publishDataFreshness, staleDataTime } from '../utils/dataFreshness.js'
-import IntradaySparkline from '../components/IntradaySparkline.vue'
+import { publishDataFreshness, staleDataTime, tradingCalendar } from '../utils/dataFreshness.js'
+import { isWeekendReportVisible } from '../utils/weekendReportVisibility.js'
+import { isPostMarketReportVisible } from '../utils/postMarketReportVisibility.js'
+import IntradayKlineThumbnail from '../components/IntradayKlineThumbnail.vue'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v21'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v23'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
@@ -20,6 +23,9 @@ const morningNewsExpanded = ref(false)
 const opinionPreviewOpen = ref(false)
 const opinionPreview = ref(null)
 const weekendReport = ref(null)
+const postMarketReport = ref(null)
+const weekendReportClock = ref(new Date())
+let weekendReportClockTimer
 
 function readHomeCache() {
   try {
@@ -59,6 +65,18 @@ const weekendReportMeta = computed(() => {
   const source = weekendReport.value.reportSource === 'AI' ? '智能研判' : '规则研判'
   return [date, source].filter(Boolean).join(' · ') || '已生成'
 })
+const weekendReportVisible = computed(() => (
+  Boolean(weekendReport.value) && isWeekendReportVisible(weekendReportClock.value)
+))
+const postMarketReportVisible = computed(() => (
+  isPostMarketReportVisible(weekendReportClock.value, tradingCalendar.value)
+))
+const postMarketReportMeta = computed(() => {
+  if (!postMarketReport.value) return '正在生成最新交易日总结'
+  const date = postMarketReport.value.tradeDate || postMarketReport.value.reportDate
+  const source = postMarketReport.value.reportSource === 'AI' ? '智能研判' : '规则研判'
+  return [date, source].filter(Boolean).join(' · ') || '已生成'
+})
 const morningBriefingTime = computed(() => staleDataTime({
   tradeDate: morningBriefing.value?.tradeDate,
   updatedAt: morningBriefing.value?.generatedAt,
@@ -69,10 +87,13 @@ const morningBriefingTime = computed(() => staleDataTime({
   ) || undefined,
 }))
 const breadthForecast = computed(() => home.value?.breadthForecast || null)
+const visibleBreadthForecastReasons = computed(() => (
+  (breadthForecast.value?.reasons || []).filter((reason) => reason !== '已按历史偏差校准')
+))
 const newsPulse = computed(() => morningBriefing.value?.newsPulse || null)
 const preMarketEventImpacts = computed(() => newsPulse.value?.eventImpacts || [])
 const visiblePreMarketEventImpacts = computed(() => (
-  morningNewsExpanded.value ? preMarketEventImpacts.value : preMarketEventImpacts.value.slice(0, 3)
+  preMarketEventImpacts.value.slice(0, 3)
 ))
 const marketOpinion = computed(() => morningBriefing.value?.marketOpinion || null)
 const institutionViews = computed(() => marketOpinion.value?.institutionViews || [])
@@ -98,13 +119,10 @@ const externalMarketAvailableCount = computed(
   () => externalMarketItems.value.filter((item) => item.available).length,
 )
 const ftseA50Future = computed(() => morningBriefing.value?.ftseA50Future || null)
-const chinaAssetIntradayPoints = computed(() => (
-  ftseA50Future.value?.intradayPoints
-  || ftseA50Future.value?.points
-  || []
-))
 const chinaAssetPreviousClose = computed(() => {
   const quote = ftseA50Future.value
+  const previousClose = Number(quote?.previousClose)
+  if (Number.isFinite(previousClose)) return previousClose
   const latest = Number(quote?.latestPrice)
   const pctChg = Number(quote?.pctChg)
   if (Number.isFinite(latest) && Number.isFinite(pctChg) && pctChg !== -100) {
@@ -487,6 +505,32 @@ async function loadWeekendReport() {
   }
 }
 
+async function loadPostMarketReport() {
+  if (!postMarketReportVisible.value) return
+  try {
+    const response = await fetchPostMarketReport()
+    postMarketReport.value = response.data
+  } catch {
+    // 盘后总结入口允许生成中状态，不影响看板主体加载。
+  }
+}
+
+function syncWeekendReportVisibility() {
+  const wasVisible = isWeekendReportVisible(weekendReportClock.value)
+  weekendReportClock.value = new Date()
+  const visible = isWeekendReportVisible(weekendReportClock.value)
+  if (!visible) {
+    weekendReport.value = null
+  } else if (!wasVisible) {
+    void loadWeekendReport()
+  }
+  if (!postMarketReportVisible.value) {
+    postMarketReport.value = null
+  } else if (!postMarketReport.value) {
+    void loadPostMarketReport()
+  }
+}
+
 onMounted(() => {
   const cached = readHomeCache()
   if (cached) {
@@ -497,6 +541,12 @@ onMounted(() => {
     load()
   }
   loadWeekendReport()
+  loadPostMarketReport()
+  weekendReportClockTimer = window.setInterval(syncWeekendReportVisibility, 30000)
+})
+
+onBeforeUnmount(() => {
+  if (weekendReportClockTimer) window.clearInterval(weekendReportClockTimer)
 })
 </script>
 
@@ -721,10 +771,7 @@ onMounted(() => {
     >
       <div v-if="breadthForecast.available" class="breadth-forecast-main">
         <div class="breadth-forecast-head">
-          <div>
-            <h3>盘前涨跌比预测</h3>
-            <p>平盘剔除 · {{ fmtBriefingTime(breadthForecast.generatedAt) }} 固化</p>
-          </div>
+          <h3>盘前涨跌比预测</h3>
           <span class="breadth-forecast-confidence">{{ breadthForecast.confidence || '低' }}置信度</span>
         </div>
         <div class="breadth-forecast-tug" :aria-label="`预测上涨 ${fmtForecastRatio(breadthForecast.predictedUpRatio)}，预测下跌 ${fmtForecastRatio(breadthForecast.predictedDownRatio)}`">
@@ -741,8 +788,8 @@ onMounted(() => {
             <strong>{{ fmtForecastRatio(breadthForecast.predictedDownRatio) }}</strong>
           </div>
         </div>
-        <div class="breadth-forecast-evidence">
-          <span v-for="reason in breadthForecast.reasons || []" :key="reason">{{ reason }}</span>
+        <div v-if="visibleBreadthForecastReasons.length" class="breadth-forecast-evidence">
+          <span v-for="reason in visibleBreadthForecastReasons" :key="reason">{{ reason }}</span>
         </div>
       </div>
       <div v-else class="breadth-forecast-empty">
@@ -795,6 +842,42 @@ onMounted(() => {
         <div class="effect-cell" :class="pctDir(effect.hs300PctChg)" title="000300 沪深300">
           <em>沪深300</em>
           <b>{{ fmtIndexPct(effect.hs300PctChg) }}</b>
+        </div>
+      </div>
+    </section>
+
+    <!-- ② 主线与情绪 -->
+    <section class="panel enter delay-1">
+      <div class="panel-head">
+        <div>
+          <h3>主线与情绪</h3>
+          <p class="panel-desc">今日关注题材与操作提示</p>
+        </div>
+        <div class="panel-links">
+          <el-button link type="primary" @click="router.push({ path: '/market', query: { tab: 'sector' } })">板块</el-button>
+          <el-button link type="primary" @click="router.push('/limit-up')">连板天梯</el-button>
+        </div>
+      </div>
+      <div v-if="themes.length" class="theme-row">
+        <span
+          v-for="(t, i) in themes"
+          :key="t.key"
+          class="theme-chip"
+          :style="{ '--i': i }"
+        >
+          <span class="theme-name">{{ t.name }}</span>
+          <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
+        </span>
+      </div>
+      <div v-else class="empty-guide">
+        <p>{{ loading || refreshing ? '主线加载中…' : '暂无主线题材' }}</p>
+        <span v-if="!loading && !refreshing">先在同步中心刷新「板块行情」，看板才会显示今日主线芯片与操作提示。</span>
+        <el-button v-if="!loading && !refreshing" size="small" round @click="router.push('/sync')">去同步板块</el-button>
+      </div>
+      <div v-if="tips.length" class="tip-list">
+        <div v-for="(t, i) in tips" :key="i" class="tip-item">
+          <span class="tip-dot" />
+          <span>{{ t }}</span>
         </div>
       </div>
     </section>
@@ -931,7 +1014,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="weekend-report-entry enter delay-1" aria-label="周末研报入口">
+    <section v-if="weekendReportVisible" class="weekend-report-entry enter delay-1" aria-label="周末研报入口">
       <div>
         <span class="weekend-report-entry-kicker">周末消息面</span>
         <h3>周末研报</h3>
@@ -943,6 +1026,31 @@ onMounted(() => {
           查看周末研报
           <span aria-hidden="true">→</span>
         </el-button>
+      </div>
+    </section>
+
+    <section v-if="postMarketReportVisible" class="weekend-report-entry post-market-report-entry enter delay-1" aria-label="盘后总结入口">
+      <div>
+        <span class="weekend-report-entry-kicker">最新交易日复盘</span>
+        <h3>盘后总结</h3>
+        <p>大盘强弱、板块主线、明星个股与游资动向</p>
+      </div>
+      <div class="weekend-report-entry-meta">
+        <span>{{ postMarketReportMeta }}</span>
+        <div class="post-market-entry-actions">
+          <el-button link type="primary" @click="router.push('/post-market-report')">
+            查看盘后总结
+            <span aria-hidden="true">→</span>
+          </el-button>
+          <el-button
+            link
+            type="primary"
+            @click="router.push({ path: '/market', query: { tab: 'capital-flow' }, hash: '#dragon-tiger' })"
+          >
+            龙虎榜
+            <span aria-hidden="true">→</span>
+          </el-button>
+        </div>
       </div>
     </section>
 
@@ -981,11 +1089,6 @@ onMounted(() => {
         :class="{ 'is-market-collapsed': !morningMarketExpanded }"
       >
         <div class="morning-context-block overnight-block">
-          <div class="morning-block-head">
-            <h4>开盘影响</h4>
-            <span>{{ hasOpeningAuction ? '竞价确认与外盘锚' : '外盘锚' }}</span>
-          </div>
-
           <div v-if="hasOpeningAuction" class="overnight-layer">
             <div class="overnight-layer-head">
               <h5>集合竞价确认</h5>
@@ -1004,14 +1107,26 @@ onMounted(() => {
 
           <div class="overnight-layer">
             <div class="overnight-layer-head">
-              <h5>三大指数</h5>
-              <span>涨跌幅</span>
+              <h5>隔夜美股</h5>
             </div>
             <div v-if="overnightIndexes.length" class="overnight-index-grid benchmark-index-grid">
-              <div v-for="quote in overnightIndexes" :key="quote.symbol" class="overnight-quote">
+              <div
+                v-for="quote in overnightIndexes"
+                :key="quote.symbol"
+                class="overnight-quote"
+                :class="{ 'has-intraday-chart': quote.intradayBars?.length }"
+              >
                 <div class="overnight-quote-name">
                   <strong>{{ quote.name || quote.symbol }}</strong>
                 </div>
+                <IntradayKlineThumbnail
+                  v-if="quote.intradayBars?.length"
+                  class="benchmark-intraday-chart"
+                  :bars="quote.intradayBars"
+                  :previous-close="quote.previousClose"
+                  :height="32"
+                  :label="`${quote.name || quote.symbol}日内 K 线`"
+                />
                 <b :class="pctDir(quote.pctChg)">{{ fmtIndexPct(quote.pctChg) }}</b>
               </div>
             </div>
@@ -1023,7 +1138,6 @@ onMounted(() => {
           <div class="overnight-layer">
             <div class="overnight-layer-head">
               <h5>中国资产</h5>
-              <span>富时 A50 期指连续 · 涨跌幅</span>
             </div>
             <div v-if="ftseA50Future" class="overnight-index-grid china-assets-grid">
               <div class="overnight-quote">
@@ -1032,11 +1146,11 @@ onMounted(() => {
                 </div>
                 <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
               </div>
-              <div class="china-asset-chart">
-                <IntradaySparkline
-                  :points="chinaAssetIntradayPoints"
+              <div v-if="ftseA50Future.intradayBars?.length" class="china-asset-chart">
+                <IntradayKlineThumbnail
+                  :bars="ftseA50Future.intradayBars"
                   :previous-close="chinaAssetPreviousClose"
-                  label="富时 A50 期指连续日内走势"
+                  label="富时 A50 期指连续日内 K 线"
                 />
               </div>
             </div>
@@ -1172,7 +1286,7 @@ onMounted(() => {
           <section v-if="preMarketEventImpacts.length" class="pre-market-event-impact" aria-label="盘前事件影响">
             <div class="pre-market-event-head">
               <h5>盘前事件影响</h5>
-              <span>按重要度排序</span>
+              <span>重要度与A股相关性 Top 3</span>
             </div>
             <article v-for="item in visiblePreMarketEventImpacts" :key="`${item.eventType}-${item.title}`" class="pre-market-event-item">
               <div class="pre-market-event-meta">
@@ -1319,7 +1433,7 @@ onMounted(() => {
     </section>
 
     <div class="two-col">
-      <!-- ② 今日决策 -->
+      <!-- ③ 今日决策 -->
       <section class="panel action-panel decision-action-panel enter delay-1">
         <div class="panel-head">
           <div>
@@ -1479,7 +1593,7 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- ③ 持仓行动 -->
+      <!-- ④ 持仓行动 -->
       <section class="panel action-panel holding-action-panel enter delay-2">
         <div class="panel-head">
           <div>
@@ -1568,42 +1682,6 @@ onMounted(() => {
         </div>
       </section>
     </div>
-
-    <!-- ④ 主线与情绪 -->
-    <section class="panel enter delay-3">
-      <div class="panel-head">
-        <div>
-          <h3>主线与情绪</h3>
-          <p class="panel-desc">今日关注题材与操作提示</p>
-        </div>
-        <div class="panel-links">
-          <el-button link type="primary" @click="router.push({ path: '/market', query: { tab: 'sector' } })">板块</el-button>
-          <el-button link type="primary" @click="router.push('/limit-up')">连板天梯</el-button>
-        </div>
-      </div>
-      <div v-if="themes.length" class="theme-row">
-        <span
-          v-for="(t, i) in themes"
-          :key="t.key"
-          class="theme-chip"
-          :style="{ '--i': i }"
-        >
-          <span class="theme-name">{{ t.name }}</span>
-          <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
-        </span>
-      </div>
-      <div v-else class="empty-guide">
-        <p>{{ loading || refreshing ? '主线加载中…' : '暂无主线题材' }}</p>
-        <span v-if="!loading && !refreshing">先在同步中心刷新「板块行情」，看板才会显示今日主线芯片与操作提示。</span>
-        <el-button v-if="!loading && !refreshing" size="small" round @click="router.push('/sync')">去同步板块</el-button>
-      </div>
-      <div v-if="tips.length" class="tip-list">
-        <div v-for="(t, i) in tips" :key="i" class="tip-item">
-          <span class="tip-dot" />
-          <span>{{ t }}</span>
-        </div>
-      </div>
-    </section>
 
     <!-- ⑤ 数据可信度 -->
     <section
@@ -1704,6 +1782,12 @@ onMounted(() => {
 
 .weekend-report-entry-meta :deep(.el-button) {
   margin: 0;
+}
+
+.post-market-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .dash-header .eyebrow {
@@ -2463,7 +2547,6 @@ onMounted(() => {
   font-weight: 650;
 }
 
-.breadth-forecast-head p,
 .breadth-forecast-empty p {
   margin: 5px 0 0;
   color: var(--muted);
@@ -3517,6 +3600,21 @@ onMounted(() => {
   min-height: 48px;
 }
 
+.benchmark-index-grid .overnight-quote.has-intraday-chart {
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 128px) auto;
+  gap: 10px;
+}
+
+.benchmark-intraday-chart {
+  grid-column: 2;
+  min-width: 0;
+  width: 100%;
+}
+
+.benchmark-index-grid .overnight-quote.has-intraday-chart > b {
+  grid-column: 3;
+}
+
 .benchmark-index-grid .overnight-quote-name strong {
   font-size: 13px;
 }
@@ -4104,6 +4202,11 @@ onMounted(() => {
     white-space: normal;
   }
 
+  .post-market-entry-actions {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+
   .observe-chips {
     grid-template-columns: 1fr;
   }
@@ -4220,6 +4323,11 @@ onMounted(() => {
     align-items: center;
     gap: 10px;
     padding: 6px 8px;
+  }
+
+  .benchmark-index-grid .overnight-quote.has-intraday-chart {
+    grid-template-columns: minmax(0, 1fr) minmax(72px, 112px) auto;
+    gap: 8px;
   }
 
   .overnight-star-grid {

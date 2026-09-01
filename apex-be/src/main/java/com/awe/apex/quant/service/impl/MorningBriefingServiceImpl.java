@@ -5,6 +5,7 @@ import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.bot.config.ApexBotProperties;
 import com.awe.apex.quant.cache.RedisCacheService;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
+import com.awe.apex.quant.domain.dto.GlobalMarketIntradayResp;
 import com.awe.apex.quant.domain.dto.ExternalMarketItemResp;
 import com.awe.apex.quant.domain.dto.MarketOpinionRadarResp;
 import com.awe.apex.quant.domain.dto.NewsPulseCardResp;
@@ -12,6 +13,7 @@ import com.awe.apex.quant.domain.dto.NewsPulseResp;
 import com.awe.apex.quant.domain.dto.OvernightMarketQuote;
 import com.awe.apex.quant.domain.dto.OvernightMarketTheme;
 import com.awe.apex.quant.market.GlobalFuturesQuoteClient;
+import com.awe.apex.quant.market.GlobalMarketIntradayClient;
 import com.awe.apex.quant.market.ExternalMarketIndicatorEnum;
 import com.awe.apex.quant.market.ExternalMarketQuoteClient;
 import com.awe.apex.quant.market.MarketBriefingMath;
@@ -43,7 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 public class MorningBriefingServiceImpl implements IMorningBriefingService {
 
-    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest:v4";
+    private static final String BRIEFING_CACHE_KEY = "apex:morning-briefing:latest:v6";
     private static final Duration BRIEFING_CACHE_TTL = Duration.ofHours(30);
     private static final ExecutorService MORNING_BRIEFING_REFRESH_POOL = Executors.newSingleThreadExecutor(runnable -> {
         Thread refreshThread = new Thread(runnable, "morning-briefing-refresh");
@@ -64,6 +66,9 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
 
     @Resource
     private GlobalFuturesQuoteClient globalFuturesQuoteClient;
+
+    @Resource
+    private GlobalMarketIntradayClient globalMarketIntradayClient;
 
     @Resource
     private ExternalMarketQuoteClient externalMarketQuoteClient;
@@ -129,6 +134,10 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 parseSymbols(properties.getMorningBriefing().getChinaConceptSymbols()));
         OvernightMarketQuote ftseA50Future = globalFuturesQuoteClient.fetch(
                 properties.getMorningBriefing().getFtseA50FutureSymbol());
+        for (OvernightMarketQuote indexQuote : indexQuotes) {
+            attachIntradayKline(indexQuote);
+        }
+        attachIntradayKline(ftseA50Future);
         List<ExternalMarketItemResp> externalMarketItems = externalMarketQuoteClient.fetch();
         if (Objects.isNull(externalMarketItems)) {
             externalMarketItems = List.of();
@@ -256,6 +265,18 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
                 refreshRunning.set(false);
             }
         });
+    }
+
+    private void attachIntradayKline(OvernightMarketQuote marketQuote) {
+        if (Objects.isNull(marketQuote) || StringUtils.isBlank(marketQuote.getSymbol())) {
+            return;
+        }
+        GlobalMarketIntradayResp intraday = globalMarketIntradayClient.fetch(marketQuote.getSymbol());
+        if (Objects.isNull(intraday) || CollUtil.isEmpty(intraday.getBars())) {
+            return;
+        }
+        marketQuote.setPreviousClose(intraday.getPreviousClose());
+        marketQuote.setIntradayBars(intraday.getBars());
     }
 
     private int countAvailableExternalMarketItems(List<ExternalMarketItemResp> externalMarketItems) {

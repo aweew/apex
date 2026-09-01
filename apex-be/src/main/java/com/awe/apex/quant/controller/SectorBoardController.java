@@ -104,7 +104,7 @@ public class SectorBoardController {
     @GetMapping("/rotation")
     public Result<SectorRotationResp> rotation(
             @RequestParam(defaultValue = "INDUSTRY") String type,
-            @RequestParam(defaultValue = "10") Integer days,
+            @RequestParam(defaultValue = "5") Integer days,
             @RequestParam(defaultValue = "5") Integer topN) {
         return Result.success(sectorBoardService.rotation(type, days, topN));
     }
