@@ -40,7 +40,6 @@ import {
   tradingCalendar,
 } from './utils/dataFreshness.js'
 import {
-  menuContentOffset,
   menuSwipeProgress,
   resolveMenuSwipeAxis,
   shouldOpenMenuAfterSwipe,
@@ -54,9 +53,7 @@ const settingsOpen = ref(false)
 const mobileMenuOpen = ref(false)
 const mobileMenuProgress = ref(0)
 const mobileMenuDragging = ref(false)
-const MOBILE_MENU_RIGHT_GAP = 16
 const isMobileViewport = ref(window.innerWidth <= 900)
-const mobileViewportWidth = ref(window.innerWidth)
 const query = ref('')
 const loading = ref(false)
 const results = ref([])
@@ -103,14 +100,8 @@ const mobileMenuActive = computed(() => (
 const mobileMenuDrawerStyle = computed(() => (isMobileViewport.value
   ? { transform: `translate3d(${(mobileMenuProgress.value - 1) * 100}%, 0, 0)` }
   : undefined))
-const mobileMenuShellStyle = computed(() => (isMobileViewport.value
-  ? {
-      '--mobile-menu-right-gap': `${MOBILE_MENU_RIGHT_GAP}px`,
-      '--mobile-menu-page-offset': `${menuContentOffset(
-        mobileMenuProgress.value,
-        Math.max(0, mobileViewportWidth.value - MOBILE_MENU_RIGHT_GAP),
-      )}px`,
-    }
+const mobileMenuScrimStyle = computed(() => (isMobileViewport.value
+  ? { opacity: mobileMenuProgress.value }
   : undefined))
 const settingsDrawerDirection = computed(() => (isMobileViewport.value ? 'btt' : 'rtl'))
 const settingsDrawerSize = computed(() => (isMobileViewport.value ? '74%' : '380px'))
@@ -160,6 +151,8 @@ let activityShowTimer
 let activityHideTimer
 let moduleTitleFrame
 let mobileMenuSwipe
+let mobileMenuFrame
+let pendingMobileMenuProgress
 
 function readReduceMotionPreference() {
   try {
@@ -275,10 +268,30 @@ async function logoutCurrentUser() {
 }
 
 function setMobileMenu(open) {
+  if (mobileMenuFrame) window.cancelAnimationFrame(mobileMenuFrame)
+  mobileMenuFrame = undefined
+  pendingMobileMenuProgress = undefined
   mobileMenuDragging.value = false
   mobileMenuOpen.value = open
   mobileMenuProgress.value = open ? 1 : 0
   mobileMenuSwipe = undefined
+}
+
+function scheduleMobileMenuProgress(progress) {
+  pendingMobileMenuProgress = progress
+  if (mobileMenuFrame) return
+  mobileMenuFrame = window.requestAnimationFrame(() => {
+    mobileMenuProgress.value = pendingMobileMenuProgress
+    mobileMenuFrame = undefined
+  })
+}
+
+function flushMobileMenuProgress() {
+  if (pendingMobileMenuProgress === undefined) return
+  if (mobileMenuFrame) window.cancelAnimationFrame(mobileMenuFrame)
+  mobileMenuFrame = undefined
+  mobileMenuProgress.value = pendingMobileMenuProgress
+  pendingMobileMenuProgress = undefined
 }
 
 function syncFullscreenState() {
@@ -355,10 +368,7 @@ function onMobileMenuTouchStart(event) {
   mobileMenuSwipe = {
     startX: touch.clientX,
     startY: touch.clientY,
-    lastX: touch.clientX,
-    lastTime: event.timeStamp,
-    velocity: 0,
-    startProgress: mobileMenuOpen.value ? 1 : 0,
+    startProgress: mobileMenuProgress.value,
     axis: 'pending',
   }
 }
@@ -385,25 +395,26 @@ function onMobileMenuTouchMove(event) {
   event.preventDefault()
 
   const drawerWidth = mobileMenuRef.value?.getBoundingClientRect?.().width || window.innerWidth
-  mobileMenuProgress.value = menuSwipeProgress(mobileMenuSwipe.startProgress, deltaX, drawerWidth)
-  const elapsed = event.timeStamp - mobileMenuSwipe.lastTime
-  if (elapsed > 0) mobileMenuSwipe.velocity = (touch.clientX - mobileMenuSwipe.lastX) / elapsed
-  mobileMenuSwipe.lastX = touch.clientX
-  mobileMenuSwipe.lastTime = event.timeStamp
+  scheduleMobileMenuProgress(menuSwipeProgress(mobileMenuSwipe.startProgress, deltaX, drawerWidth))
 }
 
-function finishMobileMenuSwipe(event) {
+function finishMobileMenuSwipe() {
   if (!mobileMenuSwipe || mobileMenuSwipe.axis !== 'horizontal') {
     mobileMenuSwipe = undefined
     return
   }
-  const releaseVelocity = event.timeStamp - mobileMenuSwipe.lastTime > 100 ? 0 : mobileMenuSwipe.velocity
-  const shouldOpen = shouldOpenMenuAfterSwipe(mobileMenuProgress.value, releaseVelocity)
+  flushMobileMenuProgress()
+  const shouldOpen = shouldOpenMenuAfterSwipe(mobileMenuProgress.value)
+  setMobileMenu(shouldOpen)
+}
+
+function cancelMobileMenuSwipe() {
+  if (!mobileMenuSwipe) return
+  const shouldOpen = mobileMenuSwipe.startProgress >= 0.5
   setMobileMenu(shouldOpen)
 }
 
 function closeMobileMenuOnDesktop() {
-  mobileViewportWidth.value = window.innerWidth
   isMobileViewport.value = window.innerWidth <= 900
   if (!isMobileViewport.value && mobileMenuActive.value) setMobileMenu(false)
   syncMobileBackTarget()
@@ -769,6 +780,7 @@ onBeforeUnmount(() => {
   clearTimeout(activityShowTimer)
   clearTimeout(activityHideTimer)
   if (moduleTitleFrame) window.cancelAnimationFrame(moduleTitleFrame)
+  if (mobileMenuFrame) window.cancelAnimationFrame(mobileMenuFrame)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', closeMobileMenuOnDesktop)
   window.removeEventListener('resize', scheduleMobileModuleTitle)
@@ -786,11 +798,10 @@ onBeforeUnmount(() => {
     ref="shellRef"
     class="shell"
     :class="{ 'mobile-menu-dragging': mobileMenuDragging }"
-    :style="mobileMenuShellStyle"
     @touchstart="onMobileMenuTouchStart"
     @touchmove="onMobileMenuTouchMove"
     @touchend="finishMobileMenuSwipe"
-    @touchcancel="finishMobileMenuSwipe"
+    @touchcancel="cancelMobileMenuSwipe"
   >
     <nav
       v-if="!isPublicRoute"
@@ -856,6 +867,7 @@ onBeforeUnmount(() => {
         type="button"
         class="nav-scrim"
         :class="{ visible: mobileMenuActive }"
+        :style="mobileMenuScrimStyle"
         :disabled="!mobileMenuActive"
         :aria-hidden="mobileMenuActive ? undefined : 'true'"
         aria-label="关闭菜单"
@@ -2255,23 +2267,24 @@ onBeforeUnmount(() => {
     z-index: 101;
     padding: 0;
     border: 0;
-    background: transparent;
+    background: rgba(15, 23, 42, 0.42);
+    opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transition: visibility 0.3s step-end;
+    transition: opacity 0.24s ease-out, visibility 0.24s step-end;
   }
 
   .nav-scrim.visible {
     visibility: visible;
     pointer-events: auto;
-    transition: visibility 0s step-start;
+    transition: opacity 0.24s ease-out, visibility 0s step-start;
   }
 
   .links {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 102;
-    width: calc(100vw - var(--mobile-menu-right-gap, 16px));
+    width: min(calc(100vw - 64px), 360px);
     max-width: none;
     height: 100vh;
     height: 100dvh;
@@ -2287,18 +2300,23 @@ onBeforeUnmount(() => {
     box-shadow: 18px 0 54px rgba(15, 23, 42, 0.16);
     transform: translate3d(-100%, 0, 0);
     visibility: hidden;
-    transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1), visibility 0.3s step-end;
+    transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.24s step-end;
   }
 
   .links.open,
   .links.visible {
     visibility: visible;
-    transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1), visibility 0s step-start;
+    transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s step-start;
   }
 
   .links.dragging {
     transition: none;
     will-change: transform;
+  }
+
+  .mobile-menu-dragging .nav-scrim {
+    transition: none;
+    will-change: opacity;
   }
 
   .mobile-menu-head {
@@ -2503,8 +2521,6 @@ onBeforeUnmount(() => {
   .main {
     min-width: 0;
     padding-bottom: calc(76px + env(safe-area-inset-bottom));
-    transform: translate3d(var(--mobile-menu-page-offset, 0px), 0, 0);
-    transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1);
   }
 
   .mobile-bottom-nav {
@@ -2581,27 +2597,6 @@ onBeforeUnmount(() => {
 
   .mobile-bottom-nav__item:active {
     background: rgba(0, 113, 227, 0.08);
-  }
-
-  .nav > .brand-block,
-  .nav > .mobile-module-title,
-  .nav > .mobile-top-actions,
-  .nav > .app-activity {
-    transform: translate3d(var(--mobile-menu-page-offset, 0px), 0, 0);
-    transition: transform 0.3s cubic-bezier(0.22, 0.72, 0, 1);
-  }
-
-  .mobile-menu-dragging .main {
-    transition: none;
-    will-change: transform;
-  }
-
-  .mobile-menu-dragging .nav > .brand-block,
-  .mobile-menu-dragging .nav > .mobile-module-title,
-  .mobile-menu-dragging .nav > .mobile-top-actions,
-  .mobile-menu-dragging .nav > .app-activity {
-    transition: none;
-    will-change: transform;
   }
 
   .search-layer {

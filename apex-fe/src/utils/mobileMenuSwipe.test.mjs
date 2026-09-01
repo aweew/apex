@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  menuContentOffset,
   menuSwipeProgress,
   resolveMenuSwipeAxis,
   shouldOpenMenuAfterSwipe,
@@ -21,16 +20,9 @@ test('mobile menu swipe progress follows the finger within drawer bounds', () =>
   assert.equal(menuSwipeProgress(1, 60, 300), 1)
 })
 
-test('mobile menu pushes page content by the visible menu width', () => {
-  assert.equal(menuContentOffset(0, 374), 0)
-  assert.equal(menuContentOffset(0.5, 374), 187)
-  assert.equal(menuContentOffset(1, 374), 374)
-  assert.equal(menuContentOffset(1.2, 374), 374)
-})
-
-test('mobile menu swipe settles from distance or release velocity', () => {
-  assert.equal(shouldOpenMenuAfterSwipe(0.41, 0.2), false)
-  assert.equal(shouldOpenMenuAfterSwipe(0.42, 0.2), true)
-  assert.equal(shouldOpenMenuAfterSwipe(0.2, 0.5), true)
-  assert.equal(shouldOpenMenuAfterSwipe(0.8, -0.5), false)
+test('mobile menu swipe settles only from the halfway position', () => {
+  assert.equal(shouldOpenMenuAfterSwipe(0.49), false)
+  assert.equal(shouldOpenMenuAfterSwipe(0.5), true)
+  assert.equal(shouldOpenMenuAfterSwipe(0.2), false)
+  assert.equal(shouldOpenMenuAfterSwipe(0.8), true)
 })
