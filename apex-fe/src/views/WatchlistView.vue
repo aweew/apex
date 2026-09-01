@@ -1,8 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Download, MoreFilled, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, Download, Filter, MoreFilled, Refresh, RefreshLeft, Search } from '@element-plus/icons-vue'
 import {
   fetchWatchlist,
   fillQuotes,
@@ -35,9 +35,22 @@ const groupName = ref('我的自选')
 const movers = ref(null)
 const corr = ref(null)
 const viewportWidth = ref(typeof window === 'undefined' ? 1024 : window.innerWidth)
+const filtersExpanded = ref(false)
+const currentPage = ref(1)
+const tableSort = ref({ prop: '', order: '' })
+const watchlistTableRef = ref(null)
 
 const isMobileViewport = computed(() => viewportWidth.value <= 820)
 const showActionColumn = computed(() => resolveActionColumnVisible(viewportWidth.value))
+const pageSize = computed(() => (isMobileViewport.value ? 30 : 50))
+const activeFilterCount = computed(() => {
+  let count = 0
+  if (statusFilter.value) count += 1
+  if (industryFilter.value) count += 1
+  if (peMax.value !== '') count += 1
+  if (onlyHasBars.value) count += 1
+  return count
+})
 
 useSessionViewState('watchlist', {
   keyword,
@@ -86,6 +99,42 @@ const filtered = computed(() => {
   return list
 })
 
+const sortedRows = computed(() => {
+  if (!tableSort.value.prop || !tableSort.value.order) return filtered.value
+  const sorted = [...filtered.value]
+  const direction = tableSort.value.order === 'ascending' ? 1 : -1
+  sorted.sort((leftRow, rightRow) => {
+    const leftValue = leftRow[tableSort.value.prop]
+    const rightValue = rightRow[tableSort.value.prop]
+    const leftEmpty = leftValue == null || leftValue === ''
+    const rightEmpty = rightValue == null || rightValue === ''
+    if (leftEmpty && rightEmpty) return 0
+    if (leftEmpty) return 1
+    if (rightEmpty) return -1
+    const leftNumber = Number(leftValue)
+    const rightNumber = Number(rightValue)
+    if (!Number.isNaN(leftNumber) && !Number.isNaN(rightNumber)) {
+      return (leftNumber - rightNumber) * direction
+    }
+    return String(leftValue).localeCompare(String(rightValue), 'zh-CN') * direction
+  })
+  return sorted
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(sortedRows.value.length / pageSize.value)))
+const pagedRows = computed(() => {
+  const safePage = Math.min(currentPage.value, totalPages.value)
+  const start = (safePage - 1) * pageSize.value
+  return sortedRows.value.slice(start, start + pageSize.value)
+})
+
+watch([keyword, statusFilter, industryFilter, peMax, onlyHasBars, sortMode, pageSize], async () => {
+  currentPage.value = 1
+  selected.value = []
+  await nextTick()
+  watchlistTableRef.value?.clearSelection()
+})
+
 async function loadList() {
   loading.value = true
   try {
@@ -95,6 +144,7 @@ async function loadList() {
       watchlistCorrelation(groupName.value, 6, 60),
     ])
     rows.value = res.data || []
+    currentPage.value = 1
     movers.value = mv.data || null
     corr.value = cr.data || null
   } catch (e) {
@@ -283,6 +333,28 @@ function syncViewportWidth() {
   viewportWidth.value = window.innerWidth
 }
 
+function clearAdvancedFilters() {
+  statusFilter.value = ''
+  industryFilter.value = ''
+  peMax.value = ''
+  onlyHasBars.value = false
+}
+
+function handleTableSort({ prop, order }) {
+  tableSort.value = { prop: prop || '', order: order || '' }
+  currentPage.value = 1
+}
+
+function clearTableSort() {
+  tableSort.value = { prop: '', order: '' }
+}
+
+async function changePage(page) {
+  currentPage.value = page
+  await nextTick()
+  document.getElementById('watchlist-table-start')?.scrollIntoView({ block: 'start', behavior: 'auto' })
+}
+
 onMounted(() => {
   syncViewportWidth()
   window.addEventListener('resize', syncViewportWidth)
@@ -311,10 +383,10 @@ onBeforeUnmount(() => {
           <p>勾选后同步 K 线；行情刷新不影响已有自选。</p>
         </div>
         <div class="watchlist-action-buttons">
-          <el-button type="primary" :loading="syncing" :disabled="!selected.length" @click="onSyncSelected">
-            同步已选（{{ selected.length }}）
-          </el-button>
           <el-button :loading="syncing" @click="onRefreshQuotes">刷新行情</el-button>
+          <el-button type="primary" :loading="syncing" :disabled="!selected.length" @click="onSyncSelected">
+            {{ isMobileViewport ? `同步（${selected.length}）` : `同步已选（${selected.length}）` }}
+          </el-button>
           <el-dropdown :disabled="syncing" @command="onSyncCommand">
             <el-button plain>
               数据维护<el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -329,17 +401,6 @@ onBeforeUnmount(() => {
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-tooltip content="重新加载列表" placement="top">
-            <el-button
-              class="watchlist-reload-action"
-              circle
-              plain
-              :icon="Refresh"
-              :loading="loading"
-              aria-label="重新加载列表"
-              @click="loadList"
-            />
-          </el-tooltip>
         </div>
       </div>
       <div class="watchlist-destinations" aria-label="关联页面">
@@ -424,23 +485,78 @@ onBeforeUnmount(() => {
           <h2>自选列表</h2>
           <p>共 {{ filtered.length }} / {{ rows.length }} 只</p>
         </div>
+        <el-tooltip content="重新加载列表" placement="top">
+          <el-button
+            class="watchlist-reload-action"
+            circle
+            plain
+            :icon="Refresh"
+            :loading="loading"
+            aria-label="重新加载列表"
+            @click="loadList"
+          />
+        </el-tooltip>
       </div>
       <div class="watchlist-filter-controls">
-        <el-input v-model="keyword" class="watchlist-keyword-filter" clearable placeholder="搜索代码、名称或行业" />
-        <el-select v-model="statusFilter" class="watchlist-status-filter" clearable placeholder="数据状态">
-          <el-option label="正常" value="OK" />
-          <el-option label="过期" value="STALE" />
-          <el-option label="无 K 线" value="EMPTY" />
-        </el-select>
-        <el-select v-model="industryFilter" class="watchlist-industry-filter" clearable filterable placeholder="行业">
-          <el-option v-for="industry in industries" :key="industry" :label="industry" :value="industry" />
-        </el-select>
-        <el-input v-model="peMax" class="watchlist-pe-filter" clearable placeholder="PE 上限" />
-        <el-checkbox v-model="onlyHasBars" class="watchlist-data-filter">K 线不少于 60 天</el-checkbox>
-        <el-select v-model="sortMode" class="watchlist-sort-control" aria-label="列表排序">
-          <el-option label="今日涨跌幅降序" value="pctChgDesc" />
-          <el-option label="默认顺序" value="default" />
-        </el-select>
+        <div class="watchlist-primary-filter-row">
+          <el-input
+            v-model="keyword"
+            class="watchlist-keyword-filter"
+            clearable
+            :prefix-icon="Search"
+            inputmode="search"
+            enterkeyhint="search"
+            aria-label="搜索自选股票"
+            placeholder="搜索代码、名称或行业"
+          />
+          <el-button
+            class="watchlist-filter-toggle"
+            :class="{ 'is-active': filtersExpanded || activeFilterCount > 0 }"
+            :icon="Filter"
+            :aria-expanded="filtersExpanded"
+            aria-controls="watchlist-advanced-filters"
+            @click="filtersExpanded = !filtersExpanded"
+          >
+            筛选<span v-if="activeFilterCount" class="watchlist-filter-count">{{ activeFilterCount }}</span>
+            <el-icon class="watchlist-filter-arrow" :class="{ 'is-expanded': filtersExpanded }"><ArrowDown /></el-icon>
+          </el-button>
+        </div>
+        <el-collapse-transition>
+          <div
+            v-show="!isMobileViewport || filtersExpanded"
+            id="watchlist-advanced-filters"
+            class="watchlist-advanced-filters"
+          >
+            <el-select v-model="statusFilter" class="watchlist-status-filter" clearable aria-label="数据状态" placeholder="数据状态">
+              <el-option label="正常" value="OK" />
+              <el-option label="过期" value="STALE" />
+              <el-option label="无 K 线" value="EMPTY" />
+            </el-select>
+            <el-select v-model="industryFilter" class="watchlist-industry-filter" clearable filterable aria-label="行业" placeholder="行业">
+              <el-option v-for="industry in industries" :key="industry" :label="industry" :value="industry" />
+            </el-select>
+            <el-input
+              v-model="peMax"
+              class="watchlist-pe-filter"
+              clearable
+              inputmode="decimal"
+              aria-label="市盈率上限"
+              placeholder="PE 上限"
+            />
+            <el-checkbox v-model="onlyHasBars" class="watchlist-data-filter">K 线不少于 60 天</el-checkbox>
+            <el-select v-model="sortMode" class="watchlist-sort-control" aria-label="列表排序" @change="clearTableSort">
+              <el-option label="今日涨跌幅降序" value="pctChgDesc" />
+              <el-option label="默认顺序" value="default" />
+            </el-select>
+            <el-button
+              v-if="activeFilterCount"
+              class="watchlist-filter-reset"
+              text
+              :icon="RefreshLeft"
+              @click="clearAdvancedFilters"
+            >重置</el-button>
+          </div>
+        </el-collapse-transition>
       </div>
     </section>
 
@@ -453,14 +569,17 @@ onBeforeUnmount(() => {
 
     <el-table
       v-else
+      ref="watchlistTableRef"
       v-loading="loading"
-      :data="filtered"
+      id="watchlist-table-start"
+      :data="pagedRows"
+      row-key="code"
       class="watchlist-table"
-      height="calc(100vh - 300px)"
       @selection-change="(val) => (selected = val)"
+      @sort-change="handleTableSort"
     >
-      <el-table-column type="selection" width="48" />
-      <el-table-column prop="name" label="股票" min-width="140" sortable>
+      <el-table-column type="selection" width="48" reserve-selection />
+      <el-table-column prop="name" label="股票" min-width="140" sortable="custom">
         <template #default="{ row }">
           <div class="watchlist-stock-cell">
             <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
@@ -482,8 +601,8 @@ onBeforeUnmount(() => {
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="latestPrice" label="最新价" width="100" sortable />
-      <el-table-column prop="pctChg" width="90" sortable>
+      <el-table-column prop="latestPrice" label="最新价" width="100" sortable="custom" />
+      <el-table-column prop="pctChg" width="90" sortable="custom">
         <template #header><TermTip term="pct_chg">今日%</TermTip></template>
         <template #default="{ row }">
           <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">
@@ -491,21 +610,21 @@ onBeforeUnmount(() => {
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="pctChg5" label="5日%" width="90" sortable>
+      <el-table-column prop="pctChg5" label="5日%" width="90" sortable="custom">
         <template #default="{ row }">
           <span :class="Number(row.pctChg5) >= 0 ? 'up' : 'down'">
             {{ row.pctChg5 != null ? Number(row.pctChg5).toFixed(2) + '%' : '-' }}
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="pctChg20" label="20日%" width="90" sortable>
+      <el-table-column prop="pctChg20" label="20日%" width="90" sortable="custom">
         <template #default="{ row }">
           <span :class="Number(row.pctChg20) >= 0 ? 'up' : 'down'">
             {{ row.pctChg20 != null ? Number(row.pctChg20).toFixed(2) + '%' : '-' }}
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="rs20VsHs300" width="90" sortable>
+      <el-table-column prop="rs20VsHs300" width="90" sortable="custom">
         <template #header><TermTip term="rs20">RS20</TermTip></template>
         <template #default="{ row }">
           <span :class="Number(row.rs20VsHs300) >= 0 ? 'up' : 'down'">
@@ -513,20 +632,20 @@ onBeforeUnmount(() => {
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="pctChg60" label="60日%" width="90" sortable>
+      <el-table-column prop="pctChg60" label="60日%" width="90" sortable="custom">
         <template #default="{ row }">
           <span :class="Number(row.pctChg60) >= 0 ? 'up' : 'down'">
             {{ row.pctChg60 != null ? Number(row.pctChg60).toFixed(2) + '%' : '-' }}
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="peTtm" width="80" sortable>
+      <el-table-column prop="peTtm" width="80" sortable="custom">
         <template #header><TermTip term="pe_ttm">PE</TermTip></template>
       </el-table-column>
-      <el-table-column prop="pb" width="80" sortable>
+      <el-table-column prop="pb" width="80" sortable="custom">
         <template #header><TermTip term="pb">PB</TermTip></template>
       </el-table-column>
-      <el-table-column prop="circMv" width="128" sortable label-class-name="watchlist-circ-mv-header">
+      <el-table-column prop="circMv" width="128" sortable="custom" label-class-name="watchlist-circ-mv-header">
         <template #header><TermTip term="circ_mv">流通市值(亿)</TermTip></template>
         <template #default="{ row }">
           {{ row.circMv != null ? (Number(row.circMv) / 1e8).toFixed(1) : '-' }}
@@ -535,10 +654,10 @@ onBeforeUnmount(() => {
       <el-table-column prop="industry" width="120" show-overflow-tooltip>
         <template #header><TermTip term="sector">行业</TermTip></template>
       </el-table-column>
-      <el-table-column prop="lastBarDate" width="120" sortable>
+      <el-table-column prop="lastBarDate" width="120" sortable="custom">
         <template #header><TermTip term="ohlc">最后K线</TermTip></template>
       </el-table-column>
-      <el-table-column prop="barCount" width="100" sortable>
+      <el-table-column prop="barCount" width="100" sortable="custom">
         <template #header><TermTip term="ohlc">K线条数</TermTip></template>
       </el-table-column>
       <el-table-column prop="syncStatus" label="状态" width="90">
@@ -556,6 +675,17 @@ onBeforeUnmount(() => {
         </template>
       </el-table-column>
     </el-table>
+    <div v-if="filtered.length > pageSize" class="watchlist-pagination" aria-label="自选列表分页">
+      <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
+      <el-pagination
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :total="filtered.length"
+        :layout="isMobileViewport ? 'prev, next' : 'prev, pager, next'"
+        :pager-count="5"
+        @current-change="changePage"
+      />
+    </div>
   </div>
 </template>
 
@@ -751,8 +881,16 @@ onBeforeUnmount(() => {
 .watchlist-list-heading {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 12px;
+}
+
+.watchlist-list-heading :deep(.watchlist-reload-action) {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
 }
 
 .watchlist-filter-controls {
@@ -762,21 +900,55 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
+.watchlist-primary-filter-row,
+.watchlist-advanced-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .watchlist-keyword-filter {
-  width: min(320px, 100%);
+  width: min(300px, 100%);
+}
+
+.watchlist-filter-toggle {
+  display: none;
+}
+
+.watchlist-filter-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.watchlist-filter-arrow {
+  margin-left: 2px;
+  transition: transform 160ms ease;
+}
+
+.watchlist-filter-arrow.is-expanded {
+  transform: rotate(180deg);
 }
 
 .watchlist-status-filter,
 .watchlist-sort-control {
-  width: 168px;
+  width: 154px;
 }
 
 .watchlist-industry-filter {
-  width: 184px;
+  width: 152px;
 }
 
 .watchlist-pe-filter {
-  width: 120px;
+  width: 104px;
 }
 
 .watchlist-data-filter {
@@ -788,6 +960,23 @@ onBeforeUnmount(() => {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-soft);
+  scroll-margin-top: 72px;
+}
+
+.watchlist-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.watchlist-pagination > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .watchlist-table :deep(th.watchlist-circ-mv-header > .cell) {
@@ -861,17 +1050,12 @@ onBeforeUnmount(() => {
   }
 
   .watchlist-daily-actions {
-    position: relative;
     align-items: stretch;
-  }
-
-  .watchlist-daily-actions > div:first-child {
-    padding-right: 52px;
   }
 
   .watchlist-action-buttons {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
     max-width: 360px;
     gap: 6px;
@@ -891,13 +1075,7 @@ onBeforeUnmount(() => {
     white-space: nowrap;
   }
 
-  .watchlist-reload-action {
-    position: absolute;
-    top: 14px;
-    right: 12px;
-  }
-
-  .watchlist-action-buttons :deep(.watchlist-reload-action) {
+  .watchlist-list-heading :deep(.watchlist-reload-action) {
     width: 44px;
     height: 44px;
     padding: 0;
@@ -913,8 +1091,40 @@ onBeforeUnmount(() => {
   }
 
   .watchlist-filter-controls {
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .watchlist-primary-filter-row {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .watchlist-filter-toggle {
+    display: inline-flex;
+    min-width: 88px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 10px;
+  }
+
+  .watchlist-filter-toggle.is-active {
+    border-color: rgba(0, 113, 227, 0.35);
+    background: rgba(0, 113, 227, 0.08);
+    color: var(--accent);
+  }
+
+  .watchlist-advanced-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    background: #f7f9fc;
   }
 
   .watchlist-keyword-filter,
@@ -925,18 +1135,51 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .watchlist-keyword-filter,
-  .watchlist-data-filter,
+  .watchlist-keyword-filter :deep(.el-input__wrapper),
+  .watchlist-advanced-filters :deep(.el-input__wrapper),
+  .watchlist-advanced-filters :deep(.el-select__wrapper) {
+    min-height: 44px;
+  }
+
+  .watchlist-keyword-filter :deep(.el-input__inner),
+  .watchlist-advanced-filters :deep(.el-input__inner),
+  .watchlist-advanced-filters :deep(.el-select__input) {
+    font-size: 16px;
+  }
+
   .watchlist-sort-control {
     grid-column: 1 / -1;
   }
 
   .watchlist-data-filter {
+    min-height: 44px;
     margin-left: 0;
   }
 
-  .watchlist-table {
-    height: calc(100vh - 360px) !important;
+  .watchlist-filter-reset {
+    justify-self: end;
+    min-height: 36px;
+    grid-column: 1 / -1;
+    padding: 0 6px;
+  }
+
+  .watchlist-pagination {
+    justify-content: space-between;
+    min-height: 56px;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .watchlist-pagination :deep(.el-pagination) {
+    gap: 8px;
+  }
+
+  .watchlist-pagination :deep(.btn-prev),
+  .watchlist-pagination :deep(.btn-next) {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    margin: 0;
   }
 }
 </style>

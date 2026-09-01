@@ -10,7 +10,8 @@ const operationColumnSource = source.slice(
 
 test('watchlist keeps daily actions clear and moves low-frequency sync tasks into a menu', () => {
   assert.match(source, /class="watchlist-action-panel"/)
-  assert.match(source, /同步已选（\{\{ selected\.length \}\}）/)
+  assert.match(source, /同步已选（\$\{selected\.length\}）/)
+  assert.match(source, /同步（\$\{selected\.length\}）/)
   assert.match(source, /<el-dropdown[^>]*@command="onSyncCommand"/)
   assert.match(source, /command="import-watchlist"[\s\S]*导入自选/)
   assert.match(source, /command="fill-bars"[\s\S]*补齐缺失 K 线/)
@@ -44,10 +45,41 @@ test('watchlist provides a compact layout for actions and filters', () => {
   assert.doesNotMatch(source, /sortByPct/)
 })
 
+test('mobile watchlist keeps search stable on iOS and collapses secondary filters', () => {
+  assert.match(source, /class="watchlist-primary-filter-row"/)
+  assert.match(source, /:prefix-icon="Search"[\s\S]*inputmode="search"/)
+  assert.match(source, /class="watchlist-filter-toggle"[\s\S]*:aria-expanded="filtersExpanded"/)
+  assert.match(source, /v-show="!isMobileViewport \|\| filtersExpanded"/)
+  assert.match(
+    source,
+    /\.watchlist-keyword-filter :deep\(\.el-input__inner\),[\s\S]*?font-size:\s*16px;/,
+  )
+  assert.match(
+    source,
+    /\.watchlist-primary-filter-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
+  )
+})
+
+test('watchlist exposes active filter count and a focused reset action', () => {
+  assert.match(source, /const activeFilterCount = computed/)
+  assert.match(source, /class="watchlist-filter-count"/)
+  assert.match(source, /function clearAdvancedFilters\(\)/)
+  assert.match(source, /class="watchlist-filter-reset"[\s\S]*@click="clearAdvancedFilters"/)
+  assert.match(source, /inputmode="decimal"[\s\S]*aria-label="市盈率上限"/)
+})
+
 test('mobile daily actions stay compact and use consistent touch targets', () => {
   assert.match(
     source,
-    /\.watchlist-action-buttons\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1\.2fr\) repeat\(2, minmax\(0, 1fr\)\);[^}]*max-width:\s*360px;/,
+    /class="watchlist-action-buttons"[\s\S]*?@click="onRefreshQuotes"[\s\S]*?@click="onSyncSelected"/,
+  )
+  assert.match(
+    source,
+    /class="watchlist-list-heading"[\s\S]*?class="watchlist-reload-action"[\s\S]*?@click="loadList"/,
+  )
+  assert.match(
+    source,
+    /\.watchlist-action-buttons\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);[^}]*width:\s*100%;/,
   )
   assert.match(
     source,
@@ -59,8 +91,9 @@ test('mobile daily actions stay compact and use consistent touch targets', () =>
   )
   assert.match(
     source,
-    /\.watchlist-action-buttons :deep\(\.watchlist-reload-action\)\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/,
+    /\.watchlist-list-heading :deep\(\.watchlist-reload-action\)\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/,
   )
+  assert.doesNotMatch(source, /\.watchlist-reload-action\s*\{[^}]*position:\s*absolute;/)
 })
 
 test('wrapped mover names stay aligned after their group label', () => {
@@ -72,12 +105,26 @@ test('wrapped mover names stay aligned after their group label', () => {
   assert.match(source, /\.mover-items\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/)
 })
 
-test('watchlist keeps enough desktop height for scanning more rows', () => {
-  assert.match(source, /class="watchlist-table"[\s\S]*height="calc\(100vh - 300px\)"/)
+test('watchlist uses natural page scrolling and limits rendered rows', () => {
+  assert.match(source, /const pageSize = computed\(\(\) => \(isMobileViewport\.value \? 30 : 50\)\)/)
+  assert.match(source, /const pagedRows = computed/)
+  assert.match(source, /:data="pagedRows"/)
+  assert.match(source, /class="watchlist-pagination"/)
+  assert.match(source, /watchlistTableRef\.value\?\.clearSelection\(\)/)
+  assert.doesNotMatch(source, /height="calc\(100vh - 300px\)"/)
+  assert.doesNotMatch(source, /height:\s*calc\(100vh - 360px\)/)
+})
+
+test('watchlist sorts the complete filtered result before pagination', () => {
+  assert.match(source, /const sortedRows = computed/)
+  assert.match(source, /sortable="custom"/)
+  assert.match(source, /@sort-change="handleTableSort"/)
+  assert.match(source, /row-key="code"/)
+  assert.match(source, /reserve-selection/)
 })
 
 test('watchlist keeps the circulating market-value header and sort control on one line', () => {
-  assert.match(source, /<el-table-column prop="circMv" width="128" sortable label-class-name="watchlist-circ-mv-header">/)
+  assert.match(source, /<el-table-column prop="circMv" width="128" sortable="custom" label-class-name="watchlist-circ-mv-header">/)
   assert.match(
     source,
     /\.watchlist-table :deep\(th\.watchlist-circ-mv-header > \.cell\)\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*white-space:\s*nowrap;/,
