@@ -60,3 +60,18 @@ test('share progress animation respects reduced-motion preferences', () => {
     /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.spinning\s*\{[\s\S]*?animation:\s*none;/,
   )
 })
+
+test('mobile share control clears saved drag coordinates and stays above bottom navigation', () => {
+  assert.match(
+    shareButtonSource,
+    /if \(window\.innerWidth <= 820\) \{[\s\S]*?target\.style\.removeProperty\('left'\)[\s\S]*?target\.style\.removeProperty\('bottom'\)[\s\S]*?return/,
+  )
+  assert.match(
+    shareButtonSource,
+    /function onPointerDown\(event\) \{\s*if \(window\.innerWidth <= 820\) return/,
+  )
+  assert.match(
+    shareButtonSource,
+    /@media \(max-width: 820px\) \{[\s\S]*?\.floating-share-button\s*\{[\s\S]*?bottom:\s*calc\(76px \+ env\(safe-area-inset-bottom\)\);[\s\S]*?touch-action:\s*manipulation;/,
+  )
+})

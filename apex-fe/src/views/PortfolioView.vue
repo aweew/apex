@@ -2648,11 +2648,7 @@ onBeforeUnmount(() => {
 @media (max-width: 820px) {
   .floating-share-dropdown {
     right: 16px;
-    bottom: calc(16px + env(safe-area-inset-bottom));
-  }
-
-  .portfolio-page.mobile-detail-open .floating-share-dropdown {
-    bottom: calc(12px + env(safe-area-inset-bottom));
+    bottom: calc(76px + env(safe-area-inset-bottom));
   }
 
   .portfolio-page .portfolio-header {

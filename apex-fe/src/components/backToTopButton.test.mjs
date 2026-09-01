@@ -19,8 +19,20 @@ test('back-to-top control appears after one viewport and scrolls to the page sta
 })
 
 test('back-to-top control stays restrained and clears the lower floating action', () => {
-  assert.match(buttonSource, /\.back-to-top-button\s*\{[\s\S]*?bottom:\s*calc\(68px \+ env\(safe-area-inset-bottom\)\);/)
   assert.match(buttonSource, /\.back-to-top-button\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;/)
   assert.match(buttonSource, /\.back-to-top-button\s*\{[\s\S]*?opacity:\s*0\.78;/)
   assert.match(buttonSource, /background:\s*rgba\(255, 255, 255, 0\.82\);/)
+})
+
+test('mobile back-to-top aligns beside sharing and clears the bottom navigation', () => {
+  const mobileStyle = buttonSource.slice(buttonSource.indexOf('@media (max-width: 820px)'))
+
+  assert.match(
+    mobileStyle,
+    /\.back-to-top-button\s*\{[\s\S]*?right:\s*16px;[\s\S]*?bottom:\s*calc\(76px \+ env\(safe-area-inset-bottom\)\);/,
+  )
+  assert.match(
+    mobileStyle,
+    /:global\(body:has\(\.floating-share-button\) \.back-to-top-button\)\s*\{[\s\S]*?right:\s*64px;/,
+  )
 })

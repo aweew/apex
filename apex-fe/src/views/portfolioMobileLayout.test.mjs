@@ -32,6 +32,16 @@ test('mobile portfolio list clears the fixed bottom navigation', () => {
   )
 })
 
+test('mobile portfolio share control clears the fixed bottom navigation in list and detail views', () => {
+  const mobileStyle = portfolioSource.slice(portfolioSource.indexOf('@media (max-width: 820px)'))
+
+  assert.match(
+    mobileStyle,
+    /\.floating-share-dropdown\s*\{[\s\S]*?right:\s*16px;[\s\S]*?bottom:\s*calc\(76px \+ env\(safe-area-inset-bottom\)\);/,
+  )
+  assert.doesNotMatch(mobileStyle, /\.mobile-detail-open \.floating-share-dropdown/)
+})
+
 test('mobile portfolio rows keep today performance beside the portfolio name', () => {
   assert.match(portfolioSource, /v-if="isMobileViewport" class="pf-mobile-pnl"/)
   assert.match(portfolioSource, /v-if="!isMobileViewport" class="pf-summary"[\s\S]*?class="pf-pnl"/)

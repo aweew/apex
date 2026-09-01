@@ -102,6 +102,12 @@ onBeforeUnmount(() => {
 @media (max-width: 820px) {
   .back-to-top-button {
     right: 16px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    z-index: 850;
+  }
+
+  :global(body:has(.floating-share-button) .back-to-top-button) {
+    right: 64px;
   }
 }
 

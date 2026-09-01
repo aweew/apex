@@ -70,10 +70,11 @@ test('mobile screener uses compact actions and pagination', () => {
   assert.match(screenerSource, /class="mobile-filter-actions"/)
   assert.match(screenerSource, /class="mobile-pager"/)
   assert.match(screenerSource, /class="mobile-batch-results"/)
-  assert.match(screenerSource, /\.mobile-filter-actions :deep\(\.el-button\)[\s\S]*?min-height:\s*44px;/)
-  assert.match(screenerSource, /\.mobile-pager-button\s*\{[\s\S]*?min-height:\s*44px;/)
-  assert.match(screenerSource, /\.advanced-filter-toggle\s*\{[\s\S]*?width:\s*auto;[\s\S]*?min-height:\s*44px;/)
-  assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.screener-mode-switch :deep\(\.el-segmented\)\s*\{[\s\S]*?width:\s*max-content;[\s\S]*?max-width:\s*100%;/)
+  assert.match(screenerSource, /\.mobile-filter-actions :deep\(\.el-button\)[\s\S]*?height:\s*36px;[\s\S]*?min-height:\s*36px;/)
+  assert.match(screenerSource, /\.mobile-filter-actions :deep\(\.mobile-filter-reset\)[\s\S]*?width:\s*40px;[\s\S]*?min-width:\s*40px;/)
+  assert.match(screenerSource, /\.mobile-pager-button\s*\{[\s\S]*?min-height:\s*36px;/)
+  assert.match(screenerSource, /\.advanced-filter-toggle\s*\{[\s\S]*?width:\s*auto;[\s\S]*?min-height:\s*36px;/)
+  assert.match(screenerSource, /@media \(max-width: 820px\)[\s\S]*?\.screener-mode-switch :deep\(\.el-segmented\)\s*\{[\s\S]*?width:\s*max-content;[\s\S]*?max-width:\s*100%;[\s\S]*?min-height:\s*36px;/)
 })
 
 test('mobile stock cards keep key metrics in stable responsive tracks', () => {

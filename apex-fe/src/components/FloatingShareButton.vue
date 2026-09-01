@@ -47,7 +47,15 @@ function setTargetPosition(target, position) {
 
 function applySavedPosition() {
   const target = positionTarget()
-  if (!target || !savedRatio) return
+  if (!target) return
+  if (window.innerWidth <= 820) {
+    target.style.removeProperty('left')
+    target.style.removeProperty('top')
+    target.style.removeProperty('right')
+    target.style.removeProperty('bottom')
+    return
+  }
+  if (!savedRatio) return
   setTargetPosition(target, floatingPositionFromRatio(savedRatio, boundsOf(target)))
 }
 
@@ -62,6 +70,7 @@ function savePosition(target) {
 }
 
 function onPointerDown(event) {
+  if (window.innerWidth <= 820) return
   if (props.disabled || props.loading || (event.pointerType === 'mouse' && event.button !== 0)) return
   const target = positionTarget()
   if (!target) return
@@ -241,9 +250,10 @@ onBeforeUnmount(() => {
 @media (max-width: 820px) {
   .floating-share-button {
     right: 16px;
-    bottom: calc(16px + env(safe-area-inset-bottom));
+    bottom: calc(76px + env(safe-area-inset-bottom));
     width: 40px;
     height: 40px;
+    touch-action: manipulation;
   }
 }
 

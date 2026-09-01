@@ -2422,8 +2422,8 @@ onBeforeUnmount(() => {
     justify-content: center;
     gap: 5px;
     width: auto;
-    min-height: 44px;
-    padding: 0 12px;
+    min-height: 36px;
+    padding: 0 10px;
     border: 1px solid var(--line-strong);
     border-radius: 8px;
     background: var(--paper);
@@ -2528,13 +2528,15 @@ onBeforeUnmount(() => {
 
   .mobile-filter-actions :deep(.el-button) {
     width: auto;
-    min-height: 44px;
+    height: 36px;
+    min-height: 36px;
     margin: 0;
-    border-radius: 8px;
+    border-radius: 6px;
   }
 
   .mobile-filter-actions :deep(.mobile-filter-reset) {
-    min-width: 44px;
+    width: 40px;
+    min-width: 40px;
     padding: 0;
   }
 
@@ -2548,9 +2550,9 @@ onBeforeUnmount(() => {
   }
 
   .mobile-results-heading :deep(.el-button) {
-    min-height: 40px;
+    min-height: 36px;
     margin: 0;
-    border-radius: 7px;
+    border-radius: 6px;
   }
 
   .screener-mobile-list {
@@ -2724,9 +2726,9 @@ onBeforeUnmount(() => {
 
   .mobile-pager-button {
     width: 100%;
-    min-height: 44px;
+    min-height: 36px;
     margin: 0 !important;
-    border-radius: 8px;
+    border-radius: 6px;
   }
 
   .mobile-pager > span {
@@ -2834,7 +2836,7 @@ onBeforeUnmount(() => {
   .screener-mode-switch :deep(.el-segmented) {
     width: max-content;
     max-width: 100%;
-    min-height: 44px;
+    min-height: 36px;
   }
 
   .strategy-panel {
@@ -2870,7 +2872,7 @@ onBeforeUnmount(() => {
 
   .strategy-actions {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(44px, 0.75fr);
+    grid-template-columns: minmax(0, 1.45fr) minmax(40px, 0.75fr);
     gap: 8px;
   }
 
@@ -2878,7 +2880,7 @@ onBeforeUnmount(() => {
   .strategy-actions :deep(.el-dropdown),
   .strategy-actions :deep(.el-dropdown .el-button) {
     width: 100%;
-    min-height: 44px;
+    min-height: 36px;
     margin: 0;
   }
 
@@ -3024,7 +3026,7 @@ onBeforeUnmount(() => {
   }
 
   .strategy-actions {
-    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-columns: minmax(0, 1fr) 40px;
   }
 
   .strategy-action-label {

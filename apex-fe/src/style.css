@@ -796,13 +796,13 @@ textarea {
 
   .page .header > .actions > .tabs,
   .page .header > .header-actions > .tabs {
-    min-height: 44px;
+    min-height: 36px;
   }
 
   .page .header > .actions > .tabs > button,
   .page .header > .header-actions > .tabs > button {
     flex: 1;
-    min-height: 38px;
+    min-height: 32px;
   }
 
   .page .header > .actions > .el-button,
@@ -823,7 +823,7 @@ textarea {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 44px;
+    min-height: 36px;
     padding: 0 10px;
     border-radius: 8px;
     line-height: 1.25;
@@ -833,18 +833,16 @@ textarea {
   .page .toolbar > .el-button,
   .page .toolbar-bar > .el-button,
   .page .row-actions > .el-button {
-    flex: 1 1 120px;
+    flex: 0 0 auto;
     min-width: 0;
     margin: 0;
     padding-right: 10px;
     padding-left: 10px;
-    white-space: normal;
+    white-space: nowrap;
   }
 
-  .page .el-button,
   .page .el-tabs__item,
-  .page .el-checkbox,
-  .page .el-radio-button__inner {
+  .page .el-checkbox {
     min-height: 44px;
   }
 
@@ -927,7 +925,7 @@ textarea {
   .el-dialog__footer > .el-button,
   .el-dialog__footer > .btn {
     width: 100%;
-    min-height: 44px;
+    min-height: 40px;
     margin: 0;
   }
 
@@ -969,7 +967,7 @@ textarea {
   .page .header > .actions > *,
   .page .header > .header-actions > * {
     min-width: 0;
-    min-height: 44px;
+    min-height: 36px;
     margin: 0;
   }
 
@@ -980,7 +978,7 @@ textarea {
   .page .header > .actions > .btn,
   .page .header > .header-actions > .btn {
     width: auto;
-    min-height: 44px;
+    min-height: 36px;
     margin: 0;
     padding-right: 8px;
     padding-left: 8px;
@@ -993,5 +991,57 @@ textarea {
   .page .header > .actions .el-select__wrapper,
   .page .header > .header-actions .el-select__wrapper {
     min-height: 44px;
+  }
+}
+
+@media (max-width: 900px) {
+  .page .el-button:not(.is-link):not(.is-text):not(.is-circle) {
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .page .el-button.is-circle {
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding: 0;
+  }
+
+  .page .el-button.is-link,
+  .page .el-button.is-text {
+    min-height: 32px !important;
+    padding: 0 6px;
+  }
+
+  .page .el-segmented {
+    min-height: 36px !important;
+    padding: 3px;
+    border-radius: 7px;
+  }
+
+  .page .el-segmented__item {
+    min-height: 30px;
+  }
+
+  .page .el-radio-button__inner {
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 0 12px;
+    line-height: 34px;
+  }
+
+  .page .toolbar > .el-button,
+  .page .toolbar-bar > .el-button,
+  .page .row-actions > .el-button {
+    flex: 0 0 auto;
+    min-width: 0;
+    margin: 0;
+    white-space: nowrap;
   }
 }
