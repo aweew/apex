@@ -13,7 +13,7 @@ test('mobile portfolio controls share one compact list toolbar', () => {
   assert.match(portfolioSource, /\.mobile-list-toolbar\.can-sort\s*\{[\s\S]*?grid-template-columns:\s*minmax\(72px, 1fr\) auto auto auto 44px;/)
   assert.doesNotMatch(portfolioSource, /class="mobile-header-actions"/)
   assert.match(portfolioSource, /\.portfolio-page \.portfolio-header\s*\{\s*display:\s*none;/)
-  assert.match(portfolioSource, /<strong>组合<\/strong>/)
+  assert.match(portfolioSource, /<strong data-mobile-nav-title>组合<\/strong>/)
   assert.doesNotMatch(portfolioSource, /<strong>共享组合<\/strong>/)
 })
 
@@ -47,9 +47,10 @@ test('mobile portfolio rows keep today performance beside the portfolio name', (
   assert.match(portfolioSource, /v-if="!isMobileViewport" class="pf-summary"[\s\S]*?class="pf-pnl"/)
 })
 
-test('mobile portfolio rows use distinct card boundaries for scanning', () => {
-  assert.match(portfolioSource, /\.pf-card\s*\{\s*margin: 10px 0 0;[\s\S]*?border: 1px solid rgba\(0, 0, 0, 0\.1\);/)
-  assert.match(portfolioSource, /\.mobile-list-toolbar \+ \.pf-card\s*\{\s*margin-top: 12px;/)
+test('mobile portfolio rows use quiet cards and unframed stock summaries', () => {
+  assert.match(portfolioSource, /\.portfolio-page:not\(\.mobile-detail-open\)\s*\{[\s\S]*?background:\s*#f1f4f7;/)
+  assert.match(portfolioSource, /\.pf-card\s*\{\s*margin: 10px 0 0;[\s\S]*?background:\s*#ffffff;/)
+  assert.match(portfolioSource, /\.pf-tops\s*\{[\s\S]*?border-top:\s*1px solid #edf0f4;[\s\S]*?background:\s*transparent;/)
 })
 
 test('opening mobile detail redraws charts after their containers mount', () => {

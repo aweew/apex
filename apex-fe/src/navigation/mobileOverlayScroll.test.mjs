@@ -119,9 +119,43 @@ test('mobile navigation drawer follows horizontal page swipes progressively', ()
   assert.match(appSource, /\.mobile-menu-dragging \.nav-scrim\s*\{[^}]*transition:\s*none;/)
 })
 
+test('mobile menu focus is restored only for keyboard interaction', () => {
+  assert.match(appSource, /function openMobileMenu\(event\)[\s\S]*?event\?\.detail === 0/)
+  assert.match(appSource, /@click="openMobileMenu"/)
+  assert.match(appSource, /if \(!mobileMenuKeyboardInteraction\) return/)
+  assert.match(appSource, /previousOpen && mobileMenuKeyboardInteraction/)
+})
+
+test('mobile left-edge swipe navigates back and never opens the menu', () => {
+  assert.match(appSource, /if \(isMobileBackSwipeStart\(touch\.clientX\)\)/)
+  assert.match(appSource, /type: 'back'/)
+  assert.match(appSource, /mobileBackSwipeOffsetPx\.value = mobileBackSwipeOffset\(deltaX\)/)
+  assert.match(appSource, /if \(canNavigate && shouldNavigateBackAfterSwipe\(deltaX, velocityX\)\) goMobileBack\(\)/)
+  assert.match(appSource, /'mobile-back-swipe-dragging': mobileBackSwipeDragging/)
+
+  const edgeBranch = appSource.slice(
+    appSource.indexOf('if (isMobileBackSwipeStart(touch.clientX))'),
+    appSource.indexOf("type: 'menu'"),
+  )
+  assert.doesNotMatch(edgeBranch, /scheduleMobileMenuProgress|setMobileMenu\(true\)/)
+})
+
+test('mobile swipe release preserves the dragged frame before easing to its destination', () => {
+  assert.match(appSource, /function settleMobileMenu\(open\)[\s\S]*?window\.requestAnimationFrame/)
+  assert.match(appSource, /shouldOpenMenuAfterSwipe\(mobileMenuProgress\.value, velocityX\)/)
+  assert.match(appSource, /\.links\.dragging\s*\{[^}]*transition:\s*none;/)
+})
+
 test('mobile sticky title keeps only the page name in the narrow navigation slot', () => {
   assert.match(appSource, /\? heading\.textContent\.trim\(\)/)
   assert.doesNotMatch(appSource, /\$\{heading\.textContent\.trim\(\)\} · \$\{module\.textContent\.trim\(\)\}/)
+})
+
+test('mobile sticky title follows a visible page sentinel and eases into view', () => {
+  assert.match(appSource, /document\.querySelector\('\.page \[data-mobile-nav-title\]'\)/)
+  assert.match(appSource, /headingRect\.height <= 0/)
+  assert.match(appSource, /headingRect\.bottom <= navigation\.getBoundingClientRect\(\)\.bottom \+ 2/)
+  assert.match(appSource, /opacity 0\.36s cubic-bezier\(0\.22, 1, 0\.36, 1\)/)
 })
 
 test('brand navigation replaces history and the dashboard never shows a back action', () => {

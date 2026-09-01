@@ -23,9 +23,13 @@ const route = useRoute()
   gap: 3px;
   margin: 0 0 14px;
   padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper-deep);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 12px;
+  background: rgba(220, 232, 247, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 5px 16px rgba(42, 65, 94, 0.09);
+  backdrop-filter: blur(18px) saturate(175%);
+  -webkit-backdrop-filter: blur(18px) saturate(175%);
 }
 
 .decision-workspace-tabs a {
@@ -34,17 +38,20 @@ const route = useRoute()
   display: grid;
   place-items: center;
   padding: 0 14px;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   color: var(--slate);
   font-size: 13px;
   font-weight: 650;
   text-decoration: none;
+  transition: color 180ms ease, background 220ms ease, box-shadow 220ms ease, transform 160ms ease;
 }
 
 .decision-workspace-tabs a[aria-current='page'] {
-  background: #fff;
-  color: var(--ink);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
+  border-color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), 0 3px 10px rgba(45, 73, 108, 0.13);
 }
 
 .decision-workspace-tabs a:focus-visible {

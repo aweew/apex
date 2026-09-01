@@ -40,8 +40,11 @@ import {
   tradingCalendar,
 } from './utils/dataFreshness.js'
 import {
+  isMobileBackSwipeStart,
+  mobileBackSwipeOffset,
   menuSwipeProgress,
   resolveMenuSwipeAxis,
+  shouldNavigateBackAfterSwipe,
   shouldOpenMenuAfterSwipe,
 } from './utils/mobileMenuSwipe.js'
 
@@ -53,6 +56,8 @@ const settingsOpen = ref(false)
 const mobileMenuOpen = ref(false)
 const mobileMenuProgress = ref(0)
 const mobileMenuDragging = ref(false)
+const mobileBackSwipeOffsetPx = ref(0)
+const mobileBackSwipeDragging = ref(false)
 const isMobileViewport = ref(window.innerWidth <= 900)
 const query = ref('')
 const loading = ref(false)
@@ -103,6 +108,9 @@ const mobileMenuDrawerStyle = computed(() => (isMobileViewport.value
 const mobileMenuScrimStyle = computed(() => (isMobileViewport.value
   ? { opacity: mobileMenuProgress.value }
   : undefined))
+const mobileBackSwipeStyle = computed(() => (isMobileViewport.value
+  ? { '--mobile-back-swipe-offset': `${mobileBackSwipeOffsetPx.value}px` }
+  : undefined))
 const settingsDrawerDirection = computed(() => (isMobileViewport.value ? 'btt' : 'rtl'))
 const settingsDrawerSize = computed(() => (isMobileViewport.value ? '74%' : '380px'))
 const COMMAND_ROUTE_ITEMS = [
@@ -152,7 +160,9 @@ let activityHideTimer
 let moduleTitleFrame
 let mobileMenuSwipe
 let mobileMenuFrame
+let mobileMenuSettleFrame
 let pendingMobileMenuProgress
+let mobileMenuKeyboardInteraction = false
 
 function readReduceMotionPreference() {
   try {
@@ -172,24 +182,22 @@ function syncMobileModuleTitle() {
     return
   }
   const detailHeading = document.querySelector('.page.mobile-detail-open .detail-title h2')
-  const heading = document.querySelector('.page .header h1')
-  const module = document.querySelector('.page .header .eyebrow')
+  const mobileHeading = document.querySelector('.page [data-mobile-nav-title]')
+  const pageHeading = document.querySelector('.page .header h1')
+  const heading = detailHeading || mobileHeading || pageHeading
   const navigation = document.querySelector('.nav')
-  if (!navigation) {
+  if (!navigation || !heading) {
     mobileModuleTitle.value = ''
     return
   }
-  if (detailHeading) {
-    mobileModuleTitle.value = detailHeading.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().bottom
-      ? detailHeading.textContent.trim()
-      : ''
-    return
-  }
-  if (!heading || !module) {
+
+  const headingRect = heading.getBoundingClientRect()
+  if (headingRect.height <= 0 || window.getComputedStyle(heading).display === 'none') {
     mobileModuleTitle.value = ''
     return
   }
-  mobileModuleTitle.value = heading.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().bottom
+
+  mobileModuleTitle.value = headingRect.bottom <= navigation.getBoundingClientRect().bottom + 2
     ? heading.textContent.trim()
     : ''
 }
@@ -269,12 +277,31 @@ async function logoutCurrentUser() {
 
 function setMobileMenu(open) {
   if (mobileMenuFrame) window.cancelAnimationFrame(mobileMenuFrame)
+  if (mobileMenuSettleFrame) window.cancelAnimationFrame(mobileMenuSettleFrame)
   mobileMenuFrame = undefined
+  mobileMenuSettleFrame = undefined
   pendingMobileMenuProgress = undefined
   mobileMenuDragging.value = false
   mobileMenuOpen.value = open
   mobileMenuProgress.value = open ? 1 : 0
   mobileMenuSwipe = undefined
+}
+
+function openMobileMenu(event) {
+  mobileMenuKeyboardInteraction = event?.detail === 0
+  setMobileMenu(true)
+}
+
+function settleMobileMenu(open) {
+  flushMobileMenuProgress()
+  mobileMenuDragging.value = false
+  mobileMenuSwipe = undefined
+  if (mobileMenuSettleFrame) window.cancelAnimationFrame(mobileMenuSettleFrame)
+  mobileMenuSettleFrame = window.requestAnimationFrame(() => {
+    mobileMenuSettleFrame = undefined
+    mobileMenuOpen.value = open
+    mobileMenuProgress.value = open ? 1 : 0
+  })
 }
 
 function scheduleMobileMenuProgress(progress) {
@@ -353,22 +380,52 @@ function isMobileMenuSwipeTarget(target) {
 }
 
 function onMobileMenuTouchStart(event) {
+  if (mobileMenuSettleFrame) {
+    window.cancelAnimationFrame(mobileMenuSettleFrame)
+    mobileMenuSettleFrame = undefined
+  }
   if (
     window.innerWidth > 900
     || isPublicRoute.value
     || searchOpen.value
+    || settingsOpen.value
     || event.touches.length !== 1
-    || !isMobileMenuSwipeTarget(event.target)
   ) {
     mobileMenuSwipe = undefined
     return
   }
 
   const touch = event.touches[0]
+  // The browser-style left-edge gesture is reserved for history navigation.
+  // It must never reveal the app menu, including when there is no history entry.
+  if (isMobileBackSwipeStart(touch.clientX)) {
+    mobileMenuSwipe = {
+      type: 'back',
+      startX: touch.clientX,
+      startY: touch.clientY,
+      currentX: touch.clientX,
+      lastX: touch.clientX,
+      lastTime: event.timeStamp,
+      velocityX: 0,
+      canNavigate: !mobileMenuOpen.value && Boolean(mobileBackPath.value),
+      axis: 'pending',
+    }
+    return
+  }
+
+  if (!isMobileMenuSwipeTarget(event.target)) {
+    mobileMenuSwipe = undefined
+    return
+  }
+
   mobileMenuSwipe = {
+    type: 'menu',
     startX: touch.clientX,
     startY: touch.clientY,
     startProgress: mobileMenuProgress.value,
+    lastX: touch.clientX,
+    lastTime: event.timeStamp,
+    velocityX: 0,
     axis: 'pending',
   }
 }
@@ -378,14 +435,29 @@ function onMobileMenuTouchMove(event) {
   const touch = event.touches[0]
   const deltaX = touch.clientX - mobileMenuSwipe.startX
   const deltaY = touch.clientY - mobileMenuSwipe.startY
+  const elapsed = event.timeStamp - mobileMenuSwipe.lastTime
+  if (elapsed > 0 && elapsed < 100) {
+    const instantVelocity = (touch.clientX - mobileMenuSwipe.lastX) / elapsed
+    mobileMenuSwipe.velocityX = mobileMenuSwipe.velocityX * 0.65 + instantVelocity * 0.35
+  }
+  mobileMenuSwipe.currentX = touch.clientX
+  mobileMenuSwipe.lastX = touch.clientX
+  mobileMenuSwipe.lastTime = event.timeStamp
 
   if (mobileMenuSwipe.axis === 'pending') {
     mobileMenuSwipe.axis = resolveMenuSwipeAxis(deltaX, deltaY)
     if (mobileMenuSwipe.axis === 'pending') return
+    const backWrongWay = mobileMenuSwipe.type === 'back' && deltaX < 0
     const openingWrongWay = mobileMenuSwipe.startProgress === 0 && deltaX < 0
     const closingWrongWay = mobileMenuSwipe.startProgress === 1 && deltaX > 0
-    if (mobileMenuSwipe.axis === 'vertical' || openingWrongWay || closingWrongWay) {
+    if (mobileMenuSwipe.axis === 'vertical' || backWrongWay || openingWrongWay || closingWrongWay) {
       mobileMenuSwipe.axis = 'ignored'
+      return
+    }
+    if (mobileMenuSwipe.type === 'back') {
+      mobileBackSwipeDragging.value = true
+      mobileBackSwipeOffsetPx.value = mobileBackSwipeOffset(deltaX)
+      event.preventDefault()
       return
     }
     mobileMenuDragging.value = true
@@ -394,24 +466,46 @@ function onMobileMenuTouchMove(event) {
   if (mobileMenuSwipe.axis !== 'horizontal') return
   event.preventDefault()
 
+  if (mobileMenuSwipe.type === 'back') {
+    mobileBackSwipeOffsetPx.value = mobileBackSwipeOffset(deltaX)
+    return
+  }
+
   const drawerWidth = mobileMenuRef.value?.getBoundingClientRect?.().width || window.innerWidth
   scheduleMobileMenuProgress(menuSwipeProgress(mobileMenuSwipe.startProgress, deltaX, drawerWidth))
 }
 
-function finishMobileMenuSwipe() {
+function finishMobileMenuSwipe(event) {
   if (!mobileMenuSwipe || mobileMenuSwipe.axis !== 'horizontal') {
     mobileMenuSwipe = undefined
     return
   }
+  const releaseDelay = event.timeStamp - mobileMenuSwipe.lastTime
+  const velocityX = releaseDelay <= 80 ? mobileMenuSwipe.velocityX : 0
+  if (mobileMenuSwipe.type === 'back') {
+    const deltaX = mobileMenuSwipe.currentX - mobileMenuSwipe.startX
+    const canNavigate = mobileMenuSwipe.canNavigate
+    mobileMenuSwipe = undefined
+    mobileBackSwipeDragging.value = false
+    mobileBackSwipeOffsetPx.value = 0
+    if (canNavigate && shouldNavigateBackAfterSwipe(deltaX, velocityX)) goMobileBack()
+    return
+  }
   flushMobileMenuProgress()
-  const shouldOpen = shouldOpenMenuAfterSwipe(mobileMenuProgress.value)
-  setMobileMenu(shouldOpen)
+  const shouldOpen = shouldOpenMenuAfterSwipe(mobileMenuProgress.value, velocityX)
+  settleMobileMenu(shouldOpen)
 }
 
 function cancelMobileMenuSwipe() {
   if (!mobileMenuSwipe) return
+  if (mobileMenuSwipe.type === 'back') {
+    mobileMenuSwipe = undefined
+    mobileBackSwipeDragging.value = false
+    mobileBackSwipeOffsetPx.value = 0
+    return
+  }
   const shouldOpen = mobileMenuSwipe.startProgress >= 0.5
-  setMobileMenu(shouldOpen)
+  settleMobileMenu(shouldOpen)
 }
 
 function closeMobileMenuOnDesktop() {
@@ -721,17 +815,21 @@ watch(
 
 watch(
   mobileMenuOpen,
-  async (open) => {
+  async (open, previousOpen) => {
     document.documentElement.classList.toggle('mobile-menu-open', open)
     await nextTick()
     if (open) {
+      if (!mobileMenuKeyboardInteraction) return
       const activeLink = mobileMenuRef.value?.querySelector?.('.router-link-active')
       activeLink?.scrollIntoView?.({ block: 'center' })
       if (activeLink) activeLink.focus()
       else mobileMenuCloseRef.value?.focus?.()
       return
     }
-    if (!settingsOpen.value) mobileMenuButtonRef.value?.focus?.()
+    if (previousOpen && mobileMenuKeyboardInteraction && !settingsOpen.value) {
+      mobileMenuButtonRef.value?.focus?.({ preventScroll: true })
+    }
+    mobileMenuKeyboardInteraction = false
   },
   { immediate: true },
 )
@@ -781,6 +879,7 @@ onBeforeUnmount(() => {
   clearTimeout(activityHideTimer)
   if (moduleTitleFrame) window.cancelAnimationFrame(moduleTitleFrame)
   if (mobileMenuFrame) window.cancelAnimationFrame(mobileMenuFrame)
+  if (mobileMenuSettleFrame) window.cancelAnimationFrame(mobileMenuSettleFrame)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', closeMobileMenuOnDesktop)
   window.removeEventListener('resize', scheduleMobileModuleTitle)
@@ -797,7 +896,11 @@ onBeforeUnmount(() => {
   <div
     ref="shellRef"
     class="shell"
-    :class="{ 'mobile-menu-dragging': mobileMenuDragging }"
+    :class="{
+      'mobile-menu-dragging': mobileMenuDragging,
+      'mobile-back-swipe-dragging': mobileBackSwipeDragging,
+    }"
+    :style="mobileBackSwipeStyle"
     @touchstart="onMobileMenuTouchStart"
     @touchmove="onMobileMenuTouchMove"
     @touchend="finishMobileMenuSwipe"
@@ -856,7 +959,7 @@ onBeforeUnmount(() => {
           aria-label="打开菜单"
           aria-controls="mobile-navigation"
           :aria-expanded="mobileMenuOpen"
-          @click="setMobileMenu(true)"
+          @click="openMobileMenu"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
@@ -1296,13 +1399,15 @@ onBeforeUnmount(() => {
 
 .mobile-module-title-enter-active,
 .mobile-module-title-leave-active {
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transition:
+    opacity 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .mobile-module-title-enter-from,
 .mobile-module-title-leave-to {
   opacity: 0;
-  transform: translateY(4px);
+  transform: translateY(7px);
 }
 
 .app-activity {
@@ -2317,6 +2422,20 @@ onBeforeUnmount(() => {
   .mobile-menu-dragging .nav-scrim {
     transition: none;
     will-change: opacity;
+  }
+
+  .shell > .nav,
+  .shell > .main,
+  .shell > .mobile-bottom-nav {
+    transform: translate3d(var(--mobile-back-swipe-offset, 0), 0, 0);
+    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .mobile-back-swipe-dragging > .nav,
+  .mobile-back-swipe-dragging > .main,
+  .mobile-back-swipe-dragging > .mobile-bottom-nav {
+    transition: none;
+    will-change: transform;
   }
 
   .mobile-menu-head {

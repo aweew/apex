@@ -1732,7 +1732,7 @@ onBeforeUnmount(() => {
           :class="{ 'can-sort': canSortPortfolios }"
         >
           <div class="mobile-list-heading">
-            <strong>组合</strong>
+            <strong data-mobile-nav-title>组合</strong>
             <span>{{ list.length }} 组</span>
           </div>
           <el-checkbox v-model="includeArchived" size="small">含归档</el-checkbox>
@@ -4097,14 +4097,18 @@ onBeforeUnmount(() => {
     padding-bottom: calc(76px + env(safe-area-inset-bottom));
   }
 
+  .portfolio-page:not(.mobile-detail-open) {
+    background: #f1f4f7;
+  }
+
   .mobile-list-toolbar {
     display: grid;
     grid-template-columns: minmax(72px, 1fr) auto auto 44px;
     align-items: center;
     gap: 8px;
     margin-bottom: 0;
-    padding: 0 2px 10px;
-    border-bottom: 1px solid var(--line);
+    padding: 0 2px 4px;
+    border-bottom: 0;
   }
 
   .mobile-list-toolbar.can-sort {
@@ -4121,8 +4125,8 @@ onBeforeUnmount(() => {
   .mobile-list-heading strong {
     overflow: hidden;
     color: var(--ink);
-    font-size: 17px;
-    font-weight: 700;
+    font-size: 20px;
+    font-weight: 720;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -4166,15 +4170,15 @@ onBeforeUnmount(() => {
 
   .pf-card {
     margin: 10px 0 0;
-    padding: 11px 10px 12px;
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    padding: 13px 12px 10px;
+    border: 1px solid rgba(24, 33, 47, 0.08);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.78);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.025);
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(24, 33, 47, 0.045);
   }
 
   .mobile-list-toolbar + .pf-card {
-    margin-top: 12px;
+    margin-top: 10px;
   }
 
   .pf-card:active {
@@ -4196,8 +4200,8 @@ onBeforeUnmount(() => {
   .pf-top {
     display: grid;
     grid-template-columns: minmax(56px, 1fr) auto 62px;
-    min-height: 32px;
-    gap: 8px;
+    min-height: 34px;
+    gap: 10px;
     padding-right: 0;
   }
 
@@ -4256,8 +4260,8 @@ onBeforeUnmount(() => {
   .pf-name strong {
     min-width: 0;
     overflow: hidden;
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 17px;
+    font-weight: 720;
     letter-spacing: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4271,16 +4275,16 @@ onBeforeUnmount(() => {
   .pf-card-arrow {
     flex: 0 0 auto;
     margin-left: 0;
-    color: var(--muted);
-    font-size: 16px;
+    color: #a1aab6;
+    font-size: 15px;
   }
 
   .pf-mobile-meta-line {
     display: flex;
     align-items: center;
     min-width: 0;
-    gap: 7px;
-    margin-top: 2px;
+    gap: 8px;
+    margin-top: 3px;
     font-size: 11px;
     line-height: 16px;
     white-space: nowrap;
@@ -4291,7 +4295,7 @@ onBeforeUnmount(() => {
   .pf-freshness {
     min-width: 0;
     overflow: hidden;
-    color: #667085;
+    color: #7b8796;
     text-overflow: ellipsis;
   }
 
@@ -4323,8 +4327,8 @@ onBeforeUnmount(() => {
   }
 
   .pf-mobile-pnl b {
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 16px;
+    font-weight: 720;
   }
 
   .pf-mobile-pnl small {
@@ -4349,10 +4353,11 @@ onBeforeUnmount(() => {
   .pf-tops {
     display: flex;
     gap: 0;
-    margin-top: 7px;
+    margin-top: 10px;
     overflow: hidden;
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.045);
+    border-top: 1px solid #edf0f4;
+    border-radius: 0;
+    background: transparent;
   }
 
   .pf-top-chip {
@@ -4363,11 +4368,12 @@ onBeforeUnmount(() => {
     justify-content: space-between;
     gap: 5px;
     overflow: hidden;
-    padding: 6px 8px;
-    border-right: 1px solid var(--line);
+    padding: 9px 8px 1px;
+    border-right: 1px solid #edf0f4;
     border-radius: 0;
     background: transparent;
-    font-size: 11px;
+    color: #596575;
+    font-size: 12px;
     white-space: nowrap;
   }
 
@@ -4377,6 +4383,8 @@ onBeforeUnmount(() => {
 
   .pf-top-chip em {
     flex: 0 0 auto;
+    font-size: 12px;
+    font-weight: 650;
   }
 
   .mobile-detail-open .main {

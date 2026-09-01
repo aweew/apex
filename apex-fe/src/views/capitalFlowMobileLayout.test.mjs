@@ -94,6 +94,10 @@ test('dragon tiger desktop columns and mobile cards share one sortable result', 
   assert.match(viewSource, /class="dragon-sort-mobile"/)
 })
 
-test('mobile refresh control has a stable touch target', () => {
-  assert.match(mobileStyles, /\.capital-refresh-button\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/)
+test('mobile action controls use consistent compact sizing', () => {
+  assert.equal(viewSource.match(/<span class="refresh-label">刷新<\/span>/g)?.length, 2)
+  assert.doesNotMatch(viewSource, /class="sort-direction-button"[\s\S]*?\bcircle\b/)
+  assert.match(mobileStyles, /\.capital-refresh-button\s*\{[\s\S]*?width:\s*40px;[\s\S]*?height:\s*40px;[\s\S]*?border-radius:\s*6px;/)
+  assert.match(mobileStyles, /\.dragon-sort-mobile :deep\(\.el-select__wrapper\)[\s\S]*?min-height:\s*36px;[\s\S]*?border-radius:\s*6px;/)
+  assert.match(mobileStyles, /:deep\(\.sort-direction-button\)\s*\{[\s\S]*?width:\s*36px;[\s\S]*?height:\s*36px;/)
 })

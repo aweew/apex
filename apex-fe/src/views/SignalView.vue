@@ -741,9 +741,12 @@ onBeforeUnmount(() => {
   grid-auto-columns: 1fr;
   min-width: 0;
   padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--paper-deep);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 10px;
+  background: rgba(220, 232, 247, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 4px 14px rgba(42, 65, 94, 0.08);
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
 }
 
 .signal-segmented button {
@@ -761,9 +764,10 @@ onBeforeUnmount(() => {
 }
 
 .signal-segmented button.is-active {
-  background: var(--glass-strong);
-  color: var(--ink);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
+  border-color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--accent);
+  box-shadow: 0 3px 10px rgba(45, 73, 108, 0.12);
 }
 
 .signal-segmented button:focus-visible,

@@ -176,8 +176,9 @@ onMounted(loadOverview)
             :icon="Refresh"
             :loading="Boolean(refreshingMode)"
             aria-label="刷新资金流"
+            title="刷新资金流"
           >
-            刷新
+            <span class="refresh-label">刷新</span>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -210,8 +211,8 @@ onMounted(loadOverview)
             </el-select>
             <el-tooltip :content="dragonTigerSort.order === 'descending' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'">
               <el-button
+                class="sort-direction-button"
                 :icon="dragonTigerSortIcon"
-                circle
                 size="small"
                 :aria-label="dragonTigerSort.order === 'descending' ? '切换为升序' : '切换为降序'"
                 @click="toggleDragonTigerSortOrder"
@@ -356,8 +357,8 @@ onMounted(loadOverview)
             </el-select>
             <el-tooltip :content="stockFlowSort.order === 'descending' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'">
               <el-button
+                class="sort-direction-button"
                 :icon="stockFlowSortIcon"
-                circle
                 size="small"
                 :aria-label="stockFlowSort.order === 'descending' ? '切换为升序' : '切换为降序'"
                 @click="toggleStockFlowSortOrder"
@@ -553,18 +554,29 @@ onMounted(loadOverview)
   .stock-sort-mobile {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
   }
 
   .dragon-sort-mobile :deep(.el-select),
   .stock-sort-mobile :deep(.el-select) {
-    width: 112px;
+    width: 116px;
   }
 
-  .dragon-sort-mobile :deep(.el-button),
-  .stock-sort-mobile :deep(.el-button) {
-    width: 32px;
-    height: 32px;
+  .dragon-sort-mobile :deep(.el-select__wrapper),
+  .stock-sort-mobile :deep(.el-select__wrapper),
+  .dragon-sort-mobile :deep(.sort-direction-button),
+  .stock-sort-mobile :deep(.sort-direction-button) {
+    min-height: 36px;
+    border-radius: 6px;
+  }
+
+  .dragon-sort-mobile :deep(.sort-direction-button),
+  .stock-sort-mobile :deep(.sort-direction-button) {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
   }
 
   .capital-flow-embedded-header {
@@ -580,10 +592,12 @@ onMounted(loadOverview)
   }
 
   .capital-refresh-button {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
     padding: 0;
+    border-radius: 6px;
   }
 
   .refresh-label {
