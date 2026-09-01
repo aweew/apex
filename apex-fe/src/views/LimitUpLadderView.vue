@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Grid, Opportunity, Refresh } from '@element-plus/icons-vue'
 import { fetchLimitUpLadder, refreshLimitUpLadder } from '../api/limitUp'
 import { saveObserve } from '../api/observe'
 import { getSyncJob, startSyncJob } from '../api/sync'
@@ -14,7 +14,12 @@ import {
   downloadBlob,
   shareFilename,
 } from '../utils/shareCapture'
-import { buildLimitUpShareSheet, mountShareSheet, LIMIT_UP_SHARE_WIDTH } from '../utils/limitUpShareSheet'
+import {
+  buildLimitUpShareSheet,
+  limitUpCaptureScale,
+  mountShareSheet,
+  LIMIT_UP_SHARE_WIDTH,
+} from '../utils/limitUpShareSheet'
 import { snapshotFallbackText, snapshotStamp } from '../utils/snapshotDate'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
 
@@ -293,7 +298,11 @@ function revokeSharePreview() {
   sharePreviewUrl.value = ''
 }
 
-async function captureBoard(mode = shareMode.value) {
+function preferredShareMode() {
+  return window.matchMedia('(max-width: 720px)').matches ? 'mobile' : 'desktop'
+}
+
+async function captureBoard(mode = shareMode.value, intent = 'preview') {
   await nextTick()
   if (!filteredTiers.value.length) throw new Error('暂无复盘内容')
 
@@ -314,11 +323,12 @@ async function captureBoard(mode = shareMode.value) {
     const height = Math.max(sheet.scrollHeight, sheet.offsetHeight, 1)
     sheet.style.width = `${width}px`
     sheet.style.height = `${height}px`
-    // 高分屏至少 2x 才清晰；超长图才按 canvas 上限略降，且不低于 1.75
-    const dpr = Math.max(window.devicePixelRatio || 1, 2)
-    const maxEdge = 14000
-    const scaleCap = maxEdge / Math.max(width, height)
-    const scale = Math.min(dpr, Math.max(1.75, scaleCap))
+    const scale = limitUpCaptureScale({
+      width,
+      height,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      intent,
+    })
     return await captureElementBlob(sheet, {
       scale,
       width,
@@ -343,9 +353,7 @@ async function openShare(mode) {
     ElMessage.warning('暂无复盘内容可分享')
     return
   }
-  if (mode === 'desktop' || mode === 'mobile') {
-    shareMode.value = mode
-  }
+  shareMode.value = mode === 'desktop' || mode === 'mobile' ? mode : preferredShareMode()
   sharing.value = true
   try {
     const blob = await captureBoard(shareMode.value)
@@ -370,7 +378,10 @@ async function onShareModeChange(mode) {
 async function onCopyShare() {
   copying.value = true
   try {
-    await copyImageBlob(captureBoard(shareMode.value))
+    const previewBlob = sharePreviewObjectUrl
+      ? fetch(sharePreviewObjectUrl).then((response) => response.blob())
+      : captureBoard(shareMode.value, 'clipboard')
+    await copyImageBlob(previewBlob)
     ElMessage.success('已复制到剪贴板，可直接粘贴到微信/文档')
   } catch (e) {
     console.error('复制连板天梯分享图失败', e)
@@ -383,7 +394,7 @@ async function onCopyShare() {
 async function onDownloadShare() {
   downloading.value = true
   try {
-    const blob = await captureBoard(shareMode.value)
+    const blob = await captureBoard(shareMode.value, 'download')
     const suffix = shareMode.value === 'mobile' ? 'mobile' : 'ladder'
     downloadBlob(blob, shareFilename(`apex_limitup_${suffix}`, titleDate.value || 'ladder'))
     ElMessage.success('已下载分享图')
@@ -423,20 +434,18 @@ onBeforeUnmount(() => {
       </div>
       <div class="actions">
         <el-date-picker
+          class="lu-date-picker"
           v-model="tradeDate"
           type="date"
           value-format="YYYY-MM-DD"
           placeholder="交易日"
-          style="width: 150px"
           :clearable="false"
           :disabled-date="disableUnavailableDate"
         />
-        <el-tooltip content="刷新涨停池" placement="top">
-          <el-button circle plain :icon="Refresh" :loading="refreshing" aria-label="刷新涨停池" @click="onRefresh" />
-        </el-tooltip>
-        <el-button-group>
-          <el-button plain @click="router.push({ path: '/market', query: { tab: 'sector' } })">板块</el-button>
-          <el-button plain @click="router.push('/hot')">热点</el-button>
+        <el-button-group class="lu-view-actions">
+          <el-button plain :icon="Refresh" :loading="refreshing" @click="onRefresh">刷新</el-button>
+          <el-button plain :icon="Grid" @click="router.push({ path: '/market', query: { tab: 'sector' } })">板块</el-button>
+          <el-button plain :icon="Opportunity" @click="router.push('/hot')">热点</el-button>
         </el-button-group>
       </div>
     </header>
@@ -605,7 +614,7 @@ onBeforeUnmount(() => {
           @change="onShareModeChange"
         >
           <el-radio-button value="desktop">桌面版 1180</el-radio-button>
-          <el-radio-button value="mobile">手机版 750</el-radio-button>
+          <el-radio-button value="mobile">手机版 1080</el-radio-button>
         </el-radio-group>
         <span class="share-tip-inline">预览可滚动；推荐下载 PNG 发微信/社群</span>
       </div>
@@ -632,6 +641,10 @@ onBeforeUnmount(() => {
   --lu-red: #c45656;
   --lu-red-soft: rgba(196, 86, 86, 0.1);
   --lu-green: #3d9a4a;
+}
+
+.lu-date-picker {
+  width: 150px;
 }
 
 .effect-bar {
@@ -1224,13 +1237,28 @@ onBeforeUnmount(() => {
 
   .actions {
     flex-wrap: wrap;
+    align-items: center;
   }
 
-  .lu-page .actions :deep(.el-button.is-circle) {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    padding: 0;
+  .lu-page .header > .actions > .lu-date-picker {
+    flex: 0 0 132px;
+    width: 132px !important;
+    min-height: 40px;
+  }
+
+  .lu-page .lu-date-picker :deep(.el-input__wrapper),
+  .lu-page .lu-view-actions :deep(.el-button) {
+    height: 40px !important;
+    min-height: 40px !important;
+  }
+
+  .lu-page .lu-view-actions :deep(.el-button) {
+    padding: 0 10px;
+  }
+
+  .lu-page .lu-view-actions :deep(.el-icon) {
+    width: 15px;
+    height: 15px;
   }
 
 }

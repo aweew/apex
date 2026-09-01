@@ -6,7 +6,26 @@ import { shareBrandFooterHtml, shareBrandLockupHtml } from '../brand/identity.js
 
 export const LIMIT_UP_SHARE_WIDTH = {
   desktop: 1180,
-  mobile: 750,
+  mobile: 1080,
+}
+
+export const LIMIT_UP_CLIPBOARD_MAX_WIDTH = 1280
+
+export function limitUpCaptureScale({
+  width,
+  height,
+  devicePixelRatio = 1,
+  intent = 'download',
+} = {}) {
+  const safeWidth = Math.max(1, Number(width) || 1)
+  const safeHeight = Math.max(1, Number(height) || 1)
+  const maxEdgeScale = 14000 / Math.max(safeWidth, safeHeight)
+  const preferredScale = intent === 'preview'
+    ? 1
+    : intent === 'clipboard'
+      ? LIMIT_UP_CLIPBOARD_MAX_WIDTH / safeWidth
+      : Math.max(Number(devicePixelRatio) || 1, 2)
+  return Math.max(1, Math.min(preferredScale, maxEdgeScale))
 }
 
 function esc(s) {
@@ -64,9 +83,9 @@ function themeTone(theme) {
 }
 
 function badgeHtml(text, bg, mobile) {
-  const minW = mobile ? 13 : 14
-  const h = mobile ? 13 : 14
-  const fs = mobile ? 8 : 8
+  const minW = mobile ? 24 : 14
+  const h = mobile ? 24 : 14
+  const fs = mobile ? 14 : 8
   return `<i style="display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;flex-shrink:0;min-width:${minW}px;height:${h}px;padding:0 3px;border-radius:2px;background:${bg};color:#fff;font-size:${fs}px;font-style:normal;font-weight:${mobile ? 600 : 700};line-height:1;">${esc(text)}</i>`
 }
 
@@ -94,16 +113,16 @@ export function buildLimitUpShareSheet(payload) {
 
   const mobile = layout === 'mobile'
   const width = mobile ? LIMIT_UP_SHARE_WIDTH.mobile : LIMIT_UP_SHARE_WIDTH.desktop
-  const pad = mobile ? '88px 40px 104px' : '28px 28px 20px'
-  const cardW = mobile ? 96 : 100
-  const tierSideW = mobile ? 64 : null
-  const cardRowH = mobile ? 68 : 72
-  const markSize = mobile ? 36 : 44
-  const titleFs = mobile ? 16 : 18
-  const tierTitleFs = mobile ? 14 : 15
-  const nameFs = mobile ? 12 : 11
-  const cardThemeFs = mobile ? 7 : 8
-  const themeChipFs = mobile ? 10 : 11
+  const pad = mobile ? '48px 40px 72px' : '28px 28px 20px'
+  const cardW = mobile ? 170 : 100
+  const tierSideW = mobile ? 92 : null
+  const cardRowH = mobile ? 116 : 72
+  const markSize = mobile ? 60 : 44
+  const titleFs = mobile ? 28 : 18
+  const tierTitleFs = mobile ? 24 : 15
+  const nameFs = mobile ? 22 : 11
+  const cardThemeFs = mobile ? 16 : 8
+  const themeChipFs = mobile ? 18 : 11
   const cardNameWeight = mobile ? 600 : 700
   const accentWeight = mobile ? 600 : 700
   const mediumWeight = mobile ? 600 : 650
@@ -129,7 +148,7 @@ export function buildLimitUpShareSheet(payload) {
     'background:#ffffff',
     'color:#1d1d1f',
     'font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif',
-    `font-size:${mobile ? 11 : 12}px`,
+    `font-size:${mobile ? 18 : 12}px`,
     'line-height:1.35',
   ].join(';')
 
@@ -163,7 +182,7 @@ export function buildLimitUpShareSheet(payload) {
             ? '#86868b'
             : pctN > 0 ? (mobile ? '#c97a7a' : '#c45656') : (mobile ? '#72a57a' : '#3d9a4a')
           const pctHtml = pctText
-            ? `<span style="flex:0 0 auto;font-size:${mobile ? 8 : 9}px;font-weight:${accentWeight};color:${pctColor};font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2;">${esc(pctText)}</span>`
+            ? `<span style="flex:0 0 auto;font-size:${mobile ? 16 : 9}px;font-weight:${accentWeight};color:${pctColor};font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2;">${esc(pctText)}</span>`
             : ''
           const meta = []
           if (!failed && s.sealAmount != null) meta.push(`封 ${fmtSealAmount(s.sealAmount)}`)
@@ -174,24 +193,24 @@ export function buildLimitUpShareSheet(payload) {
             ? `<span style="flex:1 1 auto;min-width:0;font-size:${cardThemeFs}px;font-weight:${mediumWeight};color:${tone.color};opacity:${mobile ? 0.72 : 1};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35;">${esc(theme)}</span>`
             : `<span style="flex:1 1 auto;min-width:0;font-size:${cardThemeFs}px;color:#86868b;">-</span>`
           const failX = failed
-            ? `<span style="position:absolute;inset:-2px;display:flex;align-items:center;justify-content:center;font-size:${mobile ? 52 : 60}px;font-weight:200;line-height:1;color:rgba(60,60,67,.16);pointer-events:none;font-family:'Helvetica Neue',Arial,sans-serif;">×</span>`
+            ? `<span style="position:absolute;inset:-2px;display:flex;align-items:center;justify-content:center;font-size:${mobile ? 84 : 60}px;font-weight:200;line-height:1;color:rgba(60,60,67,.16);pointer-events:none;font-family:'Helvetica Neue',Arial,sans-serif;">×</span>`
             : ''
           const contentOpacity = failed ? 'opacity:.52;' : ''
-          return `<div style="box-sizing:border-box;position:relative;overflow:hidden;width:${cardW}px;height:${cardRowH}px;padding:4px 5px 3px;border:${cardBorder};border-radius:5px;background:${cardBg};">
+          return `<div style="box-sizing:border-box;position:relative;overflow:hidden;width:${cardW}px;height:${cardRowH}px;padding:${mobile ? '8px 10px 7px' : '4px 5px 3px'};border:${cardBorder};border-radius:${mobile ? 8 : 5}px;background:${cardBg};">
             ${failX}
             <div style="position:relative;z-index:1;${contentOpacity}">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:2px;min-height:11px;">
-              <span style="font-size:8px;color:#aeaeb2;white-space:nowrap;">${time}</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:2px;min-height:${mobile ? 17 : 11}px;">
+              <span style="font-size:${mobile ? 14 : 8}px;color:#aeaeb2;white-space:nowrap;">${time}</span>
             </div>
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;height:16px;">
-              <div style="flex:1 1 auto;min-width:0;font-size:${nameFs}px;font-weight:${cardNameWeight};color:${mobile ? '#111318' : '#1d1d1f'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:16px;height:16px;">${name}</div>
-              <span style="display:inline-flex;flex:0 0 auto;flex-wrap:nowrap;gap:2px;align-items:center;height:16px;">${badges.join('')}</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:${mobile ? 5 : 3}px;min-width:0;margin-top:1px;height:${mobile ? 28 : 16}px;">
+              <div style="flex:1 1 auto;min-width:0;font-size:${nameFs}px;font-weight:${cardNameWeight};color:${mobile ? '#111318' : '#1d1d1f'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:${mobile ? 28 : 16}px;height:${mobile ? 28 : 16}px;">${name}</div>
+              <span style="display:inline-flex;flex:0 0 auto;flex-wrap:nowrap;gap:${mobile ? 3 : 2}px;align-items:center;height:${mobile ? 24 : 16}px;">${badges.join('')}</span>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:3px;min-width:0;margin-top:1px;">
               ${themeHtmlInner}
               ${pctHtml}
             </div>
-            ${meta.length ? `<div style="display:flex;gap:${mobile ? 4 : 6}px;margin-top:1px;font-size:8px;color:#aeaeb2;white-space:nowrap;overflow:hidden;line-height:1.2;font-variant-numeric:tabular-nums;">${meta.map((m) => `<span style="flex:0 0 auto;white-space:nowrap;">${esc(m).replace(' ', '&nbsp;')}</span>`).join('')}</div>` : ''}
+            ${meta.length ? `<div style="display:flex;gap:${mobile ? 8 : 6}px;margin-top:${mobile ? 3 : 1}px;font-size:${mobile ? 14 : 8}px;color:#aeaeb2;white-space:nowrap;overflow:hidden;line-height:1.2;font-variant-numeric:tabular-nums;">${meta.map((m) => `<span style="flex:0 0 auto;white-space:nowrap;">${esc(m).replace(' ', '&nbsp;')}</span>`).join('')}</div>` : ''}
             </div>
           </div>`
         })
@@ -200,17 +219,17 @@ export function buildLimitUpShareSheet(payload) {
       const promoteLabelText = tier.promoteLabel ? String(tier.promoteLabel) : ''
       const promoteRateText = tier.promoteRate != null ? fmtRate(tier.promoteRate) : ''
       const promoteHtml = mobile
-        ? `${promoteLabelText ? `<div style="margin-top:3px;font-size:9px;font-weight:600;color:#3d9a4a;line-height:1.15;white-space:nowrap;">${esc(promoteLabelText)}</div>` : ''}${promoteRateText ? `<div style="font-size:10px;font-weight:650;color:#3d9a4a;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums;">${esc(promoteRateText)}</div>` : ''}`
+        ? `${promoteLabelText ? `<div style="margin-top:5px;font-size:15px;font-weight:600;color:#3d9a4a;line-height:1.15;white-space:nowrap;">${esc(promoteLabelText)}</div>` : ''}${promoteRateText ? `<div style="font-size:17px;font-weight:650;color:#3d9a4a;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums;">${esc(promoteRateText)}</div>` : ''}`
         : `${promoteLabelText ? `<div style="margin-top:1px;font-size:10px;font-weight:650;color:#3d9a4a;line-height:1.15;white-space:nowrap;">${esc(promoteLabelText)}</div>` : ''}${promoteRateText ? `<div style="font-size:10px;font-weight:650;color:#3d9a4a;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums;">${esc(promoteRateText)}</div>` : ''}`
       const tierSideStyle = mobile
-        ? `display:flex;flex-direction:column;justify-content:center;align-items:center;align-self:stretch;box-sizing:border-box;width:${tierSideW}px;min-width:${tierSideW}px;min-height:${cardRowH}px;height:auto;padding:6px 6px 6px 4px;border:0;border-right:2px solid rgba(196,86,86,.3);background:#fffafa;text-align:center;overflow:hidden;`
+        ? `display:flex;flex-direction:column;justify-content:center;align-items:center;align-self:stretch;box-sizing:border-box;width:${tierSideW}px;min-width:${tierSideW}px;min-height:${cardRowH}px;height:auto;padding:10px 8px 10px 6px;border:0;border-right:3px solid rgba(196,86,86,.3);background:#fffafa;text-align:center;overflow:hidden;`
         : `display:flex;flex-direction:column;justify-content:center;align-items:flex-start;box-sizing:border-box;width:max-content;min-height:${cardRowH}px;height:${cardRowH}px;padding:0;text-align:left;`
 
       return `<section style="display:grid;grid-template-columns:${mobile ? `${tierSideW}px` : 'max-content'} 1fr;column-gap:${mobile ? 8 : 6}px;align-items:${mobile ? 'stretch' : 'start'};margin-bottom:${mobile ? 7 : 8}px;padding:2px 0 ${mobile ? 7 : 8}px;border-bottom:1px solid #f0f0f2;">
         <aside style="${tierSideStyle}">
           <div style="font-size:${tierTitleFs}px;font-weight:${mobile ? 700 : 800};color:#c45656;line-height:1.15;white-space:nowrap;">${esc(tier.title)}</div>
           ${promoteHtml}
-          <div style="margin-top:${mobile ? 3 : 1}px;font-size:${mobile ? 9 : 10}px;color:#aeaeb2;white-space:nowrap;line-height:1.2;">${esc(tier.count ?? tier.stocks?.length ?? 0)}${mobile ? '' : ' '}家</div>
+          <div style="margin-top:${mobile ? 5 : 1}px;font-size:${mobile ? 15 : 10}px;color:#aeaeb2;white-space:nowrap;line-height:1.2;">${esc(tier.count ?? tier.stocks?.length ?? 0)}${mobile ? '' : ' '}家</div>
         </aside>
         <div style="display:flex;flex-wrap:wrap;gap:${mobile ? 4 : 5}px;align-content:flex-start;">${cards}</div>
       </section>`
@@ -218,13 +237,13 @@ export function buildLimitUpShareSheet(payload) {
     .join('')
 
   root.innerHTML = `
-    <header style="margin-bottom:${mobile ? 10 : 12}px;padding:${mobile ? '10px 12px 8px' : '12px 14px 10px'};border:1px solid #eee;border-radius:${mobile ? 10 : 12}px;background:linear-gradient(180deg,#fff8f6 0%,#fff 70%);">
+    <header style="margin-bottom:${mobile ? 18 : 12}px;padding:${mobile ? '20px 24px 18px' : '12px 14px 10px'};border:1px solid #eee;border-radius:${mobile ? 14 : 12}px;background:linear-gradient(180deg,#fff8f6 0%,#fff 70%);">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;">
         <div>
           ${shareBrandLockupHtml({ subtitle: '连板天梯', markSize })}
           <h2 style="margin:8px 0 0;font-size:${titleFs}px;font-weight:${mobile ? 700 : 750};color:#c45656;">${esc(titleDate)} A股 连板天梯</h2>
         </div>
-        <span style="font-size:${mobile ? 10 : 11}px;color:#86868b;white-space:nowrap;padding-top:4px;">${esc(total)} 家${activeTheme ? ` · ${esc(activeTheme)}` : ''}</span>
+        <span style="font-size:${mobile ? 16 : 11}px;color:#86868b;white-space:nowrap;padding-top:4px;">${esc(total)} 家${activeTheme ? ` · ${esc(activeTheme)}` : ''}</span>
       </div>
       ${themeHtml ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;width:100%;">${themeHtml}</div>` : ''}
     </header>
