@@ -720,6 +720,8 @@ onBeforeUnmount(() => {
               >{{ item.label }}</button>
             </div>
           </div>
+        </nav>
+        <div class="market-secondary-row">
           <div class="market-nav-group analysis-market-nav">
             <span class="market-nav-label">A股分析</span>
             <div class="tabs" role="tablist" aria-label="A股分析">
@@ -737,21 +739,23 @@ onBeforeUnmount(() => {
               >资金流</button>
             </div>
           </div>
-        </nav>
-        <el-button v-if="isQuoteMarketTab" class="market-action" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
-          <el-icon v-if="!quoteRefreshing"><Refresh /></el-icon>
-          <span class="desktop-action-label">刷新行情</span>
-          <span class="mobile-action-label">刷新</span>
-        </el-button>
-        <el-button v-if="isQuoteMarketTab" class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
-          <el-icon v-if="!indexSyncing"><Download /></el-icon>
-          <span class="desktop-action-label">同步指数</span>
-          <span class="mobile-action-label">同步</span>
-        </el-button>
-        <el-button v-if="isQuoteMarketTab" class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
-          <el-icon><Histogram /></el-icon>
-          <span class="desktop-action-label">连板天梯</span>
-        </el-button>
+          <div v-if="isQuoteMarketTab" class="market-action-group">
+            <el-button class="market-action" :loading="quoteRefreshing" :disabled="indexSyncing" aria-label="刷新行情" @click="onRefreshQuotes">
+              <el-icon v-if="!quoteRefreshing"><Refresh /></el-icon>
+              <span class="desktop-action-label">刷新行情</span>
+              <span class="mobile-action-label">刷新</span>
+            </el-button>
+            <el-button class="market-action" :loading="indexSyncing" :disabled="quoteRefreshing" aria-label="同步指数" @click="onSyncIndex('20240101')">
+              <el-icon v-if="!indexSyncing"><Download /></el-icon>
+              <span class="desktop-action-label">同步指数</span>
+              <span class="mobile-action-label">同步</span>
+            </el-button>
+            <el-button class="market-action mobile-icon-action" plain aria-label="打开连板天梯" title="连板天梯" @click="router.push('/limit-up')">
+              <el-icon><Histogram /></el-icon>
+              <span class="desktop-action-label">连板天梯</span>
+            </el-button>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -1191,6 +1195,18 @@ onBeforeUnmount(() => {
   align-items: flex-end;
   gap: 12px;
   min-width: 0;
+}
+
+.market-secondary-row,
+.market-action-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.market-action-group {
+  align-items: center;
 }
 
 .market-nav-group {
@@ -2342,10 +2358,40 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .analysis-market-nav {
-    padding: 8px 0 0;
+  .header .actions .index-market-nav .tabs {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .header .actions .index-market-nav .tabs > .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 4px;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .market-secondary-row {
+    display: flex;
+    align-items: flex-end;
+    width: 100%;
+    gap: 8px;
+    padding-top: 8px;
     border-top: 1px solid var(--mc-line);
+  }
+
+  .analysis-market-nav {
+    flex: 0 1 auto;
+    width: auto;
+    padding: 0;
+    border-top: 0;
     border-left: 0;
+  }
+
+  .market-action-group {
+    flex: 0 0 auto;
+    gap: 6px;
+    margin-left: auto;
   }
 
   .header .actions .tabs {

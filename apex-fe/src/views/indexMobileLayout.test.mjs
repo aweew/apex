@@ -61,6 +61,26 @@ test('market refresh and index sync expose only the action that is running', () 
   assert.match(indexSource, /:loading="indexSyncing" :disabled="quoteRefreshing"/)
 })
 
+test('mobile market controls balance primary navigation and secondary actions', () => {
+  assert.match(
+    indexSource,
+    /class="market-secondary-row"[\s\S]*?class="market-nav-group analysis-market-nav"[\s\S]*?class="market-action-group"/,
+  )
+  assert.match(
+    mobileStyles,
+    /\.header \.actions \.index-market-nav \.tabs\s*\{[\s\S]*?width:\s*100%;[\s\S]*?overflow:\s*hidden;/,
+  )
+  assert.match(
+    mobileStyles,
+    /\.header \.actions \.index-market-nav \.tabs > \.tab\s*\{[\s\S]*?flex:\s*1 1 0;/,
+  )
+  assert.match(
+    mobileStyles,
+    /\.market-secondary-row\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*flex-end;[\s\S]*?width:\s*100%;/,
+  )
+  assert.match(mobileStyles, /\.market-action-group\s*\{[\s\S]*?margin-left:\s*auto;/)
+})
+
 test('market board automatically follows the highest-priority active market', () => {
   assert.match(indexSource, /import \{ resolveActiveMarket, resolveMarketTab \} from '\.\.\/utils\/marketTradingSession\.js'/)
   assert.match(indexSource, /const marketTabs = \[[\s\S]*?key: 'cn'[\s\S]*?key: 'hk'[\s\S]*?key: 'asia', label: '日韩'[\s\S]*?key: 'us'/)

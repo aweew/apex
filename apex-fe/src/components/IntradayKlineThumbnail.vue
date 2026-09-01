@@ -25,62 +25,55 @@ const props = defineProps({
 })
 
 const padding = 3
-const chartBars = computed(() => props.bars
-  .map((bar) => ({
-    open: Number(bar?.openPrice ?? bar?.open),
-    close: Number(bar?.closePrice ?? bar?.close),
-    high: Number(bar?.highPrice ?? bar?.high),
-    low: Number(bar?.lowPrice ?? bar?.low),
-  }))
-  .filter((bar) => [bar.open, bar.close, bar.high, bar.low].every(Number.isFinite)))
-const bounds = computed(() => {
-  const values = chartBars.value.flatMap((bar) => [bar.high, bar.low])
+const chartPoints = computed(() => props.bars
+  .map((bar) => Number(bar?.closePrice ?? bar?.close))
+  .filter(Number.isFinite))
+const latestClose = computed(() => chartPoints.value.at(-1))
+const referenceClose = computed(() => {
+  if (props.previousClose === null || props.previousClose === undefined || props.previousClose === '') {
+    return chartPoints.value[0]
+  }
   const previousClose = Number(props.previousClose)
-  if (Number.isFinite(previousClose)) values.push(previousClose)
-  if (!values.length) return { min: 0, max: 1 }
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+  return Number.isFinite(previousClose) ? previousClose : chartPoints.value[0]
+})
+const lineColor = computed(() => {
+  if (!Number.isFinite(latestClose.value) || !Number.isFinite(referenceClose.value)) return '#64748b'
+  if (latestClose.value > referenceClose.value) return '#d6495f'
+  if (latestClose.value < referenceClose.value) return '#16866a'
+  return '#64748b'
+})
+const bounds = computed(() => {
+  if (!chartPoints.value.length) return { min: 0, max: 1 }
+  const min = Math.min(...chartPoints.value)
+  const max = Math.max(...chartPoints.value)
   const range = max - min || Math.max(Math.abs(max) * 0.01, 0.01)
-  return { min: min - range * 0.06, max: max + range * 0.06 }
+  return { min: min - range * 0.08, max: max + range * 0.08 }
 })
 const plotWidth = computed(() => Math.max(1, props.width - padding * 2))
 const plotHeight = computed(() => Math.max(1, props.height - padding * 2))
-const candleStep = computed(() => plotWidth.value / Math.max(1, chartBars.value.length))
-const candleWidth = computed(() => Math.max(1, Math.min(4, candleStep.value * 0.58)))
+const xStep = computed(() => chartPoints.value.length > 1
+  ? plotWidth.value / (chartPoints.value.length - 1)
+  : 0)
 
 function yFor(value) {
   const range = bounds.value.max - bounds.value.min || 1
   return padding + ((bounds.value.max - value) / range) * plotHeight.value
 }
 
-const candles = computed(() => chartBars.value.map((bar, index) => {
-  const centerX = padding + candleStep.value * (index + 0.5)
-  const openY = yFor(bar.open)
-  const closeY = yFor(bar.close)
-  return {
-    centerX,
-    highY: yFor(bar.high),
-    lowY: yFor(bar.low),
-    bodyX: centerX - candleWidth.value / 2,
-    bodyY: Math.min(openY, closeY),
-    bodyHeight: Math.max(1, Math.abs(openY - closeY)),
-    color: bar.close >= bar.open ? '#d6495f' : '#16866a',
-  }
-}))
-const baselineY = computed(() => {
-  const previousClose = Number(props.previousClose)
-  return Number.isFinite(previousClose) ? yFor(previousClose) : null
-})
+const linePath = computed(() => chartPoints.value.map((value, index) => {
+  const x = padding + index * xStep.value
+  const y = yFor(value)
+  return `${index ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`
+}).join(' '))
 const ariaLabel = computed(() => {
-  const latestClose = chartBars.value.at(-1)?.close
-  const latestText = Number.isFinite(latestClose) ? latestClose.toFixed(2) : '暂无'
-  return `${props.label}，${chartBars.value.length} 根，最新 ${latestText}`
+  const latestText = Number.isFinite(latestClose.value) ? latestClose.value.toFixed(2) : '暂无'
+  return `${props.label}，${chartPoints.value.length} 个点，最新 ${latestText}`
 })
 </script>
 
 <template>
   <svg
-    v-if="candles.length"
+    v-if="chartPoints.length"
     class="intraday-kline-thumbnail"
     :style="{ height: `${height}px` }"
     :viewBox="`0 0 ${width} ${height}`"
@@ -88,32 +81,16 @@ const ariaLabel = computed(() => {
     role="img"
     :aria-label="ariaLabel"
   >
-    <line
-      v-if="baselineY !== null"
-      class="intraday-kline-baseline"
-      :x1="padding"
-      :x2="width - padding"
-      :y1="baselineY"
-      :y2="baselineY"
+    <path
+      class="intraday-kline-line"
+      :d="linePath"
+      fill="none"
+      :stroke="lineColor"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="1.7"
+      vector-effect="non-scaling-stroke"
     />
-    <g v-for="(candle, index) in candles" :key="index">
-      <line
-        class="intraday-kline-wick"
-        :x1="candle.centerX"
-        :x2="candle.centerX"
-        :y1="candle.highY"
-        :y2="candle.lowY"
-        :stroke="candle.color"
-      />
-      <rect
-        class="intraday-kline-body"
-        :x="candle.bodyX"
-        :y="candle.bodyY"
-        :width="candleWidth"
-        :height="candle.bodyHeight"
-        :fill="candle.color"
-      />
-    </g>
   </svg>
 </template>
 
@@ -122,21 +99,5 @@ const ariaLabel = computed(() => {
   display: block;
   width: 100%;
   overflow: hidden;
-}
-
-.intraday-kline-baseline {
-  stroke: #cbd5e1;
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-  vector-effect: non-scaling-stroke;
-}
-
-.intraday-kline-wick {
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.intraday-kline-body {
-  shape-rendering: crispEdges;
 }
 </style>
