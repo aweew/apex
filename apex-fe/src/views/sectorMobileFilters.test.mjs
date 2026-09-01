@@ -4,10 +4,11 @@ import test from 'node:test'
 
 const sectorSource = await readFile(new URL('./SectorBoardView.vue', import.meta.url), 'utf8')
 const sectorApiSource = await readFile(new URL('../api/sector.js', import.meta.url), 'utf8')
+const liquidTabsSource = await readFile(new URL('../components/LiquidGlassSegmented.vue', import.meta.url), 'utf8')
 
 test('sector rotation requests and labels five trading days', () => {
   assert.match(sectorSource, /const ROTATION_DAY_COUNT = 5/)
-  assert.match(sectorSource, /fetchSectorRotation\(\{ days: ROTATION_DAY_COUNT, type: activeTab\.value \}\)/)
+  assert.match(sectorSource, /fetchSectorRotation\(\{ days: ROTATION_DAY_COUNT, type \}\)/)
   assert.match(sectorSource, /近 5 个交易日 Top5/)
   assert.match(sectorApiSource, /fetchSectorRotation\(\{ days = 5, type = 'INDUSTRY' \} = \{\}\)/)
 })
@@ -16,7 +17,6 @@ test('sector page provides a dedicated mobile filter surface', () => {
   assert.match(sectorSource, /class="sector-mobile-filters"/)
   assert.match(sectorSource, /class="mobile-filter-primary"/)
   assert.match(sectorSource, /class="mobile-sort-strip"/)
-  assert.match(sectorSource, /class="mobile-filter-summary"/)
   assert.match(sectorSource, /class="mobile-sector-shortcuts"/)
 })
 
@@ -34,16 +34,31 @@ test('desktop sector filters remain separate from the mobile controls', () => {
   assert.match(sectorSource, /@media \(max-width: 560px\)[\s\S]*?\.sector-desktop-filters,[\s\S]*?\.sector-desktop-shortcuts\s*\{\s*display:\s*none;/)
 })
 
-test('mobile sector controls keep touch targets at least 44 pixels tall', () => {
-  assert.match(sectorSource, /\.mobile-sort-chip\s*\{[\s\S]*?min-height:\s*44px;/)
-  assert.match(sectorSource, /\.mobile-order-toggle\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/)
+test('embedded mobile sector controls stay compact without repeating the page title', () => {
+  assert.match(sectorSource, /<div v-if="!embedded" class="sector-title-block">/)
+  assert.doesNotMatch(sectorSource, /class="mobile-filter-summary"/)
+  assert.match(sectorSource, /\.mobile-filter-primary :deep\(\.el-input__wrapper\)\s*\{[\s\S]*?min-height:\s*36px;/)
+  assert.match(sectorSource, /\.mobile-sort-chip\s*\{[\s\S]*?min-height:\s*34px;/)
+  assert.match(sectorSource, /\.mobile-order-toggle\s*\{[\s\S]*?width:\s*36px;[\s\S]*?height:\s*36px;/)
+  assert.match(sectorSource, /\.mobile-sector-shortcuts\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*flex-end;/)
 })
 
-test('mobile sector tabs keep three equal segments and a contained active surface', () => {
-  const mobileStyles = sectorSource.slice(sectorSource.indexOf('@media (max-width: 560px)'))
-  assert.match(mobileStyles, /\.tabs :deep\(\.el-tabs__nav\)\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);[\s\S]*?float:\s*none;/)
-  assert.match(mobileStyles, /\.tabs :deep\(\.el-tabs__item\)\s*\{[\s\S]*?width:\s*100%;/)
-  assert.match(mobileStyles, /\.tabs :deep\(\.el-tabs__item\.is-active\)\s*\{[\s\S]*?border-radius:\s*5px;[\s\S]*?background:\s*var\(--accent\);[\s\S]*?color:\s*#fff;/)
+test('sector type switch uses the reusable liquid glass segmented control', () => {
+  assert.match(sectorSource, /import LiquidGlassSegmented from '\.\.\/components\/LiquidGlassSegmented\.vue'/)
+  assert.match(sectorSource, /<LiquidGlassSegmented[\s\S]*?v-model="activeTab"[\s\S]*?:options="TAB_OPTIONS"/)
+  assert.match(liquidTabsSource, /grid-template-columns: repeat\(var\(--liquid-count\), minmax\(0, 1fr\)\)/)
+  assert.match(liquidTabsSource, /backdrop-filter: blur\(18px\) saturate\(170%\)/)
+  assert.match(liquidTabsSource, /transform 520ms cubic-bezier\(0\.22, 1\.35, 0\.36, 1\)/)
+  assert.match(liquidTabsSource, /@media \(prefers-reduced-motion: reduce\)/)
+})
+
+test('tab requests update only the ranking surface and reject stale responses', () => {
+  assert.match(sectorSource, /v-loading="loading && !board"/)
+  assert.match(sectorSource, /class="ranking-content"/)
+  assert.match(sectorSource, /loading && loadedBoardType !== activeTab/)
+  assert.match(sectorSource, /const requestSequence = \+\+boardLoadSequence/)
+  assert.match(sectorSource, /if \(requestSequence !== boardLoadSequence\) return/)
+  assert.doesNotMatch(sectorSource, /v-loading="loading \|\| refreshing"/)
 })
 
 test('mobile mainline cards keep headings compact and summaries inside each card', () => {

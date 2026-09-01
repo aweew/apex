@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Refresh, Search, SortDown, SortUp } from '@element-plus/icons-vue'
+import LiquidGlassSegmented from '../components/LiquidGlassSegmented.vue'
 import {
   fetchSectorBoard,
   fetchSectorConstituents,
@@ -43,6 +44,7 @@ const rotationLoading = ref(false)
 const availableDateSet = ref(new Set())
 const nameFilter = ref('')
 const mobileSortExpanded = ref(false)
+const loadedBoardType = ref('')
 
 const drawerOpen = ref(false)
 const drawerLoading = ref(false)
@@ -76,23 +78,19 @@ const TAB_META = {
 }
 
 const TYPE_LABEL = { INDUSTRY: '行业', CONCEPT: '概念', THEME: '题材' }
+const TAB_OPTIONS = Object.entries(TAB_META).map(([value, meta]) => ({ value, label: meta.label }))
 const RANKING_PAGE_SIZE = 50
 const ROTATION_DAY_COUNT = 5
 const MOBILE_PRIMARY_SORTS = [
-  { label: '涨跌', fullLabel: '涨跌幅', value: 'pctChg' },
-  { label: '3日', fullLabel: '3日涨幅', value: 'pctChg3d' },
-  { label: '5日', fullLabel: '5日涨幅', value: 'pctChg5d' },
+  { label: '涨跌', value: 'pctChg' },
+  { label: '3日', value: 'pctChg3d' },
+  { label: '5日', value: 'pctChg5d' },
 ]
 const MOBILE_MORE_SORTS = [
-  { label: '涨停数', fullLabel: '涨停家数', value: 'limitUpCount' },
-  { label: '连板', fullLabel: '连板高度', value: 'maxLianban' },
-  { label: '净流入', fullLabel: '净流入', value: 'netInflow' },
+  { label: '涨停数', value: 'limitUpCount' },
+  { label: '连板', value: 'maxLianban' },
+  { label: '净流入', value: 'netInflow' },
 ]
-const mobileSortLabel = computed(() => {
-  const currentSort = [...MOBILE_PRIMARY_SORTS, ...MOBILE_MORE_SORTS]
-    .find((option) => option.value === sortBy.value)
-  return currentSort?.fullLabel || '涨跌幅'
-})
 const mobileMoreSortActive = computed(() => {
   return MOBILE_MORE_SORTS.some((option) => option.value === sortBy.value)
 })
@@ -180,41 +178,54 @@ function fmtAmountYi(v) {
 }
 
 let suppressDateWatch = false
+let boardLoadSequence = 0
+let rotationLoadSequence = 0
+let mainlineLoadSequence = 0
 
 async function loadMainline(date) {
+  const requestSequence = ++mainlineLoadSequence
   try {
     const res = await fetchSectorMainline({ tradeDate: date || undefined, limit: 8 })
+    if (requestSequence !== mainlineLoadSequence) return
     mainline.value = res.data || []
   } catch {
-    mainline.value = []
+    if (requestSequence === mainlineLoadSequence) mainline.value = []
   }
 }
 
-async function loadRotation() {
+async function loadRotation(type = activeTab.value) {
+  const requestSequence = ++rotationLoadSequence
   rotationLoading.value = true
   try {
-    const res = await fetchSectorRotation({ days: ROTATION_DAY_COUNT, type: activeTab.value })
+    const res = await fetchSectorRotation({ days: ROTATION_DAY_COUNT, type })
+    if (requestSequence !== rotationLoadSequence || activeTab.value !== type) return
     rotation.value = res.data
   } catch {
-    rotation.value = null
+    if (requestSequence === rotationLoadSequence) rotation.value = null
   } finally {
-    rotationLoading.value = false
+    if (requestSequence === rotationLoadSequence) rotationLoading.value = false
   }
 }
 
 async function load() {
+  const requestSequence = ++boardLoadSequence
+  const requestedType = activeTab.value
+  const requestedSort = sortBy.value
+  const requestedOrder = order.value
   loading.value = true
   rankingPage.value = 1
   const requestedDate = tradeDate.value
   try {
     const res = await fetchSectorBoard({
-      type: activeTab.value,
-      sortBy: sortBy.value,
-      order: order.value,
+      type: requestedType,
+      sortBy: requestedSort,
+      order: requestedOrder,
       limit: 200,
       tradeDate: requestedDate || undefined,
     })
+    if (requestSequence !== boardLoadSequence) return
     board.value = res.data
+    loadedBoardType.value = requestedType
     const actualDate = snapshotStamp(res.data)
     snapshotNotice.value = snapshotFallbackText(requestedDate, actualDate)
     syncAvailableDates(res.data?.availableDates)
@@ -228,13 +239,16 @@ async function load() {
         })
       }
     }
-    await loadMainline(actualDate || undefined)
-    await loadRotation()
+    await Promise.all([
+      loadMainline(actualDate || undefined),
+      loadRotation(requestedType),
+    ])
+    if (requestSequence !== boardLoadSequence) return
     await openRouteSector()
   } catch (e) {
-    ElMessage.error(e.message || '加载失败')
+    if (requestSequence === boardLoadSequence) ElMessage.error(e.message || '加载失败')
   } finally {
-    loading.value = false
+    if (requestSequence === boardLoadSequence) loading.value = false
   }
 }
 
@@ -498,9 +512,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div :class="['sector-page', { page: !embedded, embedded }]" v-loading="loading || refreshing">
-    <header class="header sector-header">
-      <div>
+  <div :class="['sector-page', { page: !embedded, embedded }]" v-loading="loading && !board">
+    <header :class="['header', 'sector-header', { 'is-embedded': embedded }]">
+      <div v-if="!embedded" class="sector-title-block">
         <p class="eyebrow">Sector</p>
         <h1>板块行情</h1>
         <p>{{ snapshotNotice || board?.message || '主线强弱 · 涨停家数 · 联动决策候选' }}</p>
@@ -564,7 +578,6 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="mobile-sort-control">
-            <span class="mobile-filter-label">排序</span>
             <div class="mobile-sort-row">
               <div class="mobile-sort-strip" role="group" aria-label="排序指标">
                 <button
@@ -621,10 +634,6 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="mobile-filter-summary" aria-live="polite">
-            <span><b>{{ items.length }}</b> 个板块</span>
-            <span>{{ mobileSortLabel }} · {{ order === 'desc' ? '降序' : '升序' }}</span>
-          </div>
         </section>
 
         <div class="mobile-sector-shortcuts">
@@ -707,16 +716,24 @@ onBeforeUnmount(() => {
         <h3>板块榜单</h3>
         <span>{{ items.length }} 个板块</span>
       </div>
-      <el-tabs v-model="activeTab" class="tabs">
-        <el-tab-pane
-          v-for="(meta, key) in TAB_META"
-          :key="key"
-          :label="meta.label"
-          :name="key"
-        />
-      </el-tabs>
+      <LiquidGlassSegmented
+        v-model="activeTab"
+        class="sector-type-switch"
+        :options="TAB_OPTIONS"
+        :busy="loading"
+        aria-label="板块类型"
+      />
 
-      <el-table
+      <div
+        class="ranking-content"
+        :class="{ 'is-updating': loading && loadedBoardType === activeTab }"
+        :aria-busy="loading"
+      >
+        <div v-if="loading && loadedBoardType !== activeTab" class="ranking-skeleton" aria-label="正在加载榜单">
+          <span v-for="index in 7" :key="index" class="ranking-skeleton-row" />
+        </div>
+        <el-table
+          v-else
         :data="pagedItems"
         class="board-table"
         size="small"
@@ -793,8 +810,9 @@ onBeforeUnmount(() => {
           </template>
         </el-table-column>
         <el-table-column prop="moveReason" label="涨跌原因" min-width="220" show-overflow-tooltip />
-      </el-table>
-      <div v-if="items.length > RANKING_PAGE_SIZE" class="sector-pagination">
+        </el-table>
+      </div>
+      <div v-if="!loading && items.length > RANKING_PAGE_SIZE" class="sector-pagination">
         <el-pagination
           background
           layout="total, prev, pager, next"
@@ -804,7 +822,7 @@ onBeforeUnmount(() => {
           @current-change="onRankingPageChange"
         />
       </div>
-      <div v-if="items.length > RANKING_PAGE_SIZE" class="sector-mobile-pagination" aria-label="板块榜单分页">
+      <div v-if="!loading && items.length > RANKING_PAGE_SIZE" class="sector-mobile-pagination" aria-label="板块榜单分页">
         <el-button
           :disabled="rankingPage <= 1"
           @click="onRankingPageChange(rankingPage - 1)"
@@ -1281,18 +1299,72 @@ onBeforeUnmount(() => {
   margin-bottom: 2px;
 }
 
-.tabs {
-  --el-tabs-header-height: 42px;
+.sector-type-switch {
+  margin-bottom: 12px;
 }
 
-.tabs :deep(.el-tabs__header) {
-  margin-bottom: 10px;
+.ranking-content {
+  position: relative;
+  min-height: 300px;
+  transition: opacity 180ms ease, transform 260ms ease;
 }
 
-.tabs :deep(.el-tabs__item) {
-  min-width: 72px;
-  padding: 0 18px;
-  font-weight: 600;
+.ranking-content.is-updating {
+  opacity: 0.68;
+  pointer-events: none;
+  transform: translateY(1px);
+}
+
+.ranking-content.is-updating::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 113, 227, 0.8), transparent);
+  background-size: 45% 100%;
+  content: '';
+  animation: rankingLoad 1s ease-in-out infinite;
+}
+
+.ranking-skeleton {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--line);
+}
+
+.ranking-skeleton-row {
+  position: relative;
+  height: 43px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.ranking-skeleton-row::after {
+  position: absolute;
+  top: 13px;
+  left: 5%;
+  width: min(62%, 520px);
+  height: 16px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(113, 130, 151, 0.08), rgba(255, 255, 255, 0.74), rgba(113, 130, 151, 0.08));
+  background-size: 200% 100%;
+  content: '';
+  animation: skeletonFlow 1.15s ease-in-out infinite;
+}
+
+@keyframes rankingLoad {
+  from { background-position-x: -70%; }
+  to { background-position-x: 170%; }
+}
+
+@keyframes skeletonFlow {
+  from { background-position-x: 150%; }
+  to { background-position-x: -50%; }
 }
 
 .board-table {
@@ -1458,8 +1530,12 @@ onBeforeUnmount(() => {
 
 @media (max-width: 560px) {
   .sector-header {
-    gap: 12px;
-    margin-bottom: 14px;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .sector-header.is-embedded {
+    margin-bottom: 10px;
   }
 
   .sector-header > div:first-child {
@@ -1482,9 +1558,9 @@ onBeforeUnmount(() => {
 
   .sector-mobile-filters {
     display: grid;
-    gap: 10px;
+    gap: 6px;
     width: 100%;
-    padding: 10px;
+    padding: 8px;
     border: 1px solid var(--glass-border);
     border-radius: 8px;
     background: var(--glass-strong);
@@ -1493,8 +1569,8 @@ onBeforeUnmount(() => {
 
   .mobile-filter-primary {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
   }
 
   .mobile-filter-primary :deep(.el-date-editor),
@@ -1504,8 +1580,8 @@ onBeforeUnmount(() => {
   }
 
   .mobile-filter-primary :deep(.el-input__wrapper) {
-    min-height: 44px;
-    border-radius: 7px;
+    min-height: 36px;
+    border-radius: 6px;
     box-shadow: 0 0 0 1px var(--line) inset;
   }
 
@@ -1515,19 +1591,13 @@ onBeforeUnmount(() => {
 
   .mobile-sort-control {
     display: grid;
-    gap: 6px;
-  }
-
-  .mobile-filter-label {
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 600;
+    gap: 4px;
   }
 
   .mobile-sort-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px;
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) 36px;
+    gap: 6px;
   }
 
   .mobile-sort-strip {
@@ -1535,7 +1605,7 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 3px;
     min-width: 0;
-    padding: 3px;
+    padding: 2px;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--paper-deep);
@@ -1547,8 +1617,8 @@ onBeforeUnmount(() => {
     justify-content: center;
     gap: 2px;
     min-width: 0;
-    min-height: 44px;
-    padding: 0 5px;
+    min-height: 34px;
+    padding: 0 4px;
     border: 0;
     border-radius: 6px;
     background: transparent;
@@ -1578,8 +1648,8 @@ onBeforeUnmount(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
     align-self: center;
     padding: 0;
     border: 1px solid var(--line);
@@ -1616,38 +1686,25 @@ onBeforeUnmount(() => {
     border: 1px solid var(--line);
   }
 
-  .mobile-filter-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    min-height: 30px;
-    padding-top: 7px;
-    border-top: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .mobile-filter-summary b {
-    color: var(--ink-soft);
-    font-variant-numeric: tabular-nums;
-  }
-
   .mobile-sector-shortcuts {
-    display: grid;
-    grid-template-columns: 44px repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
     width: 100%;
   }
 
   .mobile-sector-shortcuts :deep(.el-button) {
-    width: 100%;
-    min-height: 44px;
+    width: auto;
+    min-width: 64px;
+    min-height: 36px;
     margin: 0;
-    border-radius: 8px;
+    padding: 0 14px;
+    border-radius: 6px;
   }
 
   .mobile-sector-shortcuts .mobile-refresh-button {
+    width: 36px;
+    min-width: 36px;
     padding: 0;
   }
 
@@ -1709,43 +1766,8 @@ onBeforeUnmount(() => {
     margin-top: 1px;
   }
 
-  .tabs {
-    --el-tabs-header-height: 44px;
-  }
-
-  .tabs :deep(.el-tabs__nav-wrap) {
-    padding: 3px;
-    border: 1px solid rgba(20, 32, 51, 0.08);
-    border-radius: 8px;
-    background: rgba(20, 32, 51, 0.045);
-  }
-
-  .tabs :deep(.el-tabs__nav-wrap::after),
-  .tabs :deep(.el-tabs__active-bar) {
-    display: none;
-  }
-
-  .tabs :deep(.el-tabs__nav) {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .sector-type-switch {
     width: 100%;
-    float: none;
-  }
-
-  .tabs :deep(.el-tabs__item) {
-    min-width: 0;
-    width: 100%;
-    height: 38px;
-    padding: 0;
-    color: var(--slate);
-    transition: color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
-  }
-
-  .tabs :deep(.el-tabs__item.is-active) {
-    border-radius: 5px;
-    background: var(--accent);
-    color: #fff;
-    box-shadow: none;
   }
 
   .board-table {
