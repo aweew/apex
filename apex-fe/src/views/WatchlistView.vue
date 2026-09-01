@@ -12,6 +12,7 @@ import {
   watchlistMovers,
 } from '../api/watchlist'
 import { fillWatchlistBars, syncBars, syncBarsGroup, syncStaleBars } from '../api/bars'
+import IntradayKlineThumbnail from '../components/IntradayKlineThumbnail.vue'
 import { saveObserve } from '../api/observe'
 import { buildApiUrl } from '../api/baseUrl'
 import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
@@ -602,6 +603,19 @@ onBeforeUnmount(() => {
         </template>
       </el-table-column>
       <el-table-column prop="latestPrice" label="最新价" width="100" sortable="custom" />
+      <el-table-column label="近20日" width="132" align="center">
+        <template #default="{ row }">
+          <IntradayKlineThumbnail
+            v-if="row.sparkCloses?.length"
+            :points="row.sparkCloses"
+            :previous-close="row.sparkCloses[0]"
+            :width="112"
+            :height="32"
+            :label="`${row.name || row.code}近20日走势`"
+          />
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="pctChg" width="90" sortable="custom">
         <template #header><TermTip term="pct_chg">今日%</TermTip></template>
         <template #default="{ row }">

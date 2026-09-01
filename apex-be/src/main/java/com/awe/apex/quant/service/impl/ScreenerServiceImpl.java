@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -248,6 +249,7 @@ public class ScreenerServiceImpl implements IScreenerService {
             }
         }
         Map<String, Integer> barCountMap = loadBarCounts(codes);
+        Map<String, List<BigDecimal>> sparkCloseMap = loadSparkCloses(codes);
         Set<String> universeCodes = loadUniverseCodeSet();
 
         List<WatchlistResp> records = new ArrayList<>();
@@ -268,6 +270,7 @@ public class ScreenerServiceImpl implements IScreenerService {
                         .totalMv(basic.getTotalMv())
                         .circMv(basic.getCircMv())
                         .barCount(barCountMap.getOrDefault(code, 0))
+                        .sparkCloses(sparkCloseMap.getOrDefault(code, List.of()))
                         .inUniverse(universeCodes.contains(code))
                         .build());
             }
@@ -380,6 +383,7 @@ public class ScreenerServiceImpl implements IScreenerService {
             }
         }
         Map<String, Integer> barCountMap = loadBarCounts(codes);
+        Map<String, List<BigDecimal>> sparkCloseMap = loadSparkCloses(codes);
         List<WatchlistResp> rows = new ArrayList<>();
         for (StockBasic basic : basics) {
             rows.add(WatchlistResp.builder()
@@ -396,9 +400,33 @@ public class ScreenerServiceImpl implements IScreenerService {
                     .totalMv(basic.getTotalMv())
                     .circMv(basic.getCircMv())
                     .barCount(barCountMap.getOrDefault(basic.getCode(), 0))
+                    .sparkCloses(sparkCloseMap.getOrDefault(basic.getCode(), List.of()))
                     .build());
         }
         return rows;
+    }
+
+    private Map<String, List<BigDecimal>> loadSparkCloses(List<String> codes) {
+        Map<String, List<BigDecimal>> result = new HashMap<>();
+        if (CollUtil.isEmpty(codes)) {
+            return result;
+        }
+        List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                .in(BarDaily::getCode, codes)
+                .ge(BarDaily::getTradeDate, LocalDate.now().minusDays(45))
+                .orderByAsc(BarDaily::getCode)
+                .orderByAsc(BarDaily::getTradeDate));
+        for (BarDaily bar : bars) {
+            if (Objects.isNull(bar.getClosePrice())) {
+                continue;
+            }
+            List<BigDecimal> closes = result.computeIfAbsent(bar.getCode(), ignored -> new ArrayList<>());
+            closes.add(bar.getClosePrice());
+            if (closes.size() > 20) {
+                closes.remove(0);
+            }
+        }
+        return result;
     }
 
     private Map<String, Integer> loadBarCounts(List<String> codes) {

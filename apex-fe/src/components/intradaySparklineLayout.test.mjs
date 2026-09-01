@@ -14,15 +14,18 @@ test('intraday sparkline accepts generic price points and exposes an accessible 
   assert.match(componentSource, /暂无日内走势/)
 })
 
-test('intraday K-line thumbnail renders one accessible close-price trend line', () => {
+test('intraday K-line thumbnail renders an accessible thin trend line with a zero-axis baseline', () => {
   assert.match(klineComponentSource, /role="img"/)
   assert.match(klineComponentSource, /bar\?\.closePrice \?\? bar\?\.close/)
   assert.match(klineComponentSource, /class="intraday-kline-line"/)
+  assert.match(klineComponentSource, /class="intraday-kline-baseline"/)
+  assert.match(klineComponentSource, /stroke-width="1\.2"/)
+  assert.match(klineComponentSource, /stroke-dasharray:\s*3 3/)
+  assert.match(klineComponentSource, /values\.push\(referenceClose\.value\)/)
   assert.match(klineComponentSource, /#d6495f/)
   assert.match(klineComponentSource, /#16866a/)
   assert.doesNotMatch(klineComponentSource, /intraday-kline-wick/)
   assert.doesNotMatch(klineComponentSource, /intraday-kline-body/)
-  assert.doesNotMatch(klineComponentSource, /intraday-kline-baseline/)
 })
 
 test('dashboard applies real intraday K-line thumbnails to US indexes and China assets', () => {

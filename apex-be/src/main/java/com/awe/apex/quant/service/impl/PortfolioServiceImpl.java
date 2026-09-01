@@ -1415,16 +1415,32 @@ public class PortfolioServiceImpl implements IPortfolioService {
             }
         }
         Map<String, StockBasic> basicMap = new HashMap<>();
+        Map<String, List<BigDecimal>> sparkCloseMap = new HashMap<>();
         if (CollUtil.isNotEmpty(codes)) {
             List<StockBasic> basics = stockBasicMapper.selectList(Wrappers.<StockBasic>lambdaQuery()
                     .in(StockBasic::getCode, codes));
             for (StockBasic basic : basics) {
                 basicMap.put(basic.getCode(), basic);
             }
+            List<BarDaily> recentBars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                    .in(BarDaily::getCode, codes)
+                    .ge(BarDaily::getTradeDate, LocalDate.now().minusDays(45))
+                    .orderByAsc(BarDaily::getCode)
+                    .orderByAsc(BarDaily::getTradeDate));
+            for (BarDaily bar : recentBars) {
+                if (Objects.nonNull(bar.getClosePrice())) {
+                    List<BigDecimal> closes = sparkCloseMap.computeIfAbsent(bar.getCode(), ignored -> new ArrayList<>());
+                    closes.add(bar.getClosePrice());
+                    if (closes.size() > 20) {
+                        closes.remove(0);
+                    }
+                }
+            }
         }
         for (PortfolioHolding holding : holdings) {
             String code = MarketCodeUtils.normalizeHoldingCode(holding.getCode());
             fillPnl(holding, basicMap.get(code));
+            holding.setSparkCloses(sparkCloseMap.getOrDefault(code, List.of()));
         }
     }
 

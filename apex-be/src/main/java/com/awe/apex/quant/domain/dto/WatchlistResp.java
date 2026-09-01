@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 自选股响应
@@ -136,4 +137,7 @@ public class WatchlistResp {
      * ATR14占现价%
      */
     private BigDecimal atrPct;
+
+    /** 最近 20 个交易日收盘价，用于列表缩略图。 */
+    private List<BigDecimal> sparkCloses;
 }

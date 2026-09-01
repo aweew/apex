@@ -21,6 +21,7 @@ import {
 } from '../utils/shareCapture'
 import { buildObserveShareSheet, mountObserveShareSheet } from '../utils/observeShareSheet'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
+import IntradayKlineThumbnail from '../components/IntradayKlineThumbnail.vue'
 import { useSessionViewState } from '../utils/viewState.js'
 
 const router = useRouter()
@@ -742,6 +743,14 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="card-main">
+          <IntradayKlineThumbnail
+            v-if="row.sparkCloses?.length"
+            class="observe-kline-thumbnail"
+            :points="row.sparkCloses"
+            :previous-close="row.sparkCloses[0]"
+            :height="38"
+            :label="`${row.name || row.code}近20日走势`"
+          />
           <div class="pick">
             <div class="pick-head">
               <span class="strategy">{{ row.strategyName || strategyLabel(row) }}</span>

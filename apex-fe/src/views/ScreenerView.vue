@@ -34,6 +34,7 @@ import { saveObserve } from '../api/observe'
 import { buildTrailingDateRange } from '../utils/backtestLab.js'
 import { resolveActionColumnVisible } from '../utils/responsiveTable.js'
 import { useSessionViewState } from '../utils/viewState.js'
+import IntradayKlineThumbnail from '../components/IntradayKlineThumbnail.vue'
 
 const router = useRouter()
 const activeMode = ref('free')
@@ -1261,6 +1262,19 @@ onBeforeUnmount(() => {
           </template>
         </el-table-column>
         <el-table-column prop="latestPrice" label="现价" min-width="84" />
+        <el-table-column label="近20日" width="132" align="center">
+          <template #default="{ row }">
+            <IntradayKlineThumbnail
+              v-if="row.sparkCloses?.length"
+              :points="row.sparkCloses"
+              :previous-close="row.sparkCloses[0]"
+              :width="112"
+              :height="32"
+              :label="`${row.name || row.code}近20日走势`"
+            />
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="pctChg" label="今日%" min-width="80">
           <template #default="{ row }">
             <span :class="Number(row.pctChg) >= 0 ? 'up' : 'down'">{{ row.pctChg ?? '-' }}</span>
@@ -1358,6 +1372,15 @@ onBeforeUnmount(() => {
               <small>{{ row.latestPrice ?? '-' }}</small>
             </span>
           </span>
+
+          <IntradayKlineThumbnail
+            v-if="row.sparkCloses?.length"
+            class="screener-mobile-spark"
+            :points="row.sparkCloses"
+            :previous-close="row.sparkCloses[0]"
+            :height="38"
+            :label="`${row.name || row.code}近20日走势`"
+          />
 
           <span class="mobile-stock-metrics" :class="{ 'is-screening': screeningActive }">
             <template v-if="activeMode === 'strategy'">

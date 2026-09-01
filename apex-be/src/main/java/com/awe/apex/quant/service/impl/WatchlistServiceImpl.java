@@ -198,6 +198,9 @@ public class WatchlistServiceImpl extends ServiceImpl<WatchlistMapper, Watchlist
                     .pctChg5(periodReturnPct(closes, 5))
                     .pctChg20(ret20)
                     .pctChg60(periodReturnPct(closes, 60))
+                    .sparkCloses(closes.size() > 20
+                            ? new ArrayList<>(closes.subList(closes.size() - 20, closes.size()))
+                            : new ArrayList<>(closes))
                     .rs20VsHs300(rs20)
                     .peTtm(Objects.nonNull(basic) ? basic.getPeTtm() : null)
                     .pb(Objects.nonNull(basic) ? basic.getPb() : null)

@@ -258,6 +258,12 @@ public class ScreenerStrategyExecutionServiceImpl implements IScreenerStrategyEx
 
         finalMatches.sort(candidateComparator());
         int matchedCount = finalMatches.size();
+        LocalDate sparkAsOf = Objects.nonNull(snapshotBatch.getAsOf())
+                ? snapshotBatch.getAsOf().toLocalDate() : LocalDate.now();
+        Map<String, List<BarDaily>> sparkBars = loadBars(finalMatches, sparkAsOf, 20);
+        for (ScreenerCandidateBO candidate : finalMatches) {
+            candidate.setBars(sparkBars.getOrDefault(candidate.getSnapshot().getCode(), List.of()));
+        }
         List<ScreenerStrategyMatchResp> responses = new ArrayList<>();
         int responseCount = Math.min(limit, finalMatches.size());
         for (int index = 0; index < responseCount; index++) {
@@ -472,8 +478,23 @@ public class ScreenerStrategyExecutionServiceImpl implements IScreenerStrategyEx
                         ? intraday.getMaxConsecutiveBelowMinutes() : null)
                 .intradayPointCount(Objects.nonNull(intraday) ? intraday.getPointCount() : null)
                 .intradayAsOf(Objects.nonNull(intraday) ? intraday.getLatestTime() : null)
+                .sparkCloses(sparkCloses(candidate.getBars()))
                 .evidence(candidate.getEvidence())
                 .build();
+    }
+
+    private List<BigDecimal> sparkCloses(List<BarDaily> bars) {
+        if (CollUtil.isEmpty(bars)) {
+            return List.of();
+        }
+        List<BigDecimal> closes = new ArrayList<>();
+        int from = Math.max(0, bars.size() - 20);
+        for (int index = from; index < bars.size(); index++) {
+            if (Objects.nonNull(bars.get(index).getClosePrice())) {
+                closes.add(bars.get(index).getClosePrice());
+            }
+        }
+        return closes;
     }
 
     private void addEvidence(ScreenerCandidateBO candidate, ScreenerStrategyRuleResp rule,

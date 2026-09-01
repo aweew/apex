@@ -1295,11 +1295,26 @@ public class ObservePoolServiceImpl implements IObservePoolService {
                 .riskFlags(riskFlags)
                 .pct2d(pct2d)
                 .pct5d(pct5d)
+                .sparkCloses(sparkCloses(bars))
                 .valuationLevel(Objects.nonNull(valuation) ? valuation.getLevel() : null)
                 .valuationLabel(Objects.nonNull(valuation) ? valuation.getLevelLabel() : null)
                 .valuationScore(Objects.nonNull(valuation) ? valuation.getScore() : null)
                 .valuationSummary(Objects.nonNull(valuation) ? valuation.getSummary() : null)
                 .build();
+    }
+
+    private List<BigDecimal> sparkCloses(List<BarDaily> bars) {
+        if (CollUtil.isEmpty(bars)) {
+            return List.of();
+        }
+        int from = Math.max(0, bars.size() - 20);
+        List<BigDecimal> closes = new ArrayList<>();
+        for (int index = from; index < bars.size(); index++) {
+            if (Objects.nonNull(bars.get(index).getClosePrice())) {
+                closes.add(bars.get(index).getClosePrice());
+            }
+        }
+        return closes;
     }
 
     private String extractStrategyId(ObservePool row) {

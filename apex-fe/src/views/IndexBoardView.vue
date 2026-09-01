@@ -32,6 +32,7 @@ import { snapshotStamp } from '../utils/snapshotDate.js'
 import { resolveActiveMarket, resolveMarketTab } from '../utils/marketTradingSession.js'
 import { staleDataTime } from '../utils/dataFreshness.js'
 import FloatingShareButton from '../components/FloatingShareButton.vue'
+import IntradayKlineThumbnail from '../components/IntradayKlineThumbnail.vue'
 import { useSessionViewState } from '../utils/viewState.js'
 import worldMarketMapUrl from '../assets/world-market-map.svg'
 import {
@@ -879,20 +880,15 @@ onBeforeUnmount(() => {
             <b>{{ fmtNum(item.closePrice ?? item.close) }}</b>
             <em>{{ fmtPct(item.pctChg) }}</em>
           </div>
-          <svg
+          <IntradayKlineThumbnail
             v-if="item.sparkCloses?.length"
             class="spark"
-            viewBox="0 0 88 28"
-            preserveAspectRatio="none"
-          >
-            <path
-              :d="sparkPath(item.sparkCloses)"
-              fill="none"
-              :stroke="Number(item.pctChg) >= 0 ? '#e11d48' : '#059669'"
-              stroke-width="1.5"
-              vector-effect="non-scaling-stroke"
-            />
-          </svg>
+            :points="item.sparkCloses"
+            :previous-close="item.sparkCloses[0]"
+            :width="88"
+            :height="28"
+            :label="`${item.name}近20日走势`"
+          />
         </button>
         <div v-if="!heroIndexes.length" class="hero-empty">
           暂无指数，请先「同步指数」或「刷新行情」
@@ -1121,15 +1117,15 @@ onBeforeUnmount(() => {
               <b>{{ fmtNum(item.closePrice) }}</b>
               <em>{{ fmtPct(item.pctChg) }}</em>
             </div>
-            <svg class="spark" viewBox="0 0 88 28" preserveAspectRatio="none">
-              <path
-                :d="sparkPath(item.sparkCloses)"
-                fill="none"
-                :stroke="Number(item.pctChg) >= 0 ? '#e11d48' : '#059669'"
-                stroke-width="1.5"
-                vector-effect="non-scaling-stroke"
-              />
-            </svg>
+            <IntradayKlineThumbnail
+              v-if="item.sparkCloses?.length"
+              class="spark"
+              :points="item.sparkCloses"
+              :previous-close="item.sparkCloses[0]"
+              :width="88"
+              :height="28"
+              :label="`${item.name}近20日走势`"
+            />
           </button>
         </div>
         <p v-else class="side-empty">暂无{{ activeMarketTitle }}指数数据</p>
@@ -1232,8 +1228,16 @@ onBeforeUnmount(() => {
 .tabs {
   display: inline-flex;
   padding: 3px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.05);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 12px;
+  background: rgba(220, 232, 247, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(73, 101, 137, 0.08),
+    0 5px 16px rgba(42, 65, 94, 0.09);
+  backdrop-filter: blur(18px) saturate(175%);
+  -webkit-backdrop-filter: blur(18px) saturate(175%);
   gap: 2px;
 }
 
@@ -1241,18 +1245,31 @@ onBeforeUnmount(() => {
   border: 0;
   background: transparent;
   padding: 6px 12px;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   font: inherit;
   font-size: 13px;
   font-weight: 600;
   color: var(--mc-muted);
   cursor: pointer;
+  transition: color 180ms ease, background 220ms ease, box-shadow 220ms ease, transform 160ms ease;
+}
+
+.tab:hover {
+  color: var(--mc-ink);
+}
+
+.tab:active {
+  transform: scale(0.97);
 }
 
 .tab.on {
-  background: #fff;
-  color: var(--mc-ink);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  border-color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 3px 10px rgba(45, 73, 108, 0.13);
 }
 
 .mobile-action-label {

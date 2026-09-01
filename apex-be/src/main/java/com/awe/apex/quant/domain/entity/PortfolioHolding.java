@@ -200,6 +200,10 @@ public class PortfolioHolding implements Serializable {
     @TableField(exist = false)
     private BigDecimal peTtm;
 
+    /** 最近 20 个交易日收盘价（非表字段）。 */
+    @TableField(exist = false)
+    private List<BigDecimal> sparkCloses;
+
     /**
      * 评价（非表字段）
      */

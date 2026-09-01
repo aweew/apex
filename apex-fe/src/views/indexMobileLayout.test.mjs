@@ -34,13 +34,12 @@ test('mobile hero index prices can shrink without widening the page', () => {
   assert.match(mobileStyles, /\.hero-price em\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?white-space:\s*nowrap;/)
 })
 
-test('index sparklines keep a thin stable stroke when cards stretch horizontally', () => {
-  const stableSparkStrokes = indexSource.match(
-    /stroke-width="1\.5"\s+vector-effect="non-scaling-stroke"/g,
-  ) || []
+test('index cards reuse the shared K-line thumbnail with a stable zero axis', () => {
+  const sharedThumbnails = indexSource.match(/<IntradayKlineThumbnail/g) || []
 
-  assert.equal(stableSparkStrokes.length, 2)
-  assert.doesNotMatch(indexSource, /stroke-width="1\.6"/)
+  assert.equal(sharedThumbnails.length, 2)
+  assert.match(indexSource, /:points="item\.sparkCloses"/)
+  assert.match(indexSource, /:previous-close="item\.sparkCloses\[0\]"/)
 })
 
 test('money effect typography uses the available width at larger mobile sizes', () => {

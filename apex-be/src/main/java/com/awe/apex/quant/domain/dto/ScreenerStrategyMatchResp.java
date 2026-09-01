@@ -124,4 +124,7 @@ public class ScreenerStrategyMatchResp {
 
     /** 命中依据 */
     private List<ScreenerRuleEvidenceResp> evidence;
+
+    /** 最近 20 个交易日收盘价，用于结果缩略图。 */
+    private List<BigDecimal> sparkCloses;
 }

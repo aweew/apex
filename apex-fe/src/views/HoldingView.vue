@@ -15,6 +15,7 @@ import {
 } from '@element-plus/icons-vue'
 import { listHoldings, refreshHoldingQuotes, saveHolding, tradeHolding } from '../api/holding'
 import { saveObserve } from '../api/observe'
+import IntradayKlineThumbnail from '../components/IntradayKlineThumbnail.vue'
 import {
   HOLDING_SHARE_WIDTH,
   buildHoldingShareSheet,
@@ -975,6 +976,19 @@ onBeforeUnmount(() => {
         >
           <template #default="{ row }">
             <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="近20日" width="132" align="center">
+          <template #default="{ row }">
+            <IntradayKlineThumbnail
+              v-if="row.sparkCloses?.length"
+              :points="row.sparkCloses"
+              :previous-close="row.sparkCloses[0]"
+              :width="112"
+              :height="32"
+              :label="`${row.name || row.code}近20日走势`"
+            />
+            <span v-else class="muted">-</span>
           </template>
         </el-table-column>
         <el-table-column

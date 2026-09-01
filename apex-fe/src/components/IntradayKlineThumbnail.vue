@@ -2,6 +2,10 @@
 import { computed } from 'vue'
 
 const props = defineProps({
+  points: {
+    type: Array,
+    default: null,
+  },
   bars: {
     type: Array,
     default: () => [],
@@ -25,8 +29,9 @@ const props = defineProps({
 })
 
 const padding = 3
-const chartPoints = computed(() => props.bars
-  .map((bar) => Number(bar?.closePrice ?? bar?.close))
+const sourcePoints = computed(() => props.points ?? props.bars)
+const chartPoints = computed(() => sourcePoints.value
+  .map((bar) => Number(typeof bar === 'object' ? (bar?.closePrice ?? bar?.close ?? bar?.value) : bar))
   .filter(Number.isFinite))
 const latestClose = computed(() => chartPoints.value.at(-1))
 const referenceClose = computed(() => {
@@ -43,9 +48,11 @@ const lineColor = computed(() => {
   return '#64748b'
 })
 const bounds = computed(() => {
-  if (!chartPoints.value.length) return { min: 0, max: 1 }
-  const min = Math.min(...chartPoints.value)
-  const max = Math.max(...chartPoints.value)
+  const values = [...chartPoints.value]
+  if (Number.isFinite(referenceClose.value)) values.push(referenceClose.value)
+  if (!values.length) return { min: 0, max: 1 }
+  const min = Math.min(...values)
+  const max = Math.max(...values)
   const range = max - min || Math.max(Math.abs(max) * 0.01, 0.01)
   return { min: min - range * 0.08, max: max + range * 0.08 }
 })
@@ -65,6 +72,7 @@ const linePath = computed(() => chartPoints.value.map((value, index) => {
   const y = yFor(value)
   return `${index ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`
 }).join(' '))
+const baselineY = computed(() => Number.isFinite(referenceClose.value) ? yFor(referenceClose.value) : null)
 const ariaLabel = computed(() => {
   const latestText = Number.isFinite(latestClose.value) ? latestClose.value.toFixed(2) : '暂无'
   return `${props.label}，${chartPoints.value.length} 个点，最新 ${latestText}`
@@ -81,6 +89,14 @@ const ariaLabel = computed(() => {
     role="img"
     :aria-label="ariaLabel"
   >
+    <line
+      v-if="baselineY !== null"
+      class="intraday-kline-baseline"
+      :x1="padding"
+      :x2="width - padding"
+      :y1="baselineY"
+      :y2="baselineY"
+    />
     <path
       class="intraday-kline-line"
       :d="linePath"
@@ -88,7 +104,7 @@ const ariaLabel = computed(() => {
       :stroke="lineColor"
       stroke-linecap="round"
       stroke-linejoin="round"
-      stroke-width="1.7"
+      stroke-width="1.2"
       vector-effect="non-scaling-stroke"
     />
   </svg>
@@ -99,5 +115,12 @@ const ariaLabel = computed(() => {
   display: block;
   width: 100%;
   overflow: hidden;
+}
+
+.intraday-kline-baseline {
+  stroke: #cbd5e1;
+  stroke-width: 0.8;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
 }
 </style>

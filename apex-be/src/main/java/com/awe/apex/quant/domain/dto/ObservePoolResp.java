@@ -228,6 +228,9 @@ public class ObservePoolResp {
      */
     private BigDecimal valuationScore;
 
+    /** 最近 20 个交易日收盘价，用于列表缩略图。 */
+    private List<BigDecimal> sparkCloses;
+
     /**
      * 估值一句话
      */
