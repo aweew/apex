@@ -206,6 +206,16 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             return List.of();
         }
         Map<String, StockBasic> basics = loadBasics(rows);
+        List<ObservePool> candidateRows = new ArrayList<>();
+        for (ObservePool row : rows) {
+            StockBasic basic = basics.get(row.getCode());
+            BigDecimal latest = Objects.nonNull(basic) ? basic.getLatestPrice() : null;
+            String status = evaluateStatus(row, latest);
+            if ("TRIGGERED".equals(status) || "NEAR".equals(status)) {
+                candidateRows.add(row);
+            }
+        }
+        Map<String, List<BarDaily>> sparkBarsByCode = loadSparkBarsGrouped(candidateRows);
         List<ObservePoolResp> ready = new ArrayList<>();
         for (ObservePool row : rows) {
             StockBasic basic = basics.get(row.getCode());
@@ -239,6 +249,7 @@ public class ObservePoolServiceImpl implements IObservePoolService {
                     .updateTime(row.getUpdateTime())
                     .latestPrice(latest)
                     .pctChg(Objects.nonNull(basic) ? basic.getPctChg() : null)
+                    .sparkCloses(sparkCloses(sparkBarsByCode.get(row.getCode())))
                     .statusHint(buildHint(row, latest, pctDistance(latest,
                             effectiveTriggerPrice(row, latest)), status))
                     .triggerLabel(triggerLabel(row))
@@ -1515,6 +1526,36 @@ public class ObservePoolServiceImpl implements IObservePoolService {
             for (BarDaily bar : bars) {
                 map.computeIfAbsent(bar.getCode(), k -> new ArrayList<>()).add(bar);
             }
+        }
+        return map;
+    }
+
+    private Map<String, List<BarDaily>> loadSparkBarsGrouped(List<ObservePool> rows) {
+        Map<String, List<BarDaily>> map = new HashMap<>();
+        if (CollUtil.isEmpty(rows)) {
+            return map;
+        }
+        List<String> codes = rows.stream().map(ObservePool::getCode).filter(StringUtils::isNotBlank).distinct().toList();
+        if (CollUtil.isEmpty(codes)) {
+            return map;
+        }
+        LocalDate begin = LocalDate.now().minusDays(45);
+        List<BarDaily> bars;
+        try {
+            bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                    .in(BarDaily::getCode, codes)
+                    .ge(BarDaily::getTradeDate, begin)
+                    .orderByAsc(BarDaily::getCode)
+                    .orderByAsc(BarDaily::getTradeDate));
+        } catch (Exception ex) {
+            log.warn("观察池提醒日线缩略图加载失败，代码数量={}，原因={}", codes.size(), ex.getMessage());
+            return map;
+        }
+        if (CollUtil.isEmpty(bars)) {
+            return map;
+        }
+        for (BarDaily bar : bars) {
+            map.computeIfAbsent(bar.getCode(), k -> new ArrayList<>()).add(bar);
         }
         return map;
     }
