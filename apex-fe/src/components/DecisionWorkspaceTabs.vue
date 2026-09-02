@@ -24,12 +24,10 @@ const route = useRoute()
   margin: 0 0 14px;
   padding: 3px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.78);
-  border-radius: 12px;
-  background: rgba(220, 232, 247, 0.58);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 5px 16px rgba(42, 65, 94, 0.09);
-  backdrop-filter: blur(18px) saturate(175%);
-  -webkit-backdrop-filter: blur(18px) saturate(175%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  box-shadow: var(--shadow-soft);
 }
 
 .decision-workspace-tabs a {
@@ -39,7 +37,7 @@ const route = useRoute()
   place-items: center;
   padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 6px;
   color: var(--slate);
   font-size: 13px;
   font-weight: 650;
@@ -48,10 +46,10 @@ const route = useRoute()
 }
 
 .decision-workspace-tabs a[aria-current='page'] {
-  border-color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.74);
+  border-color: var(--line);
+  background: var(--glass);
   color: var(--accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), 0 3px 10px rgba(45, 73, 108, 0.13);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .decision-workspace-tabs a:focus-visible {

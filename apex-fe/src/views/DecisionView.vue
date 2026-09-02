@@ -1649,7 +1649,9 @@ onBeforeUnmount(() => {
 .dec-controls {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+  margin-left: auto;
 }
 
 .market-scope {
@@ -1685,12 +1687,21 @@ onBeforeUnmount(() => {
 
 .sync-link {
   min-height: 40px;
-  padding: 0 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--glass);
   font-weight: 600;
 }
 
 .sync-link :deep(.el-icon) {
   margin-left: 2px;
+}
+
+.sync-link:hover,
+.sync-link:focus-visible {
+  border-color: var(--line-strong);
+  background: var(--accent-soft);
 }
 
 .xiaoling-link {
@@ -2698,6 +2709,7 @@ onBeforeUnmount(() => {
     align-items: center;
     justify-content: space-between;
     width: 100%;
+    margin-left: 0;
   }
 
   .market-scope {
@@ -2730,6 +2742,14 @@ onBeforeUnmount(() => {
   .sync-link {
     min-height: 44px;
     padding: 0 2px;
+    border: 0;
+    background: transparent;
+  }
+
+  .sync-link:hover,
+  .sync-link:focus-visible {
+    border-color: transparent;
+    background: transparent;
   }
 
   .xiaoling-link {
