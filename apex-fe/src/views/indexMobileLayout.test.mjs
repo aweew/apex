@@ -34,6 +34,18 @@ test('mobile hero index prices can shrink without widening the page', () => {
   assert.match(mobileStyles, /\.hero-price em\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?white-space:\s*nowrap;/)
 })
 
+test('mobile market pulse keeps volume, breadth, and limit counts on one row', () => {
+  assert.match(
+    mobileStyles,
+    /\.pulse-width\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1\.45fr\) minmax\(0, 0\.95fr\);/
+  )
+  assert.match(mobileStyles, /\.pulse-tile \+ \.pulse-tile::before\s*\{[\s\S]*?display:\s*block;/)
+})
+
+test('index card live badge aligns to the right of the title row', () => {
+  assert.match(indexSource, /\.hero-name \.live\s*\{[\s\S]*?margin-left:\s*auto;/)
+})
+
 test('index cards reuse the shared K-line thumbnail with a stable zero axis', () => {
   const sharedThumbnails = indexSource.match(/<IntradayKlineThumbnail/g) || []
 

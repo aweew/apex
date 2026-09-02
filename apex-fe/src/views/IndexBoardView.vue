@@ -70,6 +70,9 @@ const detailBars = ref([])
 const chartRef = ref(null)
 let chart
 let marketSessionTimer
+const tabRefs = new Map()
+const tabIndicatorStyles = ref({ index: {}, analysis: {} })
+let tabResizeObserver
 
 useSessionViewState('market', { marketTab })
 if (!['global', ...indexMarketKeys, 'capital-flow', 'sector'].includes(marketTab.value)) {
@@ -118,6 +121,43 @@ const marketPageSubtitle = computed(() => {
   }
   return briefing.value?.message || '沪深市场总览 · 指数 · 涨跌分布 · 板块热力'
 })
+
+function setTabsRef(group, element) {
+  if (element) tabRefs.set(group, element)
+  else tabRefs.delete(group)
+}
+
+function updateTabIndicator(group, activeKey, items) {
+  const tabs = tabRefs.get(group)
+  if (!tabs) return
+  const activeIndex = items.findIndex((item) => item.key === activeKey)
+  const activeTab = tabs.querySelector(`[data-tab-key="${activeKey}"]`)
+  if (activeIndex < 0 || !activeTab) {
+    tabIndicatorStyles.value = {
+      ...tabIndicatorStyles.value,
+      [group]: { opacity: '0' },
+    }
+    return
+  }
+  const tabsRect = tabs.getBoundingClientRect()
+  const tabRect = activeTab.getBoundingClientRect()
+  tabIndicatorStyles.value = {
+    ...tabIndicatorStyles.value,
+    [group]: {
+      left: `${tabRect.left - tabsRect.left}px`,
+      width: `${tabRect.width}px`,
+      opacity: '1',
+    },
+  }
+}
+
+function updateTabIndicators() {
+  updateTabIndicator('index', marketTab.value, marketTabs)
+  updateTabIndicator('analysis', marketTab.value, [
+    { key: 'sector' },
+    { key: 'capital-flow' },
+  ])
+}
 
 const heroIndexes = computed(() => {
   // 优先用简报实时指数，并用本地指数补 spark / code
@@ -540,6 +580,7 @@ watch(
 
 watch(marketTab, async () => {
   await nextTick()
+  updateTabIndicators()
   if (activeCode.value && detailBars.value.length) {
     if (chart) {
       chart.dispose()
@@ -686,12 +727,19 @@ onMounted(async () => {
   await load()
   marketSessionTimer = window.setInterval(syncActiveMarket, 30 * 1000)
   window.addEventListener('resize', onResize)
+  await nextTick()
+  updateTabIndicators()
+  if (typeof ResizeObserver !== 'undefined') {
+    tabResizeObserver = new ResizeObserver(updateTabIndicators)
+    tabRefs.forEach((element) => tabResizeObserver.observe(element))
+  }
   await scrollToMarketSection()
 })
 
 onBeforeUnmount(() => {
   window.clearInterval(marketSessionTimer)
   window.removeEventListener('resize', onResize)
+  tabResizeObserver?.disconnect()
   revokeSharePreview()
   chart?.dispose()
   chart = null
@@ -710,12 +758,19 @@ onBeforeUnmount(() => {
         <nav class="market-nav" aria-label="行情中心视图">
           <div class="market-nav-group index-market-nav">
             <span class="market-nav-label">指数行情</span>
-            <div class="tabs" role="tablist" aria-label="指数行情">
+            <div
+              class="tabs"
+              role="tablist"
+              aria-label="指数行情"
+              :ref="(element) => setTabsRef('index', element)"
+            >
+              <span class="tab-indicator" aria-hidden="true" :style="tabIndicatorStyles.index" />
               <button
                 v-for="item in marketTabs"
                 :key="item.key"
                 type="button"
                 class="tab"
+                :data-tab-key="item.key"
                 :class="{ on: marketTab === item.key }"
                 @click="setMarketTab(item.key)"
               >{{ item.label }}</button>
@@ -725,16 +780,24 @@ onBeforeUnmount(() => {
         <div class="market-secondary-row">
           <div class="market-nav-group analysis-market-nav">
             <span class="market-nav-label">A股分析</span>
-            <div class="tabs" role="tablist" aria-label="A股分析">
+            <div
+              class="tabs"
+              role="tablist"
+              aria-label="A股分析"
+              :ref="(element) => setTabsRef('analysis', element)"
+            >
+              <span class="tab-indicator" aria-hidden="true" :style="tabIndicatorStyles.analysis" />
               <button
                 type="button"
                 class="tab"
+                data-tab-key="sector"
                 :class="{ on: marketTab === 'sector' }"
                 @click="setMarketTab('sector')"
               >板块</button>
               <button
                 type="button"
                 class="tab"
+                data-tab-key="capital-flow"
                 :class="{ on: marketTab === 'capital-flow' }"
                 @click="setMarketTab('capital-flow')"
               >资金流</button>
@@ -1226,24 +1289,50 @@ onBeforeUnmount(() => {
 }
 
 .tabs {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   padding: 3px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.78);
   border-radius: 12px;
-  background: rgba(220, 232, 247, 0.58);
+  background: rgba(210, 225, 243, 0.46);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     inset 0 -1px 0 rgba(73, 101, 137, 0.08),
     0 5px 16px rgba(42, 65, 94, 0.09);
-  backdrop-filter: blur(18px) saturate(175%);
-  -webkit-backdrop-filter: blur(18px) saturate(175%);
+  backdrop-filter: blur(20px) saturate(165%);
+  -webkit-backdrop-filter: blur(20px) saturate(165%);
   gap: 2px;
 }
 
+.tab-indicator {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 9px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.56)),
+    rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(111, 137, 169, 0.08),
+    0 4px 12px rgba(45, 73, 108, 0.16);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  pointer-events: none;
+  transition: left 300ms cubic-bezier(0.22, 0.61, 0.36, 1), width 220ms ease;
+}
+
 .tab {
+  position: relative;
+  z-index: 1;
   border: 0;
-  background: transparent;
+  background: transparent !important;
   padding: 6px 12px;
   border: 1px solid transparent;
   border-radius: 9px;
@@ -1252,7 +1341,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--mc-muted);
   cursor: pointer;
-  transition: color 180ms ease, background 220ms ease, box-shadow 220ms ease, transform 160ms ease;
+  transition: color 180ms ease, transform 160ms ease;
 }
 
 .tab:hover {
@@ -1264,12 +1353,41 @@ onBeforeUnmount(() => {
 }
 
 .tab.on {
-  border-color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.74);
   color: var(--accent);
+  font-weight: 650;
+}
+
+.tab:focus-visible {
+  outline: 2px solid rgba(22, 105, 201, 0.55);
+  outline-offset: -2px;
+}
+
+.mc-page :deep(.market-action.el-button) {
+  border-color: rgba(255, 255, 255, 0.92) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.52)),
+    rgba(231, 239, 249, 0.4) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    0 3px 10px rgba(45, 73, 108, 0.13);
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(93, 119, 153, 0.12),
+    0 4px 12px rgba(45, 73, 108, 0.1) !important;
+  color: var(--mc-ink) !important;
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  transition: transform 160ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.mc-page :deep(.market-action.el-button:hover) {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.64)),
+    rgba(231, 239, 249, 0.5) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 6px 16px rgba(45, 73, 108, 0.15) !important;
+}
+
+.mc-page :deep(.market-action.el-button:active) {
+  transform: scale(0.96);
 }
 
 .mobile-action-label {
@@ -1624,6 +1742,10 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.hero-name .live {
+  margin-left: auto;
 }
 
 .hero-name strong {
@@ -2466,10 +2588,34 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
   .pulse-width {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr) minmax(0, 0.95fr);
+    padding: 3px;
   }
+
+  .pulse-tile {
+    gap: 5px;
+    padding: 10px 8px;
+  }
+
+  .pulse-tile .v,
+  .pulse-tile .pair strong {
+    font-size: 15px;
+  }
+
+  .pulse-tile .sub {
+    font-size: 10px;
+  }
+
+  .pulse-tile .pair {
+    gap: 2px;
+  }
+
+  .pulse-tile .sep {
+    font-size: 12px;
+  }
+
   .pulse-tile + .pulse-tile::before {
-    display: none;
+    display: block;
   }
 
 }
