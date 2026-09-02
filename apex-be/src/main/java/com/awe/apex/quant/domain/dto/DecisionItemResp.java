@@ -69,6 +69,16 @@ public class DecisionItemResp {
     private BigDecimal referencePrice;
 
     /**
+     * 今日涨跌幅%
+     */
+    private BigDecimal pctChg;
+
+    /**
+     * 近 20 日日线收盘价，用于趋势缩略图
+     */
+    private List<BigDecimal> sparkCloses;
+
+    /**
      * 决策止损价
      */
     private BigDecimal stopLossPrice;

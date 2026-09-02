@@ -8,6 +8,7 @@ import { fetchPostMarketReport } from '../api/postMarketReport'
 import { normalizeHotThemes } from '../utils/hotTheme.js'
 import { buildVolumeChangeParts } from '../utils/marketVolume.js'
 import { publishDataFreshness, staleDataTime, tradingCalendar } from '../utils/dataFreshness.js'
+import { showDashboardKline } from '../utils/displayPreferences.js'
 import { isWeekendReportVisible } from '../utils/weekendReportVisibility.js'
 import { isPostMarketReportVisible } from '../utils/postMarketReportVisibility.js'
 import IntradayKlineThumbnail from '../components/IntradayKlineThumbnail.vue'
@@ -151,6 +152,8 @@ const hasMoreMorningNews = computed(() => (
 ))
 const decision = computed(() => home.value?.decision || null)
 const observeAlerts = computed(() => home.value?.observeAlerts || [])
+const observeTriggeredCount = computed(() => observeAlerts.value.filter((item) => item.status === 'TRIGGERED').length)
+const observeNearCount = computed(() => observeAlerts.value.length - observeTriggeredCount.value)
 const dataHealth = computed(() => home.value?.dataHealth || null)
 const themes = computed(() => normalizeHotThemes(market.value))
 const tips = computed(() => market.value?.tips || [])
@@ -185,6 +188,11 @@ function parseIndexLine(line) {
     close: Number(m[3]),
     direction: pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat',
   }
+}
+
+function openStock(code) {
+  const normalizedCode = String(code || '').trim()
+  if (normalizedCode) router.push(`/stock/${normalizedCode}`)
 }
 
 function fmtIndexPct(v) {
@@ -1304,7 +1312,14 @@ onBeforeUnmount(() => {
                 v-if="item.relatedCodes?.length || item.themes?.length"
                 class="pre-market-event-targets"
               >
-                <span v-for="code in item.relatedCodes || []" :key="code">{{ code }}</span>
+                <button
+                  v-for="code in item.relatedCodes || []"
+                  :key="code"
+                  type="button"
+                  class="stock-code-link"
+                  :aria-label="`打开${code}股票详情`"
+                  @click="openStock(code)"
+                >{{ code }}</button>
                 <span v-for="theme in item.themes || []" :key="theme">{{ theme }}</span>
               </div>
             </article>
@@ -1410,9 +1425,19 @@ onBeforeUnmount(() => {
       <div class="panel-head">
         <div>
           <h3>观察池提醒</h3>
-          <p class="panel-desc">接近触发 / 已触发，优先处理</p>
+          <p class="panel-desc">需要优先处理的观察标的</p>
         </div>
-        <el-button link type="primary" @click="router.push('/observe')">打开观察池 →</el-button>
+        <div class="observe-strip__actions">
+          <div class="observe-strip__summary" aria-label="提醒数量">
+            <span v-if="observeTriggeredCount" class="is-triggered">
+              <i aria-hidden="true"></i>{{ observeTriggeredCount }} 已触发
+            </span>
+            <span v-if="observeNearCount" class="is-near">
+              <i aria-hidden="true"></i>{{ observeNearCount }} 接近
+            </span>
+          </div>
+          <el-button link type="primary" @click="router.push('/observe')">打开观察池 <span aria-hidden="true">→</span></el-button>
+        </div>
       </div>
       <div class="observe-chips">
         <button
@@ -1423,7 +1448,24 @@ onBeforeUnmount(() => {
           :class="item.status === 'TRIGGERED' ? 'trig' : 'near'"
           @click="router.push(`/stock/${item.code}`)"
         >
-          <StockIdentity class="observe-chip__identity" :security="item" compact />
+          <div class="observe-chip__body">
+            <div class="observe-chip__identity-row">
+              <StockIdentity class="observe-chip__identity" :security="item" compact />
+              <div class="observe-chip__quote" aria-label="今日行情">
+                <strong :class="Number(item.pctChg) > 0 ? 'up' : Number(item.pctChg) < 0 ? 'down' : ''">{{ fmtIndexPct(item.pctChg) }}</strong>
+                <small>{{ fmtQuotePrice(item.latestPrice) || '--' }}</small>
+              </div>
+            </div>
+            <IntradayKlineThumbnail
+              v-if="item.sparkCloses?.length"
+              class="observe-chip__kline"
+              :points="item.sparkCloses"
+              :previous-close="item.sparkCloses[0]"
+              :width="150"
+              :height="30"
+              :label="`${item.name || item.code}近20日日K走势`"
+            />
+          </div>
           <em>
             <span class="observe-chip__status-dot" aria-hidden="true"></span>
             {{ item.status === 'TRIGGERED' ? '已触发' : '接近' }}
@@ -1497,9 +1539,25 @@ onBeforeUnmount(() => {
               empty-text="暂无买入建议"
               stripe
             >
-              <el-table-column prop="name" label="股票" width="120">
+              <el-table-column prop="name" label="股票" width="204">
                 <template #default="{ row }">
-                  <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                  <div class="dashboard-stock-cell">
+                    <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                    <IntradayKlineThumbnail
+                      v-if="showDashboardKline && row.sparkCloses?.length"
+                      class="decision-kline-inline"
+                      :points="row.sparkCloses"
+                      :previous-close="row.sparkCloses[0]"
+                      :width="76"
+                      :height="28"
+                      label="近 20 日日 K"
+                    />
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="今日涨跌" width="76" align="right">
+                <template #default="{ row }">
+                  <span class="num" :class="pctDir(row.pctChg)">{{ fmtIndexPct(row.pctChg) }}</span>
                 </template>
               </el-table-column>
               <el-table-column prop="strategyId" label="策略" width="52" />
@@ -1562,6 +1620,15 @@ onBeforeUnmount(() => {
                 <span class="mobile-action-primary">
                   <span class="mobile-stock">
                     <StockIdentity :security="row" compact />
+                    <IntradayKlineThumbnail
+                      v-if="showDashboardKline && row.sparkCloses?.length"
+                      class="mobile-decision-kline"
+                      :points="row.sparkCloses"
+                      :previous-close="row.sparkCloses[0]"
+                      :width="88"
+                      :height="30"
+                      label="近 20 日日 K"
+                    />
                   </span>
                   <span class="mobile-score">
                     <em>评分</em>
@@ -1571,6 +1638,7 @@ onBeforeUnmount(() => {
                 <span class="mobile-action-details">
                   <span><em>策略</em><b>{{ row.strategyId || '-' }}</b></span>
                   <span><em>估值</em><b>{{ row.valuationLabel || '-' }}</b></span>
+                  <span><em>涨跌</em><b class="num" :class="pctDir(row.pctChg)">{{ fmtIndexPct(row.pctChg) }}</b></span>
                   <span><em>仓位</em><b class="num">{{ fmtWeight(row.suggestedWeight) }}</b></span>
                 </span>
                 <span
@@ -1629,9 +1697,25 @@ onBeforeUnmount(() => {
               class="dash-table desktop-action-table"
               stripe
             >
-              <el-table-column prop="name" label="股票" width="120">
+              <el-table-column prop="name" label="股票" width="204">
                 <template #default="{ row }">
-                  <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                  <div class="dashboard-stock-cell">
+                    <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
+                    <IntradayKlineThumbnail
+                      v-if="showDashboardKline && row.sparkCloses?.length"
+                      class="decision-kline-inline"
+                      :points="row.sparkCloses"
+                      :previous-close="row.sparkCloses[0]"
+                      :width="76"
+                      :height="28"
+                      label="近 20 日日 K"
+                    />
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="今日涨跌" width="76" align="right">
+                <template #default="{ row }">
+                  <span class="num" :class="pctDir(row.pctChg)">{{ fmtIndexPct(row.pctChg) }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="策略" width="72">
@@ -1666,6 +1750,15 @@ onBeforeUnmount(() => {
                     >
                       {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
                     </span>
+                    <IntradayKlineThumbnail
+                      v-if="showDashboardKline && row.sparkCloses?.length"
+                      class="mobile-decision-kline"
+                      :points="row.sparkCloses"
+                      :previous-close="row.sparkCloses[0]"
+                      :width="88"
+                      :height="30"
+                      label="近 20 日日 K"
+                    />
                   </span>
                   <span class="mobile-score">
                     <em>评分</em>
@@ -1675,6 +1768,9 @@ onBeforeUnmount(() => {
                 <span class="mobile-exit-rule">
                   <em>触发</em>
                   <span>{{ row.exitRule || row.reason || '-' }}</span>
+                </span>
+                <span class="mobile-action-details mobile-sell-market-details">
+                  <span><em>涨跌</em><b class="num" :class="pctDir(row.pctChg)">{{ fmtIndexPct(row.pctChg) }}</b></span>
                 </span>
               </button>
             </div>
@@ -1981,28 +2077,81 @@ onBeforeUnmount(() => {
 }
 
 .observe-strip {
+  padding-bottom: 12px;
   margin-bottom: 14px;
 }
 
+.observe-strip .panel-head {
+  align-items: center;
+  margin-bottom: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.observe-strip .panel-desc {
+  margin-top: 3px;
+}
+
+.observe-strip__actions,
+.observe-strip__summary {
+  display: flex;
+  align-items: center;
+}
+
+.observe-strip__actions {
+  flex: 0 0 auto;
+  gap: 16px;
+}
+
+.observe-strip__summary {
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.observe-strip__summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.observe-strip__summary i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.observe-strip__summary .is-triggered { color: #c62828; }
+.observe-strip__summary .is-near { color: #c2410c; }
+
 .observe-chips {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 20px;
+}
+
+.observe-chips > .observe-chip {
+  width: 100%;
+  max-width: none;
 }
 
 .observe-chip {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  min-width: 200px;
-  max-width: 260px;
-  min-height: 54px;
+  min-width: 250px;
+  max-width: 360px;
+  min-height: 76px;
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 8px;
-  padding: 7px 8px 7px 10px;
-  background: rgba(255, 255, 255, 0.76);
+  border-bottom-color: var(--line);
+  padding: 10px 0;
+  background: transparent;
   color: var(--ink);
   font: inherit;
   cursor: pointer;
@@ -2012,8 +2161,9 @@ onBeforeUnmount(() => {
 
 .observe-chip:hover {
   border-color: rgba(35, 99, 235, 0.26);
-  background: #fff;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+  border-radius: 6px;
+  background: rgba(35, 99, 235, 0.035);
+  box-shadow: none;
 }
 
 .observe-chip:focus-visible {
@@ -2040,6 +2190,50 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
+.observe-chip__body {
+  min-width: 0;
+}
+
+.observe-chip__identity-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.observe-chip__quote {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.observe-chip__quote strong {
+  color: var(--slate);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.observe-chip__quote strong.up { color: var(--up); }
+.observe-chip__quote strong.down { color: var(--down); }
+
+.observe-chip__quote small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.observe-chip__kline {
+  width: 100%;
+  max-width: 180px;
+  margin-top: 5px;
+  opacity: 0.78;
+}
+
 .observe-chip em {
   display: inline-flex;
   min-width: 48px;
@@ -2050,7 +2244,7 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   border-left: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 4px;
-  padding: 4px 6px 4px 8px;
+  padding: 4px 0 4px 8px;
   font-style: normal;
   font-size: 12px;
   font-weight: 650;
@@ -2067,12 +2261,12 @@ onBeforeUnmount(() => {
 }
 
 .observe-chip.near em {
-  background: rgba(234, 88, 12, 0.07);
+  background: transparent;
   color: #c2410c;
 }
 
 .observe-chip.trig em {
-  background: rgba(220, 38, 38, 0.07);
+  background: transparent;
   color: #c62828;
 }
 
@@ -2304,9 +2498,12 @@ onBeforeUnmount(() => {
 }
 
 .index-line {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 2px;
   min-width: 0;
   padding: 8px 9px;
   border-radius: 8px;
@@ -2323,19 +2520,26 @@ onBeforeUnmount(() => {
 }
 
 .index-line .n {
+  grid-column: 1 / -1;
+  grid-row: 1;
   font-size: 11px;
   line-height: 1.35;
   color: var(--muted);
 }
 
 .index-line .c {
+  grid-column: 1;
+  grid-row: 2;
   font-size: 11px;
   line-height: 1.35;
   color: var(--ink-soft);
-  order: 1;
 }
 
 .index-line .p {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: baseline;
+  text-align: right;
   font-size: 13px;
   font-weight: 650;
   letter-spacing: -0.02em;
@@ -3901,11 +4105,29 @@ onBeforeUnmount(() => {
   margin-top: 5px;
 }
 
-.pre-market-event-targets span {
+.pre-market-event-targets span,
+.stock-code-link {
+  appearance: none;
+  border-radius: 3px;
+  background: transparent;
   padding: 1px 5px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   color: var(--slate);
+  font: inherit;
   font-size: 11px;
+  line-height: 1.35;
+}
+
+.stock-code-link {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.stock-code-link:hover,
+.stock-code-link:focus-visible {
+  border-color: rgba(22, 105, 201, 0.35);
+  background: rgba(22, 105, 201, 0.06);
+  outline: none;
 }
 
 .morning-news-item {
@@ -4209,13 +4431,25 @@ onBeforeUnmount(() => {
 
   .observe-chips {
     grid-template-columns: 1fr;
+    row-gap: 0;
+  }
+
+  .observe-strip .panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .observe-strip__actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .observe-chip {
     width: 100%;
     min-width: 0;
     max-width: none;
-    min-height: 56px;
+    min-height: 82px;
   }
 
   .effect-grid {
@@ -4573,6 +4807,17 @@ onBeforeUnmount(() => {
   background: rgba(15, 23, 42, 0.018);
 }
 
+.decision-kline {
+  width: 82px;
+  opacity: 0.92;
+}
+
+.decision-kline-inline {
+  width: 76px;
+  flex: 0 0 76px;
+  opacity: 0.9;
+}
+
 .dash-table :deep(.action-cues-col .cell) {
   overflow: visible;
   padding-left: 8px;
@@ -4885,6 +5130,10 @@ onBeforeUnmount(() => {
   .kpi-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .observe-chips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 960px) {
@@ -4977,6 +5226,14 @@ onBeforeUnmount(() => {
     min-width: 0;
   }
 
+  .mobile-stock .mobile-decision-kline,
+  .mobile-stock-with-strategy .mobile-decision-kline {
+    width: 88px;
+    flex: 0 0 88px;
+    margin-top: 0;
+    opacity: 0.82;
+  }
+
   .mobile-strategy-badge {
     display: inline-flex;
     height: 20px;
@@ -5042,9 +5299,20 @@ onBeforeUnmount(() => {
 
   .mobile-action-details {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px 12px;
     margin-top: 11px;
+  }
+
+  .mobile-decision-kline {
+    width: 100%;
+    margin-top: 9px;
+    opacity: 0.9;
+  }
+
+  .mobile-sell-market-details {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 9px;
   }
 
   .mobile-action-details > span {

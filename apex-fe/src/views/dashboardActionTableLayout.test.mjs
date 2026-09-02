@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const dashboardSource = await readFile(new URL('./DashboardView.vue', import.meta.url), 'utf8')
+const appSource = await readFile(new URL('../App.vue', import.meta.url), 'utf8')
 
 test('desktop decision table uses the shared name-first stock identity', () => {
   const tableStart = dashboardSource.indexOf(':data="topBuys"')
@@ -13,6 +14,26 @@ test('desktop decision table uses the shared name-first stock identity', () => {
   assert.doesNotMatch(decisionTable, /label="代码"|label="名称"/)
 })
 
+test('decision rows expose current change and daily K-line thumbnail', () => {
+  const tableStart = dashboardSource.indexOf(':data="topBuys"')
+  const tableEnd = dashboardSource.indexOf('</el-table>', tableStart)
+  const decisionTable = dashboardSource.slice(tableStart, tableEnd)
+
+  assert.match(decisionTable, /label="今日涨跌" width="76"/)
+  assert.match(decisionTable, /label="股票" width="204"[\s\S]*?class="dashboard-stock-cell"[\s\S]*?class="decision-kline-inline"/)
+  assert.doesNotMatch(decisionTable, /label="日 K"/)
+  assert.match(decisionTable, /row\.pctChg[\s\S]*fmtIndexPct\(row\.pctChg\)/)
+  assert.match(decisionTable, /showDashboardKline && row\.sparkCloses\?\.length[\s\S]*label="近 20 日日 K"/)
+  assert.match(dashboardSource, /class="mobile-decision-kline"/)
+})
+
+test('dashboard daily K-line thumbnails share a persisted display preference', () => {
+  assert.match(dashboardSource, /from '\.\.\/utils\/displayPreferences\.js'/)
+  assert.match(appSource, /显示日 K 缩略图/)
+  assert.match(appSource, /@change="setShowDashboardKline"/)
+  assert.match(dashboardSource, /v-if="showDashboardKline && row\.sparkCloses\?\.length"/)
+})
+
 test('observe reminder chips use a dedicated compact alert treatment', () => {
   const observeChipStyle = dashboardSource.match(/\.observe-chip\s*\{([^}]*)\}/)?.[1] || ''
 
@@ -20,7 +41,9 @@ test('observe reminder chips use a dedicated compact alert treatment', () => {
   assert.match(dashboardSource, /class="observe-chip__status-dot" aria-hidden="true"/)
   assert.match(dashboardSource, /\.observe-chip :deep\(\.observe-chip__identity\)\s*\{[\s\S]*?width:\s*auto;/)
   assert.match(dashboardSource, /\.observe-chip\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto;/)
-  assert.match(dashboardSource, /\.observe-chip\s*\{[\s\S]*?min-width:\s*200px;[\s\S]*?max-width:\s*260px;/)
+  assert.match(dashboardSource, /\.observe-chip\s*\{[\s\S]*?min-width:\s*250px;[\s\S]*?max-width:\s*360px;/)
+  assert.match(dashboardSource, /class="observe-chip__quote" aria-label="今日行情"/)
+  assert.match(dashboardSource, /class="observe-chip__kline"/)
   assert.match(dashboardSource, /\.observe-chip\s*\{[\s\S]*?border-radius:\s*8px;/)
   assert.match(dashboardSource, /\.observe-chip em\s*\{[\s\S]*?border-left:\s*1px solid/)
   assert.match(dashboardSource, /\.observe-chip em\s*\{[\s\S]*?border-radius:\s*4px;/)
@@ -107,9 +130,9 @@ test('desktop action tables keep adjacent fields together and fill their panels'
   const sellTableEnd = dashboardSource.indexOf('</el-table>', sellTableStart)
   const sellTable = dashboardSource.slice(sellTableStart, sellTableEnd)
 
-  assert.match(buyTable, /prop="name" label="股票" width="120"/)
+  assert.match(buyTable, /prop="name" label="股票" width="204"/)
   assert.match(buyTable, /label="联动" min-width="124" class-name="action-cues-col"/)
-  assert.match(sellTable, /prop="name" label="股票" width="120"/)
+  assert.match(sellTable, /prop="name" label="股票" width="204"/)
   assert.match(sellTable, /prop="exitRule" label="触发" min-width="160"/)
 })
 

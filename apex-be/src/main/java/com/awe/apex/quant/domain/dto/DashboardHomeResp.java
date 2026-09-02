@@ -136,6 +136,8 @@ public class DashboardHomeResp {
         /** 策略 */ private String strategyId;
         /** 评分 */ private BigDecimal score;
         /** 建议仓位 */ private BigDecimal suggestedWeight;
+        /** 今日涨跌幅% */ private BigDecimal pctChg;
+        /** 近 20 日日线收盘价 */ private List<BigDecimal> sparkCloses;
         /** 主线匹配 */ private Boolean mainlineMatch;
         /** 主线名 */ private String mainlineName;
         /** 估值档位 */ private String valuationLevel;

@@ -387,6 +387,17 @@ test('mobile market overview balances labels and values across each card', () =>
   )
 })
 
+test('desktop market overview keeps index close and change on one baseline', () => {
+  assert.match(
+    dashboardSource,
+    /\.index-line\s*\{[^}]*align-items:\s*baseline;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.index-line \.p\s*\{[^}]*grid-row:\s*2;[^}]*align-self:\s*baseline;[^}]*text-align:\s*right;/s,
+  )
+})
+
 test('mobile market volume aligns the percentage sign independently from its digits', () => {
   assert.match(dashboardSource, /const volumePercentageParts = computed/)
   assert.match(dashboardSource, /class="vol-sign"/)

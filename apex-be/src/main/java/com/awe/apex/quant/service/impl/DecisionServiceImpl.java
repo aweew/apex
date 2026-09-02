@@ -1293,6 +1293,95 @@ public class DecisionServiceImpl implements IDecisionService {
         return " · 日线截至 " + maxBarDate;
     }
 
+    /**
+     * 为已落库的今日决策补齐当前行情、日线趋势和缺失估值。
+     *
+     * @param items 决策条目
+     * @param codes 条目代码
+     * @param actionDate 决策日
+     */
+    private void enrichTodayMarketData(List<DecisionItemResp> items, Set<String> codes, LocalDate actionDate) {
+        if (CollUtil.isEmpty(items) || CollUtil.isEmpty(codes)) {
+            return;
+        }
+        Set<String> normalizedCodes = new HashSet<>();
+        for (String code : codes) {
+            String normalized = MarketCodeUtils.normalizeHoldingCode(code);
+            if (StringUtils.isNotBlank(normalized)) {
+                normalizedCodes.add(normalized);
+            }
+        }
+        Map<String, StockBasic> basics = loadBasics(normalizedCodes);
+        Map<String, ValuationBriefResp> valuations = Map.of();
+        if (Objects.nonNull(valuationService)) {
+            try {
+                Map<String, ValuationBriefResp> loaded = valuationService.briefBatch(codes);
+                if (Objects.nonNull(loaded)) {
+                    valuations = loaded;
+                }
+            } catch (Exception ex) {
+                log.warn("今日决策估值补齐失败，股票数={}，原因={}", codes.size(), ex.getMessage());
+            }
+        }
+
+        Map<String, List<BarDaily>> barsByCode = new HashMap<>();
+        if (Objects.nonNull(barDailyMapper)) {
+            if (CollUtil.isNotEmpty(normalizedCodes)) {
+                List<BarDaily> bars = barDailyMapper.selectList(Wrappers.<BarDaily>lambdaQuery()
+                        .in(BarDaily::getCode, normalizedCodes)
+                        .ge(BarDaily::getTradeDate, actionDate.minusDays(45))
+                        .le(BarDaily::getTradeDate, actionDate)
+                        .orderByAsc(BarDaily::getTradeDate));
+                for (BarDaily bar : bars) {
+                    if (Objects.nonNull(bar) && StringUtils.isNotBlank(bar.getCode())
+                            && Objects.nonNull(bar.getClosePrice())) {
+                        barsByCode.computeIfAbsent(MarketCodeUtils.normalizeHoldingCode(bar.getCode()),
+                                key -> new ArrayList<>()).add(bar);
+                    }
+                }
+            }
+        }
+
+        for (DecisionItemResp item : items) {
+            String code = item.getCode();
+            String normalizedCode = MarketCodeUtils.normalizeHoldingCode(code);
+            StockBasic basic = basics.get(code);
+            if (Objects.isNull(basic)) {
+                basic = basics.get(normalizedCode);
+            }
+            List<BarDaily> bars = barsByCode.getOrDefault(normalizedCode, List.of());
+            if (Objects.nonNull(basic)) {
+                item.setPctChg(basic.getPctChg());
+            }
+            if (Objects.isNull(item.getPctChg()) && CollUtil.isNotEmpty(bars)) {
+                BarDaily latestBar = bars.get(bars.size() - 1);
+                if (!actionDate.equals(LocalDate.now()) || actionDate.equals(latestBar.getTradeDate())) {
+                    item.setPctChg(latestBar.getPctChg());
+                }
+            }
+            if (CollUtil.isNotEmpty(bars)) {
+                int start = Math.max(0, bars.size() - 20);
+                List<BigDecimal> closes = new ArrayList<>();
+                for (int i = start; i < bars.size(); i++) {
+                    closes.add(bars.get(i).getClosePrice());
+                }
+                item.setSparkCloses(closes);
+            }
+
+            ValuationBriefResp valuation = valuations.get(code);
+            if (Objects.isNull(valuation)) {
+                valuation = valuations.get(normalizedCode);
+            }
+            if (Objects.nonNull(valuation)
+                    && (StringUtils.isBlank(item.getValuationLevel()) || "UNKNOWN".equals(item.getValuationLevel()))) {
+                item.setValuationLevel(valuation.getLevel());
+                item.setValuationLabel(valuation.getLevelLabel());
+                item.setValuationScore(valuation.getScore());
+                item.setValuationSummary(valuation.getSummary());
+            }
+        }
+    }
+
     private int toInt(Object v) {
         if (Objects.isNull(v)) {
             return 0;
@@ -1709,6 +1798,7 @@ public class DecisionServiceImpl implements IDecisionService {
                 holds.add(item);
             }
         }
+        enrichTodayMarketData(all, codes, actionDate);
         List<DecisionItemResp> executableBuys = new ArrayList<>();
         for (DecisionItemResp item : buys) {
             if (Boolean.TRUE.equals(item.getExecutableHint())) {

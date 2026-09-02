@@ -576,6 +576,8 @@ public class DashboardServiceImpl implements IDashboardService {
                 .strategyId(item.getStrategyId())
                 .score(item.getScore())
                 .suggestedWeight(item.getSuggestedWeight())
+                .pctChg(item.getPctChg())
+                .sparkCloses(item.getSparkCloses())
                 .mainlineMatch(item.getMainlineMatch())
                 .mainlineName(item.getMainlineName())
                 .valuationLevel(item.getValuationLevel())

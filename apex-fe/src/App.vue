@@ -39,6 +39,7 @@ import {
   setTradingCalendar,
   tradingCalendar,
 } from './utils/dataFreshness.js'
+import { setShowDashboardKline, showDashboardKline } from './utils/displayPreferences.js'
 import {
   isMobileBackSwipeStart,
   mobileBackSwipeOffset,
@@ -90,6 +91,7 @@ const fullscreenPending = ref(false)
 const fullscreenSupported = Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen)
 const REDUCE_MOTION_KEY = 'apex.ui.reduce-motion'
 const reduceMotion = ref(readReduceMotionPreference())
+const showDashboardKlinePreference = showDashboardKline
 const bottomNavIcons = {
   Briefcase,
   DataBoard,
@@ -1193,6 +1195,18 @@ onBeforeUnmount(() => {
               <small>降低页面切换与反馈动画</small>
             </span>
             <el-switch v-model="reduceMotion" aria-label="减少动效" />
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-icon"><TrendCharts aria-hidden="true" /></span>
+            <span class="settings-row-copy">
+              <strong>显示日 K 缩略图</strong>
+              <small>在看板决策表的股票右侧显示走势</small>
+            </span>
+            <el-switch
+              :model-value="showDashboardKlinePreference"
+              aria-label="显示日 K 缩略图"
+              @change="setShowDashboardKline"
+            />
           </div>
         </section>
 
