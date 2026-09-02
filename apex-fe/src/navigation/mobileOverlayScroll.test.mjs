@@ -8,7 +8,8 @@ const glossarySource = await readFile(new URL('../components/GlossaryPanel.vue',
 
 test('mobile navigation owns scrolling inside a dedicated drawer body', () => {
   assert.match(appSource, /class="mobile-menu-scroll"/)
-  assert.match(appSource, /\.links\s*\{[\s\S]*?height:\s*100dvh;[\s\S]*?overflow:\s*hidden;/)
+  assert.match(appSource, /\.links\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?top:\s*calc\(56px \+ env\(safe-area-inset-top\) \+ 8px\);[\s\S]*?bottom:\s*8px;[\s\S]*?overflow:\s*hidden;/)
+  assert.match(appSource, /\.links\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 72px - env\(safe-area-inset-top\)\);/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?touch-action:\s*pan-y;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?-webkit-overflow-scrolling:\s*touch;/)
@@ -61,6 +62,12 @@ test('mobile document keeps viewport scrolling so navigation and module title st
   assert.match(appSource, /\.nav\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;/)
   assert.match(appSource, /window\.addEventListener\('scroll', scheduleMobileModuleTitle/)
   assert.match(mobileMenuWatch, /document\.documentElement\.classList\.toggle\('mobile-menu-open', open\)/)
+  assert.match(mobileMenuWatch, /document\.body\.style\.position = 'fixed'/)
+  assert.match(mobileMenuWatch, /document\.body\.style\.top = `-\$\{mobileMenuPageScrollY\}px`/)
+  assert.match(mobileMenuWatch, /window\.scrollTo\(0, mobileMenuPageScrollY\)/)
+  assert.match(mobileMenuWatch, /const menuScroll = mobileMenuRef\.value\?\.querySelector\?\.\('\.mobile-menu-scroll'\)/)
+  assert.doesNotMatch(mobileMenuWatch, /activeLink\?\.scrollIntoView/)
+  assert.match(mobileMenuWatch, /activeLink\.focus\(\{ preventScroll: true \}\)/)
   assert.match(mobileMenuWatch, /\{ immediate: true \}/)
   assert.match(searchWatch, /document\.documentElement\.classList\.toggle\('search-open', open\)/)
   assert.match(searchWatch, /\{ immediate: true \}/)

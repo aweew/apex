@@ -1,5 +1,11 @@
 export const MENU_SWIPE_LOCK_DISTANCE = 8
 export const MENU_SWIPE_OPEN_PROGRESS = 0.5
+export const MENU_SWIPE_EDGE_DISTANCE = 28
+
+export function canStartMenuSwipe(startProgress, startX) {
+  if (startProgress > 0) return true
+  return Number(startX) <= MENU_SWIPE_EDGE_DISTANCE
+}
 export const MENU_SWIPE_FLING_VELOCITY = 0.45
 export const MOBILE_BACK_SWIPE_EDGE_WIDTH = 24
 export const MOBILE_BACK_SWIPE_DISTANCE = 64

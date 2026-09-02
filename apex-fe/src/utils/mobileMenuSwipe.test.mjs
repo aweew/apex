@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  canStartMenuSwipe,
   isMobileBackSwipeStart,
   mobileBackSwipeOffset,
   menuSwipeProgress,
@@ -9,6 +10,12 @@ import {
   shouldNavigateBackAfterSwipe,
   shouldOpenMenuAfterSwipe,
 } from './mobileMenuSwipe.js'
+
+test('mobile menu opens by swipe only from the screen edge', () => {
+  assert.equal(canStartMenuSwipe(0, 20), true)
+  assert.equal(canStartMenuSwipe(0, 29), false)
+  assert.equal(canStartMenuSwipe(1, 200), true)
+})
 
 test('mobile menu swipe waits for intent before locking an axis', () => {
   assert.equal(resolveMenuSwipeAxis(6, 2), 'pending')

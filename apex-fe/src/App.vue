@@ -41,6 +41,7 @@ import {
 } from './utils/dataFreshness.js'
 import { setShowDashboardKline, showDashboardKline } from './utils/displayPreferences.js'
 import {
+  canStartMenuSwipe,
   isMobileBackSwipeStart,
   mobileBackSwipeOffset,
   menuSwipeProgress,
@@ -164,6 +165,7 @@ let mobileMenuSwipe
 let mobileMenuFrame
 let mobileMenuSettleFrame
 let pendingMobileMenuProgress
+let mobileMenuPageScrollY = 0
 let mobileMenuKeyboardInteraction = false
 
 function readReduceMotionPreference() {
@@ -278,6 +280,7 @@ async function logoutCurrentUser() {
 }
 
 function setMobileMenu(open) {
+  if (open && !mobileMenuActive.value) mobileMenuPageScrollY = window.scrollY
   if (mobileMenuFrame) window.cancelAnimationFrame(mobileMenuFrame)
   if (mobileMenuSettleFrame) window.cancelAnimationFrame(mobileMenuSettleFrame)
   mobileMenuFrame = undefined
@@ -398,6 +401,10 @@ function onMobileMenuTouchStart(event) {
   }
 
   const touch = event.touches[0]
+  if (!canStartMenuSwipe(mobileMenuProgress.value, touch.clientX)) {
+    mobileMenuSwipe = undefined
+    return
+  }
   // The browser-style left-edge gesture is reserved for history navigation.
   // It must never reveal the app menu, including when there is no history entry.
   if (isMobileBackSwipeStart(touch.clientX)) {
@@ -819,19 +826,39 @@ watch(
   mobileMenuOpen,
   async (open, previousOpen) => {
     document.documentElement.classList.toggle('mobile-menu-open', open)
+    if (open) {
+      document.body.style.position = 'fixed'
+      document.body.style.top = `-${mobileMenuPageScrollY}px`
+      document.body.style.width = '100%'
+    } else {
+      document.body.style.position = ''
+      document.body.style.top = ''
+      document.body.style.width = ''
+      window.scrollTo(0, mobileMenuPageScrollY)
+    }
     await nextTick()
     if (open) {
       if (!mobileMenuKeyboardInteraction) return
       const activeLink = mobileMenuRef.value?.querySelector?.('.router-link-active')
-      activeLink?.scrollIntoView?.({ block: 'center' })
-      if (activeLink) activeLink.focus()
-      else mobileMenuCloseRef.value?.focus?.()
+      const menuScroll = mobileMenuRef.value?.querySelector?.('.mobile-menu-scroll')
+      if (activeLink && menuScroll) {
+        const activeRect = activeLink.getBoundingClientRect()
+        const scrollRect = menuScroll.getBoundingClientRect()
+        if (activeRect.top < scrollRect.top) {
+          menuScroll.scrollTop += activeRect.top - scrollRect.top - 12
+        } else if (activeRect.bottom > scrollRect.bottom) {
+          menuScroll.scrollTop += activeRect.bottom - scrollRect.bottom + 12
+        }
+      }
+      if (activeLink) activeLink.focus({ preventScroll: true })
+      else mobileMenuCloseRef.value?.focus?.({ preventScroll: true })
       return
     }
     if (previousOpen && mobileMenuKeyboardInteraction && !settingsOpen.value) {
       mobileMenuButtonRef.value?.focus?.({ preventScroll: true })
     }
     mobileMenuKeyboardInteraction = false
+    if (!settingsOpen.value) mobileMenuButtonRef.value?.focus?.({ preventScroll: true })
   },
   { immediate: true },
 )
@@ -889,6 +916,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onSearchOutsidePointerDown, true)
   document.removeEventListener('fullscreenchange', syncFullscreenState)
   document.documentElement.classList.remove('mobile-menu-open')
+  document.body.style.position = ''
+  document.body.style.top = ''
+  document.body.style.width = ''
   document.documentElement.classList.remove('search-open')
   document.documentElement.classList.remove('reduce-motion')
 })
@@ -2401,12 +2431,15 @@ onBeforeUnmount(() => {
 
   .links {
     position: fixed;
-    inset: 0 auto 0 0;
+    top: calc(56px + env(safe-area-inset-top) + 8px);
+    right: auto;
+    bottom: 8px;
+    left: 0;
     z-index: 102;
     width: min(calc(100vw - 64px), 360px);
     max-width: none;
-    height: 100vh;
-    height: 100dvh;
+    height: auto;
+    max-height: calc(100dvh - 72px - env(safe-area-inset-top));
     min-height: 0;
     display: flex;
     flex-direction: column;
