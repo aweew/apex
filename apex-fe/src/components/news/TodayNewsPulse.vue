@@ -75,6 +75,15 @@ function openUrl(url) {
           @click="openUrl(card.url)"
         >{{ card.title }}</h3>
         <p class="card-sum">{{ card.summary || '—' }}</p>
+        <div v-if="card.relatedCodes?.length" class="related-codes" aria-label="关联个股">
+          <router-link
+            v-for="code in card.relatedCodes"
+            :key="code"
+            :to="`/stock/${code}`"
+            class="stock-code-link"
+            :aria-label="`打开${code}股票详情`"
+          >{{ code }}</router-link>
+        </div>
         <div class="card-foot">
           <div class="themes">
             <span v-for="th in (card.themes || []).slice(0, 3)" :key="th">{{ th }}</span>
@@ -273,6 +282,30 @@ function openUrl(url) {
   -webkit-box-orient: vertical;
   overflow: hidden;
   min-height: 36px;
+}
+.related-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -2px 0 9px;
+}
+.stock-code-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 1px 6px;
+  border: 1px solid rgba(22, 105, 201, 0.2);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+.stock-code-link:hover,
+.stock-code-link:focus-visible {
+  border-color: rgba(22, 105, 201, 0.45);
+  background: rgba(22, 105, 201, 0.06);
+  outline: none;
 }
 .card-foot {
   display: flex;

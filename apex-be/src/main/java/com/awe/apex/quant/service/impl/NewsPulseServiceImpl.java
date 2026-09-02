@@ -257,7 +257,7 @@ public class NewsPulseServiceImpl implements INewsPulseService {
                                      int bear,
                                      List<PreMarketEventImpactResp> impacts,
                                      String biasLabel) {
-        String cacheKey = LocalDate.now() + "|" + bull + "|" + bear + "|" + impacts.hashCode();
+        String cacheKey = "direction-v2|" + LocalDate.now() + "|" + bull + "|" + bear + "|" + impacts.hashCode();
         CachedSummary cached = summaryCache.get();
         int ttl = Math.max(60, aiChatProperties.getSummaryCacheSeconds());
         if (!force && Objects.nonNull(cached)
@@ -287,7 +287,9 @@ public class NewsPulseServiceImpl implements INewsPulseService {
         String system = "你是 A 股券商晨会编辑。只根据给定的高相关事件归纳，禁止补充列表之外的事件或数据。"
                 + "必须输出一段中文（90-160字），严格使用格式："
                 + "首要变量：…；A股映射：…；开盘验证：…。"
-                + "首要变量只能写最重要事件，A股映射必须写明确板块或代码，开盘验证必须写可观察条件。"
+                + "A股映射要回答今天的市场风向，优先概括板块、行业、风格或风险偏好；"
+                + "只有事件明确指向单家公司时，才把关联代码作为核验线索放在方向之后，禁止把代码列表当成核心结论或荐股。"
+                + "首要变量只能写最重要事件，开盘验证必须写可观察条件。"
                 + "不要引用新闻数量、市场立场或赚钱效应充当结论，不要使用 markdown。";
         String user = "统计：利好 " + bull + " 条，利空 " + bear + " 条，综合标签「"
                 + (StringUtils.isBlank(biasLabel) ? "中性" : biasLabel) + "」。\n"
@@ -307,26 +309,35 @@ public class NewsPulseServiceImpl implements INewsPulseService {
                     + "开盘验证：等待权威政策、公司公告或量价反馈。";
         }
         PreMarketEventImpactResp primaryImpact = impacts.get(0);
-        List<String> targets = new ArrayList<>();
+        List<String> themes = new ArrayList<>();
+        List<String> relatedCodes = new ArrayList<>();
         for (PreMarketEventImpactResp impact : impacts) {
-            if (CollUtil.isNotEmpty(impact.getRelatedCodes())) {
-                for (String code : impact.getRelatedCodes()) {
-                    if (!targets.contains(code) && targets.size() < 4) {
-                        targets.add(code);
+            if (CollUtil.isNotEmpty(impact.getThemes())) {
+                for (String theme : impact.getThemes()) {
+                    if (!themes.contains(theme) && themes.size() < 4) {
+                        themes.add(theme);
                     }
                 }
             }
-            if (CollUtil.isNotEmpty(impact.getThemes())) {
-                for (String theme : impact.getThemes()) {
-                    if (!targets.contains(theme) && targets.size() < 4) {
-                        targets.add(theme);
+            if (CollUtil.isNotEmpty(impact.getRelatedCodes())) {
+                for (String code : impact.getRelatedCodes()) {
+                    if (!relatedCodes.contains(code) && relatedCodes.size() < 4) {
+                        relatedCodes.add(code);
                     }
                 }
             }
         }
-        String transmission = CollUtil.isNotEmpty(targets)
-                ? "优先观察" + String.join("、", targets)
-                : "先看大盘风险偏好与政策受益方向";
+        String transmission;
+        if (CollUtil.isNotEmpty(themes)) {
+            transmission = "市场风向优先观察" + String.join("、", themes);
+            if (CollUtil.isNotEmpty(relatedCodes)) {
+                transmission += "，相关个股仅作核验：" + String.join("、", relatedCodes);
+            }
+        } else if (CollUtil.isNotEmpty(relatedCodes)) {
+            transmission = "当前以公司事件为主，先核验" + String.join("、", relatedCodes) + "公告对市场的实际影响";
+        } else {
+            transmission = "先看大盘风险偏好与政策受益方向";
+        }
         String primaryTitle = primaryImpact.getTitle();
         if (primaryTitle.length() > 52) {
             primaryTitle = primaryTitle.substring(0, 52) + "…";
