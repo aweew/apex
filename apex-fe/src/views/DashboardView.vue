@@ -1127,6 +1127,7 @@ onBeforeUnmount(() => {
                 <div class="overnight-quote-name">
                   <strong>{{ quote.name || quote.symbol }}</strong>
                 </div>
+                <small class="overnight-quote-points">{{ fmtQuotePrice(quote.latestPrice) || '--' }}</small>
                 <IntradayKlineThumbnail
                   v-if="quote.intradayBars?.length"
                   class="benchmark-intraday-chart"
@@ -1147,19 +1148,24 @@ onBeforeUnmount(() => {
             <div class="overnight-layer-head">
               <h5>中国资产</h5>
             </div>
-            <div v-if="ftseA50Future" class="overnight-index-grid china-assets-grid">
-              <div class="overnight-quote">
+            <div v-if="ftseA50Future" class="overnight-index-grid benchmark-index-grid china-assets-grid">
+              <div
+                class="overnight-quote"
+                :class="{ 'has-intraday-chart': ftseA50Future.intradayBars?.length }"
+              >
                 <div class="overnight-quote-name">
                   <strong>富时 A50 期指连续</strong>
                 </div>
-                <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
-              </div>
-              <div v-if="ftseA50Future.intradayBars?.length" class="china-asset-chart">
+                <small class="overnight-quote-points">{{ fmtQuotePrice(ftseA50Future.latestPrice) || '--' }}</small>
                 <IntradayKlineThumbnail
+                  v-if="ftseA50Future.intradayBars?.length"
+                  class="benchmark-intraday-chart"
                   :bars="ftseA50Future.intradayBars"
                   :previous-close="chinaAssetPreviousClose"
+                  :height="32"
                   label="富时 A50 期指连续日内 K 线"
                 />
+                <b :class="pctDir(ftseA50Future.pctChg)">{{ fmtIndexPct(ftseA50Future.pctChg) }}</b>
               </div>
             </div>
             <p v-if="!ftseA50Future" class="morning-context-empty">富时 A50 期指连续暂未获取</p>
@@ -1448,7 +1454,7 @@ onBeforeUnmount(() => {
           :class="item.status === 'TRIGGERED' ? 'trig' : 'near'"
           @click="router.push(`/stock/${item.code}`)"
         >
-          <div class="observe-chip__body">
+          <div class="observe-chip__body" :class="{ 'without-kline': !item.sparkCloses?.length }">
             <div class="observe-chip__identity-row">
               <StockIdentity class="observe-chip__identity" :security="item" compact />
               <div class="observe-chip__quote" aria-label="今日行情">
@@ -1536,10 +1542,11 @@ onBeforeUnmount(() => {
               :data="topBuys"
               size="small"
               class="dash-table desktop-action-table"
+              :class="{ 'dashboard-table-no-kline': !showDashboardKline }"
               empty-text="暂无买入建议"
               stripe
             >
-              <el-table-column prop="name" label="股票" width="204">
+              <el-table-column prop="name" label="股票" :width="showDashboardKline ? 196 : 154">
                 <template #default="{ row }">
                   <div class="dashboard-stock-cell">
                     <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
@@ -1555,28 +1562,28 @@ onBeforeUnmount(() => {
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="今日涨跌" width="76" align="right">
+              <el-table-column label="今日涨跌" width="60" align="right">
                 <template #default="{ row }">
                   <span class="num" :class="pctDir(row.pctChg)">{{ fmtIndexPct(row.pctChg) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="strategyId" label="策略" width="52" />
-              <el-table-column label="评分" width="96">
+              <el-table-column prop="strategyId" label="策略" width="46" />
+              <el-table-column label="评分" width="76">
                 <template #default="{ row }">
                   <ScoreBar :score="row.score" />
                 </template>
               </el-table-column>
-              <el-table-column label="估值" width="72">
+              <el-table-column label="估值" width="56">
                 <template #default="{ row }">
                   <span class="muted">{{ row.valuationLabel || '-' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="仓位" width="60">
+              <el-table-column label="仓位" width="48">
                 <template #default="{ row }">
                   <span class="num">{{ fmtWeight(row.suggestedWeight) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="联动" min-width="124" class-name="action-cues-col">
+              <el-table-column label="联动" min-width="90" class-name="action-cues-col">
                 <template #default="{ row }">
                   <div class="action-cues">
                     <el-tag
@@ -1695,9 +1702,10 @@ onBeforeUnmount(() => {
               :data="topSells"
               size="small"
               class="dash-table desktop-action-table"
+              :class="{ 'dashboard-table-no-kline': !showDashboardKline }"
               stripe
             >
-              <el-table-column prop="name" label="股票" width="204">
+              <el-table-column prop="name" label="股票" :width="showDashboardKline ? 196 : 154">
                 <template #default="{ row }">
                   <div class="dashboard-stock-cell">
                     <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
@@ -1713,19 +1721,19 @@ onBeforeUnmount(() => {
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="今日涨跌" width="76" align="right">
+              <el-table-column label="今日涨跌" width="60" align="right">
                 <template #default="{ row }">
                   <span class="num" :class="pctDir(row.pctChg)">{{ fmtIndexPct(row.pctChg) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="策略" width="72">
+              <el-table-column label="策略" width="52">
                 <template #default="{ row }">
                   <span :class="row.strategyId === 'RISK' ? 'risk-tag' : ''">
                     {{ row.strategyId === 'RISK' ? '风控' : row.strategyId || '-' }}
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column label="评分" width="100">
+              <el-table-column label="评分" width="80">
                 <template #default="{ row }">
                   <ScoreBar :score="row.score" />
                 </template>
@@ -1926,13 +1934,13 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 14px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .panel.action-panel {
   display: flex;
   flex-direction: column;
-  align-self: stretch;
+  align-self: start;
   min-width: 0;
   min-height: 0;
   padding: 14px 16px 16px;
@@ -1996,7 +2004,8 @@ onBeforeUnmount(() => {
 
 .panel-meta {
   flex: 0 0 auto;
-  min-height: 0;
+  min-height: 94px;
+  box-sizing: border-box;
   margin: 0;
   padding: 10px 0 12px;
 }
@@ -2130,7 +2139,8 @@ onBeforeUnmount(() => {
 .observe-chips {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  column-gap: 20px;
+  gap: 12px;
+  padding-top: 12px;
 }
 
 .observe-chips > .observe-chip {
@@ -2140,30 +2150,29 @@ onBeforeUnmount(() => {
 
 .observe-chip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 72px;
   min-width: 250px;
   max-width: 360px;
-  min-height: 76px;
+  min-height: 92px;
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  border: 1px solid transparent;
+  border: 1px solid var(--glass-border, var(--line));
   border-radius: 8px;
-  border-bottom-color: var(--line);
-  padding: 10px 0;
-  background: transparent;
+  padding: 12px;
+  background: var(--glass, rgba(255, 255, 255, 0.68));
   color: var(--ink);
   font: inherit;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
 
 .observe-chip:hover {
   border-color: rgba(35, 99, 235, 0.26);
-  border-radius: 6px;
-  background: rgba(35, 99, 235, 0.035);
-  box-shadow: none;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  transform: translateY(-1px);
 }
 
 .observe-chip:focus-visible {
@@ -2178,8 +2187,8 @@ onBeforeUnmount(() => {
 }
 
 .observe-chip :deep(.stock-identity__name) {
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .observe-chip :deep(.stock-identity__meta-line) {
@@ -2188,18 +2197,28 @@ onBeforeUnmount(() => {
 
 .observe-chip :deep(.stock-identity__code) {
   font-size: 11px;
+  font-weight: 700;
 }
 
 .observe-chip__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 150px);
+  align-items: center;
+  gap: 12px;
   min-width: 0;
 }
 
 .observe-chip__identity-row {
   display: flex;
   min-width: 0;
+  min-height: 44px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.observe-chip__body.without-kline {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .observe-chip__quote {
@@ -2229,22 +2248,23 @@ onBeforeUnmount(() => {
 
 .observe-chip__kline {
   width: 100%;
-  max-width: 180px;
-  margin-top: 5px;
-  opacity: 0.78;
+  max-width: none;
+  margin-top: 0;
+  opacity: 0.86;
 }
 
 .observe-chip em {
   display: inline-flex;
-  min-width: 48px;
+  width: 72px;
+  min-width: 0;
   min-height: 30px;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 5px;
   box-sizing: border-box;
   border-left: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 4px;
-  padding: 4px 0 4px 8px;
+  padding: 6px 0 6px 10px;
   font-style: normal;
   font-size: 12px;
   font-weight: 650;
@@ -3640,18 +3660,6 @@ onBeforeUnmount(() => {
 
 .china-assets-grid {
   grid-template-columns: minmax(0, 1fr);
-  padding: 0 10px 8px;
-}
-
-.china-assets-grid .overnight-quote {
-  padding: 0;
-}
-
-.china-asset-chart {
-  grid-column: 1 / -1;
-  min-width: 0;
-  padding-top: 5px;
-  border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .opening-auction-grid {
@@ -3802,21 +3810,38 @@ onBeforeUnmount(() => {
 
 .benchmark-index-grid .overnight-quote {
   min-height: 48px;
+  grid-template-columns: max-content minmax(64px, 88px) auto;
+  gap: 10px;
 }
 
 .benchmark-index-grid .overnight-quote.has-intraday-chart {
-  grid-template-columns: minmax(0, 1fr) minmax(88px, 128px) auto;
+  grid-template-columns: max-content minmax(64px, 88px) minmax(88px, 1fr) auto;
   gap: 10px;
 }
 
 .benchmark-intraday-chart {
-  grid-column: 2;
+  grid-column: 3;
   min-width: 0;
   width: 100%;
 }
 
 .benchmark-index-grid .overnight-quote.has-intraday-chart > b {
+  grid-column: 4;
+}
+
+.benchmark-index-grid .overnight-quote:not(.has-intraday-chart) > b {
   grid-column: 3;
+}
+
+.overnight-quote-points {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  text-align: left;
+  transform: translateY(2px);
+  white-space: nowrap;
 }
 
 .benchmark-index-grid .overnight-quote-name strong {
@@ -3824,7 +3849,7 @@ onBeforeUnmount(() => {
 }
 
 .benchmark-index-grid .overnight-quote > b {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 750;
 }
 
@@ -4431,7 +4456,7 @@ onBeforeUnmount(() => {
 
   .observe-chips {
     grid-template-columns: 1fr;
-    row-gap: 0;
+    row-gap: 8px;
   }
 
   .observe-strip .panel-head {
@@ -4450,6 +4475,11 @@ onBeforeUnmount(() => {
     min-width: 0;
     max-width: none;
     min-height: 82px;
+  }
+
+  .observe-chip__body {
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 132px);
+    gap: 8px;
   }
 
   .effect-grid {
@@ -4560,7 +4590,12 @@ onBeforeUnmount(() => {
   }
 
   .benchmark-index-grid .overnight-quote.has-intraday-chart {
-    grid-template-columns: minmax(0, 1fr) minmax(72px, 112px) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(58px, 76px) minmax(72px, 112px) auto;
+    gap: 8px;
+  }
+
+  .benchmark-index-grid .overnight-quote {
+    grid-template-columns: minmax(0, 1fr) minmax(58px, 76px) auto;
     gap: 8px;
   }
 
@@ -4780,6 +4815,8 @@ onBeforeUnmount(() => {
 }
 
 .action-panel .dash-table {
+  width: 100%;
+  min-width: 0;
   border-top: 1px solid var(--el-table-border-color);
   border-bottom: 1px solid var(--el-table-border-color);
   border-radius: 0;
@@ -4810,6 +4847,22 @@ onBeforeUnmount(() => {
 .decision-kline {
   width: 82px;
   opacity: 0.92;
+}
+
+.dashboard-stock-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dashboard-stock-cell :deep(.stock-identity) {
+  width: 100%;
+}
+
+.dashboard-table-no-kline :deep(.dashboard-stock-cell) {
+  display: block;
 }
 
 .decision-kline-inline {
@@ -5131,6 +5184,10 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+
   .observe-chips {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5152,6 +5209,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 820px) {
+  .action-panel .panel-meta {
+    min-height: 0;
+  }
+
   .desktop-action-table {
     display: none;
   }

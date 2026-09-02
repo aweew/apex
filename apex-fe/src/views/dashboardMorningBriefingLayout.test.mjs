@@ -46,10 +46,10 @@ test('dashboard renders the structured forecast and only shows available opening
   assert.doesNotMatch(dashboardSource, /opening-auction-note/)
 })
 
-test('dashboard keeps China assets focused on A50 percentage change only', () => {
+test('dashboard keeps China assets aligned with benchmark quote details', () => {
   assert.match(dashboardSource, /<h5>中国资产<\/h5>/)
   assert.doesNotMatch(dashboardSource, /<span>富时 A50 期指连续 · 涨跌幅<\/span>/)
-  assert.match(dashboardSource, /v-if="ftseA50Future" class="overnight-index-grid china-assets-grid"/)
+  assert.match(dashboardSource, /v-if="ftseA50Future" class="overnight-index-grid benchmark-index-grid china-assets-grid"/)
   assert.match(dashboardSource, /<strong>富时 A50 期指连续<\/strong>/)
   assert.match(dashboardSource, /fmtIndexPct\(ftseA50Future\.pctChg\)/)
   assert.doesNotMatch(dashboardSource, /chinaGoldenDragon|chinaConceptMovers|chinaConceptQuotes/)
@@ -57,7 +57,11 @@ test('dashboard keeps China assets focused on A50 percentage change only', () =>
   const chinaAssetsStart = dashboardSource.indexOf('<h5>中国资产</h5>')
   const chinaAssetsEnd = dashboardSource.indexOf('</div>\n\n          <button', chinaAssetsStart)
   const chinaAssetsMarkup = dashboardSource.slice(chinaAssetsStart, chinaAssetsEnd)
-  assert.doesNotMatch(chinaAssetsMarkup, /latestPrice|fmtQuotePrice|quoteTime|源行情|china-asset-meta|china-asset-price|china-asset-time/)
+  assert.match(chinaAssetsMarkup, /class="overnight-quote"[\s\S]*?:class="\{ 'has-intraday-chart': ftseA50Future\.intradayBars\?\.length \}"[\s\S]*?class="benchmark-intraday-chart"/)
+  assert.match(chinaAssetsMarkup, /:bars="ftseA50Future\.intradayBars"[\s\S]*?:height="32"[\s\S]*?label="富时 A50 期指连续日内 K 线"/)
+  assert.match(chinaAssetsMarkup, /class="overnight-quote-points">\{\{ fmtQuotePrice\(ftseA50Future\.latestPrice\) \|\| '--' \}\}</)
+  assert.doesNotMatch(chinaAssetsMarkup, /class="china-asset-chart"/)
+  assert.doesNotMatch(chinaAssetsMarkup, /quoteTime|源行情|china-asset-meta|china-asset-price|china-asset-time/)
   const chinaAssetsIndex = dashboardSource.indexOf('<h5>中国资产</h5>')
   const disclosureIndex = dashboardSource.indexOf('class="morning-disclosure"')
   const ftseA50Index = dashboardSource.indexOf('<strong>富时 A50 期指连续</strong>')
@@ -480,16 +484,24 @@ test('dashboard benchmark index cards prioritize percentage changes over point v
   assert.doesNotMatch(dashboardSource, /<h5>三大指数<\/h5>/)
   assert.match(benchmarkMarkup, /v-for="quote in overnightIndexes"/)
   assert.match(benchmarkMarkup, /fmtIndexPct\(quote\.pctChg\)/)
-  assert.match(benchmarkMarkup, /IntradayKlineThumbnail/)
-  assert.match(benchmarkMarkup, /:class="\{ 'has-intraday-chart': quote\.intradayBars\?\.length \}"/)
-  assert.doesNotMatch(benchmarkMarkup, /latestPrice|fmtQuotePrice/)
+  assert.match(benchmarkMarkup, /class="overnight-quote-points">\{\{ fmtQuotePrice\(quote\.latestPrice\) \|\| '--' \}\}</)
   assert.match(
     dashboardSource,
-    /\.benchmark-index-grid \.overnight-quote > b\s*\{[^}]*font-size:\s*15px;[^}]*font-weight:\s*750;/s,
+    /\.overnight-quote-points\s*\{[^}]*font-size:\s*11px;[^}]*transform:\s*translateY\(2px\);/s,
+  )
+  assert.match(benchmarkMarkup, /IntradayKlineThumbnail/)
+  assert.match(benchmarkMarkup, /:class="\{ 'has-intraday-chart': quote\.intradayBars\?\.length \}"/)
+  assert.match(
+    dashboardSource,
+    /\.benchmark-index-grid \.overnight-quote > b\s*\{[^}]*font-size:\s*13px;[^}]*font-weight:\s*750;/s,
   )
   assert.match(
     dashboardSource,
-    /\.benchmark-index-grid \.overnight-quote\.has-intraday-chart\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(88px,\s*128px\) auto;/s,
+    /\.benchmark-index-grid \.overnight-quote\.has-intraday-chart\s*\{[^}]*grid-template-columns:\s*max-content minmax\(64px,\s*88px\) minmax\(88px,\s*1fr\) auto;/s,
+  )
+  assert.match(
+    dashboardSource,
+    /\.benchmark-index-grid \.overnight-quote:not\(\.has-intraday-chart\) > b\s*\{[^}]*grid-column:\s*3;/s,
   )
 })
 
