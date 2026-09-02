@@ -38,6 +38,12 @@ public class ScreenerMarketSnapshotClient {
             "https://push2delay.eastmoney.com/api/qt/clist/get",
             "https://push2.eastmoney.com/api/qt/clist/get",
     };
+    private static final String[] CODE_HOSTS = {
+            "https://push2delay.eastmoney.com/api/qt/ulist.np/get",
+            "https://push2.eastmoney.com/api/qt/ulist.np/get",
+    };
+    private static final String CODE_QUERY = "?fltt=2&invt=2"
+            + "&fields=f2,f3,f6,f8,f9,f10,f12,f13,f14,f20,f21,f23,f100,f124";
 
     /**
      * 拉取全A实时选股截面。
@@ -82,12 +88,38 @@ public class ScreenerMarketSnapshotClient {
     }
 
     private ScreenerMarketSnapshotBatch fetchPage(int page) {
+        return fetchPage(page, PAGE_SIZE, 15000);
+    }
+
+    /**
+     * 拉取指定页的实时截面，用于股票列表按页补充实时字段。
+     *
+     * @param page 页码，从 1 开始
+     * @param pageSize 页大小
+     * @return 实时截面页
+     */
+    public ScreenerMarketSnapshotBatch fetchPage(int page, int pageSize) {
+        return fetchPage(page, pageSize, 15000);
+    }
+
+    /**
+     * 拉取指定页的实时截面，并限制外部请求等待时间。
+     *
+     * @param page 页码，从 1 开始
+     * @param pageSize 页大小
+     * @param timeoutMs 单个服务地址的超时时间（毫秒）
+     * @return 实时截面页
+     */
+    public ScreenerMarketSnapshotBatch fetchPage(int page, int pageSize, int timeoutMs) {
+        int safePage = Math.max(1, page);
+        int safePageSize = Math.max(1, Math.min(pageSize, 200));
+        int safeTimeoutMs = Math.max(1000, Math.min(timeoutMs, 30000));
         Exception last = null;
         for (String host : HOSTS) {
-            String url = host + QUERY + "&pn=" + page + "&pz=" + PAGE_SIZE
+            String url = host + QUERY + "&pn=" + safePage + "&pz=" + safePageSize
                     + "&_=" + System.currentTimeMillis();
             try (HttpResponse response = HttpRequest.get(url)
-                    .timeout(15000)
+                    .timeout(safeTimeoutMs)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                     .header("Referer", "https://quote.eastmoney.com/")
                     .header("Accept", "*/*")
@@ -98,10 +130,64 @@ public class ScreenerMarketSnapshotClient {
                 return parse(response.body());
             } catch (Exception ex) {
                 last = ex;
-                log.warn("实时选股截面拉取失败，服务地址={}，页码={}，异常={}", host, page, ex.getMessage());
+                log.warn("实时选股截面拉取失败，服务地址={}，页码={}，异常={}", host, safePage, ex.getMessage());
             }
         }
-        throw new BusinessException("实时选股截面第 " + page + " 页拉取失败: "
+        throw new BusinessException("实时选股截面第 " + safePage + " 页拉取失败: "
+                + (Objects.nonNull(last) ? last.getMessage() : "unknown"), last);
+    }
+
+    /**
+     * 按证券代码批量拉取实时行情，避免数据库分页与行情分页的股票集合不一致。
+     *
+     * @param codes 证券代码
+     * @param timeoutMs 请求超时时间（毫秒）
+     * @return 实时截面批次
+     */
+    public ScreenerMarketSnapshotBatch fetchByCodes(List<String> codes, int timeoutMs) {
+        if (CollUtil.isEmpty(codes)) {
+            return ScreenerMarketSnapshotBatch.builder()
+                    .source("eastmoney-ulist")
+                    .total(0)
+                    .items(List.of())
+                    .build();
+        }
+        List<String> secids = new ArrayList<>();
+        for (String code : codes) {
+            if (StringUtils.isNotBlank(code)) {
+                secids.add(resolveSecid(code.trim()));
+            }
+        }
+        if (CollUtil.isEmpty(secids)) {
+            return ScreenerMarketSnapshotBatch.builder()
+                    .source("eastmoney-ulist")
+                    .total(0)
+                    .items(List.of())
+                    .build();
+        }
+
+        int safeTimeoutMs = Math.max(1000, Math.min(timeoutMs, 30000));
+        Exception last = null;
+        String secidParam = String.join(",", secids);
+        for (String host : CODE_HOSTS) {
+            String url = host + CODE_QUERY + "&secids=" + secidParam
+                    + "&_=" + System.currentTimeMillis();
+            try (HttpResponse response = HttpRequest.get(url)
+                    .timeout(safeTimeoutMs)
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .header("Referer", "https://quote.eastmoney.com/")
+                    .header("Accept", "*/*")
+                    .execute()) {
+                if (!response.isOk() || StringUtils.isBlank(response.body())) {
+                    throw new BusinessException("实时代码行情接口无响应");
+                }
+                return parse(response.body());
+            } catch (Exception ex) {
+                last = ex;
+                log.warn("实时代码行情拉取失败，代码数量={}，异常={}", secids.size(), ex.getMessage());
+            }
+        }
+        throw new BusinessException("实时代码行情拉取失败: "
                 + (Objects.nonNull(last) ? last.getMessage() : "unknown"), last);
     }
 
@@ -132,6 +218,7 @@ public class ScreenerMarketSnapshotClient {
                     .amount(decimal(row.path("f6")))
                     .turnoverRate(decimal(row.path("f8")))
                     .volumeRatio(decimal(row.path("f10")))
+                    .peDynamic(decimal(row.path("f9")))
                     .totalMv(decimal(row.path("f20")))
                     .circMv(decimal(row.path("f21")))
                     .pb(decimal(row.path("f23")))
@@ -193,5 +280,9 @@ public class ScreenerMarketSnapshotClient {
             return "SZ";
         }
         return "BJ";
+    }
+
+    private String resolveSecid(String code) {
+        return (code.startsWith("6") ? "1." : "0.") + code;
     }
 }

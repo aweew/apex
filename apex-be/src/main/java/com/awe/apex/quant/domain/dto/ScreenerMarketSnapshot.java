@@ -41,6 +41,9 @@ public class ScreenerMarketSnapshot {
     /** 滚动市盈率 */
     private BigDecimal peTtm;
 
+    /** 动态市盈率（东财实时截面） */
+    private BigDecimal peDynamic;
+
     /** 市净率 */
     private BigDecimal pb;
 

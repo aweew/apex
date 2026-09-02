@@ -4,6 +4,8 @@ import cn.hutool.core.collection.CollUtil;
 import com.awe.apex.common.api.PageResponse;
 import com.awe.apex.common.util.StringUtils;
 import com.awe.apex.quant.domain.dto.ScreenerMetaResp;
+import com.awe.apex.quant.domain.dto.ScreenerMarketSnapshot;
+import com.awe.apex.quant.domain.dto.ScreenerMarketSnapshotBatch;
 import com.awe.apex.quant.domain.dto.ScreenerReq;
 import com.awe.apex.quant.domain.dto.WatchlistResp;
 import com.awe.apex.quant.domain.entity.BarDaily;
@@ -11,6 +13,7 @@ import com.awe.apex.quant.domain.entity.StockBasic;
 import com.awe.apex.quant.domain.entity.UniverseSnapshot;
 import com.awe.apex.quant.mapper.BarDailyMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
+import com.awe.apex.quant.market.ScreenerMarketSnapshotClient;
 import com.awe.apex.quant.service.IScreenerService;
 import com.awe.apex.quant.service.IUniverseService;
 import com.awe.apex.quant.service.IWatchlistService;
@@ -18,6 +21,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -36,6 +40,7 @@ import java.util.Set;
  * 条件选股实现
  */
 @Service
+@Slf4j
 public class ScreenerServiceImpl implements IScreenerService {
 
     private static final String MARKET_SCOPE = "__MARKET__";
@@ -51,6 +56,9 @@ public class ScreenerServiceImpl implements IScreenerService {
 
     @Resource
     private StockBasicMapper stockBasicMapper;
+
+    @Resource
+    private ScreenerMarketSnapshotClient snapshotClient;
 
     /**
      * 运行选股
@@ -251,24 +259,40 @@ public class ScreenerServiceImpl implements IScreenerService {
         Map<String, Integer> barCountMap = loadBarCounts(codes);
         Map<String, List<BigDecimal>> sparkCloseMap = loadSparkCloses(codes);
         Set<String> universeCodes = loadUniverseCodeSet();
+        Map<String, ScreenerMarketSnapshot> liveSnapshotMap = new HashMap<>();
+        try {
+            ScreenerMarketSnapshotBatch livePage = snapshotClient.fetchByCodes(codes, 5000);
+            if (CollUtil.isNotEmpty(livePage.getItems())) {
+                for (ScreenerMarketSnapshot snapshot : livePage.getItems()) {
+                    if (StringUtils.isNotBlank(snapshot.getCode())) {
+                        liveSnapshotMap.put(snapshot.getCode(), snapshot);
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            // 实时源不可用时继续返回本地列表，不让补充字段影响股票浏览。
+            log.warn("股票列表实时字段补充失败，页码={}，页大小={}，原因={}", current, pageSize, ex.getMessage());
+        }
 
         List<WatchlistResp> records = new ArrayList<>();
         if (CollUtil.isNotEmpty(basics)) {
             for (StockBasic basic : basics) {
                 String code = basic.getCode();
+                ScreenerMarketSnapshot live = liveSnapshotMap.get(code);
                 records.add(WatchlistResp.builder()
                         .code(code)
                         .name(basic.getName())
                         .market(basic.getMarket())
                         .groupName("全部市场")
                         .source(basic.getSource())
-                        .latestPrice(basic.getLatestPrice())
-                        .pctChg(basic.getPctChg())
+                        .latestPrice(firstNonNull(Objects.nonNull(live) ? live.getLatestPrice() : null, basic.getLatestPrice()))
+                        .pctChg(firstNonNull(Objects.nonNull(live) ? live.getPctChg() : null, basic.getPctChg()))
                         .peTtm(basic.getPeTtm())
-                        .pb(basic.getPb())
-                        .industry(basic.getIndustry())
-                        .totalMv(basic.getTotalMv())
-                        .circMv(basic.getCircMv())
+                        .peDynamic(firstNonNull(Objects.nonNull(live) ? live.getPeDynamic() : null, basic.getPeDynamic()))
+                        .pb(firstNonNull(Objects.nonNull(live) ? live.getPb() : null, basic.getPb()))
+                        .industry(firstNonNull(Objects.nonNull(live) ? live.getIndustry() : null, basic.getIndustry()))
+                        .totalMv(firstNonNull(Objects.nonNull(live) ? live.getTotalMv() : null, basic.getTotalMv()))
+                        .circMv(firstNonNull(Objects.nonNull(live) ? live.getCircMv() : null, basic.getCircMv()))
                         .barCount(barCountMap.getOrDefault(code, 0))
                         .sparkCloses(sparkCloseMap.getOrDefault(code, List.of()))
                         .inUniverse(universeCodes.contains(code))
@@ -282,6 +306,10 @@ public class ScreenerServiceImpl implements IScreenerService {
         resp.setTotal(mpPage.getTotal());
         resp.setRecords(records);
         return resp;
+    }
+
+    private <T> T firstNonNull(T preferred, T fallback) {
+        return Objects.nonNull(preferred) ? preferred : fallback;
     }
 
     private Set<String> loadUniverseCodeSet() {

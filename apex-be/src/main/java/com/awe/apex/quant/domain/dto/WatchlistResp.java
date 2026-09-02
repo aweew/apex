@@ -79,6 +79,11 @@ public class WatchlistResp {
     private BigDecimal peTtm;
 
     /**
+     * 动态市盈率（全市场实时列表展示兜底）
+     */
+    private BigDecimal peDynamic;
+
+    /**
      * 市净率
      */
     private BigDecimal pb;

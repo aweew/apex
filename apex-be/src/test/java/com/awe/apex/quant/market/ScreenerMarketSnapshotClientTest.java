@@ -50,6 +50,7 @@ class ScreenerMarketSnapshotClientTest {
         assertEquals(1, batch.getItems().size());
         ScreenerMarketSnapshot item = batch.getItems().get(0);
         assertEquals("SH", item.getMarket());
+        assertEquals(new BigDecimal("18.2"), item.getPeDynamic());
         assertEquals(new BigDecimal("6.8"), item.getTurnoverRate());
         assertEquals(new BigDecimal("1.36"), item.getVolumeRatio());
         assertEquals(new BigDecimal("12000000000"), item.getTotalMv());

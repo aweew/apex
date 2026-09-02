@@ -195,7 +195,8 @@ public class ValuationServiceImpl implements IValuationService {
                                          StockFinAbstract abs, StockFinIndicator ind) {
         String code = basic.getCode();
 
-        BigDecimal pe = basic.getPeTtm();
+        // 部分行情同步源暂时只返回静态/动态 PE；有可用替代口径时继续给出估值，避免整行永久降级为 UNKNOWN。
+        BigDecimal pe = firstPositive(basic.getPeTtm(), basic.getPeStatic(), basic.getPeDynamic());
         BigDecimal pb = basic.getPb();
         BigDecimal price = basic.getLatestPrice();
         BigDecimal roe = firstNonNull(
@@ -213,6 +214,14 @@ public class ValuationServiceImpl implements IValuationService {
         BigDecimal bps = firstNonNull(
                 Objects.nonNull(ind) ? ind.getBps() : null,
                 Objects.nonNull(abs) ? abs.getBps() : null);
+        if (Objects.isNull(pe) && Objects.nonNull(price) && price.signum() > 0
+                && Objects.nonNull(eps) && eps.signum() > 0) {
+            pe = price.divide(eps, 4, RoundingMode.HALF_UP);
+        }
+        if (Objects.isNull(pb) && Objects.nonNull(price) && price.signum() > 0
+                && Objects.nonNull(bps) && bps.signum() > 0) {
+            pb = price.divide(bps, 4, RoundingMode.HALF_UP);
+        }
         BigDecimal revenueYoy = Objects.nonNull(abs) ? abs.getRevenueYoy() : null;
         BigDecimal profitYoy = Objects.nonNull(abs) ? abs.getNetProfitYoy() : null;
         LocalDate reportDate = firstNonNullDate(
@@ -1158,7 +1167,7 @@ public class ValuationServiceImpl implements IValuationService {
 
     private String buildDataNote(StockFinAbstract abs, StockFinIndicator ind, BigDecimal pe, BigDecimal pb, int peers) {
         List<String> parts = new ArrayList<>();
-        parts.add("行情 PE/PB 来自 stock_basic");
+        parts.add("行情 PE/PB 优先来自 stock_basic，缺失时由价格与 EPS/BPS 推导");
         if (Objects.nonNull(abs) || Objects.nonNull(ind)) {
             parts.add("财务来自本地 fin 表");
         } else {
@@ -1188,6 +1197,18 @@ public class ValuationServiceImpl implements IValuationService {
         for (T v : values) {
             if (Objects.nonNull(v)) {
                 return v;
+            }
+        }
+        return null;
+    }
+
+    private static BigDecimal firstPositive(BigDecimal... values) {
+        if (Objects.isNull(values)) {
+            return null;
+        }
+        for (BigDecimal value : values) {
+            if (Objects.nonNull(value) && value.signum() > 0) {
+                return value;
             }
         }
         return null;

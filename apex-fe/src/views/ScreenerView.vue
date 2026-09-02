@@ -14,7 +14,9 @@ import {
   Rank,
   RefreshRight,
   Search,
+  View,
   VideoPlay,
+  Wallet,
 } from '@element-plus/icons-vue'
 import {
   copyScreenerStrategy,
@@ -290,6 +292,10 @@ function formatNumber(value, digits = 2) {
   const numberValue = Number(value)
   if (Number.isNaN(numberValue)) return String(value)
   return numberValue.toFixed(digits)
+}
+
+function displayPe(row) {
+  return row?.peTtm ?? row?.peDynamic
 }
 
 function formatCircMv(value) {
@@ -826,9 +832,14 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <div class="actions row-actions">
-          <el-button type="primary" :loading="loading || marketLoading" @click="onQuery">查询</el-button>
-          <el-button @click="onReset">重置</el-button>
-          <el-button :disabled="!screeningActive" :loading="loading" @click="onBatchBacktest">批量回测前8</el-button>
+          <el-button type="primary" :icon="Search" :loading="loading || marketLoading" @click="onQuery">查询</el-button>
+          <el-button :icon="RefreshRight" @click="onReset">重置</el-button>
+          <el-button
+            :icon="VideoPlay"
+            :disabled="!screeningActive"
+            :loading="loading"
+            @click="onBatchBacktest"
+          >批量回测前8</el-button>
         </div>
       </div>
 
@@ -1250,7 +1261,7 @@ onBeforeUnmount(() => {
       style="width: 100%"
       empty-text="暂无符合条件的股票"
     >
-        <el-table-column prop="name" label="股票" min-width="132" align="center">
+        <el-table-column prop="name" label="股票" min-width="132" align="left">
           <template #default="{ row }">
             <StockIdentity
               :security="row"
@@ -1304,6 +1315,7 @@ onBeforeUnmount(() => {
         </el-table-column>
         <el-table-column prop="peTtm" min-width="72" sortable>
           <template #header><TermTip term="pe_ttm">PE</TermTip></template>
+          <template #default="{ row }">{{ formatNumber(displayPe(row)) }}</template>
         </el-table-column>
         <el-table-column prop="pb" min-width="72" sortable>
           <template #header><TermTip term="pb">PB</TermTip></template>
@@ -1328,9 +1340,11 @@ onBeforeUnmount(() => {
         </el-table-column>
         <el-table-column v-if="showActionColumn" label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button link @click="router.push({ path: '/backtest', query: { code: row.code } })">回测</el-button>
-            <el-button link type="warning" @click="addObserve(row)">观察</el-button>
-            <el-button link @click="router.push({ path: '/paper', query: { code: row.code, side: 'BUY' } })">模拟</el-button>
+            <div class="screener-row-actions">
+              <el-button size="small" text type="primary" :icon="VideoPlay" @click="router.push({ path: '/backtest', query: { code: row.code } })">回测</el-button>
+              <el-button size="small" text type="warning" :icon="View" @click="addObserve(row)">观察</el-button>
+              <el-button size="small" text type="primary" :icon="Wallet" @click="router.push({ path: '/paper', query: { code: row.code, side: 'BUY' } })">模拟</el-button>
+            </div>
           </template>
         </el-table-column>
     </el-table>
@@ -1392,7 +1406,7 @@ onBeforeUnmount(() => {
             <template v-else>
               <span>
                 <small>PE</small>
-                <b>{{ formatNumber(row.peTtm) }}</b>
+                <b>{{ formatNumber(displayPe(row)) }}</b>
               </span>
               <span>
                 <small>PB</small>
@@ -1705,12 +1719,29 @@ onBeforeUnmount(() => {
   padding: 3px;
   border: 1px solid var(--line);
   border-bottom-color: var(--paper);
-  border-radius: 7px 7px 0 0;
+  border-radius: 8px 8px 0 0;
   background: var(--paper-deep);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .screener-mode-switch :deep(.el-segmented__item) {
   min-width: 96px;
+  min-height: 36px;
+  color: var(--slate);
+  font-weight: 650;
+}
+
+.screener-mode-switch :deep(.el-segmented__item-selected) {
+  border: 1px solid var(--line);
+  background: var(--glass);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.screener-mode-switch :deep(.el-segmented__item.is-selected) {
+  color: var(--accent);
 }
 
 .strategy-panel {
@@ -2282,9 +2313,11 @@ onBeforeUnmount(() => {
 
 .filter-panel {
   margin: 4px 0 12px;
-  padding: 12px 0 2px;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  padding: 14px 16px 16px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: var(--glass);
+  box-shadow: var(--shadow-soft);
 }
 
 .filter-heading {
@@ -2304,16 +2337,74 @@ onBeforeUnmount(() => {
 .row-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 0;
 }
 
+.row-actions :deep(.el-button) {
+  margin-left: 0;
+}
+
 .form {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  align-items: center;
+  gap: 10px 14px;
   margin-bottom: 0;
+}
+
+.desktop-filter-panel .form :deep(.el-form-item) {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+}
+
+.desktop-filter-panel .form :deep(.el-form-item__label) {
+  flex: 0 0 auto;
+  padding: 0 6px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.desktop-filter-panel .form :deep(.el-form-item__content) {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.desktop-filter-panel .form :deep(.el-input) {
+  width: 100% !important;
+  min-width: 0;
+}
+
+.desktop-filter-panel .form :deep(.el-input__wrapper) {
+  min-height: 36px;
+  border-radius: 6px;
+}
+
+.desktop-filter-panel .form :deep(.el-checkbox) {
+  margin: 0;
+  min-height: 36px;
 }
 
 .screener-table {
   width: 100%;
+}
+
+.screener-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.screener-row-actions :deep(.el-button) {
+  min-width: 0;
+  margin: 0;
+  padding: 0 5px;
+  border-radius: 5px;
 }
 
 .pager {
@@ -2325,6 +2416,12 @@ onBeforeUnmount(() => {
 .mobile-filter-surface,
 .mobile-results-section {
   display: none;
+}
+
+@media (max-width: 1200px) and (min-width: 821px) {
+  .desktop-filter-panel .form {
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+  }
 }
 
 @media (max-width: 820px) {
