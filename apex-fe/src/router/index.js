@@ -6,6 +6,7 @@ import { getAccessToken, getCurrentUser } from '../api/auth'
 const DashboardView = () => import('../views/DashboardView.vue')
 const WatchlistView = () => import('../views/WatchlistView.vue')
 const SignalView = () => import('../views/SignalView.vue')
+const SignalDetailView = () => import('../views/SignalDetailView.vue')
 const BacktestView = () => import('../views/BacktestView.vue')
 const PaperView = () => import('../views/PaperView.vue')
 const DailyView = () => import('../views/DailyView.vue')
@@ -89,6 +90,7 @@ const router = createRouter({
     { path: '/valuation', name: 'valuation', component: ValuationView },
     { path: '/watchlist', name: 'watchlist', component: WatchlistView },
     { path: '/stock/:code?', name: 'stock', component: StockView },
+    { path: '/signals/:code', name: 'signalDetail', component: SignalDetailView },
     { path: '/signals', name: 'signals', component: SignalView },
     { path: '/backtest', name: 'backtest', component: BacktestView },
     { path: '/paper', name: 'paper', component: PaperView },

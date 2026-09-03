@@ -27,3 +27,23 @@ export function refreshUniverse(payload = {}) {
 export function latestUniverse() {
   return http.get('/api/universe/latest')
 }
+
+export function signalCenterOverview(timeframe = 'DAY') {
+  return http.get('/api/signal-center/overview', { params: { timeframe } })
+}
+
+export function signalCenterRankings(params = {}) {
+  return http.get('/api/signal-center/rankings', { params })
+}
+
+export function runSignalCenterCalculation(payload) {
+  return http.post('/api/signal-center/calculations', payload, { timeout: 600000 })
+}
+
+export function signalCenterStock(symbol, timeframe = 'DAY') {
+  return http.get(`/api/signal-center/stocks/${symbol}`, { params: { timeframe } })
+}
+
+export function signalCenterTimeline(symbol, timeframe = 'DAY', size = 50) {
+  return http.get(`/api/signal-center/stocks/${symbol}/timeline`, { params: { timeframe, size } })
+}

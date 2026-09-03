@@ -2,17 +2,21 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Filter, MoreFilled, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, Filter, MoreFilled, QuestionFilled, Refresh } from '@element-plus/icons-vue'
 import {
   latestSignals,
   latestUniverse,
   runSignals,
+  runSignalCenterCalculation,
+  signalCenterOverview,
+  signalCenterRankings,
   signalConfluence,
   signalForward,
   signalStats,
 } from '../api/signal'
 import { saveObserve } from '../api/observe'
 import { getAccount, orderFromSignal, placeOrder } from '../api/paper'
+import { getCurrentUser } from '../api/auth'
 import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
 import { resolveActionColumnFixed } from '../utils/responsiveTable.js'
 import {
@@ -30,6 +34,12 @@ const listLoading = ref(false)
 const generating = ref(false)
 const refreshing = ref(false)
 const ordering = ref(false)
+const behaviorLoading = ref(false)
+const behaviorCalculating = ref(false)
+const workspaceMode = ref('behavior')
+const behaviorDirection = ref('')
+const behaviorOverview = ref(null)
+const behaviorRows = ref([])
 const rows = ref([])
 const universeCount = ref(0)
 const sideFilter = ref('')
@@ -41,10 +51,12 @@ const forward = ref(null)
 const confluence = ref(null)
 const morePanels = ref([])
 const advancedFiltersOpen = ref(false)
+const helpOpen = ref(false)
 const viewportWidth = ref(window.innerWidth)
 let signalListRequestVersion = 0
 const isMobileViewport = computed(() => viewportWidth.value <= 900)
 const actionColumnFixed = computed(() => resolveActionColumnFixed(viewportWidth.value))
+const canCalculateBehavior = computed(() => getCurrentUser()?.role === 'ADMIN')
 const activeFilterCount = computed(() => {
   return Number(Boolean(sideFilter.value))
     + Number(Boolean(strategyFilter.value))
@@ -52,6 +64,52 @@ const activeFilterCount = computed(() => {
 })
 const hasCustomFilters = computed(() => activeFilterCount.value > 0 || !dedupeByCode.value)
 const scoreFilterLabel = computed(() => Number(minScore.value) > 0 ? `${minScore.value} 分以上` : '不限')
+
+async function loadMarketBehavior({ silent = false } = {}) {
+  behaviorLoading.value = true
+  try {
+    const [overviewResponse, rankingResponse] = await Promise.all([
+      signalCenterOverview('DAY'),
+      signalCenterRankings({
+        timeframe: 'DAY',
+        direction: behaviorDirection.value || undefined,
+        size: 100,
+      }),
+    ])
+    behaviorOverview.value = overviewResponse.data
+    behaviorRows.value = rankingResponse.data || []
+  } catch (e) {
+    behaviorOverview.value = null
+    behaviorRows.value = []
+    if (!silent) ElMessage.error(e.message || '市场行为加载失败')
+  } finally {
+    behaviorLoading.value = false
+  }
+}
+
+async function onCalculateMarketBehavior() {
+  behaviorCalculating.value = true
+  try {
+    const response = await runSignalCenterCalculation({
+      timeframe: 'DAY',
+      scopeType: 'ALL',
+      triggerType: 'MANUAL',
+    })
+    await loadMarketBehavior()
+    const run = response.data || {}
+    ElMessage.success(`行为计算${run.status === 'PARTIAL' ? '部分完成' : '完成'} · ${run.successCount || 0}/${run.totalCount || 0} 只`)
+  } catch (e) {
+    ElMessage.error(e.message || '市场行为计算失败')
+  } finally {
+    behaviorCalculating.value = false
+  }
+}
+
+function updateBehaviorDirection(direction) {
+  if (behaviorDirection.value === direction) return
+  behaviorDirection.value = direction
+  loadMarketBehavior()
+}
 
 function signalReason(row) {
   const rawReason = String(row?.reasonJson || '').trim()
@@ -197,6 +255,7 @@ async function onRefresh() {
   clearSignalPageCache()
   try {
     await Promise.all([
+      loadMarketBehavior(),
       loadOverview({ force: true }),
       loadSignalList({ force: true }),
     ])
@@ -315,6 +374,7 @@ function handleMobileRowAction(command, row) {
 
 onMounted(() => {
   window.addEventListener('resize', syncViewportWidth)
+  loadMarketBehavior({ silent: true })
   loadOverview()
   loadSignalList()
 })
@@ -329,25 +389,45 @@ onBeforeUnmount(() => {
     <header class="header signal-header">
       <div class="signal-heading">
         <p class="eyebrow">Signals</p>
-        <h1><TermTip term="strategy_signal">策略信号</TermTip></h1>
+        <h1>市场行为信号中心</h1>
         <p class="sub">
-          股票池 {{ universeCount }} 只 <span aria-hidden="true">·</span> S1 / S2 / S3
-          <span class="signal-data-rule">· 本地日线 ≥60 根且非 ST</span>
+          {{ workspaceMode === 'behavior' ? '客观行为、确认过程与独立风险' : `股票池 ${universeCount} 只 · S1 / S2 / S3` }}
+          <span class="signal-data-rule">· 完整日线 · 不构成投资建议</span>
         </p>
       </div>
       <div class="actions signal-header-actions">
+        <el-button
+          class="signal-help-button"
+          :icon="QuestionFilled"
+          aria-label="查看信号中心使用说明"
+          title="查看信号中心使用说明"
+          @click="helpOpen = true"
+        >
+          <span>使用说明</span>
+        </el-button>
         <el-button
           class="refresh-button"
           :icon="Refresh"
           :loading="refreshing"
           :disabled="generating"
-          aria-label="刷新策略信号"
-          title="刷新现有信号与统计"
+          aria-label="刷新信号中心"
+          title="刷新当前信号与统计"
           @click="onRefresh"
         >
           <span>刷新</span>
         </el-button>
         <el-button
+          v-if="workspaceMode === 'behavior' && canCalculateBehavior"
+          type="primary"
+          :loading="behaviorCalculating"
+          :disabled="refreshing"
+          title="使用最近完整日线计算全市场行为信号"
+          @click="onCalculateMarketBehavior"
+        >
+          计算市场行为
+        </el-button>
+        <el-button
+          v-else-if="workspaceMode === 'strategy'"
           type="primary"
           @click="onGenerateSignals"
           :loading="generating"
@@ -360,7 +440,35 @@ onBeforeUnmount(() => {
     </header>
     <DecisionWorkspaceTabs />
 
-    <div class="signal-metrics" v-loading="overviewLoading">
+    <div class="signal-segmented signal-mode-switch" role="group" aria-label="信号中心模式">
+      <button type="button" :class="{ 'is-active': workspaceMode === 'behavior' }" @click="workspaceMode = 'behavior'">
+        市场行为
+      </button>
+      <button type="button" :class="{ 'is-active': workspaceMode === 'strategy' }" @click="workspaceMode = 'strategy'">
+        策略信号
+      </button>
+    </div>
+
+    <div v-if="workspaceMode === 'behavior'" class="signal-metrics" v-loading="behaviorLoading">
+      <div class="signal-metric">
+        <label>强势行为</label>
+        <b class="up">{{ behaviorOverview?.bullishCount ?? 0 }}</b>
+      </div>
+      <div class="signal-metric">
+        <label>弱势行为</label>
+        <b class="down">{{ behaviorOverview?.bearishCount ?? 0 }}</b>
+      </div>
+      <div class="signal-metric">
+        <label>风险行为</label>
+        <b>{{ behaviorOverview?.riskCount ?? 0 }}</b>
+      </div>
+      <div class="signal-metric">
+        <label>已确认 / 活跃</label>
+        <b>{{ behaviorOverview?.confirmedCount ?? 0 }}</b>
+      </div>
+    </div>
+
+    <div v-else class="signal-metrics" v-loading="overviewLoading">
       <div class="signal-metric">
         <label>近{{ stats?.days || 5 }}日买入</label>
         <b class="up">{{ stats?.buyCount ?? buyRows.length }}</b>
@@ -379,7 +487,74 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <section class="list-panel">
+    <section v-if="workspaceMode === 'behavior'" class="list-panel behavior-panel" v-loading="behaviorLoading">
+      <div class="behavior-toolbar">
+        <div>
+          <strong>行为排行榜</strong>
+          <span>数据截至 {{ behaviorOverview?.dataAsOf || '尚未计算' }}</span>
+        </div>
+        <div class="signal-segmented behavior-direction-filter" role="group" aria-label="市场行为方向">
+          <button
+            v-for="option in [{ label: '全部', value: '' }, { label: '强势', value: 'BULLISH' }, { label: '弱势', value: 'BEARISH' }, { label: '风险', value: 'RISK' }]"
+            :key="option.value || 'all'"
+            type="button"
+            :class="{ 'is-active': behaviorDirection === option.value }"
+            @click="updateBehaviorDirection(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="!behaviorLoading && !behaviorRows.length" class="page-empty">
+        <h3>尚无市场行为结果</h3>
+        <p>{{ canCalculateBehavior ? '确认日线已同步到最近完整交易日，然后运行一次市场行为计算。' : '等待管理员完成最近交易日的市场行为计算。' }}</p>
+        <el-button v-if="canCalculateBehavior" type="primary" :loading="behaviorCalculating" @click="onCalculateMarketBehavior">计算市场行为</el-button>
+      </div>
+
+      <div v-else-if="isMobileViewport" class="behavior-mobile-list" role="list">
+        <article
+          v-for="row in behaviorRows"
+          :key="row.eventId"
+          class="behavior-mobile-item"
+          role="listitem"
+          @click="router.push(`/signals/${row.symbol}`)"
+        >
+          <header>
+            <StockIdentity :security="{ code: row.symbol, name: row.name }" compact />
+            <span class="strategy-badge">{{ row.signalCode }} · {{ row.signalName }}</span>
+          </header>
+          <div class="behavior-score-grid">
+            <span>阶段 <b>{{ row.lifecycleState }}</b></span>
+            <span>强度 <b>{{ row.strength ?? '-' }}</b></span>
+            <span>置信 <b>{{ row.confidence ?? '-' }}</b></span>
+            <span>风险 <b>{{ row.riskScore ?? '-' }}</b></span>
+          </div>
+        </article>
+      </div>
+
+      <el-table v-else :data="behaviorRows" stripe>
+        <el-table-column label="股票" width="150">
+          <template #default="{ row }">
+            <StockIdentity
+              :security="{ code: row.symbol, name: row.name }"
+              interactive
+              compact
+              @select="router.push(`/signals/${row.symbol}`)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column prop="signalCode" label="编码" width="76" />
+        <el-table-column prop="signalName" label="行为" min-width="130" />
+        <el-table-column prop="lifecycleState" label="生命周期" width="122" />
+        <el-table-column prop="strength" label="强度" width="76" />
+        <el-table-column prop="confidence" label="置信度" width="82" />
+        <el-table-column prop="riskScore" label="风险分" width="76" />
+        <el-table-column prop="dataAsOf" label="数据截止" width="168" />
+      </el-table>
+    </section>
+
+    <section v-else class="list-panel">
       <div class="signal-filters">
         <div class="filter-group direction-group">
           <span class="filter-label">方向</span>
@@ -551,7 +726,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <el-collapse v-model="morePanels" class="more-collapse">
+    <el-collapse v-if="workspaceMode === 'strategy'" v-model="morePanels" class="more-collapse">
       <el-collapse-item name="forward">
         <template #title>
           <span class="collapse-title">前瞻评估</span>
@@ -634,6 +809,42 @@ onBeforeUnmount(() => {
         <p v-else class="muted">暂无共振</p>
       </el-collapse-item>
     </el-collapse>
+
+    <el-drawer
+      v-model="helpOpen"
+      class="signal-help-drawer"
+      title="信号中心使用说明"
+      :size="isMobileViewport ? '92%' : '480px'"
+      append-to-body
+    >
+      <div class="signal-help-content">
+        <section>
+          <h2>怎么使用</h2>
+          <ol>
+            <li><strong>先看数据日期：</strong>确认日线已经同步到最近完整交易日，缺数时不要据此判断。</li>
+            <li><strong>再看市场阶段：</strong>判断当前更接近积累、推进、派发还是下降，先理解背景。</li>
+            <li><strong>查看主要信号：</strong>优先阅读已确认且强度较高的行为，同时检查风险信号。</li>
+            <li><strong>核对证据：</strong>打开个股详情，核对价格位置、成交量、支撑阻力和确认过程。</li>
+          </ol>
+        </section>
+
+        <section>
+          <h2>各项是什么意思</h2>
+          <dl>
+            <div><dt>生命周期</dt><dd>信号从观察、触发、确认、增强、活跃、减弱到失效或过期的过程。</dd></div>
+            <div><dt>强度</dt><dd>本次市场行为有多明显，只描述这一次行为本身。</dd></div>
+            <div><dt>置信度</dt><dd>数据是否完整、规则在当前场景是否稳定，不代表上涨概率。</dd></div>
+            <div><dt>历史概率</dt><dd>同规则在相似历史样本中的条件统计，需要结合样本量和区间阅读。</dd></div>
+            <div><dt>风险分</dt><dd>结构破坏、过度加速、流动性等风险的独立评分，越高表示风险越集中。</dd></div>
+          </dl>
+        </section>
+
+        <section>
+          <h2>如何理解结果</h2>
+          <p>行为信号只描述市场发生了什么，不等同于买卖建议。策略信号才会结合规则形成方向，最终仍需结合持仓、风险承受能力和模拟回测判断。</p>
+        </section>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -651,6 +862,104 @@ onBeforeUnmount(() => {
 
 .signal-header-actions {
   flex-wrap: nowrap;
+}
+
+.signal-mode-switch {
+  align-self: flex-start;
+  width: 260px;
+}
+
+.behavior-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.behavior-toolbar > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.behavior-toolbar strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.behavior-toolbar span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.behavior-direction-filter {
+  width: min(360px, 50%);
+}
+
+.behavior-mobile-list {
+  display: none;
+}
+
+.signal-help-content {
+  display: grid;
+  gap: 22px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.signal-help-content section,
+.signal-help-content h2,
+.signal-help-content p,
+.signal-help-content ol,
+.signal-help-content dl,
+.signal-help-content dd {
+  margin: 0;
+}
+
+.signal-help-content h2 {
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.signal-help-content ol {
+  display: grid;
+  gap: 7px;
+  padding-left: 22px;
+}
+
+.signal-help-content dl {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.signal-help-content dl > div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.signal-help-content dt {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.signal-help-content dd {
+  color: var(--muted);
+}
+
+:global(.signal-help-drawer .el-drawer__header) {
+  margin-bottom: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+:global(.signal-help-drawer .el-drawer__body) {
+  padding: 20px;
 }
 
 .sub {
@@ -1020,8 +1329,69 @@ onBeforeUnmount(() => {
 
   .signal-header-actions {
     display: grid !important;
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 44px 44px minmax(0, 1fr);
     gap: 8px;
+  }
+
+  .signal-mode-switch {
+    width: 100%;
+  }
+
+  .behavior-toolbar {
+    display: grid;
+    gap: 8px;
+  }
+
+  .behavior-direction-filter {
+    width: 100%;
+  }
+
+  .behavior-panel :deep(.el-table) {
+    display: none;
+  }
+
+  .behavior-mobile-list {
+    display: block;
+  }
+
+  .behavior-mobile-item {
+    padding: 11px 2px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+  }
+
+  .behavior-mobile-item:last-child {
+    border-bottom: 0;
+  }
+
+  .behavior-mobile-item header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .behavior-score-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 7px;
+  }
+
+  .behavior-score-grid span {
+    min-width: 0;
+    color: var(--muted);
+    font-size: 10px;
+    text-align: center;
+  }
+
+  .behavior-score-grid b {
+    display: block;
+    overflow: hidden;
+    color: var(--ink-soft);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .signal-header-actions > :deep(.el-button) {
@@ -1030,8 +1400,13 @@ onBeforeUnmount(() => {
     margin: 0;
   }
 
-  .signal-header-actions .refresh-button :deep(span > span) {
+  .signal-header-actions .refresh-button :deep(span > span),
+  .signal-header-actions .signal-help-button :deep(span > span) {
     display: none;
+  }
+
+  :global(.signal-help-drawer .el-drawer__body) {
+    padding: 16px;
   }
 
   .signal-metrics {
