@@ -3836,7 +3836,7 @@ onBeforeUnmount(() => {
 .overnight-quote-points {
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 9px;
   font-variant-numeric: tabular-nums;
   line-height: 1.4;
   text-align: left;

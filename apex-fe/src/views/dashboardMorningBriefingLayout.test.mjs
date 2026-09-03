@@ -487,7 +487,7 @@ test('dashboard benchmark index cards prioritize percentage changes over point v
   assert.match(benchmarkMarkup, /class="overnight-quote-points">\{\{ fmtQuotePrice\(quote\.latestPrice\) \|\| '--' \}\}</)
   assert.match(
     dashboardSource,
-    /\.overnight-quote-points\s*\{[^}]*font-size:\s*11px;[^}]*transform:\s*translateY\(2px\);/s,
+    /\.overnight-quote-points\s*\{[^}]*font-size:\s*9px;[^}]*transform:\s*translateY\(2px\);/s,
   )
   assert.match(benchmarkMarkup, /IntradayKlineThumbnail/)
   assert.match(benchmarkMarkup, /:class="\{ 'has-intraday-chart': quote\.intradayBars\?\.length \}"/)
