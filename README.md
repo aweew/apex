@@ -229,6 +229,8 @@ sh scripts/deploy-nas.sh
 | 文档 | 内容 |
 | --- | --- |
 | [架构设计](docs/ARCHITECTURE.md) | 系统边界、核心数据流、模块划分、存储、安全与部署拓扑 |
+| [市场行为信号中心设计](docs/plans/2026-09-03-signal-engine-design.md) | Signal Engine、规则 DSL、生命周期、行为链、回测与分期实施方案 |
+| [市场行为信号中心使用指南](docs/SIGNAL_CENTER_GUIDE.md) | 首次使用、页面区域、评分口径、阅读顺序与异常排查 |
 | [操作指引](docs/OPERATIONS.md) | 本地初始化、首轮数据准备、日常使用、验收与常见问题 |
 | [NAS 部署](docs/NAS_DEPLOYMENT.md) | 生产配置、构建发布、备份恢复和故障排查 |
 | [后端说明](apex-be/README.md) | 后端分层、接口域、数据库迁移和构建方式 |
