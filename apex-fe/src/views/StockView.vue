@@ -314,11 +314,16 @@ function bindMobileChartPress() {
       y: event.clientY - rect.top,
     })
   }
+  const hideChartInspection = () => {
+    if (!chart) return
+    chart.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' })
+    chart.dispatchAction({ type: 'hideTip' })
+  }
   chartPressCleanup = bindLongPress({
     element: chartDom,
     onActivate: showTip,
     onUpdate: showTip,
-    onDeactivate: () => chart?.dispatchAction({ type: 'hideTip' }),
+    onDeactivate: hideChartInspection,
     onPinchStart: startMobilePinch,
     onPinch: queueMobilePinch,
     onPinchEnd: finishMobilePinch,

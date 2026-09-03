@@ -232,3 +232,10 @@ test('mobile K-line tooltip lingers, fades, and uses a compact translucent card'
     /@media \(max-width: 820px\)[\s\S]*?\.kline-tip__chip\s*\{[^}]*padding:\s*2px 5px;[^}]*font-size:\s*9px;/s,
   )
 })
+
+test('mobile K-line release hides both the tooltip and crosshair', () => {
+  assert.match(
+    stockSource,
+    /const hideChartInspection = \(\) => \{[\s\S]*?type: 'updateAxisPointer',[\s\S]*?currTrigger: 'leave'[\s\S]*?type: 'hideTip'[\s\S]*?onDeactivate: hideChartInspection,/s,
+  )
+})
