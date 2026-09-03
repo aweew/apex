@@ -15,7 +15,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @MapperScan(basePackages = {
         "com.awe.apex.manager.mapper",
-        "com.awe.apex.quant.mapper"
+        "com.awe.apex.quant.mapper",
+        "com.awe.apex.quant.signal.query"
 })
 public class MybatisConfig {
 
