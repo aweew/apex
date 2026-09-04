@@ -2471,14 +2471,12 @@ onBeforeUnmount(() => {
     will-change: opacity;
   }
 
-  .shell > .nav,
   .shell > .main,
   .shell > .mobile-bottom-nav {
     transform: translate3d(var(--mobile-back-swipe-offset, 0), 0, 0);
     transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
-  .mobile-back-swipe-dragging > .nav,
   .mobile-back-swipe-dragging > .main,
   .mobile-back-swipe-dragging > .mobile-bottom-nav {
     transition: none;

@@ -140,6 +140,14 @@ test('mobile left-edge swipe navigates back and never opens the menu', () => {
   assert.match(appSource, /if \(canNavigate && shouldNavigateBackAfterSwipe\(deltaX, velocityX\)\) goMobileBack\(\)/)
   assert.match(appSource, /'mobile-back-swipe-dragging': mobileBackSwipeDragging/)
 
+  const mobileBackSwipeStylesStart = appSource.indexOf('.shell > .main,')
+  const mobileBackSwipeStyles = appSource.slice(
+    mobileBackSwipeStylesStart,
+    appSource.indexOf('.mobile-menu-head', mobileBackSwipeStylesStart),
+  )
+  assert.match(mobileBackSwipeStyles, /\.shell > \.main,[\s\S]*?\.shell > \.mobile-bottom-nav\s*\{[^}]*transform:/)
+  assert.doesNotMatch(mobileBackSwipeStyles, /\.shell > \.nav|\.mobile-back-swipe-dragging > \.nav/)
+
   const edgeBranch = appSource.slice(
     appSource.indexOf('if (isMobileBackSwipeStart(touch.clientX))'),
     appSource.indexOf("type: 'menu'"),
