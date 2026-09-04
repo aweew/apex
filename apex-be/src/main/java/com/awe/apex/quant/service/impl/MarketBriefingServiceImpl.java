@@ -62,6 +62,8 @@ import java.util.regex.Pattern;
 @Service
 public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
+    private static final int HOT_THEME_VISIBLE_LIMIT = 6;
+
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     /** 内存缓存 10 分钟，避免每次进看板都重建 */
     private static final long CACHE_TTL_MS = 600_000L;
@@ -296,7 +298,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (Objects.isNull(resp)) {
             return null;
         }
-        List<MarketHotThemeItem> items = loadHotThemeItems();
+        List<MarketHotThemeItem> directionThemeItems = loadHotThemeItems();
+        List<MarketHotThemeItem> items = directionThemeItems.subList(0,
+                Math.min(HOT_THEME_VISIBLE_LIMIT, directionThemeItems.size()));
         List<String> names = new ArrayList<>();
         for (MarketHotThemeItem item : items) {
             if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getName())) {
@@ -305,6 +309,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
         resp.setHotThemeItems(items);
         resp.setHotThemes(names);
+        resp.setDirectionThemeItems(directionThemeItems);
         return resp;
     }
 
@@ -1507,7 +1512,9 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
 
         // —— 主线题材 ——
-        List<MarketHotThemeItem> hotThemeItems = loadHotThemeItems();
+        List<MarketHotThemeItem> directionThemeItems = loadHotThemeItems();
+        List<MarketHotThemeItem> hotThemeItems = directionThemeItems.subList(0,
+                Math.min(HOT_THEME_VISIBLE_LIMIT, directionThemeItems.size()));
         List<String> hotThemes = new ArrayList<>();
         for (MarketHotThemeItem item : hotThemeItems) {
             if (StringUtils.isNotBlank(item.getName())) {
@@ -1603,6 +1610,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .limitDownCount(resolveLimitDownCount())
                 .hotThemes(hotThemes)
                 .hotThemeItems(hotThemeItems)
+                .directionThemeItems(directionThemeItems)
                 .dataLevel(dataLevel)
                 .dataSufficient(dataSufficient)
                 .breadthUp(breadthUp)
@@ -2355,7 +2363,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
     private List<MarketHotThemeItem> loadHotThemeItems() {
         List<MarketHotThemeItem> themes = new ArrayList<>();
         try {
-            List<SectorBoardItem> mainline = sectorBoardService.mainline(null, 6);
+            List<SectorBoardItem> mainline = sectorBoardService.mainline(null, 30);
             if (CollUtil.isNotEmpty(mainline)) {
                 for (SectorBoardItem item : mainline) {
                     if (MainlineBoardRules.isConceptBoard(item.getBoardType(), item.getName())) {
@@ -2366,6 +2374,8 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                                 .pctChg3d(scalePct(item.getPctChg3d()))
                                 .pctChg5d(scalePct(item.getPctChg5d()))
                                 .boardType(item.getBoardType())
+                                .tradeDate(item.getTradeDate())
+                                .syncedAt(item.getSyncedAt())
                                 .build());
                     }
                 }
@@ -2406,8 +2416,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                     .pctChg3d(scalePct(q.getPctChg3d()))
                     .pctChg5d(scalePct(q.getPctChg5d()))
                     .boardType(q.getBoardType())
+                    .tradeDate(q.getTradeDate())
+                    .syncedAt(q.getSyncedAt())
                     .build());
-            if (themes.size() >= 5) {
+            if (themes.size() >= 30) {
                 break;
             }
         }

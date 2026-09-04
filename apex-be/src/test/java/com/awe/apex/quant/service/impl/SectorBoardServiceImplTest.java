@@ -1,5 +1,6 @@
 package com.awe.apex.quant.service.impl;
 
+import com.awe.apex.quant.domain.dto.SectorBoardItem;
 import com.awe.apex.quant.domain.dto.SectorConstituentResp;
 import com.awe.apex.quant.domain.dto.SectorRotationResp;
 import com.awe.apex.quant.domain.entity.SectorBasic;
@@ -101,6 +102,32 @@ class SectorBoardServiceImplTest {
         ArgumentCaptor<Wrapper<SectorQuote>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(sectorQuoteMapper, times(2)).selectList(queryCaptor.capture());
         assertTrue(queryCaptor.getAllValues().get(0).getSqlSegment().contains("GROUP BY trade_date"));
+    }
+
+    @Test
+    void shouldRankMultiDayStrengthAndCapitalAboveLatestSessionSpike() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), SectorQuote.class);
+        SectorBoardServiceImpl service = new SectorBoardServiceImpl();
+        SectorQuoteMapper sectorQuoteMapper = mock(SectorQuoteMapper.class);
+        LocalDate tradeDate = LocalDate.of(2026, 8, 18);
+        SectorQuote latestDate = SectorQuote.builder().tradeDate(tradeDate).build();
+        SectorQuote latestSessionSpike = SectorQuote.builder()
+                .code("BK1001").name("单日脉冲").boardType("CONCEPT").tradeDate(tradeDate)
+                .pctChg(new BigDecimal("10.00")).pctChg3d(new BigDecimal("0.20"))
+                .pctChg5d(new BigDecimal("0.30")).netInflow(new BigDecimal("1"))
+                .amount(new BigDecimal("100")).limitUpCount(10).maxLianban(5).build();
+        SectorQuote multiDayStrength = SectorQuote.builder()
+                .code("BK1002").name("多周期修复").boardType("CONCEPT").tradeDate(tradeDate)
+                .pctChg(new BigDecimal("-0.20")).pctChg3d(new BigDecimal("2.00"))
+                .pctChg5d(new BigDecimal("-1.00")).netInflow(new BigDecimal("10"))
+                .amount(new BigDecimal("100")).limitUpCount(1).maxLianban(1).build();
+        when(sectorQuoteMapper.selectList(any())).thenReturn(
+                List.of(latestDate), List.of(latestSessionSpike, multiDayStrength));
+        ReflectionTestUtils.setField(service, "sectorQuoteMapper", sectorQuoteMapper);
+
+        List<SectorBoardItem> result = service.mainline(null, 2);
+
+        assertEquals("多周期修复", result.get(0).getName());
     }
 
     private SectorQuote sectorQuote(LocalDate tradeDate, String name, String pctChg) {

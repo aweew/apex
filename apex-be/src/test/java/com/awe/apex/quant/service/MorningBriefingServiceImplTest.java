@@ -175,7 +175,7 @@ class MorningBriefingServiceImplTest {
         assertTrue(response.getSummary().contains("AI"));
         assertEquals(List.of("美联储公布最新经济数据"), response.getNewsTitles());
         assertSame(newsPulse, response.getNewsPulse());
-        verify(redisCacheService).put(eq("apex:morning-briefing:latest:v6"), eq(response), any());
+        verify(redisCacheService).put(eq("apex:morning-briefing:latest:v7"), eq(response), any());
     }
 
     @Test
@@ -443,7 +443,7 @@ class MorningBriefingServiceImplTest {
                 .generatedAt(LocalDateTime.of(2026, 8, 18, 6, 35))
                 .dataLevel("GREEN")
                 .build();
-        when(redisCacheService.get("apex:morning-briefing:latest:v6", MorningBriefingResp.class))
+        when(redisCacheService.get("apex:morning-briefing:latest:v7", MorningBriefingResp.class))
                 .thenReturn(cached);
 
         MorningBriefingResp response = service.latest();

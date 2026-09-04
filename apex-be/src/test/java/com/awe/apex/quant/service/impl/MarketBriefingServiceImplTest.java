@@ -10,6 +10,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,11 +64,15 @@ class MarketBriefingServiceImplTest {
     void shouldKeepSectorCodeInHotThemeItems() {
         MarketBriefingServiceImpl service = new MarketBriefingServiceImpl();
         ISectorBoardService sectorBoardService = mock(ISectorBoardService.class);
-        when(sectorBoardService.mainline(null, 6)).thenReturn(List.of(SectorBoardItem.builder()
+        LocalDate tradeDate = LocalDate.of(2026, 8, 18);
+        LocalDateTime syncedAt = tradeDate.atTime(10, 15);
+        when(sectorBoardService.mainline(null, 30)).thenReturn(List.of(SectorBoardItem.builder()
                 .code("BK1156")
                 .name("机器人执行器")
                 .boardType("CONCEPT")
                 .pctChg(new BigDecimal("1.23"))
+                .tradeDate(tradeDate)
+                .syncedAt(syncedAt)
                 .build()));
         ReflectionTestUtils.setField(service, "sectorBoardService", sectorBoardService);
 
@@ -76,5 +81,7 @@ class MarketBriefingServiceImplTest {
         assertEquals(1, themes.size());
         assertEquals("BK1156", themes.get(0).getCode());
         assertEquals("CONCEPT", themes.get(0).getBoardType());
+        assertEquals(tradeDate, themes.get(0).getTradeDate());
+        assertEquals(syncedAt, themes.get(0).getSyncedAt());
     }
 }

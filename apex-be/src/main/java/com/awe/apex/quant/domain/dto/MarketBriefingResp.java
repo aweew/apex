@@ -125,6 +125,11 @@ public class MarketBriefingResp {
     private List<MarketHotThemeItem> hotThemeItems;
 
     /**
+     * 看板方向识别候选板块
+     */
+    private List<MarketHotThemeItem> directionThemeItems;
+
+    /**
      * 数据充分性 GREEN/YELLOW/RED
      */
     private String dataLevel;

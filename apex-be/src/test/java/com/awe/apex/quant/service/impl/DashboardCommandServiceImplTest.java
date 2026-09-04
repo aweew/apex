@@ -99,11 +99,14 @@ class DashboardCommandServiceImplTest {
         MarketBriefingResp marketBriefing = market(PREVIOUS_TRADE_DATE, "GREEN", List.of("煤炭开采", "保险Ⅱ"));
         marketBriefing.setHotThemeItems(List.of(
                 MarketHotThemeItem.builder().name("煤炭开采").pctChg(new BigDecimal("2.17"))
-                        .pctChg3d(new BigDecimal("3.40")).pctChg5d(new BigDecimal("4.12")).build(),
+                        .pctChg3d(new BigDecimal("3.40")).pctChg5d(new BigDecimal("4.12"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build(),
                 MarketHotThemeItem.builder().name("保险Ⅱ").pctChg(new BigDecimal("1.23"))
-                        .pctChg3d(new BigDecimal("2.11")).pctChg5d(new BigDecimal("2.80")).build(),
+                        .pctChg3d(new BigDecimal("2.11")).pctChg5d(new BigDecimal("2.80"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build(),
                 MarketHotThemeItem.builder().name("半导体").pctChg(new BigDecimal("-1.10"))
-                        .pctChg3d(new BigDecimal("-2.40")).pctChg5d(new BigDecimal("-3.20")).build()
+                        .pctChg3d(new BigDecimal("-2.40")).pctChg5d(new BigDecimal("-3.20"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build()
         ));
         DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
                 .currentTime(TRADE_DATE.atTime(8, 10))
@@ -138,8 +141,10 @@ class DashboardCommandServiceImplTest {
         MarketBriefingResp marketBriefing = market(PREVIOUS_TRADE_DATE, "GREEN",
                 List.of("粮食概念", "科技成长"));
         marketBriefing.setHotThemeItems(List.of(
-                MarketHotThemeItem.builder().name("粮食概念").pctChg(new BigDecimal("3.07")).build(),
-                MarketHotThemeItem.builder().name("科技成长").pctChg(new BigDecimal("-2.10")).build()
+                MarketHotThemeItem.builder().name("粮食概念").pctChg(new BigDecimal("3.07"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build(),
+                MarketHotThemeItem.builder().name("科技成长").pctChg(new BigDecimal("-2.10"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build()
         ));
 
         DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
@@ -163,6 +168,9 @@ class DashboardCommandServiceImplTest {
                 .noneMatch(item -> "科技成长".equals(item.getName())));
         assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().stream()
                 .anyMatch(item -> "方向持续性".equals(item.getTitle())));
+        assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().stream()
+                .anyMatch(item -> item.getCondition().contains("近3日转强")));
+        assertFalse(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("昨日强势"));
     }
 
     @Test
@@ -171,7 +179,8 @@ class DashboardCommandServiceImplTest {
         marketBriefing.setMarketDataUpdatedAt(TRADE_DATE.atTime(13, 42));
         marketBriefing.setHotThemeItems(List.of(
                 MarketHotThemeItem.builder().name("液冷服务器").pctChg(new BigDecimal("2.23"))
-                        .pctChg3d(new BigDecimal("3.10")).pctChg5d(new BigDecimal("4.20")).build()
+                        .pctChg3d(new BigDecimal("3.10")).pctChg5d(new BigDecimal("4.20"))
+                        .tradeDate(TRADE_DATE).syncedAt(TRADE_DATE.atTime(13, 42)).build()
         ));
 
         DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
@@ -197,6 +206,94 @@ class DashboardCommandServiceImplTest {
                 .getReason().contains("盘中截至 13:42 涨幅 +2.23%"));
         assertFalse(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
                 .getReason().contains("昨日收盘"));
+    }
+
+    @Test
+    void shouldUseMultiDayTrendInsteadOfLatestSessionAsFocusGate() {
+        MarketBriefingResp marketBriefing = market(PREVIOUS_TRADE_DATE, "GREEN", List.of("机器人"));
+        marketBriefing.setHotThemeItems(List.of(
+                MarketHotThemeItem.builder().name("机器人").pctChg(new BigDecimal("-0.65"))
+                        .pctChg3d(new BigDecimal("2.40")).pctChg5d(new BigDecimal("5.10"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build()
+        ));
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(8, 10))
+                .marketBriefing(marketBriefing)
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DecisionTodayResp.builder()
+                        .actionDate(TRADE_DATE)
+                        .dataAsOf(PREVIOUS_TRADE_DATE)
+                        .generated(true)
+                        .build())
+                .build());
+
+        assertEquals("机器人", command.getPreMarketSummary().getForecast().getFocusItems().get(0).getName());
+        assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
+                .getReason().contains("趋势延续"));
+    }
+
+    @Test
+    void shouldIdentifyThreeDayReversalAsNewStrengtheningDirection() {
+        MarketBriefingResp marketBriefing = market(PREVIOUS_TRADE_DATE, "GREEN", List.of("低空经济"));
+        marketBriefing.setHotThemeItems(List.of(
+                MarketHotThemeItem.builder().name("低空经济").pctChg(new BigDecimal("-0.20"))
+                        .pctChg3d(new BigDecimal("1.80")).pctChg5d(new BigDecimal("-1.30"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build()
+        ));
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(8, 10))
+                .marketBriefing(marketBriefing)
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DecisionTodayResp.builder()
+                        .actionDate(TRADE_DATE)
+                        .dataAsOf(PREVIOUS_TRADE_DATE)
+                        .generated(true)
+                        .build())
+                .build());
+
+        assertEquals("低空经济", command.getPreMarketSummary().getForecast().getFocusItems().get(0).getName());
+        assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
+                .getReason().contains("新转强"));
+    }
+
+    @Test
+    void shouldNotUseStaleThemeAsIntradayDirection() {
+        MarketBriefingResp marketBriefing = market(TRADE_DATE, "GREEN", List.of("液冷服务器"));
+        marketBriefing.setMarketDataUpdatedAt(TRADE_DATE.atTime(13, 42));
+        marketBriefing.setHotThemeItems(List.of(
+                MarketHotThemeItem.builder().name("液冷服务器").pctChg(new BigDecimal("2.23"))
+                        .pctChg3d(new BigDecimal("3.10")).pctChg5d(new BigDecimal("4.20"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).syncedAt(PREVIOUS_TRADE_DATE.atTime(15, 5)).build(),
+                MarketHotThemeItem.builder().name("机器人").pctChg(new BigDecimal("1.50"))
+                        .pctChg3d(new BigDecimal("2.80")).pctChg5d(new BigDecimal("3.60"))
+                        .tradeDate(TRADE_DATE).syncedAt(TRADE_DATE.atTime(13, 20)).build()
+        ));
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(13, 44))
+                .marketBriefing(marketBriefing)
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .build())
+                .decision(DecisionTodayResp.builder()
+                        .actionDate(TRADE_DATE)
+                        .dataAsOf(PREVIOUS_TRADE_DATE)
+                        .generated(true)
+                        .build())
+                .build());
+
+        assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().isEmpty());
+        assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().stream()
+                .anyMatch(item -> "板块行情".equals(item.getTitle())));
     }
 
     @Test

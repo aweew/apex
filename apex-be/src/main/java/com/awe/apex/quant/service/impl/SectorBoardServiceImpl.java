@@ -350,7 +350,7 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
         if (CollUtil.isEmpty(pool)) {
             return List.of();
         }
-        // 资金+持续性为主，当日涨幅降权；纯概念板块按综合分取 Top
+        // 资金和多周期趋势为主，最新单日只作辅助；纯概念板块按综合分取 Top
         BigDecimal maxPct = absMax(pool, SectorBoardItem::getPctChg);
         BigDecimal max3 = absMax(pool, SectorBoardItem::getPctChg3d);
         BigDecimal max5 = absMax(pool, SectorBoardItem::getPctChg5d);
@@ -361,13 +361,17 @@ public class SectorBoardServiceImpl implements ISectorBoardService {
         List<SectorBoardItem> scored = new ArrayList<>();
         for (SectorBoardItem item : pool) {
             double score = 0;
-            score += 0.12 * norm(item.getPctChg(), maxPct);
-            score += 0.22 * norm(item.getPctChg3d(), max3);
-            score += 0.15 * norm(item.getPctChg5d(), max5);
+            score += 0.05 * norm(item.getPctChg(), maxPct);
+            score += 0.25 * norm(item.getPctChg3d(), max3);
+            score += 0.20 * norm(item.getPctChg5d(), max5);
             score += 0.25 * norm(preferInflow(item), maxIn);
             score += 0.10 * norm(item.getAmount(), maxAmt);
             score += 0.08 * norm(toBig(item.getLimitUpCount()), maxLu);
-            score += 0.03 * norm(toBig(item.getMaxLianban()), maxLb);
+            score += 0.02 * norm(toBig(item.getMaxLianban()), maxLb);
+            if (Objects.nonNull(item.getPctChg3d()) && item.getPctChg3d().signum() > 0
+                    && Objects.nonNull(item.getPctChg5d()) && item.getPctChg5d().signum() <= 0) {
+                score += 0.05;
+            }
             score += MainlineBoardRules.typeBonus(item.getBoardType());
             SectorBoardItem copy = SectorBoardItem.builder()
                     .code(item.getCode())

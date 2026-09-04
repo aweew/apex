@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * 主线题材项（名称 + 涨幅）
@@ -45,4 +47,14 @@ public class MarketHotThemeItem {
      * 板块类型 INDUSTRY/CONCEPT/THEME
      */
     private String boardType;
+
+    /**
+     * 板块行情交易日
+     */
+    private LocalDate tradeDate;
+
+    /**
+     * 板块行情同步时间
+     */
+    private LocalDateTime syncedAt;
 }
