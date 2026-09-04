@@ -188,6 +188,15 @@ test('dense MACD cross markers are spaced and labels avoid collisions', () => {
   )
 })
 
+test('K-line renders confirmed MACD top and bottom divergence markers', () => {
+  assert.match(stockSource, /detectMacdDivergences\(highs, lows, closes, dif\)/)
+  assert.match(stockSource, /const spacedDivergences = spaceChartSignals\(divergenceSignals, 8\)/)
+  assert.match(stockSource, /name: '顶背离',[\s\S]*?symbol: 'pin',[\s\S]*?formatter: '顶'[\s\S]*?labelLayout: \{ hideOverlap: false \}/s)
+  assert.match(stockSource, /name: '底背离',[\s\S]*?symbol: 'pin',[\s\S]*?formatter: '底'[\s\S]*?labelLayout: \{ hideOverlap: false \}/s)
+  assert.match(stockSource, /MACD 顶背离（已确认）/)
+  assert.match(stockSource, /MACD 底背离（已确认）/)
+})
+
 test('K-line zoom buttons dispatch the next data window and disable at boundaries', () => {
   assert.match(stockSource, /function zoomChart\(direction\)/)
   assert.match(stockSource, /nextKlineZoomRange\([\s\S]*?direction,[\s\S]*?MIN_VISIBLE_BARS/s)

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   aggregateBars,
   defaultVisibleStart,
+  detectMacdDivergences,
   nextKlineZoomRange,
   periodBucket,
   pinchKlineZoomRange,
@@ -10,6 +11,81 @@ import {
   tdSequential,
   visibleBarCount,
 } from './kline.js'
+
+test('detects confirmed MACD bearish divergence at a higher price high', () => {
+  const highs = [10, 12, 10, 11, 13, 11, 10]
+  const lows = [9, 10, 9, 10, 11, 10, 9]
+  const closes = [9.5, 11.8, 9.8, 10.7, 12.8, 10.8, 9.6]
+  const dif = [0.2, 0.8, 0.3, 0.4, 0.5, 0.2, 0.1]
+
+  const signals = detectMacdDivergences(highs, lows, closes, dif, {
+    pivotWindow: 1,
+    minimumPivotGap: 2,
+  })
+
+  assert.equal(signals[4].type, 'bearish')
+  assert.equal(signals[4].previousIndex, 1)
+  assert.equal(signals.filter(Boolean).length, 1)
+})
+
+test('detects confirmed MACD bullish divergence at a lower price low', () => {
+  const highs = [11, 10, 11, 10, 9, 10, 11]
+  const lows = [10, 8, 10, 9, 7, 9, 10]
+  const closes = [10.5, 8.2, 10.2, 9.3, 7.2, 9.2, 10.4]
+  const dif = [-0.2, -0.8, -0.3, -0.4, -0.5, -0.2, -0.1]
+
+  const signals = detectMacdDivergences(highs, lows, closes, dif, {
+    pivotWindow: 1,
+    minimumPivotGap: 2,
+  })
+
+  assert.equal(signals[4].type, 'bullish')
+  assert.equal(signals[4].previousIndex, 1)
+  assert.equal(signals.filter(Boolean).length, 1)
+})
+
+test('does not mark an unconfirmed divergence at the latest bar', () => {
+  const highs = [10, 12, 10, 11, 13]
+  const lows = [9, 10, 9, 10, 11]
+  const closes = [9.5, 11.8, 9.8, 10.7, 12.8]
+  const dif = [0.2, 0.8, 0.3, 0.4, 0.5]
+
+  const signals = detectMacdDivergences(highs, lows, closes, dif, {
+    pivotWindow: 1,
+    minimumPivotGap: 2,
+  })
+
+  assert.equal(signals.filter(Boolean).length, 0)
+})
+
+test('does not treat zero-axis mismatches as MACD divergence', () => {
+  const highs = [10, 12, 10, 11, 13, 11, 10]
+  const lows = [9, 10, 9, 10, 11, 10, 9]
+  const closes = [9.5, 11.8, 9.8, 10.7, 12.8, 10.8, 9.6]
+  const dif = [0.2, 0.8, 0.3, 0.4, -0.5, -0.2, -0.1]
+
+  const signals = detectMacdDivergences(highs, lows, closes, dif, {
+    pivotWindow: 1,
+    minimumPivotGap: 2,
+  })
+
+  assert.equal(signals.filter(Boolean).length, 0)
+})
+
+test('uses the final bar of an equal-price pivot as the confirmed divergence point', () => {
+  const highs = [10, 12, 12, 10, 11, 13, 13, 11, 10]
+  const lows = [9, 10, 10, 9, 10, 11, 11, 10, 9]
+  const closes = [9.5, 11.7, 11.8, 9.8, 10.7, 12.7, 12.8, 10.8, 9.6]
+  const dif = [0.2, 0.82, 0.8, 0.3, 0.4, 0.52, 0.5, 0.2, 0.1]
+
+  const signals = detectMacdDivergences(highs, lows, closes, dif, {
+    pivotWindow: 1,
+    minimumPivotGap: 2,
+  })
+
+  assert.equal(signals[6].type, 'bearish')
+  assert.equal(signals[6].previousIndex, 2)
+})
 
 test('defaultVisibleStart keeps roughly three months of daily bars visible', () => {
   assert.equal(defaultVisibleStart(40), 0)

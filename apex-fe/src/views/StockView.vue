@@ -27,6 +27,7 @@ import { fetchTradeMarkers } from '../api/trade'
 import {
   aggregateBars,
   defaultVisibleStart,
+  detectMacdDivergences,
   nextKlineZoomRange,
   pinchKlineZoomRange,
   spaceChartSignals,
@@ -1119,11 +1120,21 @@ async function renderChart(list) {
   const { dif, dea, hist } = macd(closes)
   const crosses = macdCrosses(dif, dea)
   const markerCrosses = spaceChartSignals(crosses, 5)
+  const divergenceSignals = detectMacdDivergences(highs, lows, closes, dif)
+  const spacedDivergences = spaceChartSignals(divergenceSignals, 8)
   const goldenPoints = []
   const deathPoints = []
+  const bearishDivergencePoints = []
+  const bullishDivergencePoints = []
   for (let i = 0; i < markerCrosses.length; i++) {
     if (markerCrosses[i] === 'golden') goldenPoints.push([dates[i], dif[i]])
     if (markerCrosses[i] === 'death') deathPoints.push([dates[i], dif[i]])
+    if (spacedDivergences[i]?.type === 'bearish') {
+      bearishDivergencePoints.push([dates[i], highs[i]])
+    }
+    if (spacedDivergences[i]?.type === 'bullish') {
+      bullishDivergencePoints.push([dates[i], lows[i]])
+    }
   }
   const { buy: tdBuy, sell: tdSell } = tdSequential(closes)
   const tdBuyPoints = []
@@ -1316,6 +1327,11 @@ async function renderChart(list) {
           badges.push('<span class="kline-tip__badge kline-tip__badge--up">上涨九转</span>')
         } else if (tdBuy[idx] === 9) {
           badges.push('<span class="kline-tip__badge kline-tip__badge--down">下跌九转</span>')
+        }
+        if (divergenceSignals[idx]?.type === 'bearish') {
+          badges.push('<span class="kline-tip__badge kline-tip__badge--down">MACD 顶背离（已确认）</span>')
+        } else if (divergenceSignals[idx]?.type === 'bullish') {
+          badges.push('<span class="kline-tip__badge kline-tip__badge--up">MACD 底背离（已确认）</span>')
         }
         const crossBadge = badges.join('')
         const markerGroups = [...userTradeMarkers.buy, ...userTradeMarkers.sell]
@@ -1585,6 +1601,51 @@ async function renderChart(list) {
         z: 12,
         legendHoverLink: false,
         tooltip: { show: false },
+      },
+      {
+        name: '顶背离',
+        type: 'scatter',
+        data: bearishDivergencePoints,
+        symbol: 'pin',
+        symbolSize: 26,
+        symbolOffset: [0, 0],
+        clip: false,
+        silent: true,
+        itemStyle: { color: '#0f766e' },
+        label: {
+          show: true,
+          formatter: '顶',
+          position: 'inside',
+          color: '#fff',
+          fontSize: 10,
+          fontWeight: 700,
+        },
+        labelLayout: { hideOverlap: false },
+        tooltip: { show: false },
+        z: 14,
+      },
+      {
+        name: '底背离',
+        type: 'scatter',
+        data: bullishDivergencePoints,
+        symbol: 'pin',
+        symbolRotate: 180,
+        symbolSize: 26,
+        symbolOffset: [0, 0],
+        clip: false,
+        silent: true,
+        itemStyle: { color: '#c62828' },
+        label: {
+          show: true,
+          formatter: '底',
+          position: 'inside',
+          color: '#fff',
+          fontSize: 10,
+          fontWeight: 700,
+        },
+        labelLayout: { hideOverlap: false },
+        tooltip: { show: false },
+        z: 14,
       },
       buildTradeGuideSeries('BUY', userTradeMarkers.buy),
       buildTradeGuideSeries('SELL', userTradeMarkers.sell),

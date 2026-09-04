@@ -29,6 +29,130 @@ export function spaceChartSignals(signals, minimumBarGap = 5) {
 }
 
 /**
+ * 识别已确认的 MACD 顶/底背离。
+ * 顶背离：价格高点抬高，但对应的零轴上方 DIF 动能降低；底背离规则相反。
+ */
+export function detectMacdDivergences(highs, lows, closes, dif, options = {}) {
+  const length = Math.min(
+    Array.isArray(highs) ? highs.length : 0,
+    Array.isArray(lows) ? lows.length : 0,
+    Array.isArray(closes) ? closes.length : 0,
+    Array.isArray(dif) ? dif.length : 0,
+  )
+  const signals = new Array(length).fill(null)
+  const pivotWindow = Math.max(1, Math.min(5, Number(options.pivotWindow) || 3))
+  const minimumPivotGap = Math.max(
+    pivotWindow + 1,
+    Number(options.minimumPivotGap) || 5,
+  )
+  const maximumPivotGap = Math.max(
+    minimumPivotGap,
+    Number(options.maximumPivotGap) || 60,
+  )
+  const minimumPriceChangePct = Math.max(0, Number(options.minimumPriceChangePct) || 0.3)
+  const minimumMomentumChangePct = Math.max(
+    0,
+    Number(options.minimumMomentumChangePct) || 0.03,
+  )
+  const highPivots = []
+  const lowPivots = []
+
+  const isPivot = (values, index, highPivot) => {
+    const current = Number(values[index])
+    if (!Number.isFinite(current)) return false
+    for (let offset = 1; offset <= pivotWindow; offset++) {
+      const left = Number(values[index - offset])
+      const right = Number(values[index + offset])
+      if (!Number.isFinite(left) || !Number.isFinite(right)) return false
+      if (highPivot && (current < left || current <= right)) return false
+      if (!highPivot && (current > left || current >= right)) return false
+    }
+    return true
+  }
+
+  const normalizedMomentum = (index) => {
+    const close = Number(closes[index])
+    const oscillator = Number(dif[index])
+    if (!Number.isFinite(close) || close <= 0 || !Number.isFinite(oscillator)) return null
+    return (oscillator / close) * 100
+  }
+
+  const previousPivot = (pivots, currentIndex) => {
+    for (let i = pivots.length - 1; i >= 0; i--) {
+      const gap = currentIndex - pivots[i]
+      if (gap > maximumPivotGap) return null
+      if (gap >= minimumPivotGap) return pivots[i]
+    }
+    return null
+  }
+
+  for (let index = pivotWindow; index < length - pivotWindow; index++) {
+    const momentum = normalizedMomentum(index)
+    if (momentum == null) continue
+
+    if (momentum > 0 && isPivot(highs, index, true)) {
+      const previousIndex = previousPivot(highPivots, index)
+      if (previousIndex != null) {
+        const previousPrice = Number(highs[previousIndex])
+        const currentPrice = Number(highs[index])
+        const previousMomentum = normalizedMomentum(previousIndex)
+        const priceChangePct = previousPrice > 0
+          ? ((currentPrice - previousPrice) / previousPrice) * 100
+          : 0
+        if (
+          previousMomentum != null
+          && priceChangePct >= minimumPriceChangePct
+          && previousMomentum - momentum >= minimumMomentumChangePct
+        ) {
+          signals[index] = {
+            type: 'bearish',
+            previousIndex,
+            currentIndex: index,
+            confirmedIndex: index + pivotWindow,
+            previousPrice,
+            price: currentPrice,
+            previousMomentum,
+            momentum,
+          }
+        }
+      }
+      highPivots.push(index)
+    }
+
+    if (momentum < 0 && isPivot(lows, index, false)) {
+      const previousIndex = previousPivot(lowPivots, index)
+      if (previousIndex != null) {
+        const previousPrice = Number(lows[previousIndex])
+        const currentPrice = Number(lows[index])
+        const previousMomentum = normalizedMomentum(previousIndex)
+        const priceChangePct = previousPrice > 0
+          ? ((previousPrice - currentPrice) / previousPrice) * 100
+          : 0
+        if (
+          previousMomentum != null
+          && priceChangePct >= minimumPriceChangePct
+          && momentum - previousMomentum >= minimumMomentumChangePct
+        ) {
+          signals[index] = {
+            type: 'bullish',
+            previousIndex,
+            currentIndex: index,
+            confirmedIndex: index + pivotWindow,
+            previousPrice,
+            price: currentPrice,
+            previousMomentum,
+            momentum,
+          }
+        }
+      }
+      lowPivots.push(index)
+    }
+  }
+
+  return signals
+}
+
+/**
  * 计算按钮缩放后的 dataZoom 窗口。
  * 靠近最新行情时固定右边界，查看历史区间时以当前窗口中心为锚点。
  */
