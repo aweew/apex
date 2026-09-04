@@ -41,6 +41,20 @@ class UsMarketQuoteClientTest {
     }
 
     @Test
+    void parsesTencentHongKongIndexResponse() {
+        UsMarketQuoteClient client = new UsMarketQuoteClient();
+        String response = "v_hkHSI=\"100~恒生指数~HSI~25737.600~25213.310~25515.740~0~0~0~25737.600~0~0~0~0~0~0~0~0~0~25737.600~0~0~0~0~0~0~0~0~0~0.0~2026/09/04 11:59:59~524.290~2.08~25791.380~25515.740~25737.600~HKD\";";
+
+        OvernightMarketQuote quote = ReflectionTestUtils.invokeMethod(client, "parse", response);
+
+        assertEquals("hkHSI", quote.getSymbol());
+        assertEquals("恒生指数", quote.getName());
+        assertEquals(new BigDecimal("25737.600"), quote.getLatestPrice());
+        assertEquals(new BigDecimal("2.08"), quote.getPctChg());
+        assertEquals(LocalDateTime.of(2026, 9, 4, 11, 59, 59), quote.getQuoteTime());
+    }
+
+    @Test
     void rejectsTencentQuoteWithoutValidSourceTime() {
         UsMarketQuoteClient client = new UsMarketQuoteClient();
         String response = "v_usHXC=\"100~纳斯达克中国金龙指数~HXC~6183.99~6230.03~6186.35~0~0~0~"

@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -23,7 +24,10 @@ import java.util.Objects;
 @Component
 public class UsMarketQuoteClient {
 
-    private static final DateTimeFormatter QUOTE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter[] QUOTE_TIME_FORMATTERS = {
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+            DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")
+    };
 
     /**
      * 批量读取美股、亚太指数及个股最新报价。
@@ -106,10 +110,14 @@ public class UsMarketQuoteClient {
         if (StringUtils.isBlank(text)) {
             return null;
         }
-        try {
-            return LocalDateTime.parse(text.trim(), QUOTE_TIME_FORMATTER);
-        } catch (Exception ex) {
-            return null;
+        for (DateTimeFormatter quoteTimeFormatter : QUOTE_TIME_FORMATTERS) {
+            try {
+                return LocalDateTime.parse(text.trim(), quoteTimeFormatter);
+            } catch (DateTimeParseException ignored) {
+                // 腾讯美股和港股行情使用不同的日期分隔符，继续尝试下一种格式。
+            }
         }
+        log.warn("腾讯行情时间解析失败，原始时间={}", text);
+        return null;
     }
 }
