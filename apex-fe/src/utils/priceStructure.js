@@ -106,6 +106,36 @@ function buildTrend(closes, movingAverages) {
   return { key: 'sideways', label: '震荡', description: '均线未形成一致方向，支撑压力均需确认', ma20SlopePct: Number(ma20SlopePct.toFixed(2)) }
 }
 
+function buildSwingResistance(bars, currentPrice, step) {
+  const pivotWindow = 3
+  const startIndex = Math.max(pivotWindow, bars.length - 120)
+  let resistance = null
+  for (let index = startIndex; index < bars.length - pivotWindow; index++) {
+    const price = bars[index].high
+    if (price <= currentPrice * 1.003) continue
+    let confirmedHigh = true
+    for (let offset = 1; offset <= pivotWindow; offset++) {
+      if (price < bars[index - offset].high || price <= bars[index + offset].high) {
+        confirmedHigh = false
+        break
+      }
+    }
+    if (!confirmedHigh) continue
+    const distancePct = ((price - currentPrice) / currentPrice) * 100
+    if (resistance && resistance.distancePct <= distancePct) continue
+    const roundedPrice = roundPrice(price, step)
+    resistance = {
+      price: roundedPrice,
+      rangeLow: roundedPrice,
+      rangeHigh: roundedPrice,
+      distancePct: Number(distancePct.toFixed(2)),
+      strength: { key: 'watch', label: '结构' },
+      source: 'swing-high',
+    }
+  }
+  return resistance
+}
+
 export function buildPriceLevelMarkLines(structure, compact = false) {
   if (!structure?.ready) return []
   const rows = []
@@ -113,7 +143,7 @@ export function buildPriceLevelMarkLines(structure, compact = false) {
     if (!level || !Number.isFinite(Number(level.price))) return
     const support = type === 'support'
     const price = Number(level.price)
-    const label = compact ? (support ? '支' : '压') : (support ? '支撑' : '压力')
+    const label = compact ? (support ? '支' : '阻') : (support ? '支撑' : '关键阻力')
     const color = support ? '#1f8f48' : '#d92d20'
     rows.push({
       yAxis: price,
@@ -140,7 +170,7 @@ export function buildPriceLevelMarkLines(structure, compact = false) {
     })
   }
   addLevel(structure.support, 'support')
-  addLevel(structure.resistance, 'resistance')
+  addLevel(structure.keyResistance || structure.resistance, 'resistance')
   return rows
 }
 
@@ -202,6 +232,10 @@ export function analyzePriceStructure(inputBars, latestPrice, options = {}) {
     .filter((row) => row.price <= currentPrice)
     .reduce((sum, row) => sum + row.weight, 0)
   const peaks = buildPeaks(distribution, step, currentPrice)
+  const resistance = pickLevel(peaks, 'resistance')
+  const keyResistance = resistance
+    ? { ...resistance, source: 'chip-peak' }
+    : buildSwingResistance(bars, currentPrice, step)
   const closes = bars.map((bar) => bar.close)
   const movingAverages = Object.fromEntries(
     [5, 10, 20, 60].map((period) => {
@@ -237,7 +271,8 @@ export function analyzePriceStructure(inputBars, latestPrice, options = {}) {
     distribution,
     peaks: peaks.sort((a, b) => b.densityPct - a.densityPct),
     support: pickLevel(peaks, 'support'),
-    resistance: pickLevel(peaks, 'resistance'),
+    resistance,
+    keyResistance,
     movingAverages,
     dynamicLevels,
     trend: buildTrend(closes, movingAverages),

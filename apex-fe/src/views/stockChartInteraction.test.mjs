@@ -197,6 +197,11 @@ test('K-line renders confirmed MACD top and bottom divergence markers', () => {
   assert.match(stockSource, /MACD 底背离（已确认）/)
 })
 
+test('K-line surfaces the dedicated key resistance level', () => {
+  assert.match(stockSource, /priceStructure\.keyResistance/)
+  assert.match(stockSource, />\s*关键阻力 \{\{ fmtNum\(priceStructure\.keyResistance\.price\) \}\}/)
+})
+
 test('K-line zoom buttons dispatch the next data window and disable at boundaries', () => {
   assert.match(stockSource, /function zoomChart\(direction\)/)
   assert.match(stockSource, /nextKlineZoomRange\([\s\S]*?direction,[\s\S]*?MIN_VISIBLE_BARS/s)

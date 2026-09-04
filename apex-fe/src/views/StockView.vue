@@ -2291,8 +2291,8 @@ function dash(v) {
             <span v-if="priceStructure.support" class="support">
               支撑 {{ fmtNum(priceStructure.support.price) }}
             </span>
-            <span v-if="priceStructure.resistance" class="resistance">
-              压力 {{ fmtNum(priceStructure.resistance.price) }}
+            <span v-if="priceStructure.keyResistance" class="resistance">
+              关键阻力 {{ fmtNum(priceStructure.keyResistance.price) }}
             </span>
             <small>长按图表查看详情</small>
           </div>

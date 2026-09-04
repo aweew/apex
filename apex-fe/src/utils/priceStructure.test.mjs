@@ -38,6 +38,23 @@ test('same dense cost area becomes resistance when current price is below it', (
   assert.ok(result.resistance.price > 8)
 })
 
+test('falls back to a confirmed swing high when no overhead chip peak exists', () => {
+  const prices = [
+    ...new Array(25).fill(8),
+    9,
+    10,
+    12,
+    10,
+    9,
+    ...new Array(20).fill(9.5),
+  ]
+  const result = analyzePriceStructure(makeBars(prices), 10)
+
+  assert.equal(result.resistance, null)
+  assert.equal(result.keyResistance.source, 'swing-high')
+  assert.equal(result.keyResistance.price, 12.5)
+})
+
 test('recent high-turnover trading shifts average cost toward recent prices', () => {
   const oldBars = makeBars(new Array(30).fill(10), 2)
   const recentBars = makeBars(new Array(20).fill(20), 35)
@@ -70,7 +87,7 @@ test('price level labels render in the reserved right gutter', () => {
   assert.ok(lines.every((line) => line.label.position === 'end'))
   assert.ok(lines.every((line) => line.label.backgroundColor))
   assert.equal(lines[0].label.formatter, '支撑 10.12')
-  assert.equal(lines[1].label.formatter, '压力 12.34')
+  assert.equal(lines[1].label.formatter, '关键阻力 12.34')
 
   const compact = buildPriceLevelMarkLines({
     ready: true,
@@ -78,6 +95,19 @@ test('price level labels render in the reserved right gutter', () => {
     resistance: { price: 12.34 },
   }, true)
   assert.equal(compact[0].label.formatter, '支 10.12')
-  assert.equal(compact[1].label.formatter, '压 12.34')
+  assert.equal(compact[1].label.formatter, '阻 12.34')
   assert.ok(compact.every((line) => line.label.show === false))
+})
+
+test('price level line prefers the key resistance fallback', () => {
+  const lines = buildPriceLevelMarkLines({
+    ready: true,
+    support: null,
+    resistance: { price: 12.34 },
+    keyResistance: { price: 11.5 },
+  })
+
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].yAxis, 11.5)
+  assert.equal(lines[0].label.formatter, '关键阻力 11.50')
 })
