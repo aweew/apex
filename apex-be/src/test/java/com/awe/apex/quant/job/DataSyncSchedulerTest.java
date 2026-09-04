@@ -422,6 +422,10 @@ class DataSyncSchedulerTest {
         DataSyncScheduler scheduler = new DataSyncScheduler();
         ReflectionTestUtils.setField(scheduler, "configService", configService);
         ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        ReflectionTestUtils.setField(scheduler, "clock", java.time.Clock.fixed(
+                java.time.ZonedDateTime.of(2026, 8, 18, 10, 20, 0, 0,
+                        java.time.ZoneId.of("Asia/Shanghai")).toInstant(),
+                java.time.ZoneId.of("Asia/Shanghai")));
         when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
         when(dataSyncJobService.startSystemTask(org.mockito.ArgumentMatchers.any())).thenReturn(
                 SyncJobResp.builder().id(304L).status("PENDING").build());
@@ -431,6 +435,32 @@ class DataSyncSchedulerTest {
         verify(dataSyncJobService).startSystemTask(org.mockito.ArgumentMatchers.argThat(request ->
                 "SECTOR_QUOTE".equals(request.getTaskType())
                         && "INDUSTRY,CONCEPT,THEME".equals(request.getTypes())));
+    }
+
+    @Test
+    void sectorRefreshRunsEveryTenMinutesDuringTradingHours() throws Exception {
+        Method method = DataSyncScheduler.class.getMethod("refreshSectorIntraday");
+        Scheduled scheduled = method.getAnnotation(Scheduled.class);
+
+        assertEquals("0 */10 9-11,13-15 * * MON-FRI", scheduled.cron());
+        assertEquals("Asia/Shanghai", scheduled.zone());
+    }
+
+    @Test
+    void intradaySectorRefreshSkipsOutsideTradingSession() {
+        IConfigService configService = mock(IConfigService.class);
+        IDataSyncJobService dataSyncJobService = mock(IDataSyncJobService.class);
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "dataSyncJobService", dataSyncJobService);
+        ReflectionTestUtils.setField(scheduler, "clock", java.time.Clock.fixed(
+                java.time.ZonedDateTime.of(2026, 8, 18, 12, 0, 0, 0,
+                        java.time.ZoneId.of("Asia/Shanghai")).toInstant(),
+                java.time.ZoneId.of("Asia/Shanghai")));
+
+        scheduler.refreshSectorIntraday();
+
+        verifyNoInteractions(configService, dataSyncJobService);
     }
 
     @Test

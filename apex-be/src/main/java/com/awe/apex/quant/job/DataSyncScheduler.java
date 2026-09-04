@@ -386,7 +386,17 @@ public class DataSyncScheduler {
     /**
      * 快刷板块榜单（需 auto_sync_enabled=true）。
      */
+    @Scheduled(cron = "0 */10 9-11,13-15 * * MON-FRI", zone = "Asia/Shanghai")
     public void refreshSectorIntraday() {
+        ZonedDateTime now = ZonedDateTime.now(clock).withZoneSameInstant(SHANGHAI_ZONE);
+        LocalTime tradeTime = now.toLocalTime();
+        boolean morningSession = !tradeTime.isBefore(LocalTime.of(9, 30))
+                && !tradeTime.isAfter(LocalTime.of(11, 30));
+        boolean afternoonSession = !tradeTime.isBefore(LocalTime.of(13, 0))
+                && !tradeTime.isAfter(LocalTime.of(15, 0));
+        if (!TradingCalendar.isTradingDay(now.toLocalDate()) || (!morningSession && !afternoonSession)) {
+            return;
+        }
         if (!"true".equalsIgnoreCase(configService.getString("auto_sync_enabled", "false"))) {
             return;
         }
