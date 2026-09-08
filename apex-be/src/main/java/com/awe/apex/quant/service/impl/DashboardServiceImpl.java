@@ -267,6 +267,8 @@ public class DashboardServiceImpl implements IDashboardService {
                 .indexLines(Objects.nonNull(briefing) ? briefing.getIndexLines() : List.of())
                 .indexes(Objects.nonNull(briefing) && CollUtil.isNotEmpty(briefing.getIndexes())
                         ? briefing.getIndexes() : List.of())
+                .shanghaiKeyResistance(Objects.nonNull(briefing)
+                        ? briefing.getShanghaiKeyResistance() : null)
                 .volumeTrend(Objects.nonNull(briefing) ? briefing.getVolumeTrend() : null)
                 .volumeVsMa5Pct(Objects.nonNull(briefing) ? briefing.getVolumeVsMa5Pct() : null)
                 .volumeLabel(Objects.nonNull(briefing) ? briefing.getVolumeLabel() : null)

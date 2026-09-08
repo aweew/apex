@@ -13,7 +13,7 @@ import { isWeekendReportVisible } from '../utils/weekendReportVisibility.js'
 import { isPostMarketReportVisible } from '../utils/postMarketReportVisibility.js'
 import IntradayKlineThumbnail from '../components/IntradayKlineThumbnail.vue'
 const router = useRouter()
-const HOME_CACHE_KEY = 'apex.dashboard.home.v23'
+const HOME_CACHE_KEY = 'apex.dashboard.home.v24'
 const loading = ref(false)
 const refreshing = ref(false)
 const home = ref(null)
@@ -158,6 +158,23 @@ const dataHealth = computed(() => home.value?.dataHealth || null)
 const themes = computed(() => normalizeHotThemes(market.value))
 const tips = computed(() => market.value?.tips || [])
 const effect = computed(() => market.value?.effect || null)
+const effectItems = computed(() => {
+  const effectData = effect.value
+  if (!effectData) return []
+  const items = [
+    { key: 'average', label: '平均股价', title: '800005 平均股价指数涨跌幅', value: effectData.avgPctChg },
+    { key: 'median', label: '中位数', title: '880009 口径：全A涨幅中位数', value: effectData.medianPctChg },
+    { key: 'equal-weight', label: '全A等权', title: '800010 优先；缺失时使用全A截面算术平均', value: effectData.equalWeightPctChg },
+    { key: 'micro-cap', label: '微盘股', title: '800007 Choice微盘，对齐 880823', value: effectData.microPctChg ?? effectData.csi2000PctChg },
+    { key: 'csi-1000', label: '中证1000', title: '000852 中证1000', value: effectData.csi1000PctChg },
+    { key: 'csi-300', label: '沪深300', title: '000300 沪深300', value: effectData.hs300PctChg },
+  ]
+  return items.map((item) => ({
+    ...item,
+    direction: pctDir(item.value),
+    pct: splitSignedPercentage(item.value),
+  }))
+})
 const topBuys = computed(() => decision.value?.topBuys || [])
 const topSells = computed(() => decision.value?.topSells || [])
 const valuationDistTotal = computed(() => {
@@ -172,6 +189,20 @@ const indexCards = computed(() => {
   if (rows?.length) return rows
   // 兼容旧接口：从文案行解析
   return (market.value?.indexLines || []).map((line) => parseIndexLine(line)).filter(Boolean)
+})
+const marketResistanceAdvice = computed(() => {
+  const resistance = Number(market.value?.shanghaiKeyResistance)
+  if (!Number.isFinite(resistance) || resistance <= 0) return market.value?.positionAdvice || ''
+  const shanghaiIndex = indexCards.value.find((item) => String(item?.name || '').includes('上证'))
+  const currentPrice = Number(shanghaiIndex?.close)
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+    return `上证指数关键阻力位 ${fmtQuotePrice(resistance)} 点，突破并站稳后再提高仓位。`
+  }
+  if (currentPrice >= resistance) {
+    return `上证指数正在突破 ${fmtQuotePrice(resistance)} 点，关注收盘能否站稳。`
+  }
+  const distancePct = ((resistance - currentPrice) / currentPrice) * 100
+  return `上证指数关键阻力位 ${fmtQuotePrice(resistance)} 点，距当前约 ${distancePct.toFixed(2)}%；突破并站稳后再提高仓位。`
 })
 
 function parseIndexLine(line) {
@@ -201,6 +232,15 @@ function fmtIndexPct(v) {
   if (Number.isNaN(n)) return '-'
   const sign = n > 0 ? '+' : n < 0 ? '−' : ''
   return `${sign}${Math.abs(n).toFixed(2)}%`
+}
+
+function splitSignedPercentage(value) {
+  const percentage = fmtIndexPct(value)
+  const sign = percentage.startsWith('+') || percentage.startsWith('−') ? percentage.slice(0, 1) : ''
+  return {
+    sign,
+    number: sign ? percentage.slice(1) : percentage,
+  }
 }
 
 function fmtQuotePrice(v) {
@@ -638,11 +678,10 @@ onBeforeUnmount(() => {
             </p>
             <p class="advice">
               {{
-                command?.preMarketSummary?.headline
-                  || market?.positionAdvice
+                marketResistanceAdvice
                   || (loading || refreshing
-                    ? '仓位建议加载中'
-                    : '同步行情后，这里会给出进攻 / 均衡 / 防守与仓位建议')
+                    ? '大盘关键位加载中'
+                    : '同步指数行情后，这里会给出上证指数关键阻力位')
               }}
             </p>
           </div>
@@ -827,29 +866,22 @@ onBeforeUnmount(() => {
         <span v-else class="effect-hint muted">平均股价 · 中位数 · 全A等权 · 微盘股 · 中证1000 · 沪深300</span>
       </div>
       <div class="effect-grid">
-        <div class="effect-cell" :class="pctDir(effect.avgPctChg)" title="800005 平均股价指数涨跌幅">
-          <em>平均股价</em>
-          <b>{{ fmtIndexPct(effect.avgPctChg) }}</b>
-        </div>
-        <div class="effect-cell" :class="pctDir(effect.medianPctChg)" title="880009 口径：全A涨幅中位数">
-          <em>中位数</em>
-          <b>{{ fmtIndexPct(effect.medianPctChg) }}</b>
-        </div>
-        <div class="effect-cell" :class="pctDir(effect.equalWeightPctChg)" title="800010 优先；缺失时使用全A截面算术平均">
-          <em>全A等权</em>
-          <b>{{ fmtIndexPct(effect.equalWeightPctChg) }}</b>
-        </div>
-        <div class="effect-cell" :class="pctDir(effect.microPctChg ?? effect.csi2000PctChg)" title="800007 Choice微盘，对齐 880823">
-          <em>微盘股</em>
-          <b>{{ fmtIndexPct(effect.microPctChg ?? effect.csi2000PctChg) }}</b>
-        </div>
-        <div class="effect-cell" :class="pctDir(effect.csi1000PctChg)" title="000852 中证1000">
-          <em>中证1000</em>
-          <b>{{ fmtIndexPct(effect.csi1000PctChg) }}</b>
-        </div>
-        <div class="effect-cell" :class="pctDir(effect.hs300PctChg)" title="000300 沪深300">
-          <em>沪深300</em>
-          <b>{{ fmtIndexPct(effect.hs300PctChg) }}</b>
+        <div
+          v-for="item in effectItems"
+          :key="item.key"
+          class="effect-cell"
+          :class="item.direction"
+          :title="item.title"
+        >
+          <em>{{ item.label }}</em>
+          <b class="signed-pct">
+            <span
+              v-if="item.pct.sign"
+              class="signed-pct-sign"
+              :class="{ 'is-positive': item.pct.sign === '+' }"
+            >{{ item.pct.sign }}</span>
+            <span>{{ item.pct.number }}</span>
+          </b>
         </div>
       </div>
     </section>
@@ -874,7 +906,14 @@ onBeforeUnmount(() => {
           :style="{ '--i': i }"
         >
           <span class="theme-name">{{ t.name }}</span>
-          <span v-if="t.pctText" class="theme-pct" :class="t.pctDir">{{ t.pctText }}</span>
+          <span v-if="t.pctText" class="theme-pct signed-pct" :class="t.pctDir">
+            <span
+              v-if="t.sign"
+              class="signed-pct-sign"
+              :class="{ 'is-positive': t.sign === '+' }"
+            >{{ t.sign }}</span>
+            <span>{{ t.abs }}%</span>
+          </span>
         </span>
       </div>
       <div v-else class="empty-guide">
@@ -951,7 +990,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div v-if="command.preMarketSummary.forecast.watchConditions?.length" class="command-forecast-watch">
-              <span>盘中确认</span>
+              <span>开盘后看什么</span>
               <p
                 v-for="item in command.preMarketSummary.forecast.watchConditions"
                 :key="`${item.title}-${item.condition}`"
@@ -4519,6 +4558,10 @@ onBeforeUnmount(() => {
     line-height: 20px;
   }
 
+  .effect-cell b.signed-pct {
+    align-items: baseline;
+  }
+
   .effect-cell b {
     flex: 0 0 auto;
     justify-content: flex-end;
@@ -4950,7 +4993,6 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
   letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
@@ -4963,6 +5005,20 @@ onBeforeUnmount(() => {
 
 .theme-pct.down {
   color: var(--down);
+}
+
+.signed-pct {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.signed-pct-sign {
+  display: inline-block;
+  line-height: 1;
+}
+
+.signed-pct-sign.is-positive {
+  transform: translateY(-0.1em);
 }
 
 @keyframes chipIn {

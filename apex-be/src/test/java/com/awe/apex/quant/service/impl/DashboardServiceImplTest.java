@@ -25,6 +25,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.math.BigDecimal;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -65,6 +67,7 @@ class DashboardServiceImplTest {
                 .stance("均衡")
                 .dataLevel("GREEN")
                 .limitUpCount(1)
+                .shanghaiKeyResistance(new BigDecimal("3900.00"))
                 .build();
         MorningBriefingResp morningBriefing = MorningBriefingResp.builder()
                 .dataLevel("GREEN")
@@ -98,6 +101,7 @@ class DashboardServiceImplTest {
         verify(decisionService, never()).today(any(LocalDate.class), eq("我的自选"));
         assertSame(morningBriefing, response.getMorningBriefing());
         assertEquals("READY", response.getCommand().getStatus());
+        assertEquals(new BigDecimal("3900.00"), response.getMarket().getShanghaiKeyResistance());
     }
 
     @Test

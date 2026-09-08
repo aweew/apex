@@ -21,8 +21,8 @@ test('money effect includes CSI 1000 from the live quote response', () => {
 })
 
 test('dashboard and index board render CSI 1000 in the money effect metrics', () => {
-  assert.match(dashboardSource, /title="000852 中证1000"/)
-  assert.match(dashboardSource, /fmtIndexPct\(effect\.csi1000PctChg\)/)
+  assert.match(dashboardSource, /title: '000852 中证1000'/)
+  assert.match(dashboardSource, /value: effectData\.csi1000PctChg/)
   assert.match(indexBoardSource, /label: '中证1000', tip: '000852', value: e\.csi1000PctChg/)
 })
 

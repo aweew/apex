@@ -93,6 +93,7 @@ public class DashboardHomeResp {
         /** 平盘家数 */ private Integer breadthFlat;
         /** 指数一行 */ private List<String> indexLines;
         /** 指数小看板 */ private List<MarketIndexItem> indexes;
+        /** 上证指数关键阻力位 */ private BigDecimal shanghaiKeyResistance;
         /** 量能：放量/缩量 */ private String volumeTrend;
         /** 较上一交易日成交额涨跌幅%（字段名历史遗留） */ private BigDecimal volumeVsMa5Pct;
         /** 量能文案如「缩量 -4.50%」 */ private String volumeLabel;

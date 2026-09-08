@@ -317,12 +317,12 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         if (DashboardCommandStatusEnum.BLOCKED.equals(status)
                 || DashboardCommandStatusEnum.STALE.equals(status)) {
             return MarketForecastResp.builder()
-                    .marketOutlook("关键行情数据不可用，暂不形成今日预测。")
+                    .marketOutlook("关键行情数据不全，暂时无法判断今天怎么走。")
                     .focusItems(List.of())
                     .riskItems(List.of())
                     .watchConditions(List.of(CommandWatchConditionResp.builder()
-                            .title("恢复预测")
-                            .condition("补齐隔夜、亚太和上一交易日 A 股数据后重新生成")
+                            .title("补齐数据")
+                            .condition("更新海外、亚太和上一交易日的 A 股行情后重新判断")
                             .build()))
                     .build();
         }
@@ -333,13 +333,13 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 && freshIntradayMarketData;
         if (DashboardCommandPhaseEnum.IN_SESSION.equals(phase) && !freshIntradayMarketData) {
             return MarketForecastResp.builder()
-                    .marketOutlook("盘中行情未在 " + INTRADAY_MARKET_DATA_MAX_AGE_MINUTES
-                            + " 分钟内刷新，暂不按昨日收盘结构推演。")
+                    .marketOutlook("盘中行情超过 " + INTRADAY_MARKET_DATA_MAX_AGE_MINUTES
+                            + " 分钟未更新，暂时无法判断当前走势。")
                     .focusItems(List.of())
                     .riskItems(List.of())
                     .watchConditions(List.of(CommandWatchConditionResp.builder()
                             .title("刷新行情")
-                            .condition("补齐最新盘中行情后重新判断方向和市场广度")
+                            .condition("更新盘中行情后，重新查看板块和上涨、下跌家数")
                             .build()))
                     .build();
         }
@@ -367,40 +367,73 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 asiaWeak, overnightWeak, technologyPressure, useFreshIntradayMarketData, themeDataReady);
         if (focusItems.isEmpty() && watchConditions.size() < 2) {
             watchConditions.add(CommandWatchConditionResp.builder()
-                    .title("方向持续性")
-                    .condition("题材近3日转强，或近3日与近5日趋势保持同向，才列入关注")
+                    .title("板块表现")
+                    .condition("板块最近3个交易日开始上涨，或最近3个和5个交易日都上涨，才值得关注")
                     .build());
         }
 
         String marketOutlook;
         if (useFreshIntradayMarketData) {
             marketOutlook = "盘中截至 " + formatMarketDataTime(marketBriefing.getMarketDataUpdatedAt())
-                    + "，A 股当前处于" + marketBriefing.getStance() + "基线";
+                    + "，当前市场" + plainMarketState(marketBriefing.getStance());
             if (Objects.nonNull(marketBriefing.getBreadthUp()) && Objects.nonNull(marketBriefing.getBreadthDown())) {
                 marketOutlook += "；上涨 " + marketBriefing.getBreadthUp() + " 家、下跌 "
                         + marketBriefing.getBreadthDown() + " 家。";
             } else {
-                marketOutlook += "，继续观察市场广度。";
+                marketOutlook += "，还要看上涨股票能否多于下跌股票。";
             }
         } else if (asiaWeak) {
-            marketOutlook = "预计开盘承压后分化，A 股" + marketBriefing.getStance()
-                    + "基线不变；亚太均值" + formatPercent(asiaAverage)
-                    + "仅作开盘扰动，科技方向仍需 3/5 日趋势确认。";
+            marketOutlook = "预计开盘偏弱，之后各板块可能有涨有跌。亚太市场平均"
+                    + formatPlainChange(asiaAverage) + "，可能影响 A 股开盘。";
         } else if (overnightWeak) {
-            marketOutlook = "预计低开后分化，A 股" + marketBriefing.getStance()
-                    + "基线不变；隔夜指数均值" + formatPercent(overnightAverage)
-                    + "仅作开盘扰动，不单独改变方向。";
+            marketOutlook = "预计低开，之后各板块可能有涨有跌。海外主要指数平均"
+                    + formatPlainChange(overnightAverage) + "，可能影响 A 股开盘。";
         } else if (overnightStrong) {
-            marketOutlook = "预计偏强开盘后分化，A 股" + marketBriefing.getStance()
-                    + "基线不变；外盘修复不等于直接追高。";
+            marketOutlook = "预计开盘偏强，之后各板块可能有涨有跌。海外市场虽然上涨，"
+                    + "但 A 股开盘后不一定继续涨。";
         } else {
-            marketOutlook = "预计平开后分化，A 股" + marketBriefing.getStance()
-                    + "基线不变，优先验证多周期延续与新转强方向的承接。";
+            marketOutlook = "预计开盘变化不大，之后各板块可能有涨有跌。";
+        }
+        if (!useFreshIntradayMarketData) {
+            List<String> focusDirectionNames = new ArrayList<>();
+            for (MarketForecastDirectionResp focusItem : focusItems) {
+                if (Objects.isNull(focusItem) || StringUtils.isBlank(focusItem.getName())) {
+                    continue;
+                }
+                focusDirectionNames.add(focusItem.getName());
+                if (focusDirectionNames.size() >= 2) {
+                    break;
+                }
+            }
+
+            String directionAdvice;
+            if (focusDirectionNames.size() >= 2) {
+                directionAdvice = "开盘后先看" + focusDirectionNames.get(0) + "和"
+                        + focusDirectionNames.get(1) + "，继续上涨再关注";
+            } else if (focusDirectionNames.size() == 1) {
+                directionAdvice = "开盘后先看" + focusDirectionNames.get(0) + "，继续上涨再关注";
+            } else {
+                directionAdvice = "暂时没有明显走强的板块，先看上涨股票能否多于下跌股票";
+            }
+
+            String riskDirection = null;
+            for (MarketForecastDirectionResp riskItem : riskItems) {
+                if (Objects.nonNull(riskItem) && StringUtils.isNotBlank(riskItem.getName())) {
+                    riskDirection = riskItem.getName();
+                    break;
+                }
+            }
+            marketOutlook += directionAdvice;
+            if (StringUtils.isNotBlank(riskDirection)) {
+                marketOutlook += "；暂时回避" + riskDirection + "。";
+            } else {
+                marketOutlook += "。";
+            }
         }
         if (Objects.isNull(morningBriefing) || CollUtil.isEmpty(asiaIndexes)) {
             marketOutlook += useFreshIntradayMarketData
-                    ? " 亚太行情缺失，盘中判断以当前 A 股行情为准。"
-                    : " 亚太行情缺失，预测仅基于隔夜与 A 股收盘结构。";
+                    ? " 亚太行情还没更新，当前判断只参考 A 股盘中行情。"
+                    : " 亚太行情还没更新，目前只参考海外市场和 A 股上一个交易日的数据。";
         }
 
         return MarketForecastResp.builder()
@@ -439,19 +472,19 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             }
             String themeName = hotThemeItem.getName().trim();
             List<String> watchStocks = findMatchingStocks(decision, decisionFresh, themeName);
-            String periodLabel = "近3日 " + formatPercent(hotThemeItem.getPctChg3d())
-                    + "、近5日 " + formatPercent(hotThemeItem.getPctChg5d());
             String latestPeriod = freshIntradayMarketData
-                    ? "盘中截至 " + formatMarketDataTime(hotThemeItem.getSyncedAt())
-                    : "最新交易日";
-            String stage = newStrengthening ? "新转强" : "趋势延续";
-            String reason = stage + "：" + periodLabel + "；" + latestPeriod + " 涨幅 "
-                    + formatPercent(hotThemeItem.getPctChg()) + "仅作最新证据";
+                    ? "今天截至" + formatMarketDataTime(hotThemeItem.getSyncedAt())
+                    : "最近一个交易日";
+            String reason = "最近3个交易日" + formatPlainChange(hotThemeItem.getPctChg3d())
+                    + "，最近5个交易日" + formatPlainChange(hotThemeItem.getPctChg5d())
+                    + "，" + latestPeriod + formatPlainChange(hotThemeItem.getPctChg()) + "。"
+                    + (newStrengthening ? "最近几天刚有起色" : "最近几天保持上涨")
+                    + "，开盘后不明显回落再关注。";
             MarketForecastDirectionResp focusItem = MarketForecastDirectionResp.builder()
                     .name(themeName)
                     .reason(reason)
                     .watchStocks(watchStocks)
-                    .action("只在回踩后有承接时关注，不追高开")
+                    .action("开盘后不明显回落再关注，高开时不要追")
                     .build();
             if (newStrengthening) {
                 newStrengtheningItems.add(focusItem);
@@ -484,15 +517,16 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         if (technologyPressure) {
             BigDecimal asiaAverage = Objects.nonNull(morningBriefing)
                     ? averageQuotePctChg(morningBriefing.getAsiaQuotes()) : null;
-            String reason = "科技题材近3日与近5日趋势均偏弱";
+            String reason = "部分科技类板块最近3个和5个交易日都在下跌";
             if (asiaWeak) {
-                reason += "，亚太科技指数均值 " + formatPercent(asiaAverage) + "进一步承压";
+                reason += "，亚太市场平均" + formatPlainChange(asiaAverage);
             }
+            reason += "。";
             riskItems.add(MarketForecastDirectionResp.builder()
                     .name("科技成长")
                     .reason(reason)
                     .watchStocks(List.of())
-                    .action("回避高开追涨，等待盘中承接确认")
+                    .action("等到不再下跌且重新上涨后再看，高开时不要追")
                     .build());
         }
         if (riskItems.size() < 2 && Objects.nonNull(marketBriefing.getBreadthUp())
@@ -522,30 +556,30 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             String condition;
             if (marketBriefing.getBreadthDown() > marketBriefing.getBreadthUp()) {
                 condition = freshIntradayMarketData
-                        ? "后续上涨家数需回到 " + requiredUpCount + " 家以上，才确认盘中广度修复"
-                        : "上涨家数需回到 " + requiredUpCount + " 家以上，才确认昨日弱广度开始修复";
+                        ? "上涨股票达到 " + requiredUpCount + " 家以上，说明盘中跌势有所缓和"
+                        : "上涨股票达到 " + requiredUpCount + " 家以上，说明市场比昨天有所好转";
             } else {
                 condition = freshIntradayMarketData
-                        ? "上涨家数持续高于下跌家数，才保留盘中进攻节奏"
-                        : "上涨家数继续高于下跌家数，才保留开盘后的进攻节奏";
+                        ? "上涨股票持续多于下跌股票，说明盘中表现仍偏强"
+                        : "上涨股票继续多于下跌股票，说明开盘后表现仍偏强";
             }
             watchConditions.add(CommandWatchConditionResp.builder()
-                    .title("市场广度")
+                    .title("上涨家数")
                     .condition(condition)
                     .build());
         }
         if (technologyPressure) {
             watchConditions.add(CommandWatchConditionResp.builder()
-                    .title("外部扰动")
-                    .condition("科技成长需先修复近3日与近5日趋势，且开盘后不能继续放大跌幅")
+                    .title("科技板块")
+                    .condition("科技成长最近3个和5个交易日都转为上涨，且开盘后不再扩大跌幅，再取消回避")
                     .build());
         }
         if (!themeDataReady) {
             watchConditions.add(CommandWatchConditionResp.builder()
-                    .title("板块行情")
+                    .title("板块数据")
                     .condition(freshIntradayMarketData
-                            ? "同步当日板块行情后，再判断盘中新转强与延续方向"
-                            : "补齐同一交易日板块行情后，再判断关注方向")
+                            ? "更新今天的板块行情后，再看哪些板块正在上涨"
+                            : "更新同一交易日的板块行情后，再看哪些板块值得关注")
                     .build());
         }
         return watchConditions;
@@ -665,11 +699,30 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         return totalPctChg.divide(BigDecimal.valueOf(validQuoteCount), 2, java.math.RoundingMode.HALF_UP);
     }
 
-    private String formatPercent(BigDecimal value) {
+    private String formatPlainChange(BigDecimal value) {
         if (Objects.isNull(value)) {
-            return "--";
+            return "暂无数据";
         }
-        return (value.signum() > 0 ? "+" : "") + value.setScale(2, java.math.RoundingMode.HALF_UP) + "%";
+        if (value.signum() > 0) {
+            return "上涨" + value.abs().setScale(2, java.math.RoundingMode.HALF_UP) + "%";
+        }
+        if (value.signum() < 0) {
+            return "下跌" + value.abs().setScale(2, java.math.RoundingMode.HALF_UP) + "%";
+        }
+        return "没有变化";
+    }
+
+    private String plainMarketState(String stance) {
+        if ("进攻".equals(stance)) {
+            return "偏强";
+        }
+        if ("防守".equals(stance)) {
+            return "偏弱";
+        }
+        if ("均衡".equals(stance)) {
+            return "涨跌不一";
+        }
+        return StringUtils.isNotBlank(stance) ? stance : "方向不明";
     }
 
     private boolean hasFreshIntradayMarketData(MarketBriefingResp marketBriefing,
@@ -734,20 +787,17 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             return "决策基于 " + decision.getDataAsOf() + " 行情，未覆盖 " + expectedMarketDate
                     + "；当前清单不可执行，重新生成 " + tradeDate + " 决策。";
         }
-        int sellCount = Objects.nonNull(decision.getSellCount())
-                ? Math.max(0, decision.getSellCount()) : 0;
-        int executableCount = Objects.nonNull(decision.getExecutableCount())
-                ? Math.max(0, decision.getExecutableCount()) : 0;
-        if (sellCount > 0 && executableCount > 0) {
-            return "今日操作已生成，请按执行清单处理。";
+        MarketBriefingResp marketBriefing = context.getMarketBriefing();
+        if (Objects.nonNull(marketBriefing)
+                && Objects.nonNull(marketBriefing.getShanghaiKeyResistance())) {
+            return "上证指数关键阻力位" + formatNumber(marketBriefing.getShanghaiKeyResistance())
+                    + "点，突破并站稳后再提高仓位。";
         }
-        if (sellCount > 0) {
-            return "今日有" + sellCount + "项卖出/减仓，按清单处理。";
+        if (Objects.nonNull(marketBriefing) && StringUtils.isNotBlank(marketBriefing.getStance())) {
+            return "当前市场" + plainMarketState(marketBriefing.getStance())
+                    + "，开盘后先看上证指数走势，以及上涨股票是否多于下跌股票。";
         }
-        if (executableCount > 0) {
-            return "今日操作已生成，候选需满足开仓条件。";
-        }
-        return "今天无买卖动作，保持现仓。";
+        return "开盘后先看上证指数走势，以及上涨股票是否多于下跌股票。";
     }
 
     private TodayOperationGuideResp buildOperationGuide(DashboardCommandContextBO context,

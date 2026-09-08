@@ -7,16 +7,24 @@ const [dashboardSource, decisionSource, marketBriefSource] = await Promise.all([
   readFile(new URL('./DecisionView.vue', import.meta.url), 'utf8'),
   readFile(new URL('../components/news/MarketBriefPanel.vue', import.meta.url), 'utf8'),
 ])
-const themeSources = [dashboardSource, decisionSource, marketBriefSource]
 
 test('theme percentages render the sign and number as one aligned value', () => {
-  for (const themeSource of themeSources) {
+  for (const themeSource of [decisionSource, marketBriefSource]) {
     assert.match(
       themeSource,
       /<span v-if="t\.pctText" class="theme-pct" :class="t\.pctDir">\{\{ t\.pctText \}\}<\/span>/,
     )
     assert.doesNotMatch(themeSource, /theme-sign/)
   }
+})
+
+test('dashboard optically aligns positive signs without separating the percentage value', () => {
+  assert.match(dashboardSource, /const effectItems\s*=\s*computed\(/)
+  assert.match(dashboardSource, /class="signed-pct-sign"\s*:class="\{ 'is-positive': item\.pct\.sign === '\+' \}"/)
+  assert.match(dashboardSource, /class="signed-pct-sign"\s*:class="\{ 'is-positive': t\.sign === '\+' \}"/)
+  assert.match(dashboardSource, /\.signed-pct\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*baseline;/s)
+  assert.match(dashboardSource, /\.signed-pct-sign\.is-positive\s*\{[^}]*transform:\s*translateY\(-0\.1em\);/s)
+  assert.doesNotMatch(dashboardSource, /font-feature-settings:\s*'tnum' 1,\s*'case' 1;/)
 })
 
 test('market brief styles only the outer theme chip as a surface', () => {

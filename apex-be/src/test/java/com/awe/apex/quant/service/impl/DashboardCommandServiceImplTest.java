@@ -1,10 +1,13 @@
 package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.domain.bo.DashboardCommandContextBO;
+import com.awe.apex.quant.domain.dto.CommandWatchConditionResp;
 import com.awe.apex.quant.domain.dto.DashboardCommandResp;
 import com.awe.apex.quant.domain.dto.DecisionItemResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketForecastDirectionResp;
+import com.awe.apex.quant.domain.dto.MarketForecastResp;
 import com.awe.apex.quant.domain.dto.MarketHotThemeItem;
 import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.dto.NewsPulseResp;
@@ -72,10 +75,8 @@ class DashboardCommandServiceImplTest {
         assertEquals(TRADE_DATE, command.getTradeDate());
         assertEquals(PREVIOUS_TRADE_DATE, command.getMarketDataAsOf());
         assertEquals(PREVIOUS_TRADE_DATE, command.getDecisionDataAsOf());
-        assertEquals("今日操作已生成，请按执行清单处理。",
+        assertEquals("当前市场偏弱，开盘后先看上证指数走势，以及上涨股票是否多于下跌股票。",
                 command.getPreMarketSummary().getHeadline());
-        assertFalse(command.getPreMarketSummary().getHeadline().contains("先处理"));
-        assertFalse(command.getPreMarketSummary().getHeadline().contains("市场广度"));
         assertTrue(command.getPreMarketSummary().getOpportunityItems().size() <= 2);
         assertTrue(command.getPreMarketSummary().getRiskItems().size() <= 2);
         assertTrue(command.getPreMarketSummary().getEvidenceItems().size() <= 4);
@@ -127,13 +128,78 @@ class DashboardCommandServiceImplTest {
                         .build())
                 .build());
 
-        assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("承压后分化"));
+        assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("预计开盘偏弱"));
+        assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("煤炭开采"));
         assertEquals("煤炭开采", command.getPreMarketSummary().getForecast().getFocusItems().get(0).getName());
         assertEquals(List.of("中国神华"),
                 command.getPreMarketSummary().getForecast().getFocusItems().get(0).getWatchStocks());
         assertEquals("科技成长", command.getPreMarketSummary().getForecast().getRiskItems().get(0).getName());
         assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().get(0)
-                .getCondition().contains("上涨家数"));
+                .getCondition().contains("上涨股票"));
+    }
+
+    @Test
+    void shouldDescribeConcreteDirectionsInPlainLanguage() {
+        MarketBriefingResp marketBriefing = market(PREVIOUS_TRADE_DATE, "GREEN",
+                List.of("CPO概念", "液冷服务器", "科技成长"));
+        marketBriefing.setHotThemeItems(List.of(
+                MarketHotThemeItem.builder().name("CPO概念").pctChg(new BigDecimal("6.50"))
+                        .pctChg3d(new BigDecimal("4.05")).pctChg5d(new BigDecimal("-0.48"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build(),
+                MarketHotThemeItem.builder().name("液冷服务器").pctChg(new BigDecimal("1.99"))
+                        .pctChg3d(new BigDecimal("1.30")).pctChg5d(new BigDecimal("0.10"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build(),
+                MarketHotThemeItem.builder().name("科技成长").pctChg(new BigDecimal("-1.20"))
+                        .pctChg3d(new BigDecimal("-2.10")).pctChg5d(new BigDecimal("-3.40"))
+                        .tradeDate(PREVIOUS_TRADE_DATE).build()
+        ));
+
+        DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
+                .currentTime(TRADE_DATE.atTime(8, 10))
+                .marketBriefing(marketBriefing)
+                .morningBriefing(MorningBriefingResp.builder()
+                        .tradeDate(TRADE_DATE)
+                        .dataLevel("GREEN")
+                        .indexQuotes(List.of(quote("usIXIC", "纳斯达克", "0.20")))
+                        .asiaQuotes(List.of(quote("hkHSTECH", "恒生科技", "-0.20")))
+                        .build())
+                .decision(DecisionTodayResp.builder()
+                        .actionDate(TRADE_DATE)
+                        .dataAsOf(PREVIOUS_TRADE_DATE)
+                        .generated(true)
+                        .build())
+                .build());
+
+        MarketForecastResp forecast = command.getPreMarketSummary().getForecast();
+        assertEquals("预计开盘变化不大，之后各板块可能有涨有跌。开盘后先看CPO概念和液冷服务器，"
+                        + "继续上涨再关注；暂时回避科技成长。",
+                forecast.getMarketOutlook());
+        assertEquals("最近3个交易日上涨4.05%，最近5个交易日下跌0.48%，最近一个交易日上涨6.50%。"
+                        + "最近几天刚有起色，开盘后不明显回落再关注。",
+                forecast.getFocusItems().get(0).getReason());
+        assertEquals("最近3个交易日上涨1.30%，最近5个交易日上涨0.10%，最近一个交易日上涨1.99%。"
+                        + "最近几天保持上涨，开盘后不明显回落再关注。",
+                forecast.getFocusItems().get(1).getReason());
+        assertEquals("部分科技类板块最近3个和5个交易日都在下跌。",
+                forecast.getRiskItems().get(0).getReason());
+        assertEquals("等到不再下跌且重新上涨后再看，高开时不要追",
+                forecast.getRiskItems().get(0).getAction());
+
+        StringBuilder displayedText = new StringBuilder(forecast.getMarketOutlook());
+        for (MarketForecastDirectionResp focusItem : forecast.getFocusItems()) {
+            displayedText.append(focusItem.getReason()).append(focusItem.getAction());
+        }
+        for (MarketForecastDirectionResp riskItem : forecast.getRiskItems()) {
+            displayedText.append(riskItem.getReason()).append(riskItem.getAction());
+        }
+        for (CommandWatchConditionResp watchCondition : forecast.getWatchConditions()) {
+            displayedText.append(watchCondition.getTitle()).append(watchCondition.getCondition());
+        }
+        List<String> jargonList = List.of(
+                "基线", "承接", "仅作", "新转强", "趋势延续", "市场广度", "修复", "进攻节奏");
+        for (String jargon : jargonList) {
+            assertFalse(displayedText.toString().contains(jargon), "不应展示投研黑话：" + jargon);
+        }
     }
 
     @Test
@@ -167,9 +233,9 @@ class DashboardCommandServiceImplTest {
         assertTrue(command.getPreMarketSummary().getForecast().getRiskItems().stream()
                 .noneMatch(item -> "科技成长".equals(item.getName())));
         assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().stream()
-                .anyMatch(item -> "方向持续性".equals(item.getTitle())));
+                .anyMatch(item -> "板块表现".equals(item.getTitle())));
         assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().stream()
-                .anyMatch(item -> item.getCondition().contains("近3日转强")));
+                .anyMatch(item -> item.getCondition().contains("最近3个交易日开始上涨")));
         assertFalse(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("昨日强势"));
     }
 
@@ -200,10 +266,10 @@ class DashboardCommandServiceImplTest {
         assertEquals(DashboardCommandStatusEnum.READY.getCode(), command.getStatus());
         assertEquals(TRADE_DATE.atTime(13, 42), command.getMarketDataUpdatedAt());
         assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("盘中截至 13:42"));
-        assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("当前 A 股行情为准"));
+        assertTrue(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("只参考 A 股盘中行情"));
         assertFalse(command.getPreMarketSummary().getForecast().getMarketOutlook().contains("收盘结构"));
         assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
-                .getReason().contains("盘中截至 13:42 涨幅 +2.23%"));
+                .getReason().contains("今天截至13:42上涨2.23%"));
         assertFalse(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
                 .getReason().contains("昨日收盘"));
     }
@@ -233,7 +299,7 @@ class DashboardCommandServiceImplTest {
 
         assertEquals("机器人", command.getPreMarketSummary().getForecast().getFocusItems().get(0).getName());
         assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
-                .getReason().contains("趋势延续"));
+                .getReason().contains("最近几天保持上涨"));
     }
 
     @Test
@@ -261,7 +327,7 @@ class DashboardCommandServiceImplTest {
 
         assertEquals("低空经济", command.getPreMarketSummary().getForecast().getFocusItems().get(0).getName());
         assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().get(0)
-                .getReason().contains("新转强"));
+                .getReason().contains("最近几天刚有起色"));
     }
 
     @Test
@@ -293,7 +359,7 @@ class DashboardCommandServiceImplTest {
 
         assertTrue(command.getPreMarketSummary().getForecast().getFocusItems().isEmpty());
         assertTrue(command.getPreMarketSummary().getForecast().getWatchConditions().stream()
-                .anyMatch(item -> "板块行情".equals(item.getTitle())));
+                .anyMatch(item -> "板块数据".equals(item.getTitle())));
     }
 
     @Test
@@ -473,9 +539,8 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         assertEquals(DashboardCommandStatusEnum.READY.getCode(), command.getStatus());
-        assertEquals("今日操作已生成，请按执行清单处理。",
+        assertEquals("当前市场偏弱，开盘后先看上证指数走势，以及上涨股票是否多于下跌股票。",
                 command.getPreMarketSummary().getHeadline());
-        assertFalse(command.getPreMarketSummary().getHeadline().contains("市场广度"));
         assertTrue(command.getPreMarketSummary().getEvidenceItems().isEmpty());
         assertEquals("宁德时代", command.getPreMarketSummary().getOpportunityItems().get(0).getName());
         assertEquals("买至8%仓位；参考180.5；止损168；止盈210",
@@ -521,9 +586,11 @@ class DashboardCommandServiceImplTest {
                 .executableCount(0)
                 .build();
 
+        MarketBriefingResp marketBriefing = readyMarket();
+        marketBriefing.setShanghaiKeyResistance(new BigDecimal("3900.00"));
         DashboardCommandResp command = service.build(DashboardCommandContextBO.builder()
                 .currentTime(TRADE_DATE.atTime(8, 10))
-                .marketBriefing(readyMarket())
+                .marketBriefing(marketBriefing)
                 .morningBriefing(MorningBriefingResp.builder()
                         .tradeDate(TRADE_DATE)
                         .dataLevel("GREEN")
@@ -532,7 +599,7 @@ class DashboardCommandServiceImplTest {
                 .observeAlerts(List.of())
                 .build());
 
-        assertEquals("今日有3项卖出/减仓，按清单处理。",
+        assertEquals("上证指数关键阻力位3900点，突破并站稳后再提高仓位。",
                 command.getPreMarketSummary().getHeadline());
         assertTrue(command.getPreMarketSummary().getWatchConditions().isEmpty());
         assertEquals("先处理3项卖出/减仓。",

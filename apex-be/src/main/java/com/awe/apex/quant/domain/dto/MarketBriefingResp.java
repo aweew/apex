@@ -75,6 +75,11 @@ public class MarketBriefingResp {
     private List<MarketIndexItem> indexes;
 
     /**
+     * 上证指数当前点位上方的关键阻力位。
+     */
+    private BigDecimal shanghaiKeyResistance;
+
+    /**
      * 量能：放量 / 缩量（附带较上一交易日%）；今日额未就绪时为空
      */
     private String volumeTrend;

@@ -47,9 +47,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -63,8 +65,12 @@ import java.util.regex.Pattern;
 public class MarketBriefingServiceImpl implements IMarketBriefingService {
 
     private static final int HOT_THEME_VISIBLE_LIMIT = 6;
+    private static final int SHANGHAI_RESISTANCE_LOOKBACK = 60;
+    private static final int SHANGHAI_RECENT_HIGH_LOOKBACK = 20;
+    private static final int SHANGHAI_PIVOT_WINDOW = 3;
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
+    private static final BigDecimal RESISTANCE_MIN_DISTANCE_FACTOR = new BigDecimal("1.001");
     /** 内存缓存 10 分钟，避免每次进看板都重建 */
     private static final long CACHE_TTL_MS = 600_000L;
     private static final String BRIEFING_CACHE_KEY = "apex:market-briefing:latest";
@@ -210,11 +216,12 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         long now = System.currentTimeMillis();
         synchronized (cacheLock) {
             if (Objects.nonNull(cachedBriefing) && now - cachedAtMs < CACHE_TTL_MS) {
-                return cachedBriefing;
+                return normalizeMarketTips(fillShanghaiKeyResistance(cachedBriefing));
             }
         }
         MarketBriefingResp sharedCached = redisCacheService.get(BRIEFING_CACHE_KEY, MarketBriefingResp.class);
         if (Objects.nonNull(sharedCached)) {
+            sharedCached = normalizeMarketTips(fillShanghaiKeyResistance(sharedCached));
             synchronized (cacheLock) {
                 cachedBriefing = sharedCached;
                 cachedAtMs = System.currentTimeMillis();
@@ -223,12 +230,31 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         }
         MarketBriefingResp snapshot = loadRecentSnapshot();
         if (Objects.nonNull(snapshot)) {
+            snapshot = normalizeMarketTips(fillShanghaiKeyResistance(snapshot));
             synchronized (cacheLock) {
                 cachedBriefing = snapshot;
                 cachedAtMs = System.currentTimeMillis();
             }
         }
         return snapshot;
+    }
+
+    private MarketBriefingResp normalizeMarketTips(MarketBriefingResp marketBriefing) {
+        if (Objects.isNull(marketBriefing) || CollUtil.isEmpty(marketBriefing.getTips())) {
+            return marketBriefing;
+        }
+        List<MarketTipItem> uniqueTips = new ArrayList<>();
+        Set<String> tipTexts = new HashSet<>();
+        for (MarketTipItem tipItem : marketBriefing.getTips()) {
+            if (Objects.isNull(tipItem) || StringUtils.isBlank(tipItem.getText())) {
+                continue;
+            }
+            if (tipTexts.add(tipItem.getText().trim())) {
+                uniqueTips.add(tipItem);
+            }
+        }
+        marketBriefing.setTips(uniqueTips);
+        return marketBriefing;
     }
 
     /**
@@ -282,13 +308,14 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
      * 实时覆盖链：指数 → 量能 → 涨跌家数 → 涨跌停 → 赚钱效应 → 主线题材 → 因子/立场对齐
      */
     private MarketBriefingResp refreshLiveMarketQuotes(MarketBriefingResp resp) {
-        return reconcileFactorsWithLive(
+        MarketBriefingResp refreshedBriefing = reconcileFactorsWithLive(
                 overlayHotThemes(
                         overlayLiveEffect(
                                 overlayLiveLimits(
                                         overlayLiveBreadth(
                                                 overlayLiveVolume(
                                                         overlayLiveIndexes(resp)))))));
+        return normalizeMarketTips(refreshedBriefing);
     }
 
     /**
@@ -497,6 +524,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         tips.removeIf(t -> Objects.isNull(t) || StringUtils.isBlank(t.getText())
                 || t.getText().contains("综合评分")
                 || t.getText().contains("数据门禁")
+                || t.getText().contains("市场中性偏均衡")
                 || (Objects.nonNull(dayAvg) && dayAvg.compareTo(ZERO) > 0
                 && (t.getText().contains("明显调整") || t.getText().contains("放量下跌")))
                 || (Objects.nonNull(dayAvg) && dayAvg.compareTo(ZERO) < 0
@@ -706,6 +734,13 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         if (CollUtil.isNotEmpty(indexes)) {
             resp.setIndexLines(indexLines);
             resp.setIndexes(indexes);
+            LiveIndexQuote shanghaiQuote = live.get("000001");
+            if (Objects.nonNull(shanghaiQuote) && Objects.nonNull(shanghaiQuote.close)) {
+                List<IndexBar> shanghaiBars = loadShanghaiBarsForResistance();
+                if (CollUtil.isNotEmpty(shanghaiBars)) {
+                    resp.setShanghaiKeyResistance(resolveShanghaiKeyResistance(shanghaiBars, shanghaiQuote.close));
+                }
+            }
             if (resolveSessionDay().equals(LocalDate.now())) {
                 resp.setAsOf(LocalDate.now());
                 resp.setMarketDataUpdatedAt(LocalDateTime.now());
@@ -1289,6 +1324,10 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
         BigDecimal szPct = Objects.nonNull(liveSz) && Objects.nonNull(liveSz.pctChg) ? liveSz.pctChg : lastPct(sz);
         BigDecimal cybPct = Objects.nonNull(liveCyb) && Objects.nonNull(liveCyb.pctChg) ? liveCyb.pctChg : lastPct(cyb);
         BigDecimal kcPct = Objects.nonNull(liveKc) && Objects.nonNull(liveKc.pctChg) ? liveKc.pctChg : lastPct(kc);
+        BigDecimal shClose = Objects.nonNull(liveSh) && Objects.nonNull(liveSh.close)
+                ? liveSh.close
+                : CollUtil.isNotEmpty(sh) ? sh.get(sh.size() - 1).getClosePrice() : null;
+        BigDecimal shanghaiKeyResistance = resolveShanghaiKeyResistance(sh, shClose);
         if (Objects.nonNull(liveSh)) {
             indexLines.add(lineOf("上证指数", liveSh.pctChg, liveSh.close));
             indexes.add(indexItemOf("上证指数", liveSh.pctChg, liveSh.close));
@@ -1600,6 +1639,7 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .tips(tips)
                 .indexLines(indexLines)
                 .indexes(indexes)
+                .shanghaiKeyResistance(shanghaiKeyResistance)
                 .volumeTrend(volumeTrend)
                 .volumeVsMa5Pct(volumeVsMa5Pct)
                 .volumeLabel(Objects.nonNull(vol) ? vol.label : null)
@@ -1877,6 +1917,78 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
                 .last("LIMIT " + Math.max(limit, 5)));
         Collections.reverse(desc);
         return desc;
+    }
+
+    private MarketBriefingResp fillShanghaiKeyResistance(MarketBriefingResp marketBriefing) {
+        if (Objects.isNull(marketBriefing) || Objects.nonNull(marketBriefing.getShanghaiKeyResistance())
+                || Objects.isNull(indexBarMapper)) {
+            return marketBriefing;
+        }
+        List<IndexBar> shanghaiBars = loadShanghaiBarsForResistance();
+        if (CollUtil.isEmpty(shanghaiBars)) {
+            return marketBriefing;
+        }
+        BigDecimal currentPrice = findIndexClose(marketBriefing.getIndexes(), "上证");
+        if (Objects.isNull(currentPrice) && CollUtil.isNotEmpty(shanghaiBars)) {
+            currentPrice = shanghaiBars.get(shanghaiBars.size() - 1).getClosePrice();
+        }
+        marketBriefing.setShanghaiKeyResistance(resolveShanghaiKeyResistance(shanghaiBars, currentPrice));
+        return marketBriefing;
+    }
+
+    private List<IndexBar> loadShanghaiBarsForResistance() {
+        try {
+            return loadBars("CN_SH", SHANGHAI_RESISTANCE_LOOKBACK);
+        } catch (Exception ex) {
+            log.debug("上证指数阻力位日线读取失败，原因={}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private BigDecimal resolveShanghaiKeyResistance(List<IndexBar> shanghaiBars, BigDecimal currentPrice) {
+        if (CollUtil.isEmpty(shanghaiBars) || Objects.isNull(currentPrice) || currentPrice.signum() <= 0) {
+            return null;
+        }
+        BigDecimal minimumResistance = currentPrice.multiply(RESISTANCE_MIN_DISTANCE_FACTOR);
+        BigDecimal nearestResistance = null;
+        int startIndex = Math.max(SHANGHAI_PIVOT_WINDOW,
+                shanghaiBars.size() - SHANGHAI_RESISTANCE_LOOKBACK);
+        int endIndex = shanghaiBars.size() - SHANGHAI_PIVOT_WINDOW;
+        for (int index = startIndex; index < endIndex; index++) {
+            BigDecimal highPrice = shanghaiBars.get(index).getHighPrice();
+            if (Objects.isNull(highPrice) || highPrice.compareTo(minimumResistance) <= 0) {
+                continue;
+            }
+            boolean confirmedHigh = true;
+            for (int offset = 1; offset <= SHANGHAI_PIVOT_WINDOW; offset++) {
+                BigDecimal previousHigh = shanghaiBars.get(index - offset).getHighPrice();
+                BigDecimal nextHigh = shanghaiBars.get(index + offset).getHighPrice();
+                if (Objects.isNull(previousHigh) || Objects.isNull(nextHigh)
+                        || highPrice.compareTo(previousHigh) < 0
+                        || highPrice.compareTo(nextHigh) <= 0) {
+                    confirmedHigh = false;
+                    break;
+                }
+            }
+            if (confirmedHigh && (Objects.isNull(nearestResistance)
+                    || highPrice.compareTo(nearestResistance) < 0)) {
+                nearestResistance = highPrice;
+            }
+        }
+        if (Objects.nonNull(nearestResistance)) {
+            return nearestResistance.setScale(2, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal recentHigh = null;
+        int recentStartIndex = Math.max(0, shanghaiBars.size() - SHANGHAI_RECENT_HIGH_LOOKBACK);
+        for (int index = recentStartIndex; index < shanghaiBars.size(); index++) {
+            BigDecimal highPrice = shanghaiBars.get(index).getHighPrice();
+            if (Objects.nonNull(highPrice) && highPrice.compareTo(minimumResistance) > 0
+                    && (Objects.isNull(recentHigh) || highPrice.compareTo(recentHigh) > 0)) {
+                recentHigh = highPrice;
+            }
+        }
+        return Objects.nonNull(recentHigh) ? recentHigh.setScale(2, RoundingMode.HALF_UP) : null;
     }
 
     private LocalDate latestDate(List<IndexBar> a, List<IndexBar> b, List<IndexBar> c) {

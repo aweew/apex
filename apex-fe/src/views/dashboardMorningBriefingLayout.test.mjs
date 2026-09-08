@@ -14,13 +14,17 @@ test('dashboard places overnight market and news before action panels', () => {
   assert.match(dashboardSource, /aria-label="盘前依据"/)
 })
 
-test('dashboard uses command headline with legacy advice fallback and a new cache version', () => {
-  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v23'/)
+test('dashboard uses market resistance advice in the stance panel and a new cache version', () => {
+  assert.match(dashboardSource, /HOME_CACHE_KEY\s*=\s*'apex\.dashboard\.home\.v24'/)
   assert.match(dashboardSource, /const command\s*=\s*computed\(\(\)\s*=>\s*home\.value\?\.command\s*\|\|\s*null\)/)
-  assert.match(
-    dashboardSource,
-    /command\?\.preMarketSummary\?\.headline[\s\S]{0,300}?market\?\.positionAdvice/,
-  )
+  assert.match(dashboardSource, /const marketResistanceAdvice\s*=\s*computed\(/)
+  assert.match(dashboardSource, /market\.value\?\.shanghaiKeyResistance/)
+  assert.match(dashboardSource, /上证指数关键阻力位/)
+  const stanceStart = dashboardSource.indexOf('class="stance-panel enter"')
+  const stanceEnd = dashboardSource.indexOf('<div class="stance-side">', stanceStart)
+  const stanceMarkup = dashboardSource.slice(stanceStart, stanceEnd)
+  assert.match(stanceMarkup, /marketResistanceAdvice/)
+  assert.doesNotMatch(stanceMarkup, /command\?\.preMarketSummary\?\.headline/)
 })
 
 test('dashboard renders the structured forecast and only shows available opening-auction quotes', () => {
@@ -29,6 +33,8 @@ test('dashboard renders the structured forecast and only shows available opening
   assert.match(dashboardSource, /forecast\.focusItems/)
   assert.match(dashboardSource, /forecast\.riskItems/)
   assert.match(dashboardSource, /forecast\.watchConditions/)
+  assert.match(dashboardSource, />开盘后看什么<\/span>/)
+  assert.doesNotMatch(dashboardSource, />盘中确认<\/span>/)
   assert.match(dashboardSource, /morningBriefing\.value\?\.asiaQuotes/)
   assert.match(dashboardSource, /<h5>亚太情绪<\/h5>/)
   assert.match(dashboardSource, /class="asia-index-grid"/)
