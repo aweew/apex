@@ -250,7 +250,7 @@ onBeforeUnmount(() => {
         <div v-if="mainlines.length" class="mainline-grid">
           <article v-for="(row, index) in mainlines" :key="row.code || row.name" class="mainline-item">
             <span>{{ String(index + 1).padStart(2, '0') }}</span><div><h3>{{ row.name }}</h3><p>{{ boardReason(row) }}</p></div>
-            <dl><dt>主线分</dt><dd>{{ row.mainlineScore ?? '-' }}</dd><dt>近 3 日</dt><dd :class="resolveCapitalClass(row.pctChg3d)">{{ formatCapitalPercent(row.pctChg3d) }}</dd></dl>
+            <dl><dt>主线分</dt><dd class="mainline-score">{{ row.mainlineScore ?? '-' }}</dd><dt>近 3 日</dt><dd :class="resolveCapitalClass(row.pctChg3d)">{{ formatCapitalPercent(row.pctChg3d) }}</dd></dl>
           </article>
         </div>
         <el-empty v-else :image-size="56" description="今日尚未形成可确认主线" />
@@ -367,13 +367,14 @@ onBeforeUnmount(() => {
 .board-column h3 { margin: 0 0 10px; font-size: 14px; }
 .post-market-mobile-list { display: none; }
 .mainline-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.mainline-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.mainline-item > span { color: var(--primary); font-weight: 700; }
-.mainline-item h3 { margin: 0; font-size: 15px; }
+.mainline-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.58); }
+.mainline-item > span { color: var(--slate); font-weight: 600; }
+.mainline-item h3 { margin: 0; color: var(--ink-soft); font-size: 15px; font-weight: 600; }
 .mainline-item p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .mainline-item dl { display: grid; grid-template-columns: auto auto; align-content: start; gap: 4px 9px; margin: 0; font-size: 11px; }
 .mainline-item dt { color: var(--muted); }
 .mainline-item dd { margin: 0; text-align: right; }
+.mainline-score { color: var(--slate); font-weight: 500; }
 .post-market-table :deep(.cell) { line-height: 1.45; overflow-wrap: anywhere; }
 .post-market-table small { display: block; color: var(--muted); font-size: 10px; }
 .post-market-table a, .post-market-card a, .stock-link { color: var(--primary); text-decoration: none; }

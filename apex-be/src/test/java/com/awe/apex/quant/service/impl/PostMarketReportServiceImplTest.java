@@ -17,6 +17,7 @@ import com.awe.apex.quant.mapper.LimitUpPoolMapper;
 import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
 import com.awe.apex.quant.mapper.MarketOpinionMapper;
 import com.awe.apex.quant.mapper.StockFundFlowMapper;
+import com.awe.apex.quant.service.IMarketOpinionService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -68,6 +69,9 @@ class PostMarketReportServiceImplTest {
 
     @Mock
     private ISectorBoardService sectorBoardService;
+
+    @Mock
+    private IMarketOpinionService marketOpinionService;
 
     @Mock
     private RedisCacheService redisCacheService;
@@ -216,6 +220,26 @@ class PostMarketReportServiceImplTest {
         assertEquals("DEGRADED", report.getContentLevel());
         assertTrue(report.getMissingData().contains("大盘收盘快照"));
         assertTrue(report.getContent().contains("大盘收盘快照暂未齐全"));
+    }
+
+    @Test
+    void shouldRefreshMarketOpinionsWhenActiveSeatsAreMissing() {
+        LocalDate tradeDate = LocalDate.of(2026, 8, 31);
+        MarketOpinion activeSeat = MarketOpinion.builder()
+                .opinionType("ACTIVE_SEAT")
+                .subjectName("国泰君安上海江苏路")
+                .publishedAt(tradeDate.atTime(17, 40))
+                .build();
+        when(sectorBoardService.board(any(), any(), any(), any(), any())).thenReturn(null);
+        when(sectorBoardService.mainline(any(), any())).thenReturn(List.of());
+        when(marketOpinionMapper.selectList(any())).thenReturn(List.of(), List.of(activeSeat));
+        ReflectionTestUtils.setField(service, "marketOpinionService", marketOpinionService);
+
+        PostMarketReportResp report = service.generate(LocalDateTime.of(2026, 8, 31, 18, 30));
+
+        assertEquals(1, report.getActiveSeats().size());
+        verify(marketOpinionService).refresh();
+        verify(marketOpinionMapper, org.mockito.Mockito.times(2)).selectList(any());
     }
 
     @Test

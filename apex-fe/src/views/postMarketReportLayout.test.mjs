@@ -38,6 +38,15 @@ test('post-market report uses dense desktop tables and mobile cards safely', () 
   assert.match(viewSource, /grid-template-columns:\s*minmax\(0, 1fr\)/)
 })
 
+test('post-market mainline cards keep neutral information visually light', () => {
+  assert.match(viewSource, /\.mainline-item\s*\{[^}]*background:\s*rgba\(255, 255, 255, 0\.58\)/s)
+  assert.match(viewSource, /\.mainline-item\s*>\s*span\s*\{[^}]*color:\s*var\(--slate\)[^}]*font-weight:\s*600/s)
+  assert.match(viewSource, /\.mainline-item h3\s*\{[^}]*color:\s*var\(--ink-soft\)[^}]*font-weight:\s*600/s)
+  assert.match(viewSource, /class="mainline-score"/)
+  assert.match(viewSource, /\.mainline-score\s*\{[^}]*color:\s*var\(--slate\)[^}]*font-weight:\s*500/s)
+  assert.match(viewSource, /:class="resolveCapitalClass\(row\.pctChg3d\)"/)
+})
+
 test('post-market report keeps a generation action when the latest report is absent', () => {
   assert.match(viewSource, /reportWindowOpen && !loading && !report/)
   assert.match(viewSource, /盘后总结尚未生成/)

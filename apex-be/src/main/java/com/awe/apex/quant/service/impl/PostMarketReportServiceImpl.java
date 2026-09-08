@@ -23,6 +23,7 @@ import com.awe.apex.quant.mapper.MarketBriefingSnapshotMapper;
 import com.awe.apex.quant.mapper.MarketOpinionMapper;
 import com.awe.apex.quant.mapper.StockFundFlowMapper;
 import com.awe.apex.quant.market.TradingCalendar;
+import com.awe.apex.quant.service.IMarketOpinionService;
 import com.awe.apex.quant.service.IPostMarketReportService;
 import com.awe.apex.quant.service.ISectorBoardService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -55,7 +56,7 @@ import java.util.regex.Pattern;
 @Service
 public class PostMarketReportServiceImpl implements IPostMarketReportService {
 
-    static final String CACHE_KEY = "apex:post-market-report:latest:v1";
+    static final String CACHE_KEY = "apex:post-market-report:latest:v2";
     static final Duration CACHE_TTL = Duration.ofDays(2);
     private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
     private static final LocalTime VISIBLE_TIME = LocalTime.of(18, 30);
@@ -81,6 +82,9 @@ public class PostMarketReportServiceImpl implements IPostMarketReportService {
 
     @Resource
     private MarketOpinionMapper marketOpinionMapper;
+
+    @Resource
+    private IMarketOpinionService marketOpinionService;
 
     @Resource
     private ISectorBoardService sectorBoardService;
@@ -192,6 +196,19 @@ public class PostMarketReportServiceImpl implements IPostMarketReportService {
                 .lt("published_at", opinionEndTime)
                 .orderByDesc("published_at")
                 .orderByDesc("id"));
+        if (CollUtil.isEmpty(activeSeatRows) && Objects.nonNull(marketOpinionService)) {
+            try {
+                marketOpinionService.refresh();
+                activeSeatRows = marketOpinionMapper.selectList(Wrappers.<MarketOpinion>query()
+                        .eq("opinion_type", "ACTIVE_SEAT")
+                        .ge("published_at", opinionStartTime)
+                        .lt("published_at", opinionEndTime)
+                        .orderByDesc("published_at")
+                        .orderByDesc("id"));
+            } catch (Exception ex) {
+                log.warn("盘后总结补刷活跃席位失败，交易日={}，原因={}", tradeDate, ex.getMessage());
+            }
+        }
         List<PostMarketActiveSeatResp> activeSeats = buildActiveSeats(activeSeatRows);
         if (CollUtil.isEmpty(activeSeats)) {
             missingData.add("活跃席位与知名游资证据");
