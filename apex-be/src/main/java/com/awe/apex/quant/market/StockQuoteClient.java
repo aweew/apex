@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 股票基本信息/快照行情客户端（新浪行情 + 腾讯估值优先；东财可选且带熔断）
+ * 股票基本信息/快照行情客户端（同花顺优先，传统行情源负责兜底和资料补充）。
  */
 @Slf4j
 @Component
@@ -43,6 +43,9 @@ public class StockQuoteClient {
 
     private String sinaQuoteUrl = "https://hq.sinajs.cn/list=";
     private String tencentQuoteUrl = "https://qt.gtimg.cn/q=";
+
+    @jakarta.annotation.Resource
+    private HithinkFinancialClient hithinkFinancialClient;
 
     /**
      * 拉取并组装基本信息
@@ -80,6 +83,18 @@ public class StockQuoteClient {
     public StockBasic fetchRealtime(String code) {
         String pure = MarketCodeUtils.normalizeHoldingCode(code);
         String market = MarketCodeUtils.resolveMarket(pure);
+        if (Objects.nonNull(hithinkFinancialClient) && hithinkFinancialClient.isAvailable()) {
+            try {
+                StockBasic hithinkQuote = hithinkFinancialClient.fetchSnapshot(pure);
+                if (Objects.nonNull(hithinkQuote)
+                        && Objects.nonNull(hithinkQuote.getLatestPrice())
+                        && hithinkQuote.getLatestPrice().signum() > 0) {
+                    return hithinkQuote;
+                }
+            } catch (Exception ex) {
+                log.warn("同花顺单票行情失败，证券代码={}，回退传统行情源，异常={}", pure, ex.getMessage());
+            }
+        }
         StockBasic basic;
         try {
             basic = fetchFromSina(pure, market, DEFAULT_QUOTE_TIMEOUT_MS);
@@ -113,6 +128,18 @@ public class StockQuoteClient {
     public StockBasic fetchRealtimeFast(String code) {
         String pure = MarketCodeUtils.normalizeHoldingCode(code);
         String market = MarketCodeUtils.resolveMarket(pure);
+        if (Objects.nonNull(hithinkFinancialClient) && hithinkFinancialClient.isAvailable()) {
+            try {
+                StockBasic hithinkQuote = hithinkFinancialClient.fetchSnapshot(pure);
+                if (Objects.nonNull(hithinkQuote)
+                        && Objects.nonNull(hithinkQuote.getLatestPrice())
+                        && hithinkQuote.getLatestPrice().signum() > 0) {
+                    return hithinkQuote;
+                }
+            } catch (Exception ex) {
+                log.warn("同花顺快速行情失败，证券代码={}，回退传统行情源，异常={}", pure, ex.getMessage());
+            }
+        }
         StockBasic basic;
         try {
             basic = fetchFromSina(pure, market, FAST_QUOTE_TIMEOUT_MS);

@@ -84,6 +84,32 @@ class StockServiceImplTest {
     }
 
     @Test
+    void syncQuoteShouldPreserveExistingNameWhenRealtimeSourceHasNoName() {
+        StockServiceImpl service = new StockServiceImpl();
+        StockQuoteClient stockQuoteClient = mock(StockQuoteClient.class);
+        StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);
+        StockBasic existing = StockBasic.builder()
+                .code("600519")
+                .name("贵州茅台")
+                .pinyinAbbr("gzmt")
+                .market("SH")
+                .build();
+        when(stockQuoteClient.fetchRealtimeFast("600519")).thenReturn(StockBasic.builder()
+                .code("600519")
+                .market("SH")
+                .latestPrice(new BigDecimal("1420.00"))
+                .build());
+        when(stockBasicMapper.selectOne(any())).thenReturn(existing);
+        ReflectionTestUtils.setField(service, "stockQuoteClient", stockQuoteClient);
+        ReflectionTestUtils.setField(service, "stockBasicMapper", stockBasicMapper);
+
+        StockBasic result = service.syncQuote("600519");
+
+        assertEquals("贵州茅台", result.getName());
+        assertEquals("gzmt", result.getPinyinAbbr());
+    }
+
+    @Test
     void marksEmptyDailyBarsAsSyncRequiredWithReason() {
         StockServiceImpl service = new StockServiceImpl();
         StockBasicMapper stockBasicMapper = mock(StockBasicMapper.class);

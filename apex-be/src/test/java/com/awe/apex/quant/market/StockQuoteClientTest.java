@@ -16,6 +16,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class StockQuoteClientTest {
 
@@ -51,6 +54,51 @@ class StockQuoteClientTest {
 
         assertEquals(new BigDecimal("15.02"), basic.getPeDynamic());
         assertNull(basic.getPeTtm());
+    }
+
+    @Test
+    void usesHithinkSnapshotBeforeLegacyRealtimeSources() {
+        HithinkFinancialClient hithinkClient = mock(HithinkFinancialClient.class);
+        StockBasic hithinkQuote = StockBasic.builder()
+                .code("000001")
+                .market("SZ")
+                .latestPrice(new BigDecimal("10.50"))
+                .pctChg(new BigDecimal("1.23"))
+                .source("hithink")
+                .build();
+        when(hithinkClient.isAvailable()).thenReturn(true);
+        when(hithinkClient.fetchSnapshot("000001")).thenReturn(hithinkQuote);
+
+        StockQuoteClient client = new StockQuoteClient();
+        ReflectionTestUtils.setField(client, "hithinkFinancialClient", hithinkClient);
+
+        StockBasic result = client.fetchRealtime("000001");
+
+        assertEquals(new BigDecimal("10.50"), result.getLatestPrice());
+        assertEquals("hithink", result.getSource());
+        verify(hithinkClient).fetchSnapshot("000001");
+    }
+
+    @Test
+    void fastRealtimeUsesHithinkSnapshotWithoutRequiringName() {
+        HithinkFinancialClient hithinkClient = mock(HithinkFinancialClient.class);
+        StockBasic hithinkQuote = StockBasic.builder()
+                .code("000001")
+                .market("SZ")
+                .latestPrice(new BigDecimal("10.50"))
+                .source("hithink")
+                .build();
+        when(hithinkClient.isAvailable()).thenReturn(true);
+        when(hithinkClient.fetchSnapshot("000001")).thenReturn(hithinkQuote);
+
+        StockQuoteClient client = new StockQuoteClient();
+        ReflectionTestUtils.setField(client, "hithinkFinancialClient", hithinkClient);
+
+        StockBasic result = client.fetchRealtimeFast("000001");
+
+        assertEquals(new BigDecimal("10.50"), result.getLatestPrice());
+        assertEquals("hithink", result.getSource());
+        verify(hithinkClient).fetchSnapshot("000001");
     }
 
     @Test

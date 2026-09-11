@@ -98,7 +98,9 @@ public class StockServiceImpl implements IStockService {
     }
 
     private StockBasic saveSyncedBasic(String pure, StockBasic fetched, boolean quoteOnly) {
-        fetched.setPinyinAbbr(StockPinyinUtils.buildAbbr(fetched.getName()));
+        if (StringUtils.isNotBlank(fetched.getName())) {
+            fetched.setPinyinAbbr(StockPinyinUtils.buildAbbr(fetched.getName()));
+        }
         StockBasic existing = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                 .eq(StockBasic::getCode, pure)
                 .last("limit 1"));
@@ -109,10 +111,16 @@ public class StockServiceImpl implements IStockService {
             stockBasicMapper.insert(fetched);
             return fetched;
         }
-        existing.setName(fetched.getName());
-        existing.setPinyinAbbr(fetched.getPinyinAbbr());
-        existing.setMarket(fetched.getMarket());
-        existing.setStFlag(fetched.getStFlag());
+        if (StringUtils.isNotBlank(fetched.getName())) {
+            existing.setName(fetched.getName());
+            existing.setPinyinAbbr(fetched.getPinyinAbbr());
+        }
+        if (StringUtils.isNotBlank(fetched.getMarket())) {
+            existing.setMarket(fetched.getMarket());
+        }
+        if (Objects.nonNull(fetched.getStFlag())) {
+            existing.setStFlag(fetched.getStFlag());
+        }
         if (!quoteOnly) {
             existing.setPeDynamic(fetched.getPeDynamic());
             existing.setPeStatic(fetched.getPeStatic());

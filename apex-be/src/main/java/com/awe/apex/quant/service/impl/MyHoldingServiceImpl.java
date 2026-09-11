@@ -29,6 +29,7 @@ import com.awe.apex.quant.mapper.SectorBasicMapper;
 import com.awe.apex.quant.mapper.SectorConstituentMapper;
 import com.awe.apex.quant.mapper.StockBasicMapper;
 import com.awe.apex.quant.mapper.StockCompanyProfileMapper;
+import com.awe.apex.quant.market.HithinkFinancialClient;
 import com.awe.apex.quant.market.MarketCodeUtils;
 import com.awe.apex.quant.market.StockQuoteClient;
 import com.awe.apex.quant.util.StockPinyinUtils;
@@ -90,6 +91,9 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
 
     @Resource
     private StockQuoteClient stockQuoteClient;
+
+    @Resource
+    private HithinkFinancialClient hithinkFinancialClient;
 
     @Resource
     private IValuationService valuationService;
@@ -489,6 +493,23 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             empty.put("message", "无待刷新代码");
             return empty;
         }
+        Map<String, StockBasic> hithinkQuotes = new LinkedHashMap<>();
+        Map<String, StockBasic> hithinkValuations = new LinkedHashMap<>();
+        if (Objects.nonNull(hithinkFinancialClient)
+                && hithinkFinancialClient.isAvailable()) {
+            try {
+                hithinkQuotes.putAll(hithinkFinancialClient.fetchSnapshots(codes));
+            } catch (Exception ex) {
+                log.warn("同花顺批量行情失败，证券数量={}，将回退逐票行情，异常={}", codes.size(), ex.getMessage());
+            }
+            if (!realtimeOnly) {
+                try {
+                    hithinkValuations.putAll(hithinkFinancialClient.fetchValuations(codes));
+                } catch (Exception ex) {
+                    log.warn("同花顺批量估值失败，证券数量={}，保留传统估值源，异常={}", codes.size(), ex.getMessage());
+                }
+            }
+        }
         for (String raw : codes) {
             String code = MarketCodeUtils.normalizeHoldingCode(raw);
             if (StringUtils.isBlank(code)) {
@@ -497,11 +518,18 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
             StockBasic basic = stockBasicMapper.selectOne(Wrappers.<StockBasic>lambdaQuery()
                     .eq(StockBasic::getCode, code)
                     .last("LIMIT 1"));
-            if (missingOnly && Objects.nonNull(basic) && Objects.nonNull(basic.getLatestPrice())) {
+            boolean hasValidPrice = Objects.nonNull(basic)
+                    && Objects.nonNull(basic.getLatestPrice())
+                    && basic.getLatestPrice().signum() > 0;
+            boolean hasValuation = Objects.nonNull(basic)
+                    && Objects.nonNull(basic.getPeTtm())
+                    && Objects.nonNull(basic.getPb());
+            if (missingOnly && hasValidPrice && (realtimeOnly || hasValuation)) {
                 continue;
             }
             try {
-                StockBasic synced = upsertQuote(code, realtimeOnly);
+                StockBasic synced = upsertQuote(
+                        code, realtimeOnly, hithinkQuotes.get(code), hithinkValuations.get(code));
                 if (Objects.nonNull(synced) && Objects.nonNull(synced.getLatestPrice())) {
                     success++;
                 } else {
@@ -527,10 +555,25 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
     /**
      * 拉取行情并写入 stock_basic；拒绝 0 价覆盖，日线收盘兜底
      */
-    private StockBasic upsertQuote(String code, boolean realtimeOnly) {
-        StockBasic fetched = realtimeOnly
-                ? stockQuoteClient.fetchRealtime(code)
-                : stockQuoteClient.fetchBasic(code);
+    private StockBasic upsertQuote(String code, boolean realtimeOnly,
+                                   StockBasic batchQuote, StockBasic valuationQuote) {
+        StockBasic fetched = Objects.nonNull(batchQuote)
+                ? batchQuote
+                : (realtimeOnly ? stockQuoteClient.fetchRealtime(code) : stockQuoteClient.fetchBasic(code));
+        if (Objects.nonNull(valuationQuote)) {
+            if (Objects.isNull(fetched.getPeTtm())) {
+                fetched.setPeTtm(valuationQuote.getPeTtm());
+            }
+            if (Objects.isNull(fetched.getPb())) {
+                fetched.setPb(valuationQuote.getPb());
+            }
+            if (StringUtils.isBlank(fetched.getSource())) {
+                fetched.setSource(valuationQuote.getSource());
+            } else if (StringUtils.isNotBlank(valuationQuote.getSource())
+                    && !fetched.getSource().contains(valuationQuote.getSource())) {
+                fetched.setSource(fetched.getSource() + "+" + valuationQuote.getSource());
+            }
+        }
         fillPriceFromBarIfNeeded(fetched);
         fetched.setPinyinAbbr(StockPinyinUtils.buildAbbr(fetched.getName()));
         LocalDateTime now = LocalDateTime.now();
@@ -556,7 +599,9 @@ public class MyHoldingServiceImpl implements IMyHoldingService {
         if (StringUtils.isNotBlank(fetched.getMarket())) {
             existing.setMarket(fetched.getMarket());
         }
-        existing.setStFlag(fetched.getStFlag());
+        if (Objects.nonNull(fetched.getStFlag())) {
+            existing.setStFlag(fetched.getStFlag());
+        }
         // 仅写入有效现价，避免 0/空覆盖旧值
         if (Objects.nonNull(fetched.getLatestPrice()) && fetched.getLatestPrice().signum() > 0) {
             existing.setLatestPrice(fetched.getLatestPrice());
