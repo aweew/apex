@@ -71,7 +71,11 @@ public class DailyBarClient {
                 List<BarDaily> eastMoneyBars = fetchFromEastMoney(pureCode, beginDate, endDate, DEFAULT_REQUEST_TIMEOUT);
                 eastMoneyFailCount.set(0);
                 eastMoneyCooldownUntil.set(0);
-                return eastMoneyBars;
+                if (coversExpectedTradeDate(eastMoneyBars, endDate)) {
+                    return eastMoneyBars;
+                }
+                eastMoneyError = staleBarsException(pureCode, SOURCE_EASTMONEY, eastMoneyBars, endDate);
+                log.warn("东财日线未覆盖目标交易日，证券代码={}，异常={}", pureCode, eastMoneyError.getMessage());
             } catch (Exception ex) {
                 if (Thread.currentThread().isInterrupted()) {
                     throw new BusinessException("行情请求被中断", ex);
@@ -88,10 +92,10 @@ public class DailyBarClient {
         }
         try {
             List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate, DEFAULT_REQUEST_TIMEOUT);
-            if (!sinaBars.isEmpty()) {
+            if (coversExpectedTradeDate(sinaBars, endDate)) {
                 return sinaBars;
             }
-            throw new BusinessException("新浪无数据");
+            throw staleBarsException(pureCode, SOURCE_SINA, sinaBars, endDate);
         } catch (Exception ex) {
             String msg = "eastmoney: " + messageOf(eastMoneyError) + " | sina: " + ex.getMessage();
             throw new BusinessException("拉取日线失败: " + pureCode + ", " + msg, ex);
@@ -111,10 +115,10 @@ public class DailyBarClient {
         Exception sinaError = null;
         try {
             List<BarDaily> sinaBars = fetchFromSina(pureCode, beginDate, endDate, FAST_REQUEST_TIMEOUT);
-            if (!sinaBars.isEmpty()) {
+            if (coversExpectedTradeDate(sinaBars, endDate)) {
                 return sinaBars;
             }
-            throw new BusinessException("新浪日线无数据");
+            throw staleBarsException(pureCode, SOURCE_SINA, sinaBars, endDate);
         } catch (Exception ex) {
             if (Thread.currentThread().isInterrupted()) {
                 throw new BusinessException("行情请求被中断", ex);
@@ -129,7 +133,10 @@ public class DailyBarClient {
                     pureCode, beginDate, endDate, FAST_REQUEST_TIMEOUT);
             eastMoneyFailCount.set(0);
             eastMoneyCooldownUntil.set(0);
-            return eastMoneyBars;
+            if (coversExpectedTradeDate(eastMoneyBars, endDate)) {
+                return eastMoneyBars;
+            }
+            throw staleBarsException(pureCode, SOURCE_EASTMONEY, eastMoneyBars, endDate);
         } catch (Exception ex) {
             if (Thread.currentThread().isInterrupted()) {
                 throw new BusinessException("行情请求被中断", ex);
@@ -139,6 +146,46 @@ public class DailyBarClient {
         }
         throw new BusinessException("拉取快速日线失败: " + pureCode + ", sina: "
                 + messageOf(sinaError) + " | eastmoney: " + messageOf(eastMoneyError));
+    }
+
+    private boolean coversExpectedTradeDate(List<BarDaily> bars, String endDate) {
+        if (Objects.isNull(bars) || bars.isEmpty()) {
+            return false;
+        }
+        LocalDate latestBarDate = latestBarDate(bars);
+        LocalDate expectedDate = parseDate(endDate, LocalDate.now());
+        LocalDate latestCompletedDate = TradingCalendar.latestCompletedTradingDay();
+        if (expectedDate.isAfter(latestCompletedDate)) {
+            expectedDate = latestCompletedDate;
+        }
+        return Objects.nonNull(latestBarDate) && !latestBarDate.isBefore(expectedDate);
+    }
+
+    private BusinessException staleBarsException(String code, String source,
+                                                 List<BarDaily> bars, String endDate) {
+        LocalDate latestBarDate = latestBarDate(bars);
+        LocalDate expectedDate = parseDate(endDate, LocalDate.now());
+        LocalDate latestCompletedDate = TradingCalendar.latestCompletedTradingDay();
+        if (expectedDate.isAfter(latestCompletedDate)) {
+            expectedDate = latestCompletedDate;
+        }
+        String latestText = Objects.nonNull(latestBarDate) ? latestBarDate.toString() : "无数据";
+        return new BusinessException(source + "日线仅截至 " + latestText
+                + "，目标交易日为 " + expectedDate + "，证券代码=" + code);
+    }
+
+    private LocalDate latestBarDate(List<BarDaily> bars) {
+        LocalDate latestDate = null;
+        if (Objects.isNull(bars)) {
+            return null;
+        }
+        for (BarDaily bar : bars) {
+            if (Objects.nonNull(bar) && Objects.nonNull(bar.getTradeDate())
+                    && (Objects.isNull(latestDate) || bar.getTradeDate().isAfter(latestDate))) {
+                latestDate = bar.getTradeDate();
+            }
+        }
+        return latestDate;
     }
 
     private List<BarDaily> fetchFromEastMoney(String pureCode, String beginDate, String endDate,

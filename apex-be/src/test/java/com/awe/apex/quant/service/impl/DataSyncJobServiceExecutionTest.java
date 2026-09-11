@@ -403,7 +403,7 @@ class DataSyncJobServiceExecutionTest {
         verify(myHoldingService).refreshQuotesForCodes(
                 List.of("600000", "600001", "600003", "600005", "600002", "600004", "600006"), false);
         verify(barDailyService).syncStaleCodes(
-                List.of("600000", "600001", "600003", "600002", "600004"));
+                List.of("600000", "600001", "600003", "600005", "600002", "600004", "600006"));
         verify(portfolioService, org.mockito.Mockito.times(2)).snapshotAll();
         verify(myHoldingService, never()).refreshQuotes(false);
         verify(portfolioService, never()).refreshQuotesAll(false);

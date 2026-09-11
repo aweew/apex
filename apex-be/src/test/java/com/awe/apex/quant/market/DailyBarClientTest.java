@@ -9,6 +9,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -130,6 +131,47 @@ class DailyBarClientTest {
 
         assertEquals(1, bars.size());
         assertEquals(DailyBarClient.SOURCE_EASTMONEY, bars.get(0).getSource());
+        assertEquals(1, eastMoneyRequests.get());
+    }
+
+    @Test
+    void fastDailyBarsShouldFallbackWhenSinaDoesNotReachTargetTradeDate() throws Exception {
+        AtomicInteger eastMoneyRequests = new AtomicInteger();
+        AtomicInteger sinaRequests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/eastmoney", exchange -> {
+            eastMoneyRequests.incrementAndGet();
+            byte[] response = ("{\"data\":{\"klines\":["
+                    + "\"2026-09-11,18.00,18.82,17.58,18.67,668796,124800000,0,0.15,0,5.08\""
+                    + "]}}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/sina", exchange -> {
+            sinaRequests.incrementAndGet();
+            byte[] response = ("[{\"day\":\"2026-09-08\",\"open\":\"17.00\",\"high\":\"17.50\","
+                    + "\"low\":\"16.80\",\"close\":\"17.20\",\"volume\":\"1000\"}]")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        DailyBarClient dailyBarClient = new DailyBarClient();
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        ReflectionTestUtils.setField(dailyBarClient, "eastMoneyUrl", baseUrl + "/eastmoney");
+        ReflectionTestUtils.setField(dailyBarClient, "sinaUrl", baseUrl + "/sina");
+
+        List<BarDaily> bars = dailyBarClient.fetchDailyBarsFast(
+                "605577", "2026-09-01", "2026-09-11");
+
+        assertEquals(1, bars.size());
+        assertEquals(LocalDate.of(2026, 9, 11), bars.get(0).getTradeDate());
+        assertEquals(DailyBarClient.SOURCE_EASTMONEY, bars.get(0).getSource());
+        assertEquals(1, sinaRequests.get());
         assertEquals(1, eastMoneyRequests.get());
     }
 

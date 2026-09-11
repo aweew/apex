@@ -1061,6 +1061,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                     quoteCodes.addAll(portfolioCodes);
                     barCodes.addAll(watchlistCodes);
                     barCodes.addAll(holdingCodes);
+                    barCodes.addAll(portfolioCodes);
                 });
             } catch (Exception ex) {
                 String failureMessage = "用户 " + userId + " · 代码收集：" + errorMessage(ex);

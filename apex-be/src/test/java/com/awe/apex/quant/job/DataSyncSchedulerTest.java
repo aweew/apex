@@ -2,9 +2,11 @@ package com.awe.apex.quant.job;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.awe.apex.quant.context.ApexUserContext;
+import com.awe.apex.quant.domain.dto.BarSyncResp;
 import com.awe.apex.quant.domain.dto.SyncJobResp;
 import com.awe.apex.quant.market.TradingCalendar;
 import com.awe.apex.quant.service.ApexUserAuthService;
+import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
 import com.awe.apex.quant.service.IDataSyncJobService;
 import com.awe.apex.quant.service.IMyHoldingService;
@@ -237,6 +239,58 @@ class DataSyncSchedulerTest {
         scheduler.refreshQuotesAfternoon();
 
         verify(portfolioService).snapshotAll();
+    }
+
+    @Test
+    void eveningDailySyncMergesWatchlistHoldingsPortfolioAndObserveCodes() {
+        IConfigService configService = mock(IConfigService.class);
+        IBarDailyService barDailyService = mock(IBarDailyService.class);
+        IWatchlistService watchlistService = mock(IWatchlistService.class);
+        IMyHoldingService myHoldingService = mock(IMyHoldingService.class);
+        IPortfolioService portfolioService = mock(IPortfolioService.class);
+        IObservePoolService observePoolService = mock(IObservePoolService.class);
+        ApexUserAuthService userAuthService = mock(ApexUserAuthService.class);
+        ApexUserContext userContext = new ApexUserContext();
+        when(configService.getString("auto_sync_enabled", "false")).thenReturn("true");
+        when(configService.getString("auto_sync_group", "我的自选")).thenReturn("我的自选");
+        when(userAuthService.listEnabledUserIds()).thenReturn(List.of(11L, 22L));
+        when(watchlistService.listWatchlistCodes("我的自选")).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L
+                        ? List.of("600000", "000001")
+                        : List.of("000001", "300750"));
+        when(myHoldingService.listHoldingCodes()).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L
+                        ? List.of("600519")
+                        : List.of("600519", "000858"));
+        when(portfolioService.listActiveHoldingCodes()).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L
+                        ? List.of("688981")
+                        : List.of("002594", "688981"));
+        when(observePoolService.listActiveCodes()).thenAnswer(invocation ->
+                userContext.currentUserId() == 11L
+                        ? List.of("600519")
+                        : List.of("600519", "000858"));
+        when(barDailyService.syncStaleCodes(List.of(
+                "600000", "000001", "600519", "688981", "300750", "000858", "002594")))
+                .thenReturn(BarSyncResp.builder()
+                        .successCount(7)
+                        .failCount(0)
+                        .deferredCount(0)
+                        .build());
+        DataSyncScheduler scheduler = new DataSyncScheduler();
+        ReflectionTestUtils.setField(scheduler, "configService", configService);
+        ReflectionTestUtils.setField(scheduler, "barDailyService", barDailyService);
+        ReflectionTestUtils.setField(scheduler, "watchlistService", watchlistService);
+        ReflectionTestUtils.setField(scheduler, "myHoldingService", myHoldingService);
+        ReflectionTestUtils.setField(scheduler, "portfolioService", portfolioService);
+        ReflectionTestUtils.setField(scheduler, "observePoolService", observePoolService);
+        ReflectionTestUtils.setField(scheduler, "userAuthService", userAuthService);
+        ReflectionTestUtils.setField(scheduler, "userContext", userContext);
+
+        scheduler.syncStaleEvening();
+
+        verify(barDailyService).syncStaleCodes(List.of(
+                "600000", "000001", "600519", "688981", "300750", "000858", "002594"));
     }
 
     @Test

@@ -203,15 +203,31 @@ public class DataSyncScheduler {
             return;
         }
         String group = configService.getString("auto_sync_group", "我的自选");
+        Set<String> staleCodes = new LinkedHashSet<>();
         for (Long userId : queryEnabledUserIds("定时同步日线")) {
             try {
-                BarSyncResp resp = userContext.runAsUser(userId,
-                        () -> barDailyService.syncStaleWatchlist(group, 40));
-                log.info("定时同步日线完成，用户编号={}，分组={}，成功数量={}，失败数量={}",
-                        userId, group, resp.getSuccessCount(), resp.getFailCount());
+                userContext.runAsUser(userId, () -> {
+                    staleCodes.addAll(watchlistService.listWatchlistCodes(group));
+                    staleCodes.addAll(myHoldingService.listHoldingCodes());
+                    staleCodes.addAll(portfolioService.listActiveHoldingCodes());
+                    staleCodes.addAll(observePoolService.listActiveCodes());
+                    return null;
+                });
             } catch (Exception ex) {
                 log.warn("定时同步日线失败，用户编号={}，分组={}，原因={}", userId, group, ex.getMessage());
             }
+        }
+        if (staleCodes.isEmpty()) {
+            log.info("定时同步日线跳过：没有自选、持仓、组合或观察池代码，分组={}", group);
+            return;
+        }
+        try {
+            BarSyncResp resp = barDailyService.syncStaleCodes(new ArrayList<>(staleCodes));
+            log.info("定时同步日线完成，分组={}，证券数量={}，成功数量={}，失败数量={}，待补齐数量={}",
+                    group, staleCodes.size(), resp.getSuccessCount(), resp.getFailCount(),
+                    resp.getDeferredCount());
+        } catch (Exception ex) {
+            log.warn("定时同步日线失败，分组={}，证券数量={}，原因={}", group, staleCodes.size(), ex.getMessage());
         }
     }
 
