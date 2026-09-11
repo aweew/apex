@@ -226,6 +226,17 @@ function openStock(code) {
   if (normalizedCode) router.push(`/stock/${normalizedCode}`)
 }
 
+function openTheme(theme) {
+  if (!theme?.name) return
+  const query = {
+    tab: 'sector',
+    type: theme.boardType || 'CONCEPT',
+  }
+  if (theme.code) query.code = theme.code
+  else query.q = theme.name
+  router.push({ path: '/market', query })
+}
+
 function fmtIndexPct(v) {
   if (v == null || v === '') return '-'
   const n = Number(v)
@@ -899,11 +910,14 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div v-if="themes.length" class="theme-row">
-        <span
+        <button
           v-for="(t, i) in themes"
           :key="t.key"
+          type="button"
           class="theme-chip"
           :style="{ '--i': i }"
+          :aria-label="`查看板块 ${t.name}`"
+          @click="openTheme(t)"
         >
           <span class="theme-name">{{ t.name }}</span>
           <span v-if="t.pctText" class="theme-pct signed-pct" :class="t.pctDir">
@@ -914,7 +928,7 @@ onBeforeUnmount(() => {
             >{{ t.sign }}</span>
             <span>{{ t.abs }}%</span>
           </span>
-        </span>
+        </button>
       </div>
       <div v-else class="empty-guide">
         <p>{{ loading || refreshing ? '主线加载中…' : '暂无主线题材' }}</p>
@@ -4974,6 +4988,8 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  appearance: none;
+  font-family: inherit;
   font-size: 12px;
   font-weight: 500;
   padding: 6px 12px;
@@ -4981,8 +4997,20 @@ onBeforeUnmount(() => {
   color: var(--ink-soft);
   background: rgba(0, 113, 227, 0.08);
   border: 1px solid rgba(0, 113, 227, 0.12);
+  cursor: pointer;
   animation: chipIn 0.35s ease both;
   animation-delay: calc(var(--i, 0) * 0.04s);
+}
+
+.theme-chip:hover,
+.theme-chip:focus-visible {
+  border-color: rgba(0, 113, 227, 0.35);
+  background: rgba(0, 113, 227, 0.14);
+}
+
+.theme-chip:focus-visible {
+  outline: 2px solid rgba(0, 113, 227, 0.35);
+  outline-offset: 2px;
 }
 
 .theme-name {

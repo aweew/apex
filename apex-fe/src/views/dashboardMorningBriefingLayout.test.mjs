@@ -137,6 +137,17 @@ test('dashboard links to the full pre-market report without requiring a standalo
   assert.match(dashboardSource, /完整研报/)
 })
 
+test('dashboard theme chips open the matching sector board', () => {
+  assert.match(
+    dashboardSource,
+    /function openTheme\(theme\)[\s\S]*?query[\s\S]*?tab:\s*'sector'[\s\S]*?type:\s*theme\.boardType \|\| 'CONCEPT'[\s\S]*?if \(theme\.code\) query\.code = theme\.code[\s\S]*?else query\.q = theme\.name[\s\S]*?router\.push\(\{ path: '\/market', query \}\)/,
+  )
+  assert.match(
+    dashboardSource,
+    /<button[\s\S]*?class="theme-chip"[\s\S]*?:aria-label="`查看板块 \$\{t\.name\}`"[\s\S]*?@click="openTheme\(t\)"/,
+  )
+})
+
 test('dashboard renders position controls and at most three command actions in backend order', () => {
   assert.match(dashboardSource, /command\.value\?\.operationGuide\?\.items[\s\S]{0,160}?\.slice\(0,\s*3\)/)
   assert.match(
