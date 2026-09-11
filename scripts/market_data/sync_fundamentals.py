@@ -29,6 +29,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pymysql
 from pymysql.cursors import DictCursor
+from hithink_api import HithinkApiClient, hithink_report_rows
 
 try:
     from dotenv import load_dotenv
@@ -375,7 +376,13 @@ def upsert_abstracts(conn, code: str, rows: List[Dict[str, Any]]) -> int:
     return len(params)
 
 
-def upsert_report_items(conn, code: str, statement_type: str, rows: List[Dict[str, Any]]) -> int:
+def upsert_report_items(
+    conn,
+    code: str,
+    statement_type: str,
+    rows: List[Dict[str, Any]],
+    source: str = "akshare-sina",
+) -> int:
     if not rows:
         return 0
     sql = """
@@ -414,7 +421,7 @@ def upsert_report_items(conn, code: str, statement_type: str, rows: List[Dict[st
                     item_name[:128],
                     parse_number(val),
                     cell_text(val),
-                    "akshare-sina",
+                    source,
                 )
             )
     if not params:
@@ -449,6 +456,22 @@ def sync_abstract(conn, code: str) -> int:
 
 
 def sync_reports(conn, code: str) -> int:
+    if hithink_enabled():
+        client = HithinkApiClient()
+        if code.startswith(("92", "83", "87", "4")):
+            market = "BJ"
+        elif code.startswith(("5", "6", "9")):
+            market = "SH"
+        else:
+            market = "SZ"
+        total = 0
+        for stype, kind in (("profit", "income"), ("balance", "balance"), ("cashflow", "cashflow")):
+            rows = hithink_report_rows(client.financials(
+                kind, f"{code}.{market}", period="annual", limit=4
+            ))
+            total += upsert_report_items(conn, code, stype, rows, source="hithink")
+        return total
+
     import akshare as ak
 
     total = 0
@@ -457,6 +480,12 @@ def sync_reports(conn, code: str) -> int:
         total += upsert_report_items(conn, code, stype, df_to_rows(df))
         time.sleep(0.15)
     return total
+
+
+def hithink_enabled() -> bool:
+    return os.getenv("APEX_HITHINK_ENABLED", "false").lower() == "true" and bool(
+        os.getenv("HITHINK_FINANCE_API_KEY", "").strip()
+    )
 
 
 def mark_done(progress: Dict[str, Any], mode: str, code: str, ok: bool, detail: str) -> None:

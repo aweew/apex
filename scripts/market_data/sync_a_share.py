@@ -22,9 +22,11 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from zoneinfo import ZoneInfo
 
 import pymysql
 from pymysql.cursors import DictCursor
+from hithink_api import HithinkApiClient
 
 try:
     from dotenv import load_dotenv
@@ -34,6 +36,7 @@ except ImportError:  # pragma: no cover
 ROOT = Path(__file__).resolve().parent
 PROGRESS_PATH = ROOT / ".progress" / "bars_progress.json"
 SOURCE = "akshare"
+HITHINK_SOURCE = "hithink"
 BJ_DAILY_REQUEST_INTERVAL_SECONDS = 1.0
 BJ_DAILY_RETRY_COUNT = 3
 PROXY_ENV_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
@@ -131,6 +134,23 @@ def upsert_stock_basic(conn, rows: List[Tuple[str, str, str, int]]) -> int:
 
 
 def sync_stock_list(conn, limit: Optional[int] = None) -> int:
+    if hithink_enabled():
+        client = HithinkApiClient()
+        items = client.list_a_share(max_items=limit)
+        rows: List[Tuple[str, str, str, int]] = []
+        for item in items:
+            code = normalize_code(item.get("ticker") or item.get("thscode"))
+            if not code:
+                continue
+            name = str(item.get("name") or "").strip()
+            market = str(item.get("exchange") or resolve_market(code)).upper()
+            rows.append((code, name, market, is_st(name)))
+            if limit and len(rows) >= limit:
+                break
+        count = upsert_stock_basic(conn, rows)
+        print(f"同花顺股票列表已写入/更新 {count} 只")
+        return count
+
     import akshare as ak
 
     print("拉取全 A 代码列表…")
@@ -262,6 +282,13 @@ def fetch_eastmoney_hist_bars(ak, code: str, start: str, end: str):
 
 def fetch_hist_bars(code: str, start: str, end: str):
     """北交所仅走东财；沪深股票东财失败后再试新浪。"""
+    if hithink_enabled():
+        market = resolve_market(code)
+        rows = HithinkApiClient().historical(
+            f"{code}.{market}", start, end, adjust="forward"
+        )
+        return rows_to_hithink_frame(rows), HITHINK_SOURCE
+
     import akshare as ak
 
     market = resolve_market(code)
@@ -322,6 +349,45 @@ def fetch_hist_bars(code: str, start: str, end: str):
         errors.append(f"sina:{ex}")
 
     raise RuntimeError(" | ".join(errors) if errors else "empty history")
+
+
+def hithink_enabled() -> bool:
+    return os.getenv("APEX_HITHINK_ENABLED", "false").lower() == "true" and bool(
+        os.getenv("HITHINK_FINANCE_API_KEY", "").strip()
+    )
+
+
+def rows_to_hithink_frame(rows: List[Dict[str, Any]]):
+    """将 REST 日线记录转换为与现有解析器兼容的 DataFrame。"""
+    import pandas as pd
+
+    converted = []
+    for row in rows:
+        trade_date = row.get("date") or row.get("trade_date")
+        if not trade_date and row.get("date_ms"):
+            trade_date = datetime.fromtimestamp(
+                int(row["date_ms"]) / 1000,
+                tz=ZoneInfo("Asia/Shanghai"),
+            ).strftime("%Y-%m-%d")
+        if not trade_date:
+            continue
+        converted.append(
+            {
+                "date": str(trade_date)[:10],
+                "open": row.get("open_price"),
+                "high": row.get("high_price"),
+                "low": row.get("low_price"),
+                "close": row.get("close_price"),
+                "volume": row.get("volume"),
+                "amount": row.get("turnover"),
+            }
+        )
+    frame = pd.DataFrame(converted)
+    if frame.empty:
+        return frame
+    frame = frame.sort_values("date").reset_index(drop=True)
+    frame["pct"] = frame["close"].pct_change() * 100
+    return frame
 
 
 def to_bar_rows(code: str, df, source: str = SOURCE) -> List[Tuple]:
@@ -419,11 +485,16 @@ def sync_bars(
     total = len(codes)
     ok = fail = skip = 0
     failure_details: List[str] = []
+    source_mode = "hithink" if hithink_enabled() else "legacy"
     print(f"开始同步日线：{total} 只，区间 {start} ~ {end}，等待秒数={sleep_sec}")
 
     for idx, code in enumerate(codes, 1):
         state = progress.get(code) or {}
-        if resume and state.get("status") == "done" and state.get("end") == end:
+        if (resume
+                and state.get("status") == "done"
+                and state.get("start") == start
+                and state.get("end") == end
+                and state.get("source_mode") == source_mode):
             skip += 1
             if idx % 200 == 0:
                 print(f"[{idx}/{total}] 跳过已完成记录…")
@@ -440,7 +511,9 @@ def sync_bars(
             if local_max >= end_dt:
                 progress[code] = {
                     "status": "done",
+                    "start": start,
                     "end": end,
+                    "source_mode": source_mode,
                     "max_date": str(local_max),
                     "updated_at": datetime.now().isoformat(timespec="seconds"),
                 }
@@ -452,7 +525,9 @@ def sync_bars(
             if fetch_start.replace("-", "") >= end:
                 progress[code] = {
                     "status": "done",
+                    "start": start,
                     "end": end,
+                    "source_mode": source_mode,
                     "max_date": str(local_max),
                     "updated_at": datetime.now().isoformat(timespec="seconds"),
                 }
@@ -463,12 +538,16 @@ def sync_bars(
             df, src = fetch_hist_bars(code, fetch_start, end)
             rows = to_bar_rows(code, df, source=src)
             n = upsert_bars(conn, code, rows)
-            max_d = str(rows[-1][1]) if rows else (str(local_max) if local_max else None)
+            max_d = str(max(row[1] for row in rows)) if rows else (
+                str(local_max) if local_max else None
+            )
             progress[code] = {
                 "status": "done",
+                "start": start,
                 "end": end,
                 "bars": n,
                 "source": src,
+                "source_mode": source_mode,
                 "max_date": max_d,
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
             }
@@ -480,7 +559,9 @@ def sync_bars(
             failure_details.append(f"{code}（{error_message[:240] or type(ex).__name__}）")
             progress[code] = {
                 "status": "fail",
+                "start": start,
                 "end": end,
+                "source_mode": source_mode,
                 "error": str(ex)[:300],
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
             }
@@ -541,7 +622,7 @@ def main() -> int:
                 end=args.end,
                 sleep_sec=args.sleep,
                 limit=bar_limit,
-                resume=not args.no_resume,
+                resume=not args.no_resume and not args.full_refresh,
                 only_missing=not args.full_refresh,
                 codes=code_list,
             )

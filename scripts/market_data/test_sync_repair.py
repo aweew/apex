@@ -131,6 +131,29 @@ class MissingBarSelectionTest(unittest.TestCase):
 
         self.assertEqual(1, exit_code)
 
+    def test_full_refresh_ignores_resume_progress(self):
+        args = types.SimpleNamespace(
+            codes="000001",
+            mode="bars",
+            limit=None,
+            start="20100101",
+            end="20260817",
+            sleep=0,
+            no_resume=False,
+            full_refresh=True,
+        )
+        connection = FakeConnection([])
+        connection.close = lambda: None
+
+        with patch.object(sync_a_share, "load_env"), \
+                patch.object(sync_a_share, "parse_args", return_value=args), \
+                patch.object(sync_a_share, "db_conn", return_value=connection), \
+                patch.object(sync_a_share, "sync_bars", return_value=0) as sync_bars:
+            exit_code = sync_a_share.main()
+
+        self.assertEqual(0, exit_code)
+        self.assertFalse(sync_bars.call_args.kwargs["resume"])
+
     def test_daily_bar_sync_reports_failed_stock_details_at_end(self):
         connection = FakeConnection([])
 
