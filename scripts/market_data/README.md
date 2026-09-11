@@ -1,4 +1,4 @@
-# 全 A 行情导入（AKShare → MySQL）
+# 全 A 行情导入（同花顺/AKShare → MySQL）
 
 把全市场股票列表与日线历史写入 Apex 的 `stock_basic` / `bar_daily`，支持断点续传。
 
@@ -11,6 +11,20 @@ copy .env.example .env
 ```
 
 按需修改 `.env` 中的 MySQL 账号（默认 `root/apex123`，库 `apex`）。
+
+配置同花顺 API Key 后可切换官方 REST 数据源：
+
+```bash
+APEX_HITHINK_ENABLED=true
+HITHINK_FINANCE_API_KEY=你的Key
+APEX_HITHINK_BASE_URL=https://fuyao.aicubes.cn
+```
+
+开启后 `sync_a_share.py` 的股票列表和日线优先使用同花顺；关闭
+`APEX_HITHINK_ENABLED` 即恢复 AKShare。
+
+`sync_fundamentals.py` 开启后会用同花顺同步利润表、资产负债表和现金流量表
+到 `stock_fin_report_item`；财务指标和摘要仍保留 AKShare 口径。
 
 ## 2. 使用
 

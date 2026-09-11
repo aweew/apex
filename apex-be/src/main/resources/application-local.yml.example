@@ -10,6 +10,12 @@ apex:
   scheduler:
     enabled: false
   mx-output-dir: ${user.dir}/../../.mx_output
+  hithink:
+    enabled: ${APEX_HITHINK_ENABLED:false}
+    base-url: ${APEX_HITHINK_BASE_URL:https://fuyao.aicubes.cn}
+    api-key: ${HITHINK_FINANCE_API_KEY:}
+    timeout-ms: ${APEX_HITHINK_TIMEOUT_MS:10000}
+    batch-size: ${APEX_HITHINK_BATCH_SIZE:50}
   # Kimi / Moonshot（勿提交真实 Key）
   ai:
     enabled: true

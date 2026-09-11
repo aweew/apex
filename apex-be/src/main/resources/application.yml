@@ -94,6 +94,12 @@ apex:
   mx-output-dir: ${user.dir}/../../.mx_output
   cors:
     allowed-origin-patterns: ${APEX_CORS_ALLOWED_ORIGIN_PATTERNS:http://127.0.0.1:5173,http://localhost:5173}
+  hithink:
+    enabled: ${APEX_HITHINK_ENABLED:false}
+    base-url: ${APEX_HITHINK_BASE_URL:https://fuyao.aicubes.cn}
+    api-key: ${HITHINK_FINANCE_API_KEY:}
+    timeout-ms: ${APEX_HITHINK_TIMEOUT_MS:10000}
+    batch-size: ${APEX_HITHINK_BATCH_SIZE:50}
   hot:
     python-cmd: python
     # IDEA 工作目录通常为 apex-be，相对仓库根为 ../scripts
