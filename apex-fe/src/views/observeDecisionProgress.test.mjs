@@ -34,3 +34,13 @@ test('mobile observe actions keep frequent controls compact and touch-friendly',
   )
   assert.match(observeSource, /\.page \.header > \.actions \.btn\s*\{[\s\S]*?min-height:\s*42px;/)
 })
+
+test('observe summary cards keep titles and values aligned when one subtitle is empty', () => {
+  assert.match(
+    observeSource,
+    /class="sum buy"[\s\S]*?<small :class="\{ 'is-placeholder': !stats\.buyReady \}"[\s\S]*?stats\.buyReady \? `\$\{stats\.buyReady\} 接近\/可执行` : '\\u00a0'/s,
+  )
+  assert.match(observeSource, /\.sum\s*\{[\s\S]*?min-height:\s*72px;/s)
+  assert.match(observeSource, /\.sum small\s*\{[\s\S]*?min-height:\s*16px;/s)
+  assert.match(observeSource, /\.sum small\.is-placeholder\s*\{[\s\S]*?visibility:\s*hidden;/s)
+})

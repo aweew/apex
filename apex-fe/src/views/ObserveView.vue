@@ -658,7 +658,9 @@ onBeforeUnmount(() => {
       <button type="button" class="sum buy" :class="{ on: sideTab === 'BUY' }" @click="sideTab = sideTab === 'BUY' ? 'ALL' : 'BUY'">
         <span>买入观察</span>
         <b>{{ stats.buy }}</b>
-        <small v-if="stats.buyReady">{{ stats.buyReady }} 接近/可执行</small>
+        <small :class="{ 'is-placeholder': !stats.buyReady }">
+          {{ stats.buyReady ? `${stats.buyReady} 接近/可执行` : '\u00a0' }}
+        </small>
       </button>
       <button type="button" class="sum mood" :class="{ on: sideTab === 'MOOD' }" @click="sideTab = sideTab === 'MOOD' ? 'ALL' : 'MOOD'">
         <span>情绪风向</span>
@@ -1105,6 +1107,7 @@ onBeforeUnmount(() => {
   row-gap: 2px;
   align-items: center;
   min-width: 168px;
+  min-height: 72px;
   padding: 12px 16px;
   border-radius: 12px;
   border: 1px solid var(--line, #e8e8ed);
@@ -1133,10 +1136,15 @@ onBeforeUnmount(() => {
 .sum small {
   grid-column: 1;
   grid-row: 2;
+  min-height: 16px;
   margin: 0;
   font-size: 11px;
   color: var(--muted, #8e8e93);
   white-space: nowrap;
+}
+
+.sum small.is-placeholder {
+  visibility: hidden;
 }
 
 .sum.buy b { color: var(--ink, #1d1d1f); }
