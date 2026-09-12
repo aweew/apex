@@ -70,4 +70,11 @@ public interface SignalCenterService {
      * @return 信号定义
      */
     List<SignalDefinitionResp> definitions();
+
+    /**
+     * 查询短线市场上下文、候选和策略剧本。
+     *
+     * @return 短线信号页聚合结果
+     */
+    ShortTermSignalResp shortTerm();
 }

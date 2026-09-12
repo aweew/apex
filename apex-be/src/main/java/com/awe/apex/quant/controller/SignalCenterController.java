@@ -9,6 +9,7 @@ import com.awe.apex.quant.signal.query.SignalOverviewResp;
 import com.awe.apex.quant.signal.query.SignalRankingItemResp;
 import com.awe.apex.quant.signal.query.SignalStockSnapshotResp;
 import com.awe.apex.quant.signal.query.SignalTimelineItemResp;
+import com.awe.apex.quant.signal.query.ShortTermSignalResp;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
@@ -76,6 +77,16 @@ public class SignalCenterController {
     @GetMapping("/definitions")
     public Result<List<SignalDefinitionResp>> definitions() {
         return Result.success(signalCenterService.definitions());
+    }
+
+    /**
+     * 查询短线市场上下文、放量回踩候选和策略剧本。
+     *
+     * @return 短线信号页聚合结果
+     */
+    @GetMapping("/short-term")
+    public Result<ShortTermSignalResp> shortTerm() {
+        return Result.success(signalCenterService.shortTerm());
     }
 
     /**

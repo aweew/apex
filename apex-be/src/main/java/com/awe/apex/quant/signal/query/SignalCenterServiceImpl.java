@@ -3,21 +3,31 @@ package com.awe.apex.quant.signal.query;
 import com.awe.apex.common.exception.BusinessException;
 import com.awe.apex.common.util.JsonUtils;
 import com.awe.apex.common.util.StringUtils;
+import com.awe.apex.quant.domain.dto.ExternalMarketItemResp;
+import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MarketIndexItem;
 import com.awe.apex.quant.domain.entity.BarDaily;
+import com.awe.apex.quant.market.ExternalMarketQuoteClient;
 import com.awe.apex.quant.signal.event.MarketBehaviorDetector;
 import com.awe.apex.quant.signal.event.SignalCalculationRunWriteBO;
 import com.awe.apex.quant.signal.event.SignalDefinitionRuleBO;
+import com.awe.apex.quant.signal.event.SignalEvidence;
 import com.awe.apex.quant.signal.event.SignalDetectionResult;
 import com.awe.apex.quant.signal.event.SignalEventWriteBO;
+import com.awe.apex.quant.service.IMarketBriefingService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -33,6 +43,12 @@ public class SignalCenterServiceImpl implements SignalCenterService {
 
     @Resource
     private MarketBehaviorDetector marketBehaviorDetector;
+
+    @Resource
+    private IMarketBriefingService marketBriefingService;
+
+    @Resource
+    private ExternalMarketQuoteClient externalMarketQuoteClient;
 
     /**
      * 执行市场行为计算并写入事件、快照和生命周期。
@@ -211,6 +227,241 @@ public class SignalCenterServiceImpl implements SignalCenterService {
     @Override
     public List<SignalDefinitionResp> definitions() {
         return signalCenterMapper.selectDefinitions();
+    }
+
+    /**
+     * 查询短线市场上下文、放量回踩候选和策略剧本。
+     *
+     * @return 短线信号页聚合结果
+     */
+    @Override
+    public ShortTermSignalResp shortTerm() {
+        MarketBriefingResp market = marketBriefingService.briefing();
+        LocalDate dataAsOf = Objects.nonNull(market) && Objects.nonNull(market.getAsOf())
+                ? market.getAsOf() : signalCenterMapper.selectLatestTradeDate();
+        List<String> missingData = new ArrayList<>();
+        if (Objects.isNull(market)) {
+            missingData.add("A股市场简报");
+        }
+
+        ShortTermEmotionResp ashareEmotion = buildAshareEmotion(market, dataAsOf, missingData);
+        List<ExternalMarketItemResp> macroItems = externalMarketQuoteClient.fetch();
+        if (Objects.isNull(macroItems)) {
+            macroItems = List.of();
+        }
+        if (macroItems.stream().anyMatch(item -> Objects.isNull(item) || !item.isAvailable())) {
+            missingData.add("部分外围宏观指标");
+        }
+        ShortTermVixResp externalEmotion = buildVixEmotion(externalMarketQuoteClient.fetchVixProxy(), missingData);
+
+        Map<String, SignalUniverseItemResp> universe = new LinkedHashMap<>();
+        for (SignalUniverseItemResp item : signalCenterMapper.selectUniverseItems()) {
+            if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getSymbol())) {
+                universe.put(item.getSymbol(), item);
+            }
+        }
+        List<BarDaily> allBars = Objects.nonNull(dataAsOf)
+                ? signalCenterMapper.selectShortTermBars(dataAsOf, 80) : List.of();
+        Map<String, List<BarDaily>> barsBySymbol = new LinkedHashMap<>();
+        for (BarDaily bar : allBars) {
+            if (Objects.nonNull(bar) && StringUtils.isNotBlank(bar.getCode())) {
+                barsBySymbol.computeIfAbsent(bar.getCode(), key -> new ArrayList<>()).add(bar);
+            }
+        }
+        List<ShortTermCandidateResp> candidates = new ArrayList<>();
+        for (Map.Entry<String, List<BarDaily>> entry : barsBySymbol.entrySet()) {
+            SignalDetectionResult result = marketBehaviorDetector.detectVolumePullbackCandidate(
+                    entry.getKey(), entry.getValue(), dataAsOf);
+            if (Objects.isNull(result)) {
+                continue;
+            }
+            SignalUniverseItemResp stock = universe.get(entry.getKey());
+            candidates.add(toCandidate(result, stock));
+        }
+        candidates.sort(Comparator.comparing(item -> "CONFIRMED".equals(item.getState()) ? 0 : 1));
+        if (candidates.size() > 50) {
+            candidates = new ArrayList<>(candidates.subList(0, 50));
+        }
+
+        ShortTermSignalResp response = ShortTermSignalResp.builder()
+                .dataAsOf(dataAsOf)
+                .ashareEmotion(ashareEmotion)
+                .indexes(Objects.nonNull(market) && Objects.nonNull(market.getIndexes())
+                        ? market.getIndexes() : List.of())
+                .shanghaiKeyResistance(Objects.nonNull(market) ? market.getShanghaiKeyResistance() : null)
+                .shanghaiCurrentPrice(findIndexClose(market, "上证"))
+                .indexVolume(Objects.nonNull(market) ? market.getIndexVolume() : null)
+                .indexVolumeText(Objects.nonNull(market) ? market.getIndexVolumeText() : null)
+                .volumeTrend(Objects.nonNull(market) ? market.getVolumeTrend() : null)
+                .volumeChangePct(Objects.nonNull(market) ? market.getVolumeVsMa5Pct() : null)
+                .breadthUp(Objects.nonNull(market) ? market.getBreadthUp() : null)
+                .breadthDown(Objects.nonNull(market) ? market.getBreadthDown() : null)
+                .breadthFlat(Objects.nonNull(market) ? market.getBreadthFlat() : null)
+                .macroItems(macroItems)
+                .externalEmotion(externalEmotion)
+                .candidates(candidates)
+                .build();
+        response.setResistanceDistancePct(resolveResistanceDistance(
+                response.getShanghaiCurrentPrice(), response.getShanghaiKeyResistance()));
+        response.setResistanceAdvice(resolveResistanceAdvice(response));
+        response.setStrategy(buildStrategy(response));
+        response.setMissingData(missingData);
+        response.setDataStatus(missingData.isEmpty() ? "COMPLETE" : "PARTIAL");
+        return response;
+    }
+
+    private ShortTermEmotionResp buildAshareEmotion(MarketBriefingResp market, LocalDate dataAsOf,
+                                                    List<String> missingData) {
+        if (Objects.isNull(market) || Objects.isNull(market.getStanceScore())) {
+            missingData.add("A股情绪温度");
+            return ShortTermEmotionResp.builder()
+                    .dataAsOf(dataAsOf)
+                    .label("未知")
+                    .basis("A股情绪温度暂未形成")
+                    .build();
+        }
+        int score = Math.max(0, Math.min(100, market.getStanceScore()));
+        return ShortTermEmotionResp.builder()
+                .score(score)
+                .label(emotionLabel(score))
+                .dataAsOf(dataAsOf)
+                .basis(StringUtils.isNotBlank(market.getStanceReason())
+                        ? market.getStanceReason() : "由指数、量能、广度、涨跌停和赚钱效应综合计算")
+                .build();
+    }
+
+    private ShortTermVixResp buildVixEmotion(ExternalMarketItemResp item, List<String> missingData) {
+        if (Objects.isNull(item) || !item.isAvailable() || Objects.isNull(item.getLatestPrice())) {
+            missingData.add("VIX外部情绪代理");
+            return ShortTermVixResp.builder()
+                    .available(false)
+                    .label("未知")
+                    .note("VIX未获取，暂不据此判断外部风险偏好")
+                    .build();
+        }
+        BigDecimal value = item.getLatestPrice();
+        int score = value.subtract(new BigDecimal("10"))
+                .multiply(new BigDecimal("100"))
+                .divide(new BigDecimal("30"), 0, RoundingMode.HALF_UP)
+                .negate()
+                .add(new BigDecimal("100"))
+                .max(BigDecimal.ZERO)
+                .min(new BigDecimal("100"))
+                .intValue();
+        return ShortTermVixResp.builder()
+                .available(true)
+                .value(value)
+                .score(score)
+                .label(emotionLabel(score))
+                .quoteTime(item.getQuoteTime())
+                .source(item.getSource())
+                .note("VIX反向代理，不是官方恐贪指数")
+                .build();
+    }
+
+    private ShortTermCandidateResp toCandidate(SignalDetectionResult result, SignalUniverseItemResp stock) {
+        SignalEvidence evidence = result.getEvidence();
+        return ShortTermCandidateResp.builder()
+                .symbol(Objects.nonNull(stock) ? stock.getSymbol() : null)
+                .name(Objects.nonNull(stock) ? stock.getName() : null)
+                .market(Objects.nonNull(stock) ? stock.getMarket() : null)
+                .signalCode(result.getSignalCode())
+                .state(result.getLifecycleState())
+                .dataAsOf(result.getAsOfTime().toLocalDate())
+                .breakoutPrice(evidence.getBreakoutPrice())
+                .pullbackPrice(evidence.getPullbackPrice())
+                .currentPrice(evidence.getClosePrice())
+                .distancePct(evidence.getDistancePct())
+                .atr14(evidence.getAtr14())
+                .volumeRatio(evidence.getVolumeRatio())
+                .closePosition(evidence.getClosePosition())
+                .triggerCondition(evidence.getTriggerCondition())
+                .invalidCondition(evidence.getInvalidCondition())
+                .build();
+    }
+
+    private String emotionLabel(int score) {
+        if (score <= 35) {
+            return "恐慌";
+        }
+        if (score >= 65) {
+            return "贪婪";
+        }
+        return "中性";
+    }
+
+    private BigDecimal findIndexClose(MarketBriefingResp market, String namePart) {
+        if (Objects.isNull(market) || Objects.isNull(market.getIndexes())) {
+            return null;
+        }
+        for (MarketIndexItem item : market.getIndexes()) {
+            if (Objects.nonNull(item) && StringUtils.isNotBlank(item.getName())
+                    && item.getName().contains(namePart)) {
+                return item.getClose();
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal resolveResistanceDistance(BigDecimal currentPrice, BigDecimal resistance) {
+        if (Objects.isNull(currentPrice) || Objects.isNull(resistance)
+                || currentPrice.signum() <= 0 || resistance.signum() <= 0) {
+            return null;
+        }
+        return resistance.subtract(currentPrice)
+                .multiply(new BigDecimal("100"))
+                .divide(currentPrice, 2, RoundingMode.HALF_UP);
+    }
+
+    private String resolveResistanceAdvice(ShortTermSignalResp response) {
+        if (Objects.isNull(response.getShanghaiKeyResistance())) {
+            return "上证关键阻力位暂未获取，先以指数和情绪同步确认。";
+        }
+        if (Objects.nonNull(response.getResistanceDistancePct())
+                && response.getResistanceDistancePct().signum() <= 0) {
+            return "上证已触及或越过关键阻力位，关注收盘能否站稳。";
+        }
+        return "突破并站稳关键阻力位后，再提高短线进攻性。";
+    }
+
+    private ShortTermStrategyResp buildStrategy(ShortTermSignalResp response) {
+        String ashareState = Objects.nonNull(response.getAshareEmotion())
+                ? response.getAshareEmotion().getLabel() : "中性";
+        boolean externalPanic = Objects.nonNull(response.getExternalEmotion())
+                && "恐慌".equals(response.getExternalEmotion().getLabel());
+        boolean belowResistance = Objects.nonNull(response.getResistanceDistancePct())
+                && response.getResistanceDistancePct().signum() > 0;
+        if ("恐慌".equals(ashareState) || externalPanic) {
+            return ShortTermStrategyResp.builder()
+                    .state("防守")
+                    .title("先控制回撤，等待情绪修复")
+                    .suitableCandidate("只保留已确认且风险分低的候选，观察项暂不执行")
+                    .action("等待指数重新站稳关键位、广度改善或外部风险偏好修复")
+                    .triggerCondition("A股情绪回到中性以上，指数和候选同步止跌")
+                    .invalidCondition("放量跌破突破位，或市场广度继续恶化")
+                    .positionAdvice("不开弱势反抽新仓，新增仓位仅允许极小试错")
+                    .build();
+        }
+        if ("贪婪".equals(ashareState) && !belowResistance) {
+            return ShortTermStrategyResp.builder()
+                    .state("进攻")
+                    .title("放量确认后做强，不追冲高")
+                    .suitableCandidate("优先已确认的放量回踩不破，观察主线联动")
+                    .action("等待回踩价位附近承接，确认指数和板块没有同步转弱")
+                    .triggerCondition("候选收盘站上突破位，量比≥1.20，且板块保持强势")
+                    .invalidCondition("跌回突破位下方，或指数放量下跌、板块出现明显退潮")
+                    .positionAdvice("总仓仍受市场立场约束，单票小于组合上限，不因贪婪情绪追高")
+                    .build();
+        }
+        return ShortTermStrategyResp.builder()
+                .state("均衡")
+                .title("只做结构确认，不抢反弹")
+                .suitableCandidate("优先已确认候选，观察项等待收盘和板块确认")
+                .action("核对突破位、回踩承接、指数阻力和主线强度后再安排模拟计划")
+                .triggerCondition("价格重新站稳突破位，量价和指数方向一致")
+                .invalidCondition("收盘跌破突破位-0.3ATR14，或市场环境转为防守")
+                .positionAdvice("总仓控制在中等区间，非主线和冲高回落不追")
+                .build();
     }
 
     private List<String> resolveSymbols(SignalCalculationReq request) {

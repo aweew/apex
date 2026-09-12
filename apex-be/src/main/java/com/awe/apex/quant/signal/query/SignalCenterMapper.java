@@ -45,6 +45,65 @@ public interface SignalCenterMapper {
     List<String> selectUniverseSymbols();
 
     /**
+     * 查询短线候选股票池。
+     *
+     * @return 股票代码和名称
+     */
+    @Select("""
+            SELECT t1.code AS symbol,
+                   t1.name,
+                   t1.market
+            FROM stock_basic t1
+            WHERE t1.deleted = 0
+              AND (t1.st_flag IS NULL OR t1.st_flag = 0)
+            ORDER BY t1.code ASC
+            """)
+    List<SignalUniverseItemResp> selectUniverseItems();
+
+    /**
+     * 查询短线候选所需的最近完整日线。
+     *
+     * @param asOfDate 截止日期
+     * @param limit 每只股票最多根数
+     * @return 按代码和日期升序排列的日线
+     */
+    @Select("""
+            SELECT t1.code,
+                   t1.trade_date,
+                   t1.open_price,
+                   t1.high_price,
+                   t1.low_price,
+                   t1.close_price,
+                   t1.volume,
+                   t1.amount,
+                   t1.pct_chg,
+                   t1.turnover_rate
+            FROM (
+                SELECT t2.code,
+                       t2.trade_date,
+                       t2.open_price,
+                       t2.high_price,
+                       t2.low_price,
+                       t2.close_price,
+                       t2.volume,
+                       t2.amount,
+                       t2.pct_chg,
+                       t2.turnover_rate,
+                       ROW_NUMBER() OVER (PARTITION BY t2.code ORDER BY t2.trade_date DESC) AS row_no
+                FROM bar_daily t2
+                INNER JOIN stock_basic t3 ON t3.code = t2.code
+                                           AND t3.deleted = 0
+                                           AND (t3.st_flag IS NULL OR t3.st_flag = 0)
+                WHERE t2.trade_date <= #{asOfDate}
+                  AND t2.deleted = 0
+            ) t1
+            WHERE t1.row_no <= #{limit}
+            ORDER BY t1.code ASC, t1.trade_date ASC
+            """)
+    List<BarDaily> selectShortTermBars(@Param("asOfDate") LocalDate asOfDate,
+                                       @Param("limit") int limit);
+
+    /**
      * 查询检测使用的完整量价日线。
      *
      * @param symbol 证券代码
