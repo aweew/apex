@@ -12,6 +12,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -59,6 +60,95 @@ class MarketBehaviorDetectorTest {
         assertTrue(results.stream().anyMatch(item -> "R007".equals(item.getSignalCode())));
         assertFalse(results.stream().anyMatch(item -> "BULLISH".equals(item.getDirection())
                 || "BEARISH".equals(item.getDirection())));
+    }
+
+    /**
+     * 验证放量回踩不破满足全部条件时发布S007。
+     */
+    @Test
+    void detectsConfirmedVolumePullbackWithoutChangingLegacyS004() {
+        List<BarDaily> bars = volumePullbackBars(3000, 10.40, 10.15);
+
+        SignalDetectionResult candidate = detector.detectVolumePullbackCandidate(
+                "000001", bars, bars.get(64).getTradeDate());
+        List<SignalDetectionResult> results = detector.detect("000001", bars, bars.get(64).getTradeDate());
+
+        assertEquals("S007", candidate.getSignalCode());
+        assertEquals("CONFIRMED", candidate.getLifecycleState());
+        assertTrue(candidate.getEvidence().getVolumeRatio().doubleValue() >= 1.20);
+        assertTrue(candidate.getEvidence().getClosePosition().doubleValue() >= 0.60);
+        assertTrue(results.stream().anyMatch(item -> "S007".equals(item.getSignalCode())));
+
+        List<BarDaily> legacyBars = legacyPullbackBars();
+        List<SignalDetectionResult> legacyResults = detector.detect(
+                "000001", legacyBars, legacyBars.get(64).getTradeDate());
+        assertTrue(legacyResults.stream().anyMatch(item -> "S004".equals(item.getSignalCode())));
+        assertFalse(legacyResults.stream().anyMatch(item -> "S007".equals(item.getSignalCode())));
+    }
+
+    /**
+     * 验证放量不足时只返回观察态，普通事件检测不会发布S007。
+     */
+    @Test
+    void returnsObservingCandidateWhenPullbackVolumeIsInsufficient() {
+        List<BarDaily> bars = volumePullbackBars(1050, 10.18, 10.15);
+
+        SignalDetectionResult candidate = detector.detectVolumePullbackCandidate(
+                "000001", bars, bars.get(64).getTradeDate());
+        List<SignalDetectionResult> results = detector.detect("000001", bars, bars.get(64).getTradeDate());
+
+        assertEquals("OBSERVING", candidate.getLifecycleState());
+        assertTrue(candidate.getEvidence().getVolumeRatio().doubleValue() < 1.20);
+        assertFalse(results.stream().anyMatch(item -> "S007".equals(item.getSignalCode())));
+    }
+
+    /**
+     * 验证收盘跌破突破位的失效阈值时不返回S007候选。
+     */
+    @Test
+    void suppressesVolumePullbackWhenLatestCloseBreaksSupport() {
+        List<BarDaily> bars = volumePullbackBars(3000, 10.05, 9.95);
+
+        SignalDetectionResult candidate = detector.detectVolumePullbackCandidate(
+                "000001", bars, bars.get(64).getTradeDate());
+        List<SignalDetectionResult> results = detector.detect("000001", bars, bars.get(64).getTradeDate());
+
+        assertNull(candidate);
+        assertFalse(results.stream().anyMatch(item -> "S007".equals(item.getSignalCode())));
+    }
+
+    /**
+     * 验证截止日期之后的Bar不会改变S007结果。
+     */
+    @Test
+    void isolatesVolumePullbackFromFutureBars() {
+        List<BarDaily> bars = volumePullbackBars(3000, 10.40, 10.15);
+        LocalDate asOfDate = bars.get(64).getTradeDate();
+
+        SignalDetectionResult beforeFuture = detector.detectVolumePullbackCandidate(
+                "000001", bars, asOfDate);
+        bars.add(bar(asOfDate.plusDays(1), 10.40, 10.50, 9.60, 9.70, 8000, 80_000_000));
+        SignalDetectionResult afterFuture = detector.detectVolumePullbackCandidate(
+                "000001", bars, asOfDate);
+
+        assertEquals(beforeFuture, afterFuture);
+    }
+
+    private List<BarDaily> volumePullbackBars(double latestVolume, double latestClose, double latestLow) {
+        List<BarDaily> bars = normalBars(65);
+        LocalDate breakoutDate = bars.get(61).getTradeDate();
+        bars.set(61, bar(breakoutDate, 10.10, 10.70, 10.05, 10.55, 2600, 28_000_000));
+        LocalDate latestDate = bars.get(64).getTradeDate();
+        bars.set(64, bar(latestDate, 10.25, 10.48, latestLow, latestClose,
+                latestVolume, 28_000_000));
+        return bars;
+    }
+
+    private List<BarDaily> legacyPullbackBars() {
+        List<BarDaily> bars = normalBars(65);
+        LocalDate latestDate = bars.get(64).getTradeDate();
+        bars.set(64, bar(latestDate, 10.25, 10.48, 10.15, 10.40, 800, 28_000_000));
+        return bars;
     }
 
     private List<BarDaily> normalBars(int count) {

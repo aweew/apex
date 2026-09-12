@@ -103,6 +103,10 @@ public class MarketBehaviorDetector {
             add(results, "S004", "突破后回踩不破", "BULLISH", score(72D + closePosition * 12D), 76D, 0D,
                     latestBar.getTradeDate(), evidence);
         }
+        SignalDetectionResult volumePullback = detectVolumePullbackCandidate(symbol, visibleBars, asOfDate);
+        if (Objects.nonNull(volumePullback) && "CONFIRMED".equals(volumePullback.getLifecycleState())) {
+            results.add(volumePullback);
+        }
         if (historyBars.size() >= 5 && close > maximumHigh(historyBars, 5) + 0.1D * atr14
                 && volumeRatio >= 1.1D) {
             add(results, "S005", "二次突破", "BULLISH", score(65D + volumeRatio * 10D), 70D, 0D,
@@ -163,6 +167,113 @@ public class MarketBehaviorDetector {
                     latestBar.getTradeDate(), evidence);
         }
         return results;
+    }
+
+    /**
+     * 检测放量回踩不破候选，观察态仅供短线候选接口读取。
+     *
+     * @param symbol 证券代码
+     * @param sourceBars 日线数据
+     * @param asOfDate 可见截止日期
+     * @return 已确认、观察中或空结果
+     */
+    public SignalDetectionResult detectVolumePullbackCandidate(String symbol, List<BarDaily> sourceBars,
+                                                               LocalDate asOfDate) {
+        List<BarDaily> visibleBars = new ArrayList<>();
+        if (Objects.nonNull(sourceBars)) {
+            for (BarDaily bar : sourceBars) {
+                if (Objects.nonNull(bar) && Objects.nonNull(bar.getTradeDate())
+                        && !bar.getTradeDate().isAfter(asOfDate)) {
+                    visibleBars.add(bar);
+                }
+            }
+        }
+        visibleBars.sort(Comparator.comparing(BarDaily::getTradeDate));
+        if (visibleBars.size() < 25) {
+            return null;
+        }
+        for (BarDaily bar : visibleBars) {
+            if (!complete(bar)) {
+                return null;
+            }
+        }
+
+        int latestIndex = visibleBars.size() - 1;
+        BarDaily latestBar = visibleBars.get(latestIndex);
+        double latestClose = latestBar.getClosePrice().doubleValue();
+        double latestLow = latestBar.getLowPrice().doubleValue();
+        double latestHigh = latestBar.getHighPrice().doubleValue();
+        double latestRange = Math.max(0.000001D, latestHigh - latestLow);
+        double latestClosePosition = (latestClose - latestLow) / latestRange;
+        double latestAtr14 = atr(visibleBars, 14);
+        double latestVolumeRatio = latestBar.getVolume().doubleValue()
+                / Math.max(1D, averageVolume(visibleBars.subList(0, latestIndex), 20));
+
+        int searchStart = Math.max(20, latestIndex - 5);
+        for (int breakoutIndex = latestIndex - 1; breakoutIndex >= searchStart; breakoutIndex--) {
+            List<BarDaily> earlierBars = visibleBars.subList(0, breakoutIndex);
+            double breakoutResistance = maximumHigh(earlierBars, Math.min(60, earlierBars.size()));
+            double breakoutAtr14 = atr(visibleBars.subList(0, breakoutIndex + 1), 14);
+            double breakoutRange = Math.max(0.000001D,
+                    visibleBars.get(breakoutIndex).getHighPrice().doubleValue()
+                            - visibleBars.get(breakoutIndex).getLowPrice().doubleValue());
+            double breakoutClose = visibleBars.get(breakoutIndex).getClosePrice().doubleValue();
+            double breakoutClosePosition = (breakoutClose
+                    - visibleBars.get(breakoutIndex).getLowPrice().doubleValue()) / breakoutRange;
+            double breakoutVolumeRatio = visibleBars.get(breakoutIndex).getVolume().doubleValue()
+                    / Math.max(1D, averageVolume(earlierBars, 20));
+            double breakoutBuffer = Math.max(0.2D * breakoutAtr14, breakoutResistance * 0.003D);
+            if (breakoutClose <= breakoutResistance + breakoutBuffer
+                    || breakoutVolumeRatio < 1.5D || breakoutClosePosition < 0.75D) {
+                continue;
+            }
+
+            double distancePct = (latestClose - breakoutResistance) / breakoutResistance * 100D;
+            boolean pullbackInRange = latestLow >= breakoutResistance - 0.5D * latestAtr14
+                    && latestLow <= breakoutResistance + 0.5D * latestAtr14;
+            boolean invalidated = latestClose < breakoutResistance - 0.3D * latestAtr14;
+            if (!pullbackInRange || invalidated) {
+                continue;
+            }
+            boolean confirmed = latestClose > breakoutResistance
+                    && latestClosePosition >= 0.60D && latestVolumeRatio >= 1.20D;
+            String state = confirmed ? "CONFIRMED" : "OBSERVING";
+            String reason = "突破日 " + visibleBars.get(breakoutIndex).getTradeDate()
+                    + " 放量突破，最新日线回踩突破价位";
+            SignalEvidence candidateEvidence = evidence(
+                    breakoutResistance,
+                    minimumLow(visibleBars.subList(breakoutIndex + 1, latestIndex + 1),
+                            Math.max(1, latestIndex - breakoutIndex)),
+                    latestAtr14,
+                    latestVolumeRatio,
+                    latestClosePosition,
+                    averageClose(visibleBars, 20, 0),
+                    averageClose(visibleBars, Math.min(60, visibleBars.size()), 0),
+                    latestClose,
+                    (latestClose - minimumLow(visibleBars, Math.min(60, visibleBars.size())))
+                            / Math.max(0.000001D, breakoutResistance
+                            - minimumLow(visibleBars, Math.min(60, visibleBars.size()))),
+                    reason);
+            candidateEvidence.setBreakoutPrice(decimal(breakoutResistance));
+            candidateEvidence.setPullbackPrice(decimal(latestLow));
+            candidateEvidence.setDistancePct(decimal(distancePct));
+            candidateEvidence.setTriggerCondition("收盘重新站上突破位，收盘位置≥60%，最新量比≥1.20");
+            candidateEvidence.setInvalidCondition("收盘跌破突破位-0.3ATR14，或观察窗口内未重新站稳");
+            return SignalDetectionResult.builder()
+                    .signalCode("S007")
+                    .signalName("放量回踩不破")
+                    .direction("BULLISH")
+                    .lifecycleState(state)
+                    .strength(BigDecimal.valueOf(score(66D + latestVolumeRatio * 12D)))
+                    .confidence(BigDecimal.valueOf(82D))
+                    .riskScore(BigDecimal.ZERO)
+                    .asOfTime(latestBar.getTradeDate().atTime(15, 0))
+                    .dataStatus("COMPLETE")
+                    .featureVersion(FEATURE_VERSION)
+                    .evidence(candidateEvidence)
+                    .build();
+        }
+        return null;
     }
 
     private boolean complete(BarDaily bar) {

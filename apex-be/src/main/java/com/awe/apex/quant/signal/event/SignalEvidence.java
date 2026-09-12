@@ -19,6 +19,15 @@ public class SignalEvidence {
     /** 前序阻力价 */
     private BigDecimal resistancePrice;
 
+    /** 本次有效突破价位。 */
+    private BigDecimal breakoutPrice;
+
+    /** 本次回踩最低价。 */
+    private BigDecimal pullbackPrice;
+
+    /** 当前价格相对突破价位的距离百分比。 */
+    private BigDecimal distancePct;
+
     /** 前序支撑价 */
     private BigDecimal supportPrice;
 
@@ -45,4 +54,10 @@ public class SignalEvidence {
 
     /** 计算说明 */
     private String reason;
+
+    /** 触发条件。 */
+    private String triggerCondition;
+
+    /** 失效条件。 */
+    private String invalidCondition;
 }

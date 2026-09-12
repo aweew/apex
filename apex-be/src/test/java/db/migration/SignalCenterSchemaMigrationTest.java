@@ -55,4 +55,32 @@ class SignalCenterSchemaMigrationTest {
             assertTrue(sql.contains("COMMENT '主键'"), "每张表主键必须声明数据库COMMENT");
         }
     }
+
+    /**
+     * 验证V58只新增S007，不改写既有规则语义。
+     *
+     * @throws Exception SQL执行失败
+     */
+    @Test
+    void addsVolumePullbackSignalDefinitionAndRule() throws Exception {
+        Context context = mock(Context.class);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        when(context.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+
+        V58__Add_volume_pullback_signal migration = new V58__Add_volume_pullback_signal();
+        migration.migrate(context);
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(statement, times(2)).executeUpdate(sqlCaptor.capture());
+        List<String> statements = sqlCaptor.getAllValues();
+        String completeSql = String.join("\n", statements);
+
+        assertEquals("58", migration.getVersion().getVersion());
+        assertTrue(completeSql.contains("'S007'"));
+        assertTrue(completeSql.contains("'放量回踩不破'"));
+        assertTrue(completeSql.contains("INSERT IGNORE INTO signal_rule"));
+        assertTrue(!completeSql.contains("'S004'"));
+    }
 }
