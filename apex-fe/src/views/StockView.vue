@@ -89,6 +89,8 @@ const intradayAsOf = ref('')
 const klinePeriod = ref('day')
 /** 默认仅显示 MA5 / MA20 */
 const selectedMas = ref(['MA5', 'MA20'])
+/** 默认隐藏 KDJ，避免副图信息过密 */
+const showKdj = ref(false)
 const showTd9 = ref(true)
 /** key=仅显示 8/9，all=显示 1–9 */
 const tdShowMode = ref('key')
@@ -226,6 +228,11 @@ function toggleChartLegend(item) {
   selectedMas.value = DISPLAY_MA_NAMES.filter((name) => (
     name === item.maName || selectedMas.value.includes(name)
   ))
+}
+
+function toggleKdj() {
+  showKdj.value = !showKdj.value
+  refreshChart()
 }
 
 function unbindChartPress() {
@@ -1003,6 +1010,7 @@ function tradeMarkerTooltip(groups) {
 function buildTradeGuideSeries(side, markers) {
   const buy = side === 'BUY'
   const color = buy ? '#e5484d' : '#1677ff'
+  const labelStroke = buy ? 'rgba(229,72,77,0.5)' : 'rgba(22,119,255,0.5)'
   const direction = buy ? 1 : -1
   return {
     id: `user-trade-${side.toLowerCase()}`,
@@ -1022,6 +1030,7 @@ function buildTradeGuideSeries(side, markers) {
       const point = api.coord([api.value(0), api.value(1)])
       if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) return null
       const labelText = String(params.data?.labelText || (buy ? 'B' : 'S'))
+      const labelDetail = labelText.slice(1).trim()
       const labelWidth = Math.min(96, Math.max(30, Array.from(labelText).length * 11 + 16))
       const leaderEndY = point[1] + direction * 34
       const labelHeight = 20
@@ -1043,16 +1052,17 @@ function buildTradeGuideSeries(side, markers) {
           {
             type: 'rect',
             shape: { x: labelLeft, y: labelTop, width: labelWidth, height: labelHeight, r: 4 },
-            style: { fill: 'rgba(255,255,255,0.96)', stroke: color, lineWidth: 1 },
+            style: { fill: 'rgba(255,255,255,0.96)', stroke: labelStroke, lineWidth: 1 },
           },
           {
             type: 'text',
             style: {
-              x: labelLeft + 6,
+              x: labelDetail ? labelLeft + 8 : labelLeft + labelWidth / 2,
               y: labelTop + labelHeight / 2,
               text: buy ? 'B' : 'S',
               fill: color,
               font: '700 11px sans-serif',
+              textAlign: 'center',
               textVerticalAlign: 'middle',
             },
           },
@@ -1061,7 +1071,7 @@ function buildTradeGuideSeries(side, markers) {
             style: {
               x: labelLeft + 17,
               y: labelTop + labelHeight / 2,
-              text: labelText.slice(1).trim(),
+              text: labelDetail,
               fill: '#475569',
               font: '600 10px sans-serif',
               textVerticalAlign: 'middle',
@@ -1268,6 +1278,7 @@ async function renderChart(list) {
         text: 'KDJ',
         left: 8,
         top: '75%',
+        show: showKdj.value,
         textStyle: { fontSize: 11, color: 'rgba(107,114,128,0.85)', fontWeight: 600 },
       },
     ],
@@ -1430,8 +1441,8 @@ async function renderChart(list) {
       // 四个子图保持同宽；移动端隐藏图内价格牌，释放右侧绘图区。
       { left: 56, right: chartGridRight, top: 12, height: '38%' },
       { left: 56, right: chartGridRight, top: '47%', height: '9%' },
-      { left: 56, right: chartGridRight, top: '60%', height: '11%' },
-      { left: 56, right: chartGridRight, top: '75%', height: '10%' },
+      { left: 56, right: chartGridRight, top: '60%', height: showKdj.value ? '11%' : '20%' },
+      { left: 56, right: chartGridRight, top: '75%', height: showKdj.value ? '10%' : '0%' },
     ],
     xAxis: [
       {
@@ -1619,6 +1630,8 @@ async function renderChart(list) {
           color: '#fff',
           fontSize: 10,
           fontWeight: 700,
+          align: 'center',
+          verticalAlign: 'middle',
         },
         labelLayout: { hideOverlap: false },
         tooltip: { show: false },
@@ -1642,6 +1655,8 @@ async function renderChart(list) {
           color: '#fff',
           fontSize: 10,
           fontWeight: 700,
+          align: 'center',
+          verticalAlign: 'middle',
         },
         labelLayout: { hideOverlap: false },
         tooltip: { show: false },
@@ -1670,6 +1685,9 @@ async function renderChart(list) {
         xAxisIndex: 2,
         yAxisIndex: 2,
         data: hist,
+        barMinWidth: 2,
+        barMaxWidth: 8,
+        barCategoryGap: '36%',
         itemStyle: { color: (p) => (p.data >= 0 ? '#ef5350' : '#26a69a') },
       },
       {
@@ -1679,19 +1697,23 @@ async function renderChart(list) {
         yAxisIndex: 2,
         data: goldenPoints,
         symbol: 'triangle',
-        symbolSize: 11,
-        symbolOffset: [0, -5],
+        symbolSize: 10,
+        symbolOffset: [0, -7],
         legendHoverLink: false,
         itemStyle: { color: '#ef5350' },
         label: {
           show: true,
           formatter: '金',
           position: 'top',
+          distance: 8,
+          backgroundColor: 'rgba(255,255,255,0.92)',
+          borderRadius: 2,
+          padding: [1, 3],
           color: '#ef5350',
           fontSize: 10,
           fontWeight: 700,
         },
-        labelLayout: { hideOverlap: true },
+        labelLayout: { hideOverlap: true, moveOverlap: 'shiftY' },
         z: 10,
       },
       {
@@ -1702,24 +1724,29 @@ async function renderChart(list) {
         data: deathPoints,
         symbol: 'triangle',
         symbolRotate: 180,
-        symbolSize: 11,
-        symbolOffset: [0, 5],
+        symbolSize: 10,
+        symbolOffset: [0, 7],
         legendHoverLink: false,
         itemStyle: { color: '#26a69a' },
         label: {
           show: true,
           formatter: '死',
           position: 'bottom',
+          distance: 8,
+          backgroundColor: 'rgba(255,255,255,0.92)',
+          borderRadius: 2,
+          padding: [1, 3],
           color: '#26a69a',
           fontSize: 10,
           fontWeight: 700,
         },
-        labelLayout: { hideOverlap: true },
+        labelLayout: { hideOverlap: true, moveOverlap: 'shiftY' },
         z: 10,
       },
       {
         name: 'K',
         type: 'line',
+        show: showKdj.value,
         xAxisIndex: 3,
         yAxisIndex: 3,
         data: kLine,
@@ -1730,6 +1757,7 @@ async function renderChart(list) {
       {
         name: 'D',
         type: 'line',
+        show: showKdj.value,
         xAxisIndex: 3,
         yAxisIndex: 3,
         data: dLine,
@@ -1740,6 +1768,7 @@ async function renderChart(list) {
       {
         name: 'J',
         type: 'line',
+        show: showKdj.value,
         xAxisIndex: 3,
         yAxisIndex: 3,
         data: jLine,
@@ -1751,6 +1780,7 @@ async function renderChart(list) {
         // 不进图例：东财风格 20 / 50 / 80 虚线标尺
         name: 'KDJ标尺',
         type: 'line',
+        show: showKdj.value,
         xAxisIndex: 3,
         yAxisIndex: 3,
         data: [],
@@ -2349,6 +2379,17 @@ function dash(v) {
               >
                 <i :style="{ background: item.color }" aria-hidden="true"></i>
                 <span>{{ item.label }}</span>
+              </button>
+              <span class="chart-legend-divider" aria-hidden="true"></span>
+              <button
+                type="button"
+                class="chart-legend-item chart-kdj-toggle"
+                :class="{ 'is-inactive': !showKdj }"
+                :aria-pressed="showKdj"
+                @click="toggleKdj"
+              >
+                <i aria-hidden="true"></i>
+                <span>KDJ</span>
               </button>
               <span class="chart-legend-divider" aria-hidden="true"></span>
               <button
@@ -4122,13 +4163,13 @@ function dash(v) {
   box-sizing: border-box;
   padding: 12px 14px 10px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.32);
-  border: 1px solid rgba(255, 255, 255, 0.48);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(15, 23, 42, 0.1);
   box-shadow:
-    0 12px 32px rgba(15, 23, 42, 0.07),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    0 12px 32px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
   color: #1d1d1f;
   font-family: inherit;
   font-variant-numeric: tabular-nums;

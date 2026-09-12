@@ -52,6 +52,18 @@ test('stock indicators start collapsed instead of restoring an expanded state', 
   assert.match(stockSource, /\.quote-meta-details\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s)
 })
 
+test('KDJ is hidden by default and can be toggled from the chart legend', () => {
+  assert.match(stockSource, /const showKdj = ref\(false\)/)
+  assert.match(stockSource, /function toggleKdj\(\)[\s\S]*?showKdj\.value = !showKdj\.value[\s\S]*?refreshChart\(\)/s)
+  assert.match(
+    stockSource,
+    /class="chart-legend-item chart-kdj-toggle"[\s\S]*?:class="\{ 'is-inactive': !showKdj \}"[\s\S]*?:aria-pressed="showKdj"[\s\S]*?@click="toggleKdj"/s,
+  )
+  assert.match(stockSource, /top: '60%', height: showKdj\.value \? '11%' : '20%'/)
+  assert.match(stockSource, /name: 'K',[\s\S]*?show: showKdj\.value,[\s\S]*?xAxisIndex: 3/s)
+  assert.match(stockSource, /name: 'KDJ标尺',[\s\S]*?show: showKdj\.value,[\s\S]*?xAxisIndex: 3/s)
+})
+
 test('intraday polling pauses while the page is hidden and resumes on return', () => {
   assert.match(stockSource, /if \(!isIntraday\.value \|\| document\.hidden\) return/)
   assert.match(stockSource, /if \(!document\.hidden && isIntraday\.value\) loadIntraday\(true\)/)
@@ -180,21 +192,29 @@ test('dense MACD cross markers are spaced and labels avoid collisions', () => {
   assert.match(stockSource, /if \(markerCrosses\[i\] === 'death'\) deathPoints\.push/)
   assert.match(
     stockSource,
-    /name: '金叉',[\s\S]*?symbolOffset: \[0, -5\],[\s\S]*?labelLayout: \{ hideOverlap: true \},/s,
+    /name: '金叉',[\s\S]*?symbolOffset: \[0, -7\],[\s\S]*?distance: 8,[\s\S]*?backgroundColor: 'rgba\(255,255,255,0\.92\)',[\s\S]*?labelLayout: \{ hideOverlap: true, moveOverlap: 'shiftY' \},/s,
   )
   assert.match(
     stockSource,
-    /name: '死叉',[\s\S]*?symbolOffset: \[0, 5\],[\s\S]*?labelLayout: \{ hideOverlap: true \},/s,
+    /name: '死叉',[\s\S]*?symbolOffset: \[0, 7\],[\s\S]*?distance: 8,[\s\S]*?backgroundColor: 'rgba\(255,255,255,0\.92\)',[\s\S]*?labelLayout: \{ hideOverlap: true, moveOverlap: 'shiftY' \},/s,
   )
+  assert.match(stockSource, /name: 'MACD',[\s\S]*?barMinWidth: 2,[\s\S]*?barMaxWidth: 8,[\s\S]*?barCategoryGap: '36%'/s)
 })
 
 test('K-line renders confirmed MACD top and bottom divergence markers', () => {
   assert.match(stockSource, /detectMacdDivergences\(highs, lows, closes, dif\)/)
   assert.match(stockSource, /const spacedDivergences = spaceChartSignals\(divergenceSignals, 8\)/)
-  assert.match(stockSource, /name: '顶背离',[\s\S]*?symbol: 'pin',[\s\S]*?formatter: '顶'[\s\S]*?labelLayout: \{ hideOverlap: false \}/s)
-  assert.match(stockSource, /name: '底背离',[\s\S]*?symbol: 'pin',[\s\S]*?formatter: '底'[\s\S]*?labelLayout: \{ hideOverlap: false \}/s)
+  assert.match(stockSource, /name: '顶背离',[\s\S]*?symbol: 'pin',[\s\S]*?formatter: '顶'[\s\S]*?align: 'center',[\s\S]*?verticalAlign: 'middle',[\s\S]*?labelLayout: \{ hideOverlap: false \}/s)
+  assert.match(stockSource, /name: '底背离',[\s\S]*?symbol: 'pin',[\s\S]*?formatter: '底'[\s\S]*?align: 'center',[\s\S]*?verticalAlign: 'middle',[\s\S]*?labelLayout: \{ hideOverlap: false \}/s)
   assert.match(stockSource, /MACD 顶背离（已确认）/)
   assert.match(stockSource, /MACD 底背离（已确认）/)
+})
+
+test('K-line centers standalone trade marker text and softens label frames', () => {
+  assert.match(stockSource, /const labelStroke = buy \? 'rgba\(229,72,77,0\.5\)' : 'rgba\(22,119,255,0\.5\)'/)
+  assert.match(stockSource, /x: labelDetail \? labelLeft \+ 8 : labelLeft \+ labelWidth \/ 2/)
+  assert.match(stockSource, /textAlign: 'center'/)
+  assert.match(stockSource, /stroke: labelStroke/)
 })
 
 test('K-line surfaces the dedicated key resistance level', () => {
@@ -245,6 +265,14 @@ test('mobile K-line tooltip lingers, fades, and uses a compact translucent card'
     stockSource,
     /@media \(max-width: 820px\)[\s\S]*?\.kline-tip__chip\s*\{[^}]*padding:\s*2px 5px;[^}]*font-size:\s*9px;/s,
   )
+})
+
+test('desktop K-line tooltip keeps the daily hover card readable over chart lines', () => {
+  assert.match(
+    stockSource,
+    /\.kline-tip__card\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.94\);[\s\S]*?border:\s*1px solid rgba\(15, 23, 42, 0\.1\);[\s\S]*?backdrop-filter:\s*blur\(12px\) saturate\(1\.15\);/s,
+  )
+  assert.doesNotMatch(stockSource, /\.kline-tip__card\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.32\);/s)
 })
 
 test('mobile K-line release hides both the tooltip and crosshair', () => {
