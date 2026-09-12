@@ -53,6 +53,22 @@ class ExternalMarketQuoteClientTest {
     }
 
     @Test
+    void parsesVixProxyQuote() throws Exception {
+        ExternalMarketQuoteClient client = new ExternalMarketQuoteClient();
+        String response = """
+                {"chart":{"result":[{"meta":{"regularMarketPrice":25.0,"chartPreviousClose":24.5,"regularMarketTime":1787628798}}],"error":null}}
+                """;
+
+        ExternalMarketItemResp item = client.parse(ExternalMarketIndicatorEnum.VIX, response);
+
+        assertEquals("VIX", item.getCode());
+        assertEquals(new BigDecimal("25.0"), item.getLatestPrice());
+        assertEquals(new BigDecimal("2.04"), item.getPctChg());
+        assertEquals("Yahoo Finance", item.getSource());
+        assertTrue(item.getAShareImpact().contains("避险"));
+    }
+
+    @Test
     void parsesTencentGoldFallbackWhenPrimarySourceIsUnavailable() {
         ExternalMarketQuoteClient client = new ExternalMarketQuoteClient();
         String response = "v_hf_GC=\"4688.48,-0.20,4690.40,4690.50,4755.00,4670.50,11:41:01,4697.80,4710.10,0,2,1,2026-08-25,纽约黄金\";";

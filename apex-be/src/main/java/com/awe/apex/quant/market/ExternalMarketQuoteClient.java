@@ -45,7 +45,13 @@ public class ExternalMarketQuoteClient {
     public List<ExternalMarketItemResp> fetch() {
         List<ExternalMarketItemResp> items = new ArrayList<>();
         List<CompletableFuture<ExternalMarketItemResp>> futures = new ArrayList<>();
-        ExternalMarketIndicatorEnum[] indicators = ExternalMarketIndicatorEnum.values();
+        ExternalMarketIndicatorEnum[] indicators = {
+                ExternalMarketIndicatorEnum.GOLD,
+                ExternalMarketIndicatorEnum.CRUDE_OIL,
+                ExternalMarketIndicatorEnum.DOLLAR_INDEX,
+                ExternalMarketIndicatorEnum.OFFSHORE_RENMINBI,
+                ExternalMarketIndicatorEnum.US_TREASURY_10Y
+        };
         for (ExternalMarketIndicatorEnum indicator : indicators) {
             futures.add(CompletableFuture.supplyAsync(() -> fetch(indicator)));
         }
@@ -54,6 +60,17 @@ public class ExternalMarketQuoteClient {
             items.add(Objects.nonNull(item) ? item : buildUnavailableItem(indicators[index]));
         }
         return items;
+    }
+
+    /**
+     * 拉取VIX外部风险偏好代理。
+     *
+     * @return VIX报价，获取失败时返回不可用项
+     */
+    public ExternalMarketItemResp fetchVixProxy() {
+        ExternalMarketIndicatorEnum indicator = ExternalMarketIndicatorEnum.VIX;
+        ExternalMarketItemResp item = fetch(indicator);
+        return Objects.nonNull(item) ? item : buildUnavailableItem(indicator);
     }
 
     private ExternalMarketItemResp fetch(ExternalMarketIndicatorEnum indicator) {

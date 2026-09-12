@@ -175,7 +175,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
         boolean quoteDataIncomplete = CollUtil.isEmpty(symbols) || validQuoteSymbols.size() < symbols.size()
                 || (StringUtils.isNotBlank(properties.getMorningBriefing().getFtseA50FutureSymbol())
                 && Objects.isNull(ftseA50Future))
-                || countAvailableExternalMarketItems(externalMarketItems) < ExternalMarketIndicatorEnum.values().length;
+                || countAvailableExternalMarketItems(externalMarketItems) < 5;
         MorningBriefingResp briefing = MorningBriefingResp.builder()
                 .tradeDate(tradeDate)
                 .generatedAt(generatedAt)
@@ -295,6 +295,9 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
     private List<ExternalMarketItemResp> normalizeExternalMarketItems(List<ExternalMarketItemResp> externalMarketItems) {
         List<ExternalMarketItemResp> normalizedItems = new ArrayList<>();
         for (ExternalMarketIndicatorEnum indicator : ExternalMarketIndicatorEnum.values()) {
+            if (ExternalMarketIndicatorEnum.VIX == indicator) {
+                continue;
+            }
             ExternalMarketItemResp matchedItem = null;
             for (ExternalMarketItemResp item : externalMarketItems) {
                 if (Objects.nonNull(item) && indicator.getCode().equals(item.getCode())) {
@@ -507,7 +510,7 @@ public class MorningBriefingServiceImpl implements IMorningBriefingService {
             if (!hasAvailableItem) {
                 summary.append("指标暂未获取");
             }
-            if (countAvailableExternalMarketItems(externalMarketItems) < ExternalMarketIndicatorEnum.values().length) {
+            if (countAvailableExternalMarketItems(externalMarketItems) < 5) {
                 summary.append(hasAvailableItem ? "；其余指标暂未获取" : "，暂不据此判断 A 股影响");
             }
             summary.append("。");
