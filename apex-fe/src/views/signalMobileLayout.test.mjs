@@ -103,3 +103,22 @@ test('market behavior detail explains evidence and lifecycle at the stock route'
   assert.match(signalDetailSource, /强度[\s\S]*?置信度[\s\S]*?历史概率[\s\S]*?风险分/)
   assert.match(signalDetailSource, /价格与量能证据[\s\S]*?resistancePrice[\s\S]*?supportPrice[\s\S]*?atr14[\s\S]*?volumeRatio/)
 })
+
+test('short-term signal page presents context before candidates and legacy signals', () => {
+  const contextIndex = signalSource.indexOf('class="short-term-context"')
+  const candidateIndex = signalSource.indexOf('class="short-term-candidates"')
+  const legacyIndex = signalSource.indexOf('class="signal-results"')
+
+  assert.ok(contextIndex >= 0)
+  assert.ok(candidateIndex > contextIndex)
+  assert.ok(legacyIndex > candidateIndex)
+  assert.match(signalSource, /短线市场环境[\s\S]*?A股情绪温度[\s\S]*?指数与关键阻力[\s\S]*?宏观与外部风险偏好[\s\S]*?短线策略剧本/)
+  assert.match(signalSource, /放量回踩不破[\s\S]*?已确认[\s\S]*?观察中/)
+  assert.match(signalSource, /VIX反向代理，不是官方恐贪指数/)
+})
+
+test('short-term signal page keeps grouped mobile layout for dense evidence', () => {
+  assert.match(signalSource, /@media \(max-width: 900px\)[\s\S]*?\.short-term-overview-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr/)
+  assert.match(signalSource, /@media \(max-width: 900px\)[\s\S]*?\.short-term-candidate-list\s*\{[\s\S]*?grid-template-columns:\s*1fr/)
+  assert.match(signalDetailSource, /放量回踩不破[\s\S]*?breakoutPrice[\s\S]*?pullbackPrice[\s\S]*?distancePct[\s\S]*?invalidCondition/)
+})

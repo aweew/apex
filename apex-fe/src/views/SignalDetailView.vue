@@ -84,13 +84,22 @@ onMounted(load)
             <span>风险分 <b>{{ item.riskScore ?? '-' }}</b></span>
           </div>
           <div class="evidence-grid">
-            <h3>价格与量能证据</h3>
+            <h3>
+              价格与量能证据
+              <small v-if="item.signalCode === 'S007'">（S007 · 放量回踩不破）</small>
+            </h3>
             <span>阻力 <b>{{ evidence(item).resistancePrice ?? '-' }}</b></span>
+            <span v-if="item.signalCode === 'S007'">突破位 <b>{{ evidence(item).breakoutPrice ?? '-' }}</b></span>
+            <span v-if="item.signalCode === 'S007'">回踩低点 <b>{{ evidence(item).pullbackPrice ?? '-' }}</b></span>
+            <span v-if="item.signalCode === 'S007'">距突破 <b>{{ evidence(item).distancePct ?? '-' }}%</b></span>
             <span>支撑 <b>{{ evidence(item).supportPrice ?? '-' }}</b></span>
             <span>ATR14 <b>{{ evidence(item).atr14 ?? '-' }}</b></span>
             <span>20日量比 <b>{{ evidence(item).volumeRatio ?? '-' }}</b></span>
             <span>收盘位置 <b>{{ evidence(item).closePosition ?? '-' }}</b></span>
             <p>{{ evidence(item).reason }}</p>
+            <p v-if="item.signalCode === 'S007'">
+              触发：{{ evidence(item).triggerCondition || '-' }}；失效：{{ evidence(item).invalidCondition || '-' }}
+            </p>
           </div>
         </article>
       </div>

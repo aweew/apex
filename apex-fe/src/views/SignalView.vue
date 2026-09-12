@@ -10,6 +10,7 @@ import {
   runSignalCenterCalculation,
   signalCenterOverview,
   signalCenterRankings,
+  signalCenterShortTerm,
   signalConfluence,
   signalForward,
   signalStats,
@@ -36,6 +37,8 @@ const refreshing = ref(false)
 const ordering = ref(false)
 const behaviorLoading = ref(false)
 const behaviorCalculating = ref(false)
+const shortTermLoading = ref(false)
+const shortTerm = ref(null)
 const workspaceMode = ref('behavior')
 const behaviorDirection = ref('')
 const behaviorOverview = ref(null)
@@ -64,6 +67,42 @@ const activeFilterCount = computed(() => {
 })
 const hasCustomFilters = computed(() => activeFilterCount.value > 0 || !dedupeByCode.value)
 const scoreFilterLabel = computed(() => Number(minScore.value) > 0 ? `${minScore.value} 分以上` : '不限')
+const confirmedPullbacks = computed(() => (shortTerm.value?.candidates || []).filter((item) => item.state === 'CONFIRMED'))
+const observingPullbacks = computed(() => (shortTerm.value?.candidates || []).filter((item) => item.state === 'OBSERVING'))
+
+async function loadShortTerm({ silent = false } = {}) {
+  shortTermLoading.value = true
+  try {
+    const response = await signalCenterShortTerm()
+    shortTerm.value = response.data
+  } catch (error) {
+    shortTerm.value = null
+    if (!silent) ElMessage.error(error.message || '短线市场环境加载失败')
+  } finally {
+    shortTermLoading.value = false
+  }
+}
+
+function fmtShortTermNumber(value) {
+  if (value == null || value === '') return '--'
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(2) : '--'
+}
+
+function fmtShortTermPct(value) {
+  if (value == null || value === '') return '--'
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '--'
+  return `${number > 0 ? '+' : ''}${number.toFixed(2)}%`
+}
+
+function candidateStateLabel(state) {
+  return state === 'CONFIRMED' ? '已确认' : '观察中'
+}
+
+function candidateStateClass(state) {
+  return state === 'CONFIRMED' ? 'is-confirmed' : 'is-observing'
+}
 
 async function loadMarketBehavior({ silent = false } = {}) {
   behaviorLoading.value = true
@@ -256,6 +295,7 @@ async function onRefresh() {
   try {
     await Promise.all([
       loadMarketBehavior(),
+      loadShortTerm(),
       loadOverview({ force: true }),
       loadSignalList({ force: true }),
     ])
@@ -375,6 +415,7 @@ function handleMobileRowAction(command, row) {
 onMounted(() => {
   window.addEventListener('resize', syncViewportWidth)
   loadMarketBehavior({ silent: true })
+  loadShortTerm({ silent: true })
   loadOverview()
   loadSignalList()
 })
@@ -448,6 +489,135 @@ onBeforeUnmount(() => {
         策略信号
       </button>
     </div>
+
+    <section class="short-term-context" v-loading="shortTermLoading" aria-label="短线市场环境">
+      <div class="short-term-context-head">
+        <div>
+          <p class="eyebrow">Short-term context</p>
+          <h2>短线市场环境</h2>
+        </div>
+        <span class="short-term-data-status">
+          数据截至 {{ shortTerm?.dataAsOf || '尚未获取' }}
+          <b v-if="shortTerm?.dataStatus === 'PARTIAL'">部分缺失</b>
+        </span>
+      </div>
+
+      <div class="short-term-overview-grid">
+        <article class="short-term-block emotion-block">
+          <div class="short-term-block-head">
+            <span>A股情绪温度</span>
+            <strong :class="candidateStateClass(shortTerm?.ashareEmotion?.label === '贪婪' ? 'CONFIRMED' : 'OBSERVING')">
+              {{ shortTerm?.ashareEmotion?.label || '未知' }}
+            </strong>
+          </div>
+          <div class="emotion-score">
+            <b>{{ shortTerm?.ashareEmotion?.score ?? '--' }}</b><span>/100</span>
+          </div>
+          <p>{{ shortTerm?.ashareEmotion?.basis || '由指数、量能、广度和赚钱效应综合判断。' }}</p>
+        </article>
+
+        <article class="short-term-block index-block">
+          <div class="short-term-block-head">
+            <span>指数与关键阻力</span>
+            <strong>{{ shortTerm?.resistanceAdvice || '等待数据' }}</strong>
+          </div>
+          <div class="short-term-index-list">
+            <div v-for="item in shortTerm?.indexes || []" :key="item.name">
+              <span>{{ item.name }}</span>
+              <b>{{ fmtShortTermNumber(item.close) }}</b>
+              <em :class="item.direction">{{ fmtShortTermPct(item.pctChg) }}</em>
+            </div>
+          </div>
+          <div class="resistance-line">
+            <span>上证阻力 <b>{{ fmtShortTermNumber(shortTerm?.shanghaiKeyResistance) }}</b></span>
+            <span>距阻力 <b>{{ fmtShortTermPct(shortTerm?.resistanceDistancePct) }}</b></span>
+          </div>
+        </article>
+
+        <article class="short-term-block macro-block">
+          <div class="short-term-block-head">
+            <span>宏观与外部风险偏好</span>
+            <strong>{{ shortTerm?.externalEmotion?.label || '未知' }}</strong>
+          </div>
+          <div class="macro-grid">
+            <div v-for="item in shortTerm?.macroItems || []" :key="item.code">
+              <span>{{ item.name }}</span>
+              <b v-if="item.available" :class="item.pctChg > 0 ? 'up' : item.pctChg < 0 ? 'down' : ''">
+                {{ fmtShortTermPct(item.pctChg) }}
+              </b>
+              <em v-else>未获取</em>
+            </div>
+          </div>
+          <p class="vix-line">
+            VIX {{ shortTerm?.externalEmotion?.available ? fmtShortTermNumber(shortTerm.externalEmotion.value) : '--' }}
+            · 代理温度 {{ shortTerm?.externalEmotion?.score ?? '--' }}
+            <span>（VIX反向代理，不是官方恐贪指数）</span>
+          </p>
+        </article>
+
+        <article class="short-term-block strategy-block">
+          <div class="short-term-block-head">
+            <span>短线策略剧本</span>
+            <strong>{{ shortTerm?.strategy?.state || '未知' }}</strong>
+          </div>
+          <h3>{{ shortTerm?.strategy?.title || '等待市场上下文' }}</h3>
+          <p>{{ shortTerm?.strategy?.suitableCandidate || '暂无适用候选。' }}</p>
+          <dl v-if="shortTerm?.strategy">
+            <div><dt>动作</dt><dd>{{ shortTerm.strategy.action }}</dd></div>
+            <div><dt>触发</dt><dd>{{ shortTerm.strategy.triggerCondition }}</dd></div>
+            <div><dt>失效</dt><dd>{{ shortTerm.strategy.invalidCondition }}</dd></div>
+            <div><dt>仓位</dt><dd>{{ shortTerm.strategy.positionAdvice }}</dd></div>
+          </dl>
+        </article>
+      </div>
+
+      <div class="short-term-market-line">
+        <span>三市成交 <b>{{ shortTerm?.indexVolumeText || '--' }}</b></span>
+        <span :class="shortTerm?.volumeTrend === '缩量' ? 'is-contraction' : ''">
+          {{ shortTerm?.volumeTrend || '量能未知' }} {{ fmtShortTermPct(shortTerm?.volumeChangePct) }}
+        </span>
+        <span>涨/平/跌 <b>{{ shortTerm?.breadthUp ?? '--' }}/{{ shortTerm?.breadthFlat ?? '--' }}/{{ shortTerm?.breadthDown ?? '--' }}</b></span>
+      </div>
+    </section>
+
+    <section class="short-term-candidates" aria-label="放量回踩不破候选">
+      <div class="short-term-section-head">
+        <div>
+          <h2>放量回踩不破</h2>
+          <p>确认项可继续核对；观察项尚未满足全部条件，不直接视为买入信号。</p>
+        </div>
+        <span>{{ confirmedPullbacks.length }} 已确认 · {{ observingPullbacks.length }} 观察中</span>
+      </div>
+      <div v-if="!confirmedPullbacks.length && !observingPullbacks.length" class="short-term-empty">
+        暂无候选，等待最近完整日线形成突破后的回踩结构。
+      </div>
+      <div v-else class="short-term-candidate-list">
+        <article
+          v-for="item in [...confirmedPullbacks, ...observingPullbacks]"
+          :key="`${item.symbol}-${item.state}`"
+          class="short-term-candidate"
+          @click="router.push(`/signals/${item.symbol}`)"
+        >
+          <header>
+            <div>
+              <strong>{{ item.name || item.symbol }}</strong>
+              <span>{{ item.symbol }}</span>
+            </div>
+            <b :class="candidateStateClass(item.state)">{{ candidateStateLabel(item.state) }}</b>
+          </header>
+          <div class="candidate-metrics">
+            <span>突破位 <b>{{ fmtShortTermNumber(item.breakoutPrice) }}</b></span>
+            <span>回踩低点 <b>{{ fmtShortTermNumber(item.pullbackPrice) }}</b></span>
+            <span>现价 <b>{{ fmtShortTermNumber(item.currentPrice) }}</b></span>
+            <span>距突破 <b>{{ fmtShortTermPct(item.distancePct) }}</b></span>
+            <span>量比 <b>{{ fmtShortTermNumber(item.volumeRatio) }}</b></span>
+            <span>收盘位置 <b>{{ fmtShortTermPct(Number(item.closePosition) * 100) }}</b></span>
+          </div>
+          <p><b>触发：</b>{{ item.triggerCondition }}</p>
+          <p><b>失效：</b>{{ item.invalidCondition }}</p>
+        </article>
+      </div>
+    </section>
 
     <div v-if="workspaceMode === 'behavior'" class="signal-metrics" v-loading="behaviorLoading">
       <div class="signal-metric">
@@ -867,6 +1037,352 @@ onBeforeUnmount(() => {
 .signal-mode-switch {
   align-self: flex-start;
   width: 260px;
+}
+
+.short-term-context,
+.short-term-candidates {
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.short-term-context {
+  padding: 16px;
+}
+
+.short-term-context-head,
+.short-term-section-head,
+.short-term-block-head,
+.short-term-market-line,
+.short-term-candidate header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.short-term-context-head {
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.short-term-context-head h2,
+.short-term-section-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.short-term-context-head .eyebrow {
+  margin: 0 0 3px;
+}
+
+.short-term-data-status,
+.short-term-section-head > span,
+.short-term-block-head > span,
+.short-term-block > p,
+.strategy-block p,
+.short-term-candidate p {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.short-term-data-status b {
+  margin-left: 6px;
+  color: #9a5b16;
+  font-weight: 650;
+}
+
+.short-term-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.short-term-block {
+  min-width: 0;
+  padding: 14px 16px;
+  border-right: 1px solid var(--line);
+}
+
+.short-term-block:last-child {
+  border-right: 0;
+}
+
+.short-term-block-head {
+  align-items: center;
+}
+
+.short-term-block-head > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.short-term-block-head > strong {
+  color: var(--ink);
+  font-size: 12px;
+  text-align: right;
+}
+
+.short-term-block-head > strong.is-confirmed {
+  color: var(--up);
+}
+
+.short-term-block-head > strong.is-observing {
+  color: #9a5b16;
+}
+
+.emotion-score {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin: 12px 0 6px;
+}
+
+.emotion-score b {
+  color: var(--ink);
+  font-size: 30px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.emotion-score span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.short-term-block > p {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.short-term-index-list,
+.macro-grid {
+  display: grid;
+  gap: 5px;
+  margin: 11px 0;
+}
+
+.short-term-index-list > div,
+.macro-grid > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.short-term-index-list span,
+.macro-grid span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.short-term-index-list b,
+.macro-grid b {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.short-term-index-list em,
+.macro-grid em {
+  min-width: 54px;
+  color: var(--muted);
+  font-style: normal;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.short-term-index-list em.up,
+.macro-grid b.up {
+  color: var(--up);
+}
+
+.short-term-index-list em.down,
+.macro-grid b.down {
+  color: var(--down);
+}
+
+.resistance-line,
+.short-term-market-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.resistance-line b,
+.short-term-market-line b {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.vix-line {
+  margin-top: 8px !important;
+  font-size: 10px !important;
+}
+
+.vix-line span {
+  color: var(--muted);
+}
+
+.strategy-block h3 {
+  margin: 12px 0 4px;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.strategy-block dl {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+}
+
+.strategy-block dl > div {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.strategy-block dt {
+  color: var(--ink-soft);
+  font-weight: 650;
+}
+
+.strategy-block dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.short-term-market-line {
+  align-items: center;
+  padding-top: 12px;
+}
+
+.short-term-market-line .is-contraction {
+  color: #9a5b16;
+}
+
+.short-term-candidates {
+  padding: 16px;
+}
+
+.short-term-section-head {
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.short-term-section-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.short-term-candidate-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.short-term-candidate {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.short-term-candidate:hover {
+  border-color: var(--accent);
+}
+
+.short-term-candidate header {
+  align-items: center;
+}
+
+.short-term-candidate header > div {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.short-term-candidate header strong {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.short-term-candidate header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.short-term-candidate header > b {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.short-term-candidate .is-confirmed {
+  color: var(--up);
+}
+
+.short-term-candidate .is-observing {
+  color: #9a5b16;
+}
+
+.candidate-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin: 12px 0 9px;
+}
+
+.candidate-metrics span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.candidate-metrics b {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.short-term-candidate p {
+  margin: 4px 0 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.short-term-candidate p b {
+  color: var(--ink-soft);
+}
+
+.short-term-empty {
+  padding: 18px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .behavior-toolbar {
@@ -1335,6 +1851,36 @@ onBeforeUnmount(() => {
 
   .signal-mode-switch {
     width: 100%;
+  }
+
+  .short-term-context,
+  .short-term-candidates {
+    padding: 12px;
+  }
+
+  .short-term-context-head,
+  .short-term-section-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .short-term-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .short-term-block {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 12px 0;
+  }
+
+  .short-term-block:last-child {
+    border-bottom: 0;
+  }
+
+  .short-term-candidate-list {
+    grid-template-columns: 1fr;
   }
 
   .behavior-toolbar {

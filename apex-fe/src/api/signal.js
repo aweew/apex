@@ -32,6 +32,10 @@ export function signalCenterOverview(timeframe = 'DAY') {
   return http.get('/api/signal-center/overview', { params: { timeframe } })
 }
 
+export function signalCenterShortTerm() {
+  return http.get('/api/signal-center/short-term')
+}
+
 export function signalCenterRankings(params = {}) {
   return http.get('/api/signal-center/rankings', { params })
 }
