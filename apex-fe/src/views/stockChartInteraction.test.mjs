@@ -5,10 +5,12 @@ import test from 'node:test'
 const stockSource = await readFile(new URL('./StockView.vue', import.meta.url), 'utf8')
 
 test('visible K-line prices retain breathing room above highs and below lows', () => {
+  assert.match(stockSource, /const PRICE_AXIS_PADDING_RATIO = 0\.12/)
   assert.match(
     stockSource,
-    /const pad = span > 0 \? span \* 0\.08 : Math\.max\(Math\.abs\(max\) \* 0\.02, 0\.01\)/,
+    /const pad = span > 0[\s\S]*?span \* PRICE_AXIS_PADDING_RATIO[\s\S]*?Math\.max\(Math\.abs\(max\) \* 0\.03, 0\.01\)/,
   )
+  assert.match(stockSource, /offset: \[0, isLow \? -10 : 10\]/)
 })
 
 test('horizontal chart gestures stay inside the chart while vertical page scrolling remains available', () => {
@@ -59,7 +61,7 @@ test('KDJ is hidden by default and can be toggled from the chart legend', () => 
     stockSource,
     /class="chart-legend-item chart-kdj-toggle"[\s\S]*?:class="\{ 'is-inactive': !showKdj \}"[\s\S]*?:aria-pressed="showKdj"[\s\S]*?@click="toggleKdj"/s,
   )
-  assert.match(stockSource, /top: '60%', height: showKdj\.value \? '11%' : '20%'/)
+  assert.match(stockSource, /top: '60%', height: showKdj\.value \? '11%' : '30%'/)
   assert.match(stockSource, /name: 'K',[\s\S]*?show: showKdj\.value,[\s\S]*?xAxisIndex: 3/s)
   assert.match(stockSource, /name: 'KDJ标尺',[\s\S]*?show: showKdj\.value,[\s\S]*?xAxisIndex: 3/s)
 })

@@ -409,6 +409,8 @@ function visibleIndexRange(len, startPct, endPct) {
  * 仅按可视区 K 线高低定 Y 轴（忽略均线），避免底部大块空白
  * scale:true 时 boundaryGap 无效，必须显式 min/max
  */
+const PRICE_AXIS_PADDING_RATIO = 0.12
+
 function calcVisiblePriceExtent(highs, lows, startPct, endPct) {
   const [startIdx, endIdx] = visibleIndexRange(highs.length, startPct, endPct)
   if (endIdx < startIdx) return { min: null, max: null }
@@ -420,7 +422,9 @@ function calcVisiblePriceExtent(highs, lows, startPct, endPct) {
   }
   if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: null, max: null }
   const span = max - min
-  const pad = span > 0 ? span * 0.08 : Math.max(Math.abs(max) * 0.02, 0.01)
+  const pad = span > 0
+    ? span * PRICE_AXIS_PADDING_RATIO
+    : Math.max(Math.abs(max) * 0.03, 0.01)
   return { min: +(min - pad).toFixed(4), max: +(max + pad).toFixed(4) }
 }
 
@@ -448,7 +452,7 @@ function buildVisibleExtremeMarkPoint(dates, highs, lows, startPct, endPct) {
     }
   }
   const span = Math.max(1, endIdx - startIdx)
-  const makePoint = (idx, val) => {
+  const makePoint = (idx, val, isLow) => {
     const onLeft = (idx - startIdx) / span > 0.18
     const price = fmtNum(val)
     return {
@@ -461,6 +465,8 @@ function buildVisibleExtremeMarkPoint(dates, highs, lows, startPct, endPct) {
         show: true,
         formatter: onLeft ? `${price} →` : `← ${price}`,
         position: onLeft ? 'left' : 'right',
+        // 极值标签向图内错开，避免最低价标签被主图底边裁切。
+        offset: [0, isLow ? -10 : 10],
         distance: 4,
         color: '#1d1d1f',
         fontSize: 11,
@@ -473,8 +479,8 @@ function buildVisibleExtremeMarkPoint(dates, highs, lows, startPct, endPct) {
     }
   }
   const data = []
-  if (Number.isFinite(highVal)) data.push(makePoint(highIdx, highVal))
-  if (Number.isFinite(lowVal)) data.push(makePoint(lowIdx, lowVal))
+  if (Number.isFinite(highVal)) data.push(makePoint(highIdx, highVal, false))
+  if (Number.isFinite(lowVal)) data.push(makePoint(lowIdx, lowVal, true))
   return {
     silent: true,
     animation: false,
@@ -1441,7 +1447,7 @@ async function renderChart(list) {
       // 四个子图保持同宽；移动端隐藏图内价格牌，释放右侧绘图区。
       { left: 56, right: chartGridRight, top: 12, height: '38%' },
       { left: 56, right: chartGridRight, top: '47%', height: '9%' },
-      { left: 56, right: chartGridRight, top: '60%', height: showKdj.value ? '11%' : '20%' },
+      { left: 56, right: chartGridRight, top: '60%', height: showKdj.value ? '11%' : '30%' },
       { left: 56, right: chartGridRight, top: '75%', height: showKdj.value ? '10%' : '0%' },
     ],
     xAxis: [
