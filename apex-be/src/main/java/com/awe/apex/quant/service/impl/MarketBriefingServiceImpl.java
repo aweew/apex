@@ -533,10 +533,6 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             tips.add(0, tip("danger", "数据门禁生效：强制防守，买入仓位已大幅降权。"));
         } else if (score >= 65) {
             tips.add(0, tip("info", "综合评分偏进攻：可执行买入计划，但仍控制单票上限。"));
-        } else if (score <= 40) {
-            tips.add(0, tip("danger", "综合评分偏防守：今日买入建议已自动降权，优先风控与持仓体检。"));
-        } else {
-            tips.add(0, tip("info", "市场中性偏均衡：有信号再做，仓位中等、纪律优先。"));
         }
         if (tips.size() > 10) {
             tips = new ArrayList<>(tips.subList(0, 10));
@@ -1605,16 +1601,12 @@ public class MarketBriefingServiceImpl implements IMarketBriefingService {
             buyFactor = new BigDecimal("1.10");
             positionAdvice = "总仓上限8成；只做主线内放量突破、且广度未转弱的标的；高开回落和跟风票不追。";
             tips.add(0, tip("info", "综合评分偏进攻：可执行买入计划，但仍控制单票上限。"));
-        } else if (score <= 40) {
-            stance = "防守";
-            buyFactor = new BigDecimal("0.55");
-            positionAdvice = "总仓控制在2-4成；不开弱势反抽，新开仓只允许小仓试错；先处理跌破止损线的持仓。";
-            tips.add(0, tip("danger", "综合评分偏防守：今日买入建议已自动降权，优先风控与持仓体检。"));
         } else {
-            stance = "均衡";
-            buyFactor = BigDecimal.ONE;
-            positionAdvice = "总仓控制在4-6成；只在主线内放量突破时开仓；非主线和冲高回落不追。";
-            tips.add(0, tip("info", "市场中性偏均衡：有信号再做，仓位中等、纪律优先。"));
+            stance = score <= 40 ? "防守" : "均衡";
+            buyFactor = score <= 40 ? new BigDecimal("0.55") : BigDecimal.ONE;
+            positionAdvice = score <= 40
+                    ? "总仓控制在2-4成；不开弱势反抽，新开仓只允许小仓试错；先处理跌破止损线的持仓。"
+                    : "总仓控制在4-6成；只在主线内放量突破时开仓；非主线和冲高回落不追。";
         }
 
         String stanceReason = buildStanceReason(MarketBriefingResp.builder()

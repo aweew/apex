@@ -47,7 +47,7 @@ class MarketBriefingServiceImplTest {
         RedisCacheService redisCacheService = mock(RedisCacheService.class);
         MarketTipItem stanceTip = MarketTipItem.builder()
                 .level("info")
-                .text("市场中性偏均衡：有信号再做，仓位中等、纪律优先。")
+                .text("板块成交额连续两日放大")
                 .build();
         MarketBriefingResp briefing = MarketBriefingResp.builder()
                 .tips(List.of(stanceTip, stanceTip, stanceTip))
@@ -131,7 +131,7 @@ class MarketBriefingServiceImplTest {
     }
 
     @Test
-    void shouldKeepSingleStanceTipAfterRepeatedLiveRefresh() {
+    void shouldNotAddEmptyStanceTipAfterRepeatedLiveRefresh() {
         MarketBriefingServiceImpl service = new MarketBriefingServiceImpl();
         MarketBriefingResp briefing = MarketBriefingResp.builder()
                 .dataLevel("GREEN")
@@ -144,13 +144,9 @@ class MarketBriefingServiceImplTest {
         ReflectionTestUtils.invokeMethod(service, "applyStanceFromLiveFactors", briefing,
                 BigDecimal.ZERO, true, BigDecimal.ZERO);
 
-        int stanceTipCount = 0;
         for (MarketTipItem tipItem : briefing.getTips()) {
-            if ("市场中性偏均衡：有信号再做，仓位中等、纪律优先。".equals(tipItem.getText())) {
-                stanceTipCount++;
-            }
+            assertTrue(!tipItem.getText().contains("市场中性偏均衡"));
         }
-        assertEquals(1, stanceTipCount);
     }
 
     private IndexBar indexBar(int day, String highPrice, String closePrice) {
