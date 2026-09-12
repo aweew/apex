@@ -379,10 +379,6 @@ onBeforeUnmount(() => {
 
     <section class="watchlist-action-panel" aria-label="自选管理">
       <div class="watchlist-daily-actions">
-        <div>
-          <h2>日常操作</h2>
-          <p>勾选后同步 K 线；行情刷新不影响已有自选。</p>
-        </div>
         <div class="watchlist-action-buttons">
           <el-button :loading="syncing" @click="onRefreshQuotes">刷新行情</el-button>
           <el-button type="primary" :loading="syncing" :disabled="!selected.length" @click="onSyncSelected">
@@ -390,7 +386,7 @@ onBeforeUnmount(() => {
           </el-button>
           <el-dropdown :disabled="syncing" @command="onSyncCommand">
             <el-button plain>
-              数据维护<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              数据管理<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>

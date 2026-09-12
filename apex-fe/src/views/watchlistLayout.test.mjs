@@ -10,8 +10,11 @@ const operationColumnSource = source.slice(
 
 test('watchlist keeps daily actions clear and moves low-frequency sync tasks into a menu', () => {
   assert.match(source, /class="watchlist-action-panel"/)
+  assert.doesNotMatch(source, />日常操作<\/h2>/)
+  assert.doesNotMatch(source, /行情刷新不影响已有自选/)
   assert.match(source, /同步已选（\$\{selected\.length\}）/)
   assert.match(source, /同步（\$\{selected\.length\}）/)
+  assert.match(source, /数据管理/)
   assert.match(source, /<el-dropdown[^>]*@command="onSyncCommand"/)
   assert.match(source, /command="import-watchlist"[\s\S]*导入自选/)
   assert.match(source, /command="fill-bars"[\s\S]*补齐缺失 K 线/)
