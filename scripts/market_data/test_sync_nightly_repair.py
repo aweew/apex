@@ -26,7 +26,8 @@ class NightlyRepairTest(unittest.TestCase):
         self.assertIn("0", steps[0][2])
         self.assertIn("--missing", steps[1][2])
         self.assertIn("--missing", steps[2][2])
-        self.assertIn("--no-resume", steps[2][2])
+        self.assertIn("--retry-count", steps[2][2])
+        self.assertIn("--retry-wait", steps[2][2])
 
     def test_continues_remaining_steps_and_fails_at_end(self):
         steps = [

@@ -63,6 +63,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletionService;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -975,11 +976,23 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
 
         ensurePostProcessingActive(cancelled);
         if (Objects.nonNull(marketBreadthForecastService)) {
-            String settlementMessage = marketBreadthForecastService.settleAfterClose(LocalDate.now());
-            if (StringUtils.isNotBlank(settlementMessage)) {
-                appendLog(job, "[警告] " + settlementMessage + "\n");
-                log.warn("收盘任务盘前涨跌比回测未结算，任务编号={}，原因={}", job.getId(), settlementMessage);
-            }
+            Long jobId = job.getId();
+            LocalDate settlementDate = LocalDate.now();
+            appendLog(job, "[收盘后处理] 盘前涨跌比回测已异步提交\n");
+            syncJobMapper.updateById(job);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    String settlementMessage = marketBreadthForecastService.settleAfterClose(settlementDate);
+                    if (StringUtils.isNotBlank(settlementMessage)) {
+                        log.warn("收盘任务盘前涨跌比回测未结算，任务编号={}，原因={}", jobId, settlementMessage);
+                    } else {
+                        log.info("收盘任务盘前涨跌比回测完成，任务编号={}，交易日={}", jobId, settlementDate);
+                    }
+                } catch (Exception ex) {
+                    log.warn("收盘任务盘前涨跌比回测异常，任务编号={}，交易日={}，原因={}",
+                            jobId, settlementDate, errorMessage(ex));
+                }
+            });
         }
         String group = "我的自选";
         try {

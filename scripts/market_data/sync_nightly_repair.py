@@ -54,7 +54,8 @@ def build_steps(
                 "--missing",
                 "--limit", str(max(1, fundamental_limit)),
                 "--sleep", "0.6",
-                "--no-resume",
+                "--retry-count", "3",
+                "--retry-wait", "2",
             ],
         ),
     ]

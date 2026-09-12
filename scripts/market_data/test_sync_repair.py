@@ -5,7 +5,7 @@ import types
 import unittest
 from datetime import date
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 try:
     import pymysql  # noqa: F401
@@ -401,6 +401,28 @@ class MissingFundamentalSelectionTest(unittest.TestCase):
             )
 
         self.assertEqual(1, failed)
+        self.assertEqual(3, connection.rollback_count)
+
+    def test_run_mode_retries_transient_failure_before_marking_success(self):
+        connection = FakeConnection([])
+        sync_action = Mock(side_effect=[RuntimeError("temporary source error"), 4])
+
+        with patch.object(sync_fundamentals, "sync_indicator", sync_action), \
+                patch.object(sync_fundamentals, "mark_done"), \
+                patch.object(sync_fundamentals.time, "sleep"):
+            failed = sync_fundamentals.run_mode(
+                connection,
+                "indicator",
+                ["000001"],
+                0,
+                False,
+                {},
+                retry_count=2,
+                retry_wait_seconds=0,
+            )
+
+        self.assertEqual(0, failed)
+        self.assertEqual(2, sync_action.call_count)
         self.assertEqual(1, connection.rollback_count)
 
 

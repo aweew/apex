@@ -38,6 +38,8 @@ except ImportError:  # pragma: no cover
 
 ROOT = Path(__file__).resolve().parent
 PROGRESS_PATH = ROOT / ".progress" / "fund_progress.json"
+DEFAULT_RETRY_COUNT = 3
+DEFAULT_RETRY_WAIT_SECONDS = 2.0
 
 STATEMENT_MAP = {
     "profit": "利润表",
@@ -498,6 +500,45 @@ def mark_done(progress: Dict[str, Any], mode: str, code: str, ok: bool, detail: 
     save_progress(progress)
 
 
+def sync_one_with_retry(
+    conn,
+    mode: str,
+    code: str,
+    retry_count: int,
+    retry_wait_seconds: float,
+) -> int:
+    attempts = max(1, retry_count)
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            if mode == "indicator":
+                rows_written = sync_indicator(conn, code)
+            elif mode == "abstract":
+                rows_written = sync_abstract(conn, code)
+            elif mode == "reports":
+                rows_written = sync_reports(conn, code)
+            else:
+                raise ValueError(mode)
+            if rows_written <= 0:
+                raise RuntimeError("数据源未返回可落库记录")
+            return rows_written
+        except Exception as ex:
+            conn.rollback()
+            last_error = ex
+            if attempt >= attempts:
+                break
+            wait_seconds = max(0.0, retry_wait_seconds) * attempt
+            print(
+                f"[重试] {code} {mode} 第 {attempt} 次尝试失败，"
+                f"{wait_seconds:.1f} 秒后重试（共 {attempts} 次尝试）：{ex}",
+                file=sys.stderr,
+                flush=True,
+            )
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+    raise last_error
+
+
 def run_mode(
     conn,
     mode: str,
@@ -505,6 +546,8 @@ def run_mode(
     sleep_s: float,
     resume: bool,
     progress: Dict[str, Any],
+    retry_count: int = DEFAULT_RETRY_COUNT,
+    retry_wait_seconds: float = DEFAULT_RETRY_WAIT_SECONDS,
 ) -> int:
     done = progress.get(mode, {}) if resume else {}
     total = len(codes)
@@ -515,21 +558,13 @@ def run_mode(
             print(f"[{idx}/{total}] {code} 跳过（已完成）")
             continue
         try:
-            if mode == "indicator":
-                n = sync_indicator(conn, code)
-            elif mode == "abstract":
-                n = sync_abstract(conn, code)
-            elif mode == "reports":
-                n = sync_reports(conn, code)
-            else:
-                raise ValueError(mode)
-            if n <= 0:
-                raise RuntimeError("数据源未返回可落库记录")
+            n = sync_one_with_retry(
+                conn, mode, code, retry_count, retry_wait_seconds
+            )
             mark_done(progress, mode, code, True, f"rows={n}")
             ok_n += 1
             print(f"[{idx}/{total}] {code} {mode} 成功，写入行数={n}")
         except Exception as ex:
-            conn.rollback()
             mark_done(progress, mode, code, False, str(ex)[:300])
             fail_n += 1
             print(f"[{idx}/{total}] {code} {mode} 失败，异常={ex}", file=sys.stderr)
@@ -553,11 +588,23 @@ def main() -> int:
     parser.add_argument("--sleep", type=float, default=0.8, help="每只股票间隔秒")
     parser.add_argument("--missing", action="store_true", help="仅同步缺少指标、摘要或三大报表的股票")
     parser.add_argument("--no-resume", action="store_true", help="忽略进度强制重跑")
+    parser.add_argument(
+        "--retry-count",
+        type=int,
+        default=DEFAULT_RETRY_COUNT,
+        help="单只股票失败后的总尝试次数",
+    )
+    parser.add_argument(
+        "--retry-wait",
+        type=float,
+        default=DEFAULT_RETRY_WAIT_SECONDS,
+        help="重试等待秒数，按次数递增",
+    )
     args = parser.parse_args()
 
     code_list = [c.strip() for c in args.codes.split(",") if c.strip()] or None
     limit = args.limit if args.limit and args.limit > 0 else None
-    resume = not args.no_resume and not args.missing
+    resume = not args.no_resume
     progress = load_progress()
 
     conn = db_conn()
@@ -582,7 +629,16 @@ def main() -> int:
 
         failed_count = 0
         for mode in modes:
-            failed_count += run_mode(conn, mode, codes, args.sleep, resume, progress)
+            failed_count += run_mode(
+                conn,
+                mode,
+                codes,
+                args.sleep,
+                resume,
+                progress,
+                retry_count=args.retry_count,
+                retry_wait_seconds=args.retry_wait,
+            )
         return 1 if failed_count > 0 else 0
     finally:
         conn.close()

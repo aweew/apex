@@ -12,6 +12,7 @@ import com.awe.apex.quant.mapper.SyncJobMapper;
 import com.awe.apex.quant.service.ApexUserAuthService;
 import com.awe.apex.quant.service.IBarDailyService;
 import com.awe.apex.quant.service.IConfigService;
+import com.awe.apex.quant.service.IMarketBreadthForecastService;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.service.IMorningBriefingService;
 import com.awe.apex.quant.service.IMyHoldingService;
@@ -60,6 +61,8 @@ class DataSyncJobServiceExecutionTest {
 
     private final SyncJobMapper syncJobMapper = mock(SyncJobMapper.class);
     private final IMarketBriefingService marketBriefingService = mock(IMarketBriefingService.class);
+    private final IMarketBreadthForecastService marketBreadthForecastService =
+            mock(IMarketBreadthForecastService.class);
     private final IMorningBriefingService morningBriefingService = mock(IMorningBriefingService.class);
     private final IWatchlistService watchlistService = mock(IWatchlistService.class);
     private final IBarDailyService barDailyService = mock(IBarDailyService.class);
@@ -89,6 +92,7 @@ class DataSyncJobServiceExecutionTest {
         ReflectionTestUtils.setField(service, "syncJobMapper", syncJobMapper);
         ReflectionTestUtils.setField(service, "syncTaskRegistry", new SyncTaskRegistry());
         ReflectionTestUtils.setField(service, "marketBriefingService", marketBriefingService);
+        ReflectionTestUtils.setField(service, "marketBreadthForecastService", marketBreadthForecastService);
         ReflectionTestUtils.setField(service, "morningBriefingService", morningBriefingService);
         ReflectionTestUtils.setField(service, "watchlistService", watchlistService);
         ReflectionTestUtils.setField(service, "barDailyService", barDailyService);
@@ -291,6 +295,27 @@ class DataSyncJobServiceExecutionTest {
         assertTrue(persistedProgress.contains(90), () -> "缺少后处理起始进度：" + persistedProgress);
         assertEquals("SUCCESS", result.getStatus());
         assertEquals(100, result.getProgressPct());
+    }
+
+    @Test
+    void closeBundleDoesNotWaitForOptionalForecastSettlement() throws Exception {
+        CountDownLatch settlementStarted = new CountDownLatch(1);
+        CountDownLatch releaseSettlement = new CountDownLatch(1);
+        when(marketBreadthForecastService.settleAfterClose(any())).thenAnswer(invocation -> {
+            settlementStarted.countDown();
+            releaseSettlement.await(2, TimeUnit.SECONDS);
+            return "";
+        });
+
+        try {
+            SyncJob result = runCloseBundle("exit 0\n");
+
+            assertEquals("SUCCESS", result.getStatus());
+            assertEquals(100, result.getProgressPct());
+            assertTrue(settlementStarted.await(2, TimeUnit.SECONDS));
+        } finally {
+            releaseSettlement.countDown();
+        }
     }
 
     @Test
