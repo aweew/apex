@@ -423,8 +423,10 @@ onMounted(() => loadDetail())
 }
 
 .factor-center-page.is-embedded {
+  position: relative;
   max-width: none;
-  min-height: 0;
+  min-height: 1120px;
+  overflow-anchor: none;
   padding: 4px 0 24px;
 }
 
@@ -892,6 +894,10 @@ onMounted(() => loadDetail())
 
   .factor-center-page {
     padding: 16px 14px 36px;
+  }
+
+  .factor-center-page.is-embedded {
+    min-height: 1440px;
   }
 
   .factor-header {

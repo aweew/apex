@@ -80,3 +80,14 @@ test('factor center uses stable responsive grids and mobile touch targets', () =
   assert.match(source, /\.research-components\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/)
   assert.match(source, /@media \(max-width: 820px\)[\s\S]*?\.factor-query :deep\(\.el-input__wrapper\)[\s\S]*?min-height:\s*44px;/)
 })
+
+test('embedded factor center reserves height while async data loads', () => {
+  assert.match(
+    source,
+    /\.factor-center-page\.is-embedded\s*\{[\s\S]*?position:\s*relative;[\s\S]*?min-height:\s*1120px;[\s\S]*?overflow-anchor:\s*none;/s,
+  )
+  assert.match(
+    source,
+    /@media \(max-width: 820px\)[\s\S]*?\.factor-center-page\.is-embedded\s*\{[\s\S]*?min-height:\s*1440px;/s,
+  )
+})
