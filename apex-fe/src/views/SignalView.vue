@@ -479,15 +479,17 @@ onBeforeUnmount(() => {
         </el-button>
       </div>
     </header>
-    <DecisionWorkspaceTabs />
+    <div class="signal-top-tabs">
+      <DecisionWorkspaceTabs />
 
-    <div class="signal-segmented signal-mode-switch" role="group" aria-label="信号中心模式">
-      <button type="button" :class="{ 'is-active': workspaceMode === 'behavior' }" @click="workspaceMode = 'behavior'">
-        市场行为
-      </button>
-      <button type="button" :class="{ 'is-active': workspaceMode === 'strategy' }" @click="workspaceMode = 'strategy'">
-        策略信号
-      </button>
+      <div class="signal-segmented signal-mode-switch" role="group" aria-label="信号中心模式">
+        <button type="button" :class="{ 'is-active': workspaceMode === 'behavior' }" @click="workspaceMode = 'behavior'">
+          市场行为
+        </button>
+        <button type="button" :class="{ 'is-active': workspaceMode === 'strategy' }" @click="workspaceMode = 'strategy'">
+          策略信号
+        </button>
+      </div>
     </div>
 
     <section class="short-term-context" v-loading="shortTermLoading" aria-label="短线市场环境">
@@ -1030,13 +1032,27 @@ onBeforeUnmount(() => {
   margin-bottom: 0;
 }
 
+.signal-top-tabs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 480px);
+}
+
+.signal-top-tabs :deep(.decision-workspace-tabs) {
+  flex: 0 1 202px;
+  width: auto;
+  min-width: 0;
+}
+
 .signal-header-actions {
   flex-wrap: nowrap;
 }
 
 .signal-mode-switch {
-  align-self: flex-start;
-  width: 260px;
+  flex: 1 1 260px;
+  width: auto;
+  min-width: 0;
 }
 
 .short-term-context,
@@ -1851,6 +1867,19 @@ onBeforeUnmount(() => {
 
   .signal-mode-switch {
     width: 100%;
+  }
+
+  .signal-top-tabs {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .signal-top-tabs :deep(.decision-workspace-tabs) {
+    flex-basis: 42%;
+  }
+
+  .signal-top-tabs .signal-mode-switch {
+    flex-basis: 58%;
   }
 
   .short-term-context,

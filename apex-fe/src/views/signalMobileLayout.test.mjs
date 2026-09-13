@@ -15,8 +15,14 @@ const [signalDetailSource, routerSource] = await Promise.all([
 test('strategy signal workspace tabs follow the module header', () => {
   assert.match(
     signalSource,
-    /<header class="header signal-header">[\s\S]*?<\/header>\s*<DecisionWorkspaceTabs \/>/,
+    /<header class="header signal-header">[\s\S]*?<\/header>\s*<div class="signal-top-tabs">[\s\S]*?<DecisionWorkspaceTabs \/>[\s\S]*?class="signal-segmented signal-mode-switch"/,
   )
+})
+
+test('signal workspace tabs stay in one horizontal control row', () => {
+  assert.match(signalSource, /\.signal-top-tabs\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?gap:\s*12px;/)
+  assert.match(signalSource, /\.signal-top-tabs :deep\(\.decision-workspace-tabs\)\s*\{[\s\S]*?flex:\s*0 1 202px;/)
+  assert.match(signalSource, /\.signal-top-tabs \.signal-mode-switch\s*\{[\s\S]*?flex-basis:\s*58%;/)
 })
 
 test('strategy signal page keeps loading feedback local to the affected content', () => {
