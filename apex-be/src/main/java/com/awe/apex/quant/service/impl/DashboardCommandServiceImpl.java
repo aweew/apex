@@ -383,16 +383,16 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 marketOutlook += "，还要看上涨股票能否多于下跌股票。";
             }
         } else if (asiaWeak) {
-            marketOutlook = "预计开盘偏弱，之后各板块可能有涨有跌。亚太市场平均"
-                    + formatPlainChange(asiaAverage) + "，可能影响 A 股开盘。";
+            marketOutlook = "预计开盘偏弱。亚太市场平均"
+                    + formatPlainChange(asiaAverage) + "。";
         } else if (overnightWeak) {
-            marketOutlook = "预计低开，之后各板块可能有涨有跌。海外主要指数平均"
-                    + formatPlainChange(overnightAverage) + "，可能影响 A 股开盘。";
+            marketOutlook = "预计低开。海外主要指数平均"
+                    + formatPlainChange(overnightAverage) + "。";
         } else if (overnightStrong) {
-            marketOutlook = "预计开盘偏强，之后各板块可能有涨有跌。海外市场虽然上涨，"
-                    + "但 A 股开盘后不一定继续涨。";
+            marketOutlook = "预计开盘偏强。海外主要指数平均"
+                    + formatPlainChange(overnightAverage) + "。";
         } else {
-            marketOutlook = "预计开盘变化不大，之后各板块可能有涨有跌。";
+            marketOutlook = "预计开盘变化不大。";
         }
         if (!useFreshIntradayMarketData) {
             List<String> focusDirectionNames = new ArrayList<>();
@@ -409,9 +409,10 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
             String directionAdvice;
             if (focusDirectionNames.size() >= 2) {
                 directionAdvice = "开盘后先看" + focusDirectionNames.get(0) + "和"
-                        + focusDirectionNames.get(1) + "，继续上涨再关注";
+                        + focusDirectionNames.get(1) + "，不明显回落再关注";
             } else if (focusDirectionNames.size() == 1) {
-                directionAdvice = "开盘后先看" + focusDirectionNames.get(0) + "，继续上涨再关注";
+                directionAdvice = "开盘后先看" + focusDirectionNames.get(0)
+                        + "，不明显回落再关注";
             } else {
                 directionAdvice = "暂时没有明显走强的板块，先看上涨股票能否多于下跌股票";
             }
@@ -479,12 +480,12 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                     + "，最近5个交易日" + formatPlainChange(hotThemeItem.getPctChg5d())
                     + "，" + latestPeriod + formatPlainChange(hotThemeItem.getPctChg()) + "。"
                     + (newStrengthening ? "最近几天刚有起色" : "最近几天保持上涨")
-                    + "，开盘后不明显回落再关注。";
+                    + "，不明显回落再关注。";
             MarketForecastDirectionResp focusItem = MarketForecastDirectionResp.builder()
                     .name(themeName)
                     .reason(reason)
                     .watchStocks(watchStocks)
-                    .action("开盘后不明显回落再关注，高开时不要追")
+                    .action("不明显回落再关注，高开时不要追")
                     .build();
             if (newStrengthening) {
                 newStrengtheningItems.add(focusItem);

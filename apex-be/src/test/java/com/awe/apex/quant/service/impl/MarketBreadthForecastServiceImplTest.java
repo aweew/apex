@@ -1,6 +1,7 @@
 package com.awe.apex.quant.service.impl;
 
 import com.awe.apex.quant.domain.dto.MarketBriefingResp;
+import com.awe.apex.quant.domain.dto.MorningBriefingResp;
 import com.awe.apex.quant.domain.entity.MarketBreadthForecast;
 import com.awe.apex.quant.mapper.MarketBreadthForecastMapper;
 import com.awe.apex.quant.service.IMarketBriefingService;
@@ -76,5 +77,21 @@ class MarketBreadthForecastServiceImplTest {
 
         assertEquals("盘前涨跌比回测未结算：收盘市场简报未覆盖 2026-08-25", message);
         verify(forecastMapper, org.mockito.Mockito.never()).updateById(any(MarketBreadthForecast.class));
+    }
+
+    @Test
+    void shouldExplainMissingDashboardForecastInPlainLanguage() {
+        MarketBreadthForecastServiceImpl service = new MarketBreadthForecastServiceImpl();
+        MarketBreadthForecastMapper forecastMapper = mock(MarketBreadthForecastMapper.class);
+        ReflectionTestUtils.setField(service, "marketBreadthForecastMapper", forecastMapper);
+        when(forecastMapper.selectOne(any())).thenReturn(null);
+
+        MorningBriefingResp morningBriefing = MorningBriefingResp.builder()
+                .tradeDate(LocalDate.of(2026, 8, 25))
+                .build();
+
+        String message = service.loadForDashboard(morningBriefing, null).getMessage();
+
+        assertEquals("当前没有盘前预测，下一交易日开盘前生成", message);
     }
 }

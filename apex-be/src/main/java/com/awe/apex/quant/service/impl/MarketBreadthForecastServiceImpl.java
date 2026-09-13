@@ -74,13 +74,13 @@ public class MarketBreadthForecastServiceImpl implements IMarketBreadthForecastS
             forecast = createForecast(tradeDate, morningBriefing, marketBriefing);
         }
         if (Objects.isNull(forecast)) {
-            return unavailable("盘前预测仅在开盘前固化；等待下一交易日生成");
+            return unavailable("当前没有盘前预测，下一交易日开盘前生成");
         }
         return toResp(forecast);
     }
 
     /**
-     * 交易日前生成并固化盘前预测。
+     * 交易日前生成并保存盘前预测。
      *
      * @return 生成结果说明，成功或已存在时为空字符串
      */
@@ -206,7 +206,7 @@ public class MarketBreadthForecastServiceImpl implements IMarketBreadthForecastS
                 .build();
         try {
             marketBreadthForecastMapper.insert(forecast);
-            log.info("盘前涨跌比预测已固化，交易日={}，预测上涨占比={}，置信度={}，依据={}",
+            log.info("盘前涨跌比预测已生成，交易日={}，预测上涨占比={}，置信度={}，依据={}",
                     tradeDate, forecast.getPredictedUpRatio(), forecast.getConfidence(), forecast.getFactorSummary());
             return forecast;
         } catch (Exception ex) {

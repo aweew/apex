@@ -395,9 +395,9 @@ public class DecisionServiceImpl implements IDecisionService {
         BigDecimal buyFactor = Objects.nonNull(briefing.getBuyWeightFactor())
                 ? briefing.getBuyWeightFactor() : BigDecimal.ONE;
         List<String> mainlineNames = resolveMainlineNames(briefing, context.getMode() != DecisionMode.REPLAY);
-        progressListener.onProgress(12, 100, "市场简报完成，正在固化组合快照");
+        progressListener.onProgress(12, 100, "市场简报完成，正在保存组合快照");
 
-        // 1. 固化市场状态和默认组合时点，后续仓位只使用该快照
+        // 1. 保存市场状态和默认组合时点，后续仓位只使用该快照
         MarketRegimeResult marketRegime = resolveRunMarketRegime(context);
         RiskOverviewResp configuredRisk = DecisionMode.REPLAY.equals(context.getMode())
                 ? null : loadRiskLimits();

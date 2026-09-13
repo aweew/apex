@@ -21,7 +21,7 @@ public interface IMarketBreadthForecastService {
     MarketBreadthForecastResp loadForDashboard(MorningBriefingResp morningBriefing, MarketBriefingResp marketBriefing);
 
     /**
-     * 交易日前生成并固化盘前预测。
+     * 交易日前生成并保存盘前预测。
      *
      * @return 生成结果说明，成功或已存在时为空字符串
      */

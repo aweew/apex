@@ -171,14 +171,14 @@ class DashboardCommandServiceImplTest {
                 .build());
 
         MarketForecastResp forecast = command.getPreMarketSummary().getForecast();
-        assertEquals("预计开盘变化不大，之后各板块可能有涨有跌。开盘后先看CPO概念和液冷服务器，"
-                        + "继续上涨再关注；暂时回避科技成长。",
+        assertEquals("预计开盘变化不大。开盘后先看CPO概念和液冷服务器，不明显回落再关注；"
+                        + "暂时回避科技成长。",
                 forecast.getMarketOutlook());
         assertEquals("最近3个交易日上涨4.05%，最近5个交易日下跌0.48%，最近一个交易日上涨6.50%。"
-                        + "最近几天刚有起色，开盘后不明显回落再关注。",
+                        + "最近几天刚有起色，不明显回落再关注。",
                 forecast.getFocusItems().get(0).getReason());
         assertEquals("最近3个交易日上涨1.30%，最近5个交易日上涨0.10%，最近一个交易日上涨1.99%。"
-                        + "最近几天保持上涨，开盘后不明显回落再关注。",
+                        + "最近几天保持上涨，不明显回落再关注。",
                 forecast.getFocusItems().get(1).getReason());
         assertEquals("部分科技类板块最近3个和5个交易日都在下跌。",
                 forecast.getRiskItems().get(0).getReason());

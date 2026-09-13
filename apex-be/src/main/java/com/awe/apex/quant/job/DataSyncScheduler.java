@@ -288,7 +288,7 @@ public class DataSyncScheduler {
     }
 
     /**
-     * 交易日开盘前固化一次涨跌比预测。
+     * 交易日开盘前生成一次涨跌比预测。
      */
     @Scheduled(cron = "0 20 9 * * MON-FRI", zone = "Asia/Shanghai")
     public void generateBreadthForecastBeforeOpen() {

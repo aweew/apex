@@ -133,4 +133,20 @@ class MarketBriefingMathTest {
                 new BigDecimal("0.80"), new BigDecimal("2.50"), new BigDecimal("2.30"));
         assertTrue(hint.contains("小票"));
     }
+
+    @Test
+    void marksBroadSharpDeclineAsVeryWeakMoneyEffect() {
+        String hint = MarketBriefingMath.effectHint(
+                new BigDecimal("-2.21"), new BigDecimal("-1.81"), new BigDecimal("-2.65"));
+
+        assertEquals("中位数与微盘同步走弱，赚钱效应很弱，个股普遍承压。", hint);
+    }
+
+    @Test
+    void keepsMildStyleDivergenceAsAverageMoneyEffect() {
+        String hint = MarketBriefingMath.effectHint(
+                new BigDecimal("-0.30"), new BigDecimal("-1.20"), new BigDecimal("-0.10"));
+
+        assertEquals("中位数偏弱且大盘占优，赚钱效应一般。", hint);
+    }
 }

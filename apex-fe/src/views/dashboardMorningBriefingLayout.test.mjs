@@ -611,6 +611,18 @@ test('dashboard renders the pre-market breadth forecast as a red-green tug of wa
   assert.match(dashboardSource, /@media \(max-width: 560px\)[\s\S]*?\.breadth-forecast-main\s*\{[^}]*grid-template-columns:\s*1fr;/s)
 })
 
+test('dashboard does not expose implementation wording for unavailable forecasts', () => {
+  assert.doesNotMatch(dashboardSource, /固化/)
+})
+
+test('dashboard forecast copy avoids generic market disclaimers', () => {
+  assert.doesNotMatch(dashboardSource, /之后各板块可能有涨有跌/)
+  assert.doesNotMatch(dashboardSource, /海外市场虽然上涨/)
+  assert.doesNotMatch(dashboardSource, /A 股开盘后不一定继续涨/)
+  assert.doesNotMatch(dashboardSource, /继续上涨再关注/)
+  assert.doesNotMatch(dashboardSource, /开盘后不明显回落再关注/)
+})
+
 test('dashboard keeps empty forecasts compact without hiding available forecast detail', () => {
   assert.match(
     dashboardSource,

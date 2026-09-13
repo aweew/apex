@@ -108,6 +108,11 @@ public final class MarketBriefingMath {
             return "中位数与微盘同步偏强，赚钱效应偏向小票。";
         }
         if (medianDown && largeLead) {
+            if (medianPct.compareTo(new BigDecimal("-1")) <= 0
+                    && Objects.nonNull(microPct)
+                    && microPct.compareTo(new BigDecimal("-1")) <= 0) {
+                return "中位数与微盘同步走弱，赚钱效应很弱，个股普遍承压。";
+            }
             return "中位数偏弱且大盘占优，赚钱效应一般。";
         }
         if (medianUp && largeLead) {
