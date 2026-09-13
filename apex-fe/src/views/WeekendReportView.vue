@@ -173,7 +173,7 @@ onBeforeUnmount(() => {
         <aside class="weekend-lead-status" aria-label="报告状态">
           <span>本周研判</span>
           <strong>{{ report.marketStatus || '待确认' }}</strong>
-          <small>周日 21:00 固化</small>
+          <small>周日 21:00 生成</small>
         </aside>
       </header>
 

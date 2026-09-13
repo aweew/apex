@@ -41,6 +41,11 @@ test('weekend report keeps long evidence and controls safe on mobile', () => {
   assert.match(viewSource, /grid-template-columns:\s*minmax\(0, 1fr\)/)
 })
 
+test('weekend report uses user-facing timing language', () => {
+  assert.match(viewSource, /周日 21:00 生成/)
+  assert.doesNotMatch(viewSource, /固化/)
+})
+
 test('weekend report is hidden outside the Sunday night to Monday open window', () => {
   assert.match(viewSource, /isWeekendReportVisible/)
   assert.match(viewSource, /v-if="reportWindowOpen && report"/)
