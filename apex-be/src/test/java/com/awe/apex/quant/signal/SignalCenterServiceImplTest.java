@@ -7,7 +7,7 @@ import com.awe.apex.quant.market.ExternalMarketIndicatorEnum;
 import com.awe.apex.quant.market.ExternalMarketQuoteClient;
 import com.awe.apex.quant.service.IMarketBriefingService;
 import com.awe.apex.quant.signal.event.MarketBehaviorDetector;
-import com.awe.apex.quant.signal.query.SignalCenterMapper;
+import com.awe.apex.quant.signal.mapper.SignalCenterMapper;
 import com.awe.apex.quant.signal.query.SignalCenterServiceImpl;
 import com.awe.apex.quant.signal.query.ShortTermSignalResp;
 import com.awe.apex.quant.signal.query.ShortTermVixResp;

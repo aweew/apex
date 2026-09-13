@@ -1,9 +1,15 @@
-package com.awe.apex.quant.signal.query;
+package com.awe.apex.quant.signal.mapper;
 
 import com.awe.apex.quant.domain.entity.BarDaily;
 import com.awe.apex.quant.signal.event.SignalCalculationRunWriteBO;
 import com.awe.apex.quant.signal.event.SignalDefinitionRuleBO;
 import com.awe.apex.quant.signal.event.SignalEventWriteBO;
+import com.awe.apex.quant.signal.query.SignalCalculationRunResp;
+import com.awe.apex.quant.signal.query.SignalDefinitionResp;
+import com.awe.apex.quant.signal.query.SignalOverviewResp;
+import com.awe.apex.quant.signal.query.SignalRankingItemResp;
+import com.awe.apex.quant.signal.query.SignalTimelineItemResp;
+import com.awe.apex.quant.signal.query.SignalUniverseItemResp;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;

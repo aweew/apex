@@ -15,6 +15,7 @@ import com.awe.apex.quant.signal.event.SignalEvidence;
 import com.awe.apex.quant.signal.event.SignalDetectionResult;
 import com.awe.apex.quant.signal.event.SignalEventWriteBO;
 import com.awe.apex.quant.service.IMarketBriefingService;
+import com.awe.apex.quant.signal.mapper.SignalCenterMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
