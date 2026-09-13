@@ -100,6 +100,13 @@ test('K-line toolbar exposes icon zoom controls with accessible labels', () => {
   assert.doesNotMatch(stockSource, /class="chart-hint"/)
 })
 
+test('K-line canvases keep high-density pixels on high-DPI displays', () => {
+  assert.match(
+    stockSource,
+    /echarts\.init\(chartRef\.value, null, \{\s*devicePixelRatio:\s*Math\.max\(window\.devicePixelRatio \|\| 1, 2\),\s*\}\)/s,
+  )
+})
+
 test('K-line period controls share the desktop chart header with the compact legend', () => {
   const toolbarIndex = stockSource.indexOf('class="chart-toolbar"')
   const periodControlsIndex = stockSource.indexOf('class="chart-primary-controls"')
@@ -207,7 +214,14 @@ test('K-line renders confirmed MACD top and bottom divergence markers', () => {
   assert.match(stockSource, /detectMacdDivergences\(highs, lows, closes, dif\)/)
   assert.match(stockSource, /const spacedDivergences = spaceChartSignals\(divergenceSignals, 8\)/)
   assert.match(stockSource, /name: '顶背离',[\s\S]*?symbol: 'pin',[\s\S]*?formatter: '顶'[\s\S]*?align: 'center',[\s\S]*?verticalAlign: 'middle',[\s\S]*?labelLayout: \{ hideOverlap: false \}/s)
-  assert.match(stockSource, /name: '底背离',[\s\S]*?symbol: 'pin',[\s\S]*?formatter: '底'[\s\S]*?align: 'center',[\s\S]*?verticalAlign: 'middle',[\s\S]*?labelLayout: \{ hideOverlap: false \}/s)
+  assert.match(
+    stockSource,
+    /name: '底背离',[\s\S]*?symbol: 'circle',[\s\S]*?symbolSize: 24,[\s\S]*?borderColor: '#fff',[\s\S]*?borderWidth: 1\.5,[\s\S]*?formatter: '底'[\s\S]*?lineHeight: 11,[\s\S]*?align: 'center',[\s\S]*?verticalAlign: 'middle',[\s\S]*?offset: \[0, 0\],[\s\S]*?labelLayout: \{ hideOverlap: false \}/s,
+  )
+  const bottomDivergenceBlock = stockSource.match(
+    /name: '底背离',([\s\S]*?)(?=\n\s*name: '成交量')/s,
+  )?.[1] || ''
+  assert.doesNotMatch(bottomDivergenceBlock, /symbol:\s*['"](pin|triangle)['"]/)
   assert.match(stockSource, /MACD 顶背离（已确认）/)
   assert.match(stockSource, /MACD 底背离（已确认）/)
 })

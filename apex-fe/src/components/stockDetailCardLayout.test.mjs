@@ -13,6 +13,13 @@ test('stock detail card stays globally available while the stock page uses one p
   assert.match(stockViewSource, /class="market-overview"[\s\S]*?class="chart-stage"/)
 })
 
+test('stock detail card keeps K-line pixels sharp on high-DPI displays', () => {
+  assert.match(
+    componentSource,
+    /echarts\.init\(chartRef\.value, null, \{\s*renderer:\s*'canvas',\s*devicePixelRatio:\s*Math\.max\(window\.devicePixelRatio \|\| 1, 2\),\s*\}\)/s,
+  )
+})
+
 test('stock detail card exposes all chart periods without a reference disclaimer', () => {
   assert.match(componentSource, /const periods = \[[\s\S]*?value: 'intraday'[\s\S]*?value: 'day'[\s\S]*?value: 'week'[\s\S]*?value: 'month'/)
   assert.match(componentSource, /:data-period="item\.value"/)

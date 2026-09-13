@@ -595,7 +595,9 @@ async function ensureChartInstance() {
     disposeChart()
   }
   if (!chart) {
-    chart = echarts.init(chartRef.value)
+    chart = echarts.init(chartRef.value, null, {
+      devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2),
+    })
   } else {
     chart.off('datazoom')
     chart.off('legendselectchanged')
@@ -1647,13 +1649,16 @@ async function renderChart(list) {
         name: '底背离',
         type: 'scatter',
         data: bullishDivergencePoints,
-        symbol: 'pin',
-        symbolRotate: 180,
-        symbolSize: 26,
+        symbol: 'circle',
+        symbolSize: 24,
         symbolOffset: [0, 0],
         clip: false,
         silent: true,
-        itemStyle: { color: '#c62828' },
+        itemStyle: {
+          color: '#c62828',
+          borderColor: '#fff',
+          borderWidth: 1.5,
+        },
         label: {
           show: true,
           formatter: '底',
@@ -1661,8 +1666,10 @@ async function renderChart(list) {
           color: '#fff',
           fontSize: 10,
           fontWeight: 700,
+          lineHeight: 11,
           align: 'center',
           verticalAlign: 'middle',
+          offset: [0, 0],
         },
         labelLayout: { hideOverlap: false },
         tooltip: { show: false },

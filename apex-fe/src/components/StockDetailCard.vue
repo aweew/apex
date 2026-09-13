@@ -131,7 +131,12 @@ function selectPeriod(period) {
 
 function ensureChart() {
   if (!chartRef.value || chartRef.value.clientWidth < 40) return false
-  if (!chart) chart = echarts.init(chartRef.value, null, { renderer: 'canvas' })
+  if (!chart) {
+    chart = echarts.init(chartRef.value, null, {
+      renderer: 'canvas',
+      devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2),
+    })
+  }
   return true
 }
 
