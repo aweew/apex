@@ -93,7 +93,7 @@ apex:
     close-decision-enabled: ${APEX_CLOSE_DECISION_ENABLED:true}
   mx-output-dir: ${user.dir}/../../.mx_output
   cors:
-    allowed-origin-patterns: ${APEX_CORS_ALLOWED_ORIGIN_PATTERNS:http://127.0.0.1:5173,http://localhost:5173}
+    allowed-origin-patterns: ${APEX_CORS_ALLOWED_ORIGIN_PATTERNS:http://127.0.0.1:[*],http://localhost:[*]}
   hithink:
     enabled: ${APEX_HITHINK_ENABLED:false}
     base-url: ${APEX_HITHINK_BASE_URL:https://fuyao.aicubes.cn}
