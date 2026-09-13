@@ -2978,6 +2978,16 @@ function dash(v) {
   border-radius: 50%;
 }
 
+.stock-action-toolbar :deep(.sync-action > .el-icon) {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1em;
+  height: 1em;
+  margin: -0.5em 0 0 -0.5em;
+  line-height: 1;
+}
+
 .stock-action-toolbar :deep(.sync-action) {
   color: var(--ink-soft);
   border-color: var(--line);

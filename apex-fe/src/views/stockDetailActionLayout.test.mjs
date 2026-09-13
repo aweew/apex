@@ -59,6 +59,10 @@ test('stock sync exposes independent progress without resizing the primary actio
   assert.match(source, /syncQuote: syncStockQuote/)
   assert.doesNotMatch(source, /syncStockBasic/)
   assert.match(source, /\.sync-progress,[\s\S]*?\.sync-result\s*\{[^}]*min-height:\s*15px;/)
+  assert.match(
+    source,
+    /\.stock-action-toolbar :deep\(\.sync-action > \.el-icon\)\s*\{[\s\S]*?top:\s*50%;[\s\S]*?left:\s*50%;[\s\S]*?margin:\s*-0\.5em 0 0 -0\.5em;/,
+  )
   assert.match(source, /\.stock-action-toolbar :deep\(\.sync-action\)\s*\{[\s\S]*?background:\s*#fff;/)
   assert.match(source, /:deep\(\.sync-action:hover:not\(:disabled\)\)\s*\{[\s\S]*?background:\s*rgba\(0, 113, 227, 0\.06\);/)
 })
