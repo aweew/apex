@@ -12,6 +12,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -36,7 +37,8 @@ public class DecisionActionPublisher {
      * @param dataLevel 数据质量等级
      * @param message   决策说明
      */
-    @Transactional(rollbackFor = Exception.class)
+    // 首次发布当日清单时避免空日期范围的间隙锁阻塞其他用户插入，同用户仍由运行记录行锁串行发布。
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
     public void publish(DecisionRun run, List<DecisionItemResp> items,
                         String dataLevel, String message) {
         LocalDate actionDate = run.getActionDate();

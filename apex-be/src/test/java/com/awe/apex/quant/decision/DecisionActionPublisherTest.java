@@ -9,7 +9,13 @@ import com.awe.apex.quant.mapper.DecisionRunMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -35,6 +41,43 @@ class DecisionActionPublisherTest {
         ReflectionTestUtils.setField(publisher, "decisionRunMapper", runMapper);
         when(mapper.insert(any(DailyAction.class))).thenReturn(1);
         when(runMapper.updateById(any(DecisionRun.class))).thenReturn(1);
+    }
+
+    @Test
+    void springProxyPublishesWithReadCommittedIsolation() {
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        SimpleTransactionStatus transactionStatus = new SimpleTransactionStatus();
+        when(transactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(transactionStatus);
+        ProxyFactory proxyFactory = new ProxyFactory(publisher);
+        proxyFactory.addAdvice(new TransactionInterceptor(transactionManager, new AnnotationTransactionAttributeSource()));
+        DecisionActionPublisher transactionalPublisher = (DecisionActionPublisher) proxyFactory.getProxy();
+        DecisionRun run = DecisionRun.builder().id(12L).userId(7L)
+                .actionDate(LocalDate.of(2026, 9, 23)).build();
+
+        transactionalPublisher.publish(run, List.of(), "GREEN", "完成");
+
+        ArgumentCaptor<TransactionDefinition> transactionCaptor = ArgumentCaptor.forClass(TransactionDefinition.class);
+        verify(transactionManager).getTransaction(transactionCaptor.capture());
+        assertEquals(TransactionDefinition.ISOLATION_READ_COMMITTED, transactionCaptor.getValue().getIsolationLevel());
+        verify(transactionManager).commit(transactionStatus);
+    }
+
+    @Test
+    void springProxyRollsBackEntirePublicationWhenInsertFails() {
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        SimpleTransactionStatus transactionStatus = new SimpleTransactionStatus();
+        when(transactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(transactionStatus);
+        ProxyFactory proxyFactory = new ProxyFactory(publisher);
+        proxyFactory.addAdvice(new TransactionInterceptor(transactionManager, new AnnotationTransactionAttributeSource()));
+        DecisionActionPublisher transactionalPublisher = (DecisionActionPublisher) proxyFactory.getProxy();
+        DecisionRun run = DecisionRun.builder().id(12L).userId(7L)
+                .actionDate(LocalDate.of(2026, 9, 23)).build();
+        when(mapper.insert(any(DailyAction.class))).thenReturn(0);
+
+        assertThrows(BusinessException.class, () -> transactionalPublisher.publish(run,
+                List.of(DecisionItemResp.builder().code("000001").action("BUY").build()), "GREEN", "完成"));
+
+        verify(transactionManager).rollback(transactionStatus);
     }
 
     @Test
