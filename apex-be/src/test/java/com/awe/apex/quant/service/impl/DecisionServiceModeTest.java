@@ -14,6 +14,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -52,6 +54,20 @@ class DecisionServiceModeTest {
 
         verify(runManager).completeUnpublished(run, "RED", response.getMessage());
         verify(publisher, never()).publish(run, List.of(), "RED", response.getMessage());
+        assertFalse(response.getGenerated());
+        assertTrue(response.getMessage().contains("未发布"));
+    }
+
+    @Test
+    void greenDataMarksResponseGeneratedOnlyAfterPublishing() {
+        DecisionContext context = DecisionContext.builder().mode(DecisionMode.LIVE).build();
+        DecisionRun run = DecisionRun.builder().id(1L).build();
+        DecisionTodayResp response = DecisionTodayResp.builder().items(List.of()).message("完成").build();
+
+        service.finishRun(context, run, response, "GREEN");
+
+        verify(publisher).publish(run, List.of(), "GREEN", "完成");
+        assertTrue(response.getGenerated());
     }
 
     @Test

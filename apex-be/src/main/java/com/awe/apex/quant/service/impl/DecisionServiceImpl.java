@@ -53,6 +53,7 @@ import com.awe.apex.quant.domain.dto.DecisionPortfolioHolding;
 import com.awe.apex.quant.domain.dto.DecisionRunReq;
 import com.awe.apex.quant.domain.dto.DecisionStockNewsResp;
 import com.awe.apex.quant.domain.dto.DecisionTodayResp;
+import com.awe.apex.quant.domain.dto.DecisionRunStatusResp;
 import com.awe.apex.quant.domain.dto.DecisionStrategyPerformance;
 import com.awe.apex.quant.domain.dto.HotConfluenceItem;
 import com.awe.apex.quant.domain.dto.LimitUpLadderResp;
@@ -358,7 +359,8 @@ public class DecisionServiceImpl implements IDecisionService {
                     ? response.getMarketBriefing().getDataLevel() : null;
             reporter.onProgress(98, 100, "正在发布决策结果");
             finishRun(context, decisionRun, response, dataLevel);
-            reporter.onProgress(99, 100, "决策结果已生成");
+            reporter.onProgress(99, 100, Boolean.TRUE.equals(response.getGenerated())
+                    ? "决策结果已发布" : response.getMessage());
             log.info("一键决策完成，运行编号={}，模式={}，股票池数量={}，买入数量={}，卖出数量={}，持有数量={}，耗时毫秒={}",
                     decisionRun.getRunNo(), decisionRun.getMode(), response.getUniverseCount(), response.getBuyCount(),
                     response.getSellCount(), response.getHoldCount(), System.currentTimeMillis() - startedAt);
@@ -375,12 +377,14 @@ public class DecisionServiceImpl implements IDecisionService {
                    DecisionTodayResp response, String dataLevel) {
         if (context.getMode() == DecisionMode.SHADOW || !DecisionDataReadiness.canPublish(dataLevel)) {
             if (!DecisionDataReadiness.canPublish(dataLevel)) {
-                response.setMessage(response.getMessage() + "；市场关键数据未就绪，本次仅保留未发布运行记录");
+                response.setMessage("本次运行未发布：市场关键数据未就绪（" + dataLevel + "），请补齐行情后重新生成");
             }
             decisionRunManager.completeUnpublished(run, dataLevel, response.getMessage());
+            response.setGenerated(false);
             return;
         }
         decisionActionPublisher.publish(run, response.getItems(), dataLevel, response.getMessage());
+        response.setGenerated(true);
     }
 
     private DecisionTodayResp executeRun(DecisionRunReq safe, String groupName,
@@ -1709,6 +1713,12 @@ public class DecisionServiceImpl implements IDecisionService {
                 .orderByAsc(DailyAction::getAction)
                 .orderByDesc(DailyAction::getScore));
         DecisionRun storedRun = loadDecisionRun(rows, actionDate);
+        DecisionRun latestRun = decisionRunMapper.selectOne(Wrappers.<DecisionRun>lambdaQuery()
+                .eq(DecisionRun::getUserId, userContext.currentUserId())
+                .eq(DecisionRun::getActionDate, actionDate)
+                .eq(DecisionRun::getMode, DecisionMode.LIVE.name())
+                .orderByDesc(DecisionRun::getId)
+                .last("LIMIT 1"));
         if (actionDate.equals(LocalDate.now())) {
             if (!reuseBriefing) {
                 // 今日大盘与看板对齐：走实时简报（指数/量能/涨跌家数会覆盖）
@@ -1833,16 +1843,37 @@ public class DecisionServiceImpl implements IDecisionService {
         String message = CollUtil.isEmpty(all)
                 ? (generated
                 ? "今日决策已生成，暂无符合条件的操作；下方市场简报已可参考"
-                : "今日尚无决策，请启动「后台生成决策」；下方市场简报已可参考")
+                : "今日尚无决策，请等待系统自动生成，管理员可点击「生成今日决策」；下方市场简报已可参考")
                 : "市场「" + briefing.getStance() + "」· 买 " + buys.size()
                 + " / 卖 " + sells.size() + " / 持有 " + holds.size()
                 + " · 可执行 " + executableCount;
+        if (!generated && Objects.nonNull(latestRun)) {
+            if ("RUNNING".equals(latestRun.getStatus())) {
+                message = "决策正在生成，请稍后刷新查看结果";
+            } else if ("FAILED".equals(latestRun.getStatus())) {
+                message = "本次决策生成失败：" + (StringUtils.isNotBlank(latestRun.getMessage())
+                        ? latestRun.getMessage() : "请查看任务日志后重试");
+            } else if (!Integer.valueOf(1).equals(latestRun.getPublished())) {
+                message = StringUtils.isNotBlank(latestRun.getMessage())
+                        ? latestRun.getMessage() : "本次运行未发布：市场关键数据未就绪，请补齐行情后重新生成";
+            }
+        }
         return DecisionTodayResp.builder()
                 .runNo(Objects.nonNull(storedRun) ? storedRun.getRunNo() : null)
                 .runMode(Objects.nonNull(storedRun) ? storedRun.getMode() : null)
                 .asOfTime(Objects.nonNull(storedRun) ? storedRun.getAsOfTime() : null)
                 .dataAsOf(Objects.nonNull(dataCutoff) ? dataCutoff.getMarketDataAsOf() : null)
                 .generated(generated)
+                .latestRun(Objects.nonNull(latestRun) ? DecisionRunStatusResp.builder()
+                        .runNo(latestRun.getRunNo())
+                        .actionDate(latestRun.getActionDate())
+                        .status(latestRun.getStatus())
+                        .published(Integer.valueOf(1).equals(latestRun.getPublished()))
+                        .dataLevel(latestRun.getDataLevel())
+                        .message(latestRun.getMessage())
+                        .startedAt(latestRun.getStartedAt())
+                        .finishedAt(latestRun.getFinishedAt())
+                        .build() : null)
                 .ruleVersion(Objects.nonNull(storedRun) ? storedRun.getRuleVersion() : null)
                 .modelVersion(Objects.nonNull(storedRun) ? storedRun.getModelVersion() : null)
                 .featureVersion(Objects.nonNull(storedRun) ? storedRun.getFeatureVersion() : null)

@@ -27,11 +27,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 class DecisionTodayServiceTest {
@@ -95,12 +97,84 @@ class DecisionTodayServiceTest {
         assertEquals("RUN-21", response.getRunNo());
         assertTrue(response.getMessage().contains("已生成"));
         ArgumentCaptor<Wrapper<DecisionRun>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
-        verify(decisionRunMapper).selectOne(queryCaptor.capture());
-        String sql = queryCaptor.getValue().getSqlSegment();
+        verify(decisionRunMapper, times(2)).selectOne(queryCaptor.capture());
+        String sql = queryCaptor.getAllValues().get(0).getSqlSegment();
         assertTrue(sql.contains("user_id"));
         assertTrue(sql.contains("action_date"));
         assertTrue(sql.contains("status"));
         assertTrue(sql.contains("published"));
+    }
+
+    @Test
+    void exposesUnpublishedAttemptWithoutDiscardingPublishedDecision() {
+        LocalDate actionDate = LocalDate.now();
+        DecisionRun publishedRun = DecisionRun.builder().id(21L).userId(7L)
+                .runNo("PUBLISHED-21").mode("LIVE").actionDate(actionDate)
+                .status("SUCCESS").published(1).build();
+        DecisionRun latestRun = DecisionRun.builder().id(22L).userId(7L)
+                .runNo("UNPUBLISHED-22").mode("LIVE").actionDate(actionDate)
+                .status("SUCCESS").published(0).dataLevel("RED")
+                .message("市场关键数据未就绪").startedAt(actionDate.atTime(16, 0))
+                .finishedAt(actionDate.atTime(16, 1)).build();
+        when(dailyActionMapper.selectList(any())).thenReturn(List.of());
+        when(decisionRunMapper.selectOne(any())).thenReturn(publishedRun, latestRun);
+
+        DecisionTodayResp response = service.today(actionDate, "我的自选",
+                MarketBriefingResp.builder().stance("均衡").hotThemes(List.of()).build());
+
+        assertTrue(response.getGenerated());
+        assertEquals("PUBLISHED-21", response.getRunNo());
+        assertEquals("UNPUBLISHED-22", response.getLatestRun().getRunNo());
+        assertFalse(response.getLatestRun().getPublished());
+        assertEquals("RED", response.getLatestRun().getDataLevel());
+        assertEquals(latestRun.getFinishedAt(), response.getLatestRun().getFinishedAt());
+        assertEquals(actionDate, response.getLatestRun().getActionDate());
+        ArgumentCaptor<Wrapper<DecisionRun>> queryCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(decisionRunMapper, times(2)).selectOne(queryCaptor.capture());
+        String latestSql = queryCaptor.getAllValues().get(1).getSqlSegment();
+        assertTrue(latestSql.contains("user_id"));
+        assertTrue(latestSql.contains("action_date"));
+        assertTrue(latestSql.contains("mode"));
+        assertFalse(latestSql.contains("published"));
+    }
+
+    @Test
+    void exposesRunningAndUnpublishedAttemptsWhenNoPublishedDecisionExists() {
+        LocalDate actionDate = LocalDate.now();
+        when(dailyActionMapper.selectList(any())).thenReturn(List.of());
+        for (String status : List.of("RUNNING", "SUCCESS")) {
+            DecisionRun latestRun = DecisionRun.builder().userId(7L).mode("LIVE")
+                    .actionDate(actionDate).status(status).published(0).dataLevel("RED")
+                    .message("本次运行未发布：市场关键数据未就绪").build();
+            when(decisionRunMapper.selectOne(any())).thenReturn(null, latestRun);
+
+            DecisionTodayResp response = service.today(actionDate, "我的自选",
+                    MarketBriefingResp.builder().stance("均衡").hotThemes(List.of()).build());
+
+            assertFalse(response.getGenerated());
+            assertNull(response.getRunNo());
+            assertEquals(status, response.getLatestRun().getStatus());
+            assertFalse(response.getLatestRun().getPublished());
+            assertTrue(response.getMessage().contains("RUNNING".equals(status) ? "正在生成" : "未发布"));
+        }
+    }
+
+    @Test
+    void reportsFailedAttemptInsteadOfClaimingNoRunExists() {
+        LocalDate actionDate = LocalDate.now();
+        DecisionRun latestRun = DecisionRun.builder().userId(7L).mode("LIVE")
+                .actionDate(actionDate).status("FAILED").published(0)
+                .message("行情服务暂不可用").build();
+        when(dailyActionMapper.selectList(any())).thenReturn(List.of());
+        when(decisionRunMapper.selectOne(any())).thenReturn(null, latestRun);
+
+        DecisionTodayResp response = service.today(actionDate, "我的自选",
+                MarketBriefingResp.builder().stance("均衡").hotThemes(List.of()).build());
+
+        assertFalse(response.getGenerated());
+        assertEquals("FAILED", response.getLatestRun().getStatus());
+        assertTrue(response.getMessage().contains("行情服务暂不可用"));
+        assertFalse(response.getMessage().contains("今日尚无决策"));
     }
 
     @Test

@@ -37,6 +37,9 @@ public class DecisionTodayResp {
      */
     private Boolean generated;
 
+    /** 当前用户在决策日最近一次 LIVE 运行，独立于已发布结果 */
+    private DecisionRunStatusResp latestRun;
+
     /** 规则版本 */
     private String ruleVersion;
 

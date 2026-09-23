@@ -500,6 +500,7 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
             int userTotal = userIds.size();
             int successCount = 0;
             int failureCount = 0;
+            int unpublishedCount = 0;
             int totalBuyCount = 0;
             int totalSellCount = 0;
             int totalHoldCount = 0;
@@ -541,12 +542,19 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                         UserDecisionResultBO userResult = completionService.take().get();
                         if (Boolean.TRUE.equals(userResult.getSuccess())) {
                             DecisionTodayResp response = userResult.getResponse();
-                            successCount++;
-                            totalBuyCount += Objects.nonNull(response.getBuyCount()) ? response.getBuyCount() : 0;
-                            totalSellCount += Objects.nonNull(response.getSellCount()) ? response.getSellCount() : 0;
-                            totalHoldCount += Objects.nonNull(response.getHoldCount()) ? response.getHoldCount() : 0;
-                            appendLog(job, "[用户决策] 用户编号=" + userResult.getUserId()
-                                    + "，运行编号=" + response.getRunNo() + "，状态=成功\n");
+                            if (Boolean.TRUE.equals(response.getGenerated())) {
+                                successCount++;
+                                totalBuyCount += Objects.nonNull(response.getBuyCount()) ? response.getBuyCount() : 0;
+                                totalSellCount += Objects.nonNull(response.getSellCount()) ? response.getSellCount() : 0;
+                                totalHoldCount += Objects.nonNull(response.getHoldCount()) ? response.getHoldCount() : 0;
+                                appendLog(job, "[用户决策] 用户编号=" + userResult.getUserId()
+                                        + "，运行编号=" + response.getRunNo() + "，状态=已发布\n");
+                            } else {
+                                unpublishedCount++;
+                                appendLog(job, "[用户决策] 用户编号=" + userResult.getUserId()
+                                        + "，运行编号=" + response.getRunNo() + "，状态=未发布，原因="
+                                        + clip(response.getMessage(), 300) + "\n");
+                            }
                         } else {
                             failureCount++;
                             appendLog(job, "[用户决策] 用户编号=" + userResult.getUserId() + "，状态=失败，原因="
@@ -565,11 +573,12 @@ public class DataSyncJobServiceImpl implements IDataSyncJobService {
                 }
             }
 
-            job.setStatus(failureCount > 0 ? "PARTIAL" : "SUCCESS");
+            job.setStatus(failureCount > 0 || unpublishedCount > 0 ? "PARTIAL" : "SUCCESS");
             job.setProgressPct(100);
-            job.setMessage("完成：用户成功 " + successCount + "，失败 " + failureCount
+            job.setMessage("完成：用户已发布 " + successCount + "，未发布 " + unpublishedCount + "，失败 " + failureCount
                     + "，买入 " + totalBuyCount + "，卖出 " + totalSellCount + "，持有 " + totalHoldCount);
-            appendLog(job, "[共享市场决策] 用户成功=" + successCount + "，用户失败=" + failureCount + "\n");
+            appendLog(job, "[共享市场决策] 用户已发布=" + successCount + "，用户未发布=" + unpublishedCount
+                    + "，用户失败=" + failureCount + "\n");
             job.setFinishedAt(LocalDateTime.now());
             syncJobMapper.updateById(job);
         } catch (Exception ex) {

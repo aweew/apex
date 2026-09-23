@@ -37,9 +37,25 @@ import FloatingShareButton from '../components/FloatingShareButton.vue'
 import DecisionWorkspaceTabs from '../components/DecisionWorkspaceTabs.vue'
 import { useSessionViewState } from '../utils/viewState.js'
 import { publishDataFreshness, staleDataTime } from '../utils/dataFreshness.js'
+import { getCurrentUser } from '../api/auth'
+import { fetchSyncOverview, startSyncJob } from '../api/sync'
+import { createSerialPoller, isActiveSyncJob } from './syncPolling.mjs'
+import { decisionJobChanged, decisionRunFeedback } from '../utils/decisionRunFeedback.js'
 
 const router = useRouter()
 const loading = ref(false)
+const isAdmin = getCurrentUser()?.role === 'ADMIN'
+const decisionJob = ref(null)
+const startingDecision = ref(false)
+const taskStatusError = ref('')
+const resultLoadError = ref('')
+const decisionRunning = computed(() => isActiveSyncJob(decisionJob.value) || data.value?.latestRun?.status === 'RUNNING')
+const runFeedback = computed(() => decisionRunFeedback(data.value, decisionJob.value))
+const decisionPoller = createSerialPoller(refreshDecisionTask, 5000)
+let disposed = false
+let decisionLoadVersion = 0
+let resultRefreshPending = false
+let taskStatusVersion = 0
 const ordering = ref(false)
 const DEFAULT_GROUP = '我的自选'
 const data = ref(null)
@@ -298,43 +314,94 @@ function strategyName(id) {
 }
 
 async function load() {
+  const version = ++decisionLoadVersion
   loading.value = true
+  resultLoadError.value = ''
   try {
     const [res] = await Promise.all([
       fetchDecisionToday(undefined, DEFAULT_GROUP),
       loadPlaybook(),
     ])
+    if (disposed || version !== decisionLoadVersion) return
     data.value = res.data
-    trackingOpen.value = false
+    trackingOpen.value = !executableBuys.value.length && trackingBuys.value.length > 0
     publishDecisionDataFreshness()
     pickDefaultTab()
     loading.value = false
     void Promise.all([loadHistory(), loadAttribution()])
     loadDecisionAdvice(data.value?.actionDate)
     loadBuyAi(false)
+    return true
   } catch (e) {
+    if (disposed || version !== decisionLoadVersion) return
+    resultLoadError.value = e.message || '加载失败，请刷新结果重试'
     ElMessage.error(e.message || '加载失败')
+    return false
   } finally {
-    loading.value = false
+    if (version === decisionLoadVersion) loading.value = false
+  }
+}
+
+async function refreshDecisionTask() {
+  if (startingDecision.value) return !disposed
+  const version = ++taskStatusVersion
+  try {
+    const res = await fetchSyncOverview()
+    if (disposed) return false
+    if (version !== taskStatusVersion) return true
+    const current = res.data?.tasks?.find((task) => task.taskType === 'DECISION')?.latestJob || null
+    const previous = decisionJob.value
+    decisionJob.value = current
+    taskStatusError.value = ''
+    if (decisionJobChanged(previous, current)) resultRefreshPending = true
+    if (resultRefreshPending || data.value?.latestRun?.status === 'RUNNING') {
+      resultRefreshPending = !(await load())
+    }
+  } catch (error) {
+    if (!disposed && version === taskStatusVersion) taskStatusError.value = `任务状态更新失败：${error.message || '连接异常'}，正在自动重试。`
+  }
+  return !disposed
+}
+
+async function onGenerateDecision() {
+  if (!isAdmin || startingDecision.value || decisionRunning.value) return
+  ++taskStatusVersion
+  startingDecision.value = true
+  taskStatusError.value = ''
+  try {
+    const res = await startSyncJob({ taskType: 'DECISION', includeBj: includeBj.value })
+    if (disposed) return
+    decisionJob.value = res.data
+    ElMessage.success('决策任务已提交，完成后本页会自动更新结果')
+    decisionPoller.start()
+  } catch (error) {
+    if (disposed) return
+    taskStatusError.value = error.message || '决策启动失败，请重试'
+    ElMessage.error(taskStatusError.value)
+  } finally {
+    startingDecision.value = false
   }
 }
 
 async function openHistoryDay(row) {
   if (!row?.actionDate) return
+  const version = ++decisionLoadVersion
   loading.value = true
   try {
     const res = await fetchDecisionToday(row.actionDate, DEFAULT_GROUP)
+    if (disposed || version !== decisionLoadVersion) return
     data.value = res.data
-    trackingOpen.value = false
+    trackingOpen.value = !executableBuys.value.length && trackingBuys.value.length > 0
     publishDecisionDataFreshness()
     pickDefaultTab()
     loadDecisionAdvice(data.value?.actionDate)
     loadBuyAi(false)
     ElMessage.success(`已切换到决策日 ${row.actionDate}`)
   } catch (e) {
+    if (disposed || version !== decisionLoadVersion) return
     ElMessage.error(e.message || '加载历史决策失败')
   } finally {
-    loading.value = false
+    if (version === decisionLoadVersion) loading.value = false
   }
 }
 
@@ -585,9 +652,14 @@ async function onPaperOrder(row) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await Promise.all([load(), refreshDecisionTask()])
+  if (!disposed) decisionPoller.start()
+})
 
 onBeforeUnmount(() => {
+  disposed = true
+  decisionPoller.stop()
   revokeSharePreview()
 })
 </script>
@@ -605,6 +677,10 @@ onBeforeUnmount(() => {
       <div class="dec-toolbar">
         <DecisionWorkspaceTabs />
         <div class="dec-controls">
+          <el-button v-if="isAdmin" type="primary" :loading="startingDecision || decisionRunning" @click="onGenerateDecision">
+            {{ decisionRunning ? '决策生成中' : '生成今日决策' }}
+          </el-button>
+          <el-button :disabled="loading" @click="load">刷新结果</el-button>
           <label class="market-scope" title="默认不含北交所；开启后在决策清单中纳入京市">
             <span>
               <em>股票范围</em>
@@ -628,6 +704,21 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </header>
+
+    <section class="decision-run-panel" aria-label="决策运行与结果" aria-live="polite">
+      <el-alert :title="runFeedback.title" :description="runFeedback.detail" :type="runFeedback.type" :closable="false" show-icon />
+      <el-progress v-if="decisionRunning && decisionJob" :percentage="Math.max(0, Math.min(100, Number(decisionJob.progressPct) || 0))" />
+      <div class="decision-run-meta">
+        <span v-if="data?.actionDate">当前清单：{{ data.actionDate }}</span>
+        <span v-if="data?.dataAsOf">行情截至：{{ data.dataAsOf }}</span>
+        <span v-if="data?.latestRun?.finishedAt">最近运行结束：{{ data.latestRun.finishedAt }}</span>
+        <span v-else-if="decisionJob?.startedAt">最近任务开始：{{ decisionJob.startedAt }}</span>
+        <span v-if="!isAdmin">由系统自动生成，管理员可手动触发</span>
+        <el-button link type="primary" @click="router.push('/sync')">查看任务详情 / 补齐数据</el-button>
+      </div>
+      <p v-if="taskStatusError" class="decision-run-error" role="alert">{{ taskStatusError }}</p>
+      <p v-if="resultLoadError" class="decision-run-error" role="alert">结果加载失败：{{ resultLoadError }}</p>
+    </section>
 
     <FloatingShareButton
       v-if="!shareOpen"
@@ -919,8 +1010,8 @@ onBeforeUnmount(() => {
             <el-button link type="primary" @click="router.push('/sync')">去同步</el-button>
           </div>
           <div v-if="!buys.length" class="page-empty">
-            <h3>暂无买入机会</h3>
-            <p>系统会在后台扫描全 A + 热点并写入观察池</p>
+            <h3>{{ data?.generated ? '本次决策暂无买入机会' : '尚无已发布的买入清单' }}</h3>
+            <p>{{ data?.generated ? '本次筛选没有符合条件的买入标的，可查看卖出和持有建议。' : '请查看页面上方的运行状态与原因，生成完成后自动展示结果。' }}</p>
             <el-button plain type="primary" @click="router.push('/sync')">
               去同步中心
               <el-icon><ArrowRight /></el-icon>
@@ -1218,6 +1309,8 @@ onBeforeUnmount(() => {
                   <div>
                     <StockIdentity :security="row" interactive compact @select="router.push(`/stock/${row.code}`)" />
                     <span>{{ buyActionState(row) }}</span>
+                    <p v-if="row.riskFlags?.length" class="decision-tracking-reason">{{ row.riskFlags.join('；') }}</p>
+                    <p v-if="row.reason" class="decision-tracking-reason">{{ row.reason }}</p>
                   </div>
                   <el-button
                     link
@@ -1542,6 +1635,40 @@ onBeforeUnmount(() => {
 
 .decision .header {
   margin-bottom: 0;
+}
+
+.decision-run-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.decision-run-panel :deep(.el-alert__description) {
+  overflow-wrap: anywhere;
+}
+
+.decision-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.decision-run-error {
+  margin: 0;
+  color: var(--el-color-danger);
+  overflow-wrap: anywhere;
+}
+
+.decision-tracking-reason {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .decision-evidence-toggle {

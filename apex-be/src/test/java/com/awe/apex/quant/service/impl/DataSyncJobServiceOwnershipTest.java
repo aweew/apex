@@ -95,7 +95,7 @@ class DataSyncJobServiceOwnershipTest {
         when(configService.getString("auto_sync_group", "我的自选")).thenReturn("我的自选");
         when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class)))
                 .thenReturn(DecisionTodayResp.builder()
-                .runNo("RUN-1").buyCount(0).sellCount(0).holdCount(0).message("完成").build());
+                .runNo("RUN-1").generated(true).buyCount(0).sellCount(0).holdCount(0).message("完成").build());
     }
 
     @AfterEach
@@ -374,6 +374,25 @@ class DataSyncJobServiceOwnershipTest {
         assertNotNull(closeBundleTask);
         assertTrue(closeBundleTask.getRunning());
         assertEquals(1, overview.getRunningCount());
+    }
+
+    @Test
+    void unpublishedDecisionProducesPartialStatusAndExcludesCandidateCounts() {
+        ReflectionTestUtils.setField(service, "userContext", new ApexUserContext());
+        savedJob.set(SyncJob.builder().id(101L).status("PENDING").build());
+        when(userAuthService.listEnabledUserIds()).thenReturn(java.util.List.of(9L));
+        when(decisionService.run(any(DecisionRunReq.class), any(TaskProgressListener.class)))
+                .thenReturn(DecisionTodayResp.builder().runNo("RUN-UNPUBLISHED")
+                        .generated(false).buyCount(3).sellCount(1).holdCount(2)
+                        .message("市场关键数据未就绪").build());
+
+        ReflectionTestUtils.invokeMethod(service, "runDecisionJob", 101L, new SyncStartReq(),
+                new java.util.concurrent.atomic.AtomicBoolean(false));
+
+        assertEquals("PARTIAL", savedJob.get().getStatus());
+        assertTrue(savedJob.get().getMessage().contains("用户已发布 0，未发布 1"));
+        assertTrue(savedJob.get().getMessage().contains("买入 0，卖出 0，持有 0"));
+        assertTrue(savedJob.get().getLogTail().contains("市场关键数据未就绪"));
     }
 
     @Test
