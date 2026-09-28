@@ -317,12 +317,12 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
         if (DashboardCommandStatusEnum.BLOCKED.equals(status)
                 || DashboardCommandStatusEnum.STALE.equals(status)) {
             return MarketForecastResp.builder()
-                    .marketOutlook("关键行情数据不全，暂时无法判断今天怎么走。")
+                    .marketOutlook("行情数据不完整，暂不生成涨跌判断。")
                     .focusItems(List.of())
                     .riskItems(List.of())
                     .watchConditions(List.of(CommandWatchConditionResp.builder()
                             .title("补齐数据")
-                            .condition("更新海外、亚太和上一交易日的 A 股行情后重新判断")
+                            .condition("更新海外、亚太和上一交易日 A 股行情，重新生成今日决策")
                             .build()))
                     .build();
         }
@@ -1196,8 +1196,8 @@ public class DashboardCommandServiceImpl implements IDashboardCommandService {
                 .code(OperationGuideCodeEnum.REFRESH_DATA.getCode())
                 .status(OperationGuideStatusEnum.BLOCKED.getCode())
                 .title("刷新数据")
-                .actionText("停止新增动作并刷新数据")
-                .conditionText("行情和晨报日期恢复正常并重新生成目标交易日决策后，才可恢复新仓")
+                .actionText("暂停新增仓位，先刷新数据")
+                .conditionText("行情和晨报日期恢复正常，并重新生成今日决策后再恢复新仓")
                 .targetCount(0)
                 .targetType(OperationTargetTypeEnum.DATA.getCode())
                 .build();

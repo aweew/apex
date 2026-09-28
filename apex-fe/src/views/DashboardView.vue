@@ -48,6 +48,7 @@ function writeHomeCache(data) {
 
 const market = computed(() => home.value?.market || null)
 const command = computed(() => home.value?.command || null)
+const commandUnavailable = computed(() => ['STALE', 'BLOCKED'].includes(command.value?.status))
 const isIntradayCommand = computed(() => command.value?.phase === 'IN_SESSION' && command.value?.marketDataUpdatedAt)
 const dashboardMarketTime = computed(() => staleDataTime({
   tradeDate: isIntradayCommand.value ? command.value?.marketDataUpdatedAt : market.value?.asOf,
@@ -433,8 +434,8 @@ function commandStatusLabel(status) {
   const labels = {
     READY: '已就绪',
     PARTIAL: '部分可用',
-    STALE: '数据过期',
-    BLOCKED: '已阻断',
+    STALE: '暂不可用',
+    BLOCKED: '暂不可用',
     GENERATING: '生成中',
   }
   return labels[status] || '状态未知'
@@ -470,7 +471,7 @@ function operationStatusLabel(status) {
     REQUIRED: '必做',
     READY: '可执行',
     WAIT: '等待',
-    BLOCKED: '已阻断',
+    BLOCKED: '需要处理',
     DONE: '已完成',
   }
   return labels[status] || '待确认'
@@ -482,12 +483,12 @@ const commandDataTimeText = computed(() => {
   if (marketDataUpdatedAt) {
     const updatedTime = String(marketDataUpdatedAt).replace('T', ' ').slice(0, 16)
     const compactUpdatedTime = updatedTime.startsWith(tradeDate) ? updatedTime.slice(11) : updatedTime
-    return `${tradeDate} · 行情 ${compactUpdatedTime} 更新`
+    return `目标交易日 ${tradeDate} · 行情 ${compactUpdatedTime} 更新`
   }
   if (command.value?.marketDataAsOf) {
-    return `${tradeDate} · 行情截至 ${command.value.marketDataAsOf}`
+    return `目标交易日 ${tradeDate} · 行情截至 ${command.value.marketDataAsOf}`
   }
-  return tradeDate
+  return `目标交易日 ${tradeDate}`
 })
 
 function openCommandAction(code) {
@@ -946,10 +947,19 @@ onBeforeUnmount(() => {
     <section v-if="command" class="command-band enter delay-1" aria-label="盘前决策">
       <div class="command-head">
         <div>
-          <h3>盘前决策</h3>
+          <h3>{{ commandUnavailable ? '今日盘前决策暂不可用' : '盘前决策' }}</h3>
           <p>{{ commandDataTimeText }}</p>
         </div>
         <div class="command-head-actions">
+          <el-button
+            v-if="commandUnavailable"
+            class="refresh-data-button"
+            type="warning"
+            size="small"
+            @click="openCommandAction('REFRESH_DATA')"
+          >
+            去刷新数据
+          </el-button>
           <el-button class="full-report-link" link type="primary" @click="router.push('/pre-market-report')">
             完整研报
             <span aria-hidden="true">→</span>
@@ -958,6 +968,11 @@ onBeforeUnmount(() => {
             {{ commandStatusLabel(command.status) }}
           </span>
         </div>
+      </div>
+
+      <div v-if="commandUnavailable" class="command-unavailable" role="alert">
+        <strong>当前不能据此判断涨跌，也不能新增仓位。</strong>
+        <span>请更新海外、亚太和上一交易日 A 股行情，重新生成今日决策。</span>
       </div>
 
       <div class="command-grid">
@@ -972,8 +987,8 @@ onBeforeUnmount(() => {
             {{ command.preMarketSummary.headline }}
           </p>
 
-          <div v-if="command.preMarketSummary?.forecast?.marketOutlook" class="command-forecast">
-            <span class="command-forecast-label">{{ isIntradayCommand ? '盘中判断' : '今日预测' }}</span>
+          <div v-if="command.preMarketSummary?.forecast?.marketOutlook" class="command-forecast" :class="{ 'is-unavailable': commandUnavailable }">
+            <span class="command-forecast-label">{{ commandUnavailable ? '当前状态' : (isIntradayCommand ? '盘中判断' : '今日预测') }}</span>
             <p>{{ command.preMarketSummary.forecast.marketOutlook }}</p>
 
             <div
@@ -1484,7 +1499,7 @@ onBeforeUnmount(() => {
       <div class="panel-head">
         <div>
           <h3>观察池提醒</h3>
-          <p class="panel-desc">需要优先处理的观察标的</p>
+          <p class="panel-desc">需要优先处理的观察标的 · 已触发=条件已满足，接近=距离条件较近</p>
         </div>
         <div class="observe-strip__actions">
           <div class="observe-strip__summary" aria-label="提醒数量">
@@ -3082,6 +3097,11 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.refresh-data-button {
+  min-height: 32px;
+  font-weight: 700;
+}
+
 .full-report-link {
   min-height: 40px;
   padding-inline: 4px;
@@ -3131,6 +3151,25 @@ onBeforeUnmount(() => {
   border-color: rgba(255, 59, 48, 0.23);
   background: rgba(255, 59, 48, 0.07);
   color: var(--up);
+}
+
+.command-unavailable {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 16px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 159, 10, 0.32);
+  border-radius: 6px;
+  background: rgba(255, 159, 10, 0.08);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.command-unavailable strong {
+  color: #8a4f00;
+  font-weight: 700;
 }
 
 .command-grid {
@@ -3190,6 +3229,11 @@ onBeforeUnmount(() => {
   padding: 12px 14px 14px;
   border-left: 2px solid rgba(0, 113, 227, 0.5);
   background: rgba(0, 113, 227, 0.035);
+}
+
+.command-forecast.is-unavailable {
+  border-left-color: rgba(255, 159, 10, 0.7);
+  background: rgba(255, 159, 10, 0.045);
 }
 
 .command-forecast-label,
@@ -4763,6 +4807,12 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 480px) {
+  .command-head-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px 10px;
+  }
+
   .morning-context-grid {
     grid-template-columns: 1fr;
   }
@@ -5263,7 +5313,7 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 
-@media (max-width: 1100px) {
+@media (min-width: 561px) and (max-width: 1100px) {
   .kpi-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
