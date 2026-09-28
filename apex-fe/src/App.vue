@@ -41,7 +41,6 @@ import {
 } from './utils/dataFreshness.js'
 import { setShowDashboardKline, showDashboardKline } from './utils/displayPreferences.js'
 import {
-  canStartMenuSwipe,
   isMobileBackSwipeStart,
   mobileBackSwipeOffset,
   menuSwipeProgress,
@@ -401,10 +400,6 @@ function onMobileMenuTouchStart(event) {
   }
 
   const touch = event.touches[0]
-  if (!canStartMenuSwipe(mobileMenuProgress.value, touch.clientX)) {
-    mobileMenuSwipe = undefined
-    return
-  }
   // The browser-style left-edge gesture is reserved for history navigation.
   // It must never reveal the app menu, including when there is no history entry.
   if (isMobileBackSwipeStart(touch.clientX)) {
@@ -2431,15 +2426,15 @@ onBeforeUnmount(() => {
 
   .links {
     position: fixed;
-    top: calc(56px + env(safe-area-inset-top) + 8px);
+    top: 0;
     right: auto;
-    bottom: 8px;
+    bottom: 0;
     left: 0;
     z-index: 102;
     width: min(calc(100vw - 64px), 360px);
     max-width: none;
     height: auto;
-    max-height: calc(100dvh - 72px - env(safe-area-inset-top));
+    max-height: 100dvh;
     min-height: 0;
     display: flex;
     flex-direction: column;

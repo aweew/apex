@@ -6,10 +6,10 @@ const appSource = await readFile(new URL('../App.vue', import.meta.url), 'utf8')
 const sharedStyles = await readFile(new URL('../style.css', import.meta.url), 'utf8')
 const glossarySource = await readFile(new URL('../components/GlossaryPanel.vue', import.meta.url), 'utf8')
 
-test('mobile navigation owns scrolling inside a dedicated drawer body', () => {
+test('mobile navigation owns scrolling inside a full-height drawer body', () => {
   assert.match(appSource, /class="mobile-menu-scroll"/)
-  assert.match(appSource, /\.links\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?top:\s*calc\(56px \+ env\(safe-area-inset-top\) \+ 8px\);[\s\S]*?bottom:\s*8px;[\s\S]*?overflow:\s*hidden;/)
-  assert.match(appSource, /\.links\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 72px - env\(safe-area-inset-top\)\);/)
+  assert.match(appSource, /\.links\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*0;[\s\S]*?overflow:\s*hidden;/)
+  assert.match(appSource, /\.links\s*\{[\s\S]*?max-height:\s*100dvh;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?touch-action:\s*pan-y;/)
   assert.match(appSource, /\.mobile-menu-scroll\s*\{[\s\S]*?-webkit-overflow-scrolling:\s*touch;/)
@@ -133,7 +133,7 @@ test('mobile menu focus is restored only for keyboard interaction', () => {
   assert.match(appSource, /previousOpen && mobileMenuKeyboardInteraction/)
 })
 
-test('mobile left-edge swipe navigates back and never opens the menu', () => {
+test('mobile left-edge swipe keeps history navigation and center swipe opens the menu', () => {
   assert.match(appSource, /if \(isMobileBackSwipeStart\(touch\.clientX\)\)/)
   assert.match(appSource, /type: 'back'/)
   assert.match(appSource, /mobileBackSwipeOffsetPx\.value = mobileBackSwipeOffset\(deltaX\)/)
@@ -152,7 +152,8 @@ test('mobile left-edge swipe navigates back and never opens the menu', () => {
     appSource.indexOf('if (isMobileBackSwipeStart(touch.clientX))'),
     appSource.indexOf("type: 'menu'"),
   )
-  assert.doesNotMatch(edgeBranch, /scheduleMobileMenuProgress|setMobileMenu\(true\)/)
+  assert.match(edgeBranch, /!mobileMenuOpen\.value && Boolean\(mobileBackPath\.value\)/)
+  assert.match(appSource, /if \(isMobileBackSwipeStart\(touch\.clientX\)\)/)
 })
 
 test('mobile swipe release preserves the dragged frame before easing to its destination', () => {
